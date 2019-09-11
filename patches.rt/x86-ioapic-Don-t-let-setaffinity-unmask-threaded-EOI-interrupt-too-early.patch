@@ -1,0 +1,115 @@
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Thu, 19 Jul 2018 21:50:23 +0200
+Subject: x86/ioapic: Don't let setaffinity unmask threaded EOI interrupt too
+ early
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 1f87e39349f2a2581f563e735316da4346525884
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+[ Upstream commit ac14002317721910204b82b9d8611dadb1cec2bb ]
+
+There is an issue with threaded interrupts which are marked ONESHOT
+and using the fasteoi handler.
+
+    if (IS_ONESHOT())
+        mask_irq();
+
+    ....
+    ....
+
+    cond_unmask_eoi_irq()
+        chip->irq_eoi();
+
+So if setaffinity is pending then the interrupt will be moved and then
+unmasked, which is wrong as it should be kept masked up to the point where
+the threaded handler finished. It's not a real problem, the interrupt will
+just be able to fire before the threaded handler has finished, though the irq
+masked state will be wrong for a bit.
+
+The patch below should cure the issue. It also renames the horribly
+misnomed functions so it becomes clear what they are supposed to do.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Steven Rostedt (VMware) <rostedt@goodmis.org>
+[bigeasy: add the body of the patch, use the same functions in both
+          ifdef paths (spotted by Andy Shevchenko)]
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ arch/x86/kernel/apic/io_apic.c |   26 ++++++++++++++------------
+ 1 file changed, 14 insertions(+), 12 deletions(-)
+
+--- a/arch/x86/kernel/apic/io_apic.c
++++ b/arch/x86/kernel/apic/io_apic.c
+@@ -1708,20 +1708,20 @@ static bool io_apic_level_ack_pending(st
+ 	return false;
+ }
+ 
+-static inline bool ioapic_irqd_mask(struct irq_data *data)
++static inline bool ioapic_prepare_move(struct irq_data *data)
+ {
+ 	/* If we are moving the irq we need to mask it */
+-	if (unlikely(irqd_is_setaffinity_pending(data) &&
+-		     !irqd_irq_inprogress(data))) {
+-		mask_ioapic_irq(data);
++	if (unlikely(irqd_is_setaffinity_pending(data))) {
++		if (!irqd_irq_masked(data))
++			mask_ioapic_irq(data);
+ 		return true;
+ 	}
+ 	return false;
+ }
+ 
+-static inline void ioapic_irqd_unmask(struct irq_data *data, bool masked)
++static inline void ioapic_finish_move(struct irq_data *data, bool moveit)
+ {
+-	if (unlikely(masked)) {
++	if (unlikely(moveit)) {
+ 		/* Only migrate the irq if the ack has been received.
+ 		 *
+ 		 * On rare occasions the broadcast level triggered ack gets
+@@ -1750,15 +1750,17 @@ static inline void ioapic_irqd_unmask(st
+ 		 */
+ 		if (!io_apic_level_ack_pending(data->chip_data))
+ 			irq_move_masked_irq(data);
+-		unmask_ioapic_irq(data);
++		/* If the irq is masked in the core, leave it */
++		if (!irqd_irq_masked(data))
++			unmask_ioapic_irq(data);
+ 	}
+ }
+ #else
+-static inline bool ioapic_irqd_mask(struct irq_data *data)
++static inline bool ioapic_prepare_move(struct irq_data *data)
+ {
+ 	return false;
+ }
+-static inline void ioapic_irqd_unmask(struct irq_data *data, bool masked)
++static inline void ioapic_finish_move(struct irq_data *data, bool moveit)
+ {
+ }
+ #endif
+@@ -1767,11 +1769,11 @@ static void ioapic_ack_level(struct irq_
+ {
+ 	struct irq_cfg *cfg = irqd_cfg(irq_data);
+ 	unsigned long v;
+-	bool masked;
++	bool moveit;
+ 	int i;
+ 
+ 	irq_complete_move(cfg);
+-	masked = ioapic_irqd_mask(irq_data);
++	moveit = ioapic_prepare_move(irq_data);
+ 
+ 	/*
+ 	 * It appears there is an erratum which affects at least version 0x11
+@@ -1826,7 +1828,7 @@ static void ioapic_ack_level(struct irq_
+ 		eoi_ioapic_pin(cfg->vector, irq_data->chip_data);
+ 	}
+ 
+-	ioapic_irqd_unmask(irq_data, masked);
++	ioapic_finish_move(irq_data, moveit);
+ }
+ 
+ static void ioapic_ir_ack_level(struct irq_data *irq_data)

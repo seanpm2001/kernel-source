@@ -1,0 +1,123 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Fri, 15 Dec 2017 18:49:49 +0100
+Subject: tracing: Update the "tracing: Inter-event (e.g. latency) support"
+ patch
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 62f92d258e396234f161c632d36743d0d0d0a53c
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+This commit is an all-in-one update of Tom Zanussi's "tracing: Inter-event
+(e.g. latency) support" series from v7 to v8 as posted on 2017-12-21 It
+includes the following patches:
+ tracing: Move hist trigger Documentation to histogram.txt
+ tracing: Add Documentation for log2 modifier
+ tracing: Add support to detect and avoid duplicates
+ tracing: Remove code which merges duplicates
+ ring-buffer: Add interface for setting absolute time stamps
+ ring-buffer: Redefine the unimplemented RINGBUF_TYPE_TIME_STAMP
+ tracing: Add timestamp_mode trace file
+ tracing: Give event triggers access to ring_buffer_event
+ tracing: Add ring buffer event param to hist field functions
+ tracing: Break out hist trigger assignment parsing
+ tracing: Add hist trigger timestamp support
+ tracing: Add per-element variable support to tracing_map
+ tracing: Add hist_data member to hist_field
+ tracing: Add usecs modifier for hist trigger timestamps
+ tracing: Add variable support to hist triggers
+ tracing: Account for variables in named trigger compatibility
+ tracing: Move get_hist_field_flags()
+ tracing: Add simple expression support to hist triggers
+ tracing: Generalize per-element hist trigger data
+ tracing: Pass tracing_map_elt to hist_field accessor functions
+ tracing: Add hist_field 'type' field
+ tracing: Add variable reference handling to hist triggers
+ tracing: Add hist trigger action hook
+ tracing: Add support for 'synthetic' events
+ tracing: Add support for 'field variables'
+ tracing: Add 'onmatch' hist trigger action support
+ tracing: Add 'onmax' hist trigger action support
+ tracing: Allow whitespace to surround hist trigger filter
+ tracing: Add cpu field for hist triggers
+ tracing: Add hist trigger support for variable reference aliases
+ tracing: Add 'last error' error facility for hist triggers
+ tracing: Add inter-event hist trigger Documentation
+ tracing: Make tracing_set_clock() non-static
+ tracing: Add a clock attribute for hist triggers
+ tracing: Increase trace_recursive_lock() limit for synthetic events
+ tracing: Add inter-event blurb to HIST_TRIGGERS config option
+ selftests: ftrace: Add inter-event hist triggers testcases
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/trace/trace_events_hist.c |   34 +++++++++++-----------------------
+ 1 file changed, 11 insertions(+), 23 deletions(-)
+
+--- a/kernel/trace/trace_events_hist.c
++++ b/kernel/trace/trace_events_hist.c
+@@ -613,7 +613,7 @@ static enum print_line_t print_synth_eve
+ 		/* parameter values */
+ 		if (se->fields[i]->is_string) {
+ 			trace_seq_printf(s, print_fmt, se->fields[i]->name,
+-					 (char *)(long)entry->fields[n_u64],
++					 (char *)&entry->fields[n_u64],
+ 					 i == se->n_fields - 1 ? "" : " ");
+ 			n_u64 += STR_VAR_LEN_MAX / sizeof(u64);
+ 		} else {
+@@ -1500,37 +1500,25 @@ static struct trace_event_file *find_var
+ {
+ 	struct hist_trigger_data *var_hist_data;
+ 	struct hist_var_data *var_data;
+-	struct trace_event_call *call;
+ 	struct trace_event_file *file, *found = NULL;
+-	const char *name;
++
++	if (system)
++		return find_event_file(tr, system, event_name);
+ 
+ 	list_for_each_entry(var_data, &tr->hist_vars, list) {
+ 		var_hist_data = var_data->hist_data;
+ 		file = var_hist_data->event_file;
+ 		if (file == found)
+ 			continue;
+-		call = file->event_call;
+-		name = trace_event_name(call);
+-
+-		if (!system || !event_name) {
+-			if (find_var(var_hist_data, file, var_name)) {
+-				if (found) {
+-					hist_err_event("Variable name not unique, need to use fully qualified name (subsys.event.var) for variable: ", system, event_name, var_name);
+-					return NULL;
+-				}
+ 
+-				found = file;
++		if (find_var_field(var_hist_data, var_name)) {
++			if (found) {
++				hist_err_event("Variable name not unique, need to use fully qualified name (subsys.event.var) for variable: ", system, event_name, var_name);
++				return NULL;
+ 			}
+-			continue;
+-		}
+-
+-		if (strcmp(event_name, name) != 0)
+-			continue;
+-		if (strcmp(system, call->class->system) != 0)
+-			continue;
+ 
+-		found = file;
+-		break;
++			found = file;
++		}
+ 	}
+ 
+ 	return found;
+@@ -1977,7 +1965,7 @@ static void hist_trigger_elt_data_free(s
+ static int hist_trigger_elt_data_alloc(struct tracing_map_elt *elt)
+ {
+ 	struct hist_trigger_data *hist_data = elt->map->private_data;
+-	unsigned int size = TASK_COMM_LEN + 1;
++	unsigned int size = TASK_COMM_LEN;
+ 	struct hist_elt_data *elt_data;
+ 	struct hist_field *key_field;
+ 	unsigned int i, n_str;

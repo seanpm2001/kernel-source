@@ -1,0 +1,37 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Fri, 18 Aug 2017 10:09:09 +0200
+Subject: kernel/hrtimer: migrate deferred timer on CPU down
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: b3c08bffdcdd23f1b3ca8d9c01e3b8a715e03d46
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE15 Realtime Extension
+
+hrtimers, which were deferred to the softirq context, and expire between
+softirq shutdown and hrtimer migration are dangling around. If the CPU
+goes back up the list head will be initialized and this corrupts the
+timer's list. It will remain unnoticed until a hrtimer_cancel().
+This moves those timers so they will expire.
+
+Cc: stable-rt@vger.kernel.org
+Reported-by: Mike Galbraith <efault@gmx.de>
+Tested-by: Mike Galbraith <efault@gmx.de>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/time/hrtimer.c |    5 +++++
+ 1 file changed, 5 insertions(+)
+
+--- a/kernel/time/hrtimer.c
++++ b/kernel/time/hrtimer.c
+@@ -1801,6 +1801,11 @@ static void migrate_hrtimer_list(struct
+ 		 */
+ 		enqueue_hrtimer(timer, new_base);
+ 	}
++#ifdef CONFIG_PREEMPT_RT_BASE
++	list_splice_tail(&old_base->expired, &new_base->expired);
++	if (!list_empty(&new_base->expired))
++		raise_softirq_irqoff(HRTIMER_SOFTIRQ);
++#endif
+ }
+ 
+ int hrtimers_dead_cpu(unsigned int scpu)

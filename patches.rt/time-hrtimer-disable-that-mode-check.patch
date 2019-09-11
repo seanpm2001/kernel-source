@@ -1,0 +1,31 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Mon, 4 Dec 2017 11:59:02 +0100
+Subject: time/hrtimer: disable that mode check
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: f65bcddf918b65bdf0e82c8ba27b7b0aff56ea78
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+On -RT we push most timers by default into the soft-mode. The "start/update"
+code does not use that SOFT bit so we always see that warning.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/time/hrtimer.c |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+--- a/kernel/time/hrtimer.c
++++ b/kernel/time/hrtimer.c
+@@ -421,8 +421,10 @@ static inline void debug_hrtimer_activat
+ 	 * Check whether the HRTIMER_MODE_SOFT bit and hrtimer.is_soft
+ 	 * match, when a timer is started via__hrtimer_start_range_ns().
+ 	 */
++#ifndef CONFIG_PREEMPT_RT_BASE
+ 	if (modecheck)
+-		WARN_ON_ONCE((mode & HRTIMER_MODE_SOFT) & !timer->is_soft);
++		WARN_ON_ONCE(!(mode & HRTIMER_MODE_SOFT) ^ !timer->is_soft);
++#endif
+ 
+ 	debug_object_activate(timer, &hrtimer_debug_descr);
+ }

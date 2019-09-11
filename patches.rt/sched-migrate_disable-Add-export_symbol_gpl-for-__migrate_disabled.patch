@@ -1,0 +1,38 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Tue, 9 Oct 2018 17:34:50 +0200
+Subject: sched/migrate_disable: Add export_symbol_gpl for __migrate_disabled
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 753cbb71646aeeba1186c2656b3233f489e368f3
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+[ Upstream commit c0f0dd3ced7abe307d8e89477dae2929e488ba6c ]
+
+Jonathan reported that lttng/modules can't use __migrate_disabled().
+This function is only used by sched/core itself and the tracing
+infrastructure to report the migrate counter (lttng does probably the
+same). Since the rework migrate_disable() it moved from sched.h to
+preempt.h and is became an exported function instead of a "static
+inline" due to the header recursion of preempt vs sched.
+
+Since the compiler inlines the function for sched/core usage, add a
+EXPORT_SYMBOL_GPL to allow the module/LTTNG usage.
+
+Reported-by: Jonathan Rajott <jonathan.rajotte-julien@efficios.com>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Steven Rostedt (VMware) <rostedt@goodmis.org>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/sched/core.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -1133,6 +1133,7 @@ int __migrate_disabled(struct task_struc
+ {
+ 	return p->migrate_disable;
+ }
++EXPORT_SYMBOL_GPL(__migrate_disabled);
+ #endif
+ 
+ static void __do_set_cpus_allowed_tail(struct task_struct *p,

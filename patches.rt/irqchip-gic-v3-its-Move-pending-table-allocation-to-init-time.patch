@@ -1,0 +1,121 @@
+From: Marc Zyngier <marc.zyngier@arm.com>
+Date: Fri, 27 Jul 2018 13:38:54 +0100
+Subject: irqchip/gic-v3-its: Move pending table allocation to init time
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 2afd91698e241202cfb80ec14586c65e93cd0be9
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+[ Upstream commit 4a0819bb25d12d39c0390636122eefba232596c1 ]
+
+Signed-off-by: Marc Zyngier <marc.zyngier@arm.com>
+[bigeasy: backport commit effe377d415 ("irqchip/gic-v3-its: Move pending
+          table allocation to init time")]
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Steven Rostedt (VMware) <rostedt@goodmis.org>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ drivers/irqchip/irq-gic-v3-its.c |   56 +++++++++++++++++----------------------
+ 1 file changed, 25 insertions(+), 31 deletions(-)
+
+--- a/drivers/irqchip/irq-gic-v3-its.c
++++ b/drivers/irqchip/irq-gic-v3-its.c
+@@ -1989,14 +1989,12 @@ static int its_alloc_collections(struct
+ 	return 0;
+ }
+ 
+-static struct page *its_allocate_pending_table(unsigned int cpu)
++static struct page *its_allocate_pending_table(gfp_t gfp_flags)
+ {
+ 	struct page *pend_page;
+-	unsigned int order;
+ 
+-	order = get_order(LPI_PENDBASE_SZ);
+-	pend_page = alloc_pages_node(cpu_to_node(cpu), GFP_KERNEL | __GFP_ZERO,
+-				     order);
++	pend_page = alloc_pages(gfp_flags | __GFP_ZERO,
++				get_order(LPI_PENDBASE_SZ));
+ 	if (!pend_page)
+ 		return NULL;
+ 
+@@ -2027,7 +2025,7 @@ static bool enabled_lpis_allowed(void)
+ 	return gic_check_reserved_range(addr, LPI_PROPBASE_SZ);
+ }
+ 
+-static int __init allocate_lpi_tables(void)
++static int __init allocate_lpi_prop_table(void)
+ {
+ 	u64 val;
+ 	int err, cpu;
+@@ -2067,25 +2065,31 @@ static int __init allocate_lpi_tables(vo
+ 	return 0;
+ }
+ 
+-static int its_alloc_pend_page(unsigned int cpu)
++static int __init allocate_lpi_tables(void)
+ {
+-	struct page *pend_page;
+-	phys_addr_t paddr;
++	int err, cpu;
+ 
+-	pend_page = gic_data_rdist_cpu(cpu)->pend_page;
+-	if (pend_page)
+-		return 0;
++	err = its_alloc_lpi_prop_table();
++	if (err)
++		return err;
+ 
+-	pend_page = its_allocate_pending_table(cpu);
+-	if (!pend_page) {
+-		pr_err("Failed to allocate PENDBASE for CPU%d\n",
+-		       smp_processor_id());
+-		return -ENOMEM;
++	/*
++	 * We allocate all the pending tables anyway, as we may have a
++	 * mix of RDs that have had LPIs enabled, and some that
++	 * don't. We'll free the unused ones as each CPU comes online.
++	 */
++	for_each_possible_cpu(cpu) {
++		struct page *pend_page;
++
++		pend_page = its_allocate_pending_table(GFP_NOWAIT);
++		if (!pend_page) {
++			pr_err("Failed to allocate PENDBASE for CPU%d\n", cpu);
++			return -ENOMEM;
++		}
++
++		gic_data_rdist_cpu(cpu)->pend_page = pend_page;
+ 	}
+ 
+-	paddr = page_to_phys(pend_page);
+-	pr_info("CPU%d: using LPI pending table @%pa\n", cpu, &paddr);
+-	gic_data_rdist_cpu(cpu)->pend_page = pend_page;
+ 	return 0;
+ }
+ 
+@@ -2981,7 +2985,7 @@ static int its_vpe_init(struct its_vpe *
+ 		return vpe_id;
+ 
+ 	/* Allocate VPT */
+-	vpt_page = its_allocate_pending_table(raw_smp_processor_id());
++	vpt_page = its_allocate_pending_table(GFP_KERNEL);
+ 	if (!vpt_page) {
+ 		its_vpe_id_free(vpe_id);
+ 		return -ENOMEM;
+@@ -3847,16 +3851,6 @@ int __init its_init(struct fwnode_handle
+ 	if (err)
+ 		return err;
+ 
+-	err = cpuhp_setup_state(CPUHP_BP_PREPARE_DYN, "irqchip/arm/gicv3:prepare",
+-				its_alloc_pend_page, NULL);
+-	if (err < 0) {
+-		pr_warn("ITS: Can't register CPU-hoplug callback.\n");
+-		return err;
+-	}
+-	err = its_alloc_pend_page(smp_processor_id());
+-	if (err < 0)
+-		return err;
+-
+ 	list_for_each_entry(its, &its_nodes, entry)
+ 		has_v4 |= its->is_v4;
+ 

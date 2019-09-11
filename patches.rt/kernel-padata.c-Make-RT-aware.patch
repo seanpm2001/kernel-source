@@ -1,0 +1,38 @@
+From 9eab09983460696d6eed1b47589b768812bf96ad Mon Sep 17 00:00:00 2001
+From: Mel Gorman <mgorman@suse.de>
+Date: Fri, 17 May 2019 16:34:49 +0100
+Subject: [PATCH] kernel/padata.c: Make RT aware.
+
+Patch-mainline: No, should be sent upstream
+References: SLE Realtime Extension (bnc#1135344)
+
+Do not disable preemption when taking sleeping locks. User looks
+safe for migrate_disable() only.
+
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+---
+ kernel/padata.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/padata.c b/kernel/padata.c
+index 868f947166d7..d39e5b3b6c9c 100644
+--- a/kernel/padata.c
++++ b/kernel/padata.c
+@@ -326,7 +326,7 @@ void padata_do_serial(struct padata_priv *padata)
+ 
+ 	pd = padata->pd;
+ 
+-	cpu = get_cpu();
++	cpu = get_cpu_light();
+ 	pqueue = per_cpu_ptr(pd->pqueue, cpu);
+ 
+ 	spin_lock(&pqueue->reorder.lock);
+@@ -334,7 +334,7 @@ void padata_do_serial(struct padata_priv *padata)
+ 	list_add_tail(&padata->list, &pqueue->reorder.list);
+ 	spin_unlock(&pqueue->reorder.lock);
+ 
+-	put_cpu();
++	put_cpu_light();
+ 
+ 	padata_reorder(pd);
+ }

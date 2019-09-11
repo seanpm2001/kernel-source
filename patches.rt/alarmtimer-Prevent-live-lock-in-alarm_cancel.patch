@@ -1,0 +1,31 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Tue, 27 Mar 2018 15:58:16 +0200
+Subject: alarmtimer: Prevent live lock in alarm_cancel()
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 51e376c469bf05f32cb1ceb9e39d31bb92f1f6c8
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+If alarm_try_to_cancel() requires a retry, then depending on the
+priority setting the retry loop might prevent timer callback completion
+on RT. Prevent that by waiting for completion on RT, no change for a
+non RT kernel.
+
+Cc: stable-rt@vger.kernel.org
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/time/alarmtimer.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/kernel/time/alarmtimer.c
++++ b/kernel/time/alarmtimer.c
+@@ -442,7 +442,7 @@ int alarm_cancel(struct alarm *alarm)
+ 		int ret = alarm_try_to_cancel(alarm);
+ 		if (ret >= 0)
+ 			return ret;
+-		cpu_relax();
++		hrtimer_wait_for_timer(&alarm->timer);
+ 	}
+ }
+ EXPORT_SYMBOL_GPL(alarm_cancel);

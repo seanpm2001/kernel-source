@@ -1,0 +1,227 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Fri, 22 Dec 2017 15:40:30 +0100
+Subject: hrtimer: Update "Provide softirq context hrtimers" to v4
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: b802e8578ff8d52f7c0c2e36a08e214e65e848ca
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+- "hrtimer: Switch for loop to _ffs() evaluation": Add
+  Joe Perches' annotation
+
+- "hrtimer: Implement support for softirq based
+  hrtimers":
+   - WARN_ON_ONCE() on non equality of HRTIMER_MODE_SOFT bit and
+     hrtimer.is_soft at the begin of hrtimer_start_range_ns() and
+     without holding hrtimer base lock to prevent a deadlock
+   - Fold fix for remote soft hrtimer enqueue: Bug was reported-by
+     Bert Schulze and fixed by Sebastian Siewior:
+     https://lkml.kernel.org/r/20171214104755.7bnfwfv6mer2toe2@breakpoint.cc
+   - Ensure to update softirq expires next after migrating hrtimer
+     lists
+   - Add bh_disable/enable() with a comment in hrtimers_dead_cpu():
+     https://lkml.kernel.org/r/20171219085843.l55fasrfdqdyta5z@breakpoint.cc
+   - Fix comment before __hrtimer_get_next_event(): use
+     HRTIMER_ACTIVE_ALL instead of HRTIMER_ACTIVE
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/time/hrtimer.c |   79 ++++++++++++++++++++++++++------------------------
+ 1 file changed, 42 insertions(+), 37 deletions(-)
+
+--- a/kernel/time/hrtimer.c
++++ b/kernel/time/hrtimer.c
+@@ -67,9 +67,6 @@
+ #define HRTIMER_ACTIVE_SOFT	(HRTIMER_ACTIVE_HARD << MASK_SHIFT)
+ #define HRTIMER_ACTIVE_ALL	(HRTIMER_ACTIVE_SOFT | HRTIMER_ACTIVE_HARD)
+ 
+-/* Define for debug mode check */
+-#define HRTIMER_MODECHECK	true
+-
+ /*
+  * The timer bases:
+  *
+@@ -414,18 +411,8 @@ static inline void debug_hrtimer_init(st
+ }
+ 
+ static inline void debug_hrtimer_activate(struct hrtimer *timer,
+-					  enum hrtimer_mode mode,
+-					  bool modecheck)
++					  enum hrtimer_mode mode)
+ {
+-	/*
+-	 * Check whether the HRTIMER_MODE_SOFT bit and hrtimer.is_soft
+-	 * match, when a timer is started via__hrtimer_start_range_ns().
+-	 */
+-#ifndef CONFIG_PREEMPT_RT_BASE
+-	if (modecheck)
+-		WARN_ON_ONCE(!(mode & HRTIMER_MODE_SOFT) ^ !timer->is_soft);
+-#endif
+-
+ 	debug_object_activate(timer, &hrtimer_debug_descr);
+ }
+ 
+@@ -460,8 +447,7 @@ EXPORT_SYMBOL_GPL(destroy_hrtimer_on_sta
+ 
+ static inline void debug_hrtimer_init(struct hrtimer *timer) { }
+ static inline void debug_hrtimer_activate(struct hrtimer *timer,
+-					  enum hrtimer_mode mode,
+-					  bool modecheck) { }
++					  enum hrtimer_mode mode) { }
+ static inline void debug_hrtimer_deactivate(struct hrtimer *timer) { }
+ #endif
+ 
+@@ -474,10 +460,9 @@ debug_init(struct hrtimer *timer, clocki
+ }
+ 
+ static inline void debug_activate(struct hrtimer *timer,
+-				  enum hrtimer_mode mode,
+-				  bool modecheck)
++				  enum hrtimer_mode mode)
+ {
+-	debug_hrtimer_activate(timer, mode, modecheck);
++	debug_hrtimer_activate(timer, mode);
+ 	trace_hrtimer_start(timer, mode);
+ }
+ 
+@@ -490,15 +475,15 @@ static inline void debug_deactivate(stru
+ static struct hrtimer_clock_base *
+ __next_base(struct hrtimer_cpu_base *cpu_base, unsigned int *active)
+ {
+-	struct hrtimer_clock_base *base = NULL;
++	unsigned int idx;
+ 
+-	if (*active) {
+-		unsigned int idx = __ffs(*active);
+-		*active &= ~(1U << idx);
+-		base = &cpu_base->clock_base[idx];
+-	}
++	if (!*active)
++		return NULL;
+ 
+-	return base;
++	idx = __ffs(*active);
++	*active &= ~(1U << idx);
++
++	return &cpu_base->clock_base[idx];
+ }
+ 
+ #define for_each_active_base(base, cpu_base, active)	\
+@@ -545,11 +530,11 @@ static ktime_t __hrtimer_next_event_base
+  * hrtimer_run_softirq(), hrtimer_update_softirq_timer() will re-add these bases.
+  *
+  * Therefore softirq values are those from the HRTIMER_ACTIVE_SOFT clock bases.
+- * The !softirq values are the minima across HRTIMER_ACTIVE, unless an actual
++ * The !softirq values are the minima across HRTIMER_ACTIVE_ALL, unless an actual
+  * softirq is pending, in which case they're the minima of HRTIMER_ACTIVE_HARD.
+  *
+  * @active_mask must be one of:
+- *  - HRTIMER_ACTIVE,
++ *  - HRTIMER_ACTIVE_ALL,
+  *  - HRTIMER_ACTIVE_SOFT, or
+  *  - HRTIMER_ACTIVE_HARD.
+  */
+@@ -800,6 +785,13 @@ static void hrtimer_reprogram(struct hrt
+ 		expires = 0;
+ 
+ 	if (timer->is_soft) {
++		/*
++		 * soft hrtimer could be started on a remote CPU. In this
++		 * case softirq_expires_next needs to be updated on the
++		 * remote CPU. The soft hrtimer will not expire before the
++		 * first hard hrtimer on the remote CPU -
++		 * hrtimer_check_target() prevents this case.
++		 */
+ 		struct hrtimer_cpu_base *timer_cpu_base = base->cpu_base;
+ 
+ 		if (timer_cpu_base->softirq_activated)
+@@ -992,10 +984,9 @@ void hrtimer_wait_for_timer(const struct
+  */
+ static int enqueue_hrtimer(struct hrtimer *timer,
+ 			   struct hrtimer_clock_base *base,
+-			   enum hrtimer_mode mode,
+-			   bool modecheck)
++			   enum hrtimer_mode mode)
+ {
+-	debug_activate(timer, mode, modecheck);
++	debug_activate(timer, mode);
+ 
+ 	base->cpu_base->active_bases |= 1 << base->index;
+ 
+@@ -1101,7 +1092,7 @@ hrtimer_update_softirq_timer(struct hrti
+ 	 * hrtimer expires at the same time than the next hard
+ 	 * hrtimer. cpu_base->softirq_expires_next needs to be updated!
+ 	 */
+-	if (!reprogram || expires == KTIME_MAX)
++	if (expires == KTIME_MAX)
+ 		return;
+ 
+ 	/*
+@@ -1130,8 +1121,9 @@ static int __hrtimer_start_range_ns(stru
+ 	/* Switch the timer base, if necessary: */
+ 	new_base = switch_hrtimer_base(timer, base, mode & HRTIMER_MODE_PINNED);
+ 
+-	return enqueue_hrtimer(timer, new_base, mode, HRTIMER_MODECHECK);
++	return enqueue_hrtimer(timer, new_base, mode);
+ }
++
+ /**
+  * hrtimer_start_range_ns - (re)start an hrtimer
+  * @timer:	the timer to be added
+@@ -1147,6 +1139,14 @@ void hrtimer_start_range_ns(struct hrtim
+ 	struct hrtimer_clock_base *base;
+ 	unsigned long flags;
+ 
++	/*
++	 * Check whether the HRTIMER_MODE_SOFT bit and hrtimer.is_soft
++	 * match.
++	 */
++#ifndef CONFIG_PREEMPT_RT_BASE
++	WARN_ON_ONCE(!(mode & HRTIMER_MODE_SOFT) ^ !timer->is_soft);
++#endif
++
+ 	base = lock_hrtimer_base(timer, &flags);
+ 
+ 	if (__hrtimer_start_range_ns(timer, tim, delta_ns, mode, base))
+@@ -1421,8 +1421,7 @@ static void __run_hrtimer(struct hrtimer
+ 	 */
+ 	if (restart != HRTIMER_NORESTART &&
+ 	    !(timer->state & HRTIMER_STATE_ENQUEUED))
+-		enqueue_hrtimer(timer, base, HRTIMER_MODE_ABS,
+-				!HRTIMER_MODECHECK);
++		enqueue_hrtimer(timer, base, HRTIMER_MODE_ABS);
+ 
+ 	/*
+ 	 * Separate the ->running assignment from the ->state assignment.
+@@ -1925,8 +1924,7 @@ static void migrate_hrtimer_list(struct
+ 		 * sort out already expired timers and reprogram the
+ 		 * event device.
+ 		 */
+-		enqueue_hrtimer(timer, new_base, HRTIMER_MODE_ABS,
+-				!HRTIMER_MODECHECK);
++		enqueue_hrtimer(timer, new_base, HRTIMER_MODE_ABS);
+ 	}
+ }
+ 
+@@ -1938,6 +1936,12 @@ int hrtimers_dead_cpu(unsigned int scpu)
+ 	BUG_ON(cpu_online(scpu));
+ 	tick_cancel_sched_timer(scpu);
+ 
++	/*
++	 * this BH disable ensures that raise_softirq_irqoff() does
++	 * not wakeup ksoftirqd (and acquire the pi-lock) while
++	 * holding the cpu_base lock
++	 */
++	local_bh_disable();
+ 	local_irq_disable();
+ 	old_base = &per_cpu(hrtimer_bases, scpu);
+ 	new_base = this_cpu_ptr(&hrtimer_bases);
+@@ -1965,6 +1969,7 @@ int hrtimers_dead_cpu(unsigned int scpu)
+ 	/* Check, if we got expired work to do */
+ 	__hrtimer_peek_ahead_timers();
+ 	local_irq_enable();
++	local_bh_enable();
+ 	return 0;
+ }
+ 

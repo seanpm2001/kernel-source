@@ -1,0 +1,29 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Thu, 4 Feb 2016 16:38:10 +0100
+Subject: kernel/perf: mark perf_cpu_context's timer as irqsafe
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 9ff416f4216b3bce57e985774e2c6578a17e03fd
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+Otherwise we get a WARN_ON() backtrace and some events are reported as
+"not counted".
+
+Cc: stable-rt@vger.kernel.org
+Reported-by: Yang Shi <yang.shi@linaro.org>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/events/core.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/kernel/events/core.c
++++ b/kernel/events/core.c
+@@ -1046,6 +1046,7 @@ static void __perf_mux_hrtimer_init(stru
+ 	raw_spin_lock_init(&cpuctx->hrtimer_lock);
+ 	hrtimer_init(timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED);
+ 	timer->function = perf_mux_hrtimer_handler;
++	timer->irqsafe = 1;
+ }
+ 
+ static int perf_mux_hrtimer_restart(struct perf_cpu_context *cpuctx)

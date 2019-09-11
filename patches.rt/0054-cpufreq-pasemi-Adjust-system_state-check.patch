@@ -1,0 +1,42 @@
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Tue, 16 May 2017 20:42:40 +0200
+Subject: cpufreq/pasemi: Adjust system_state check
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 6b02eb3ca3194b20bfa092247166a41dce0ba995
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+To enable smp_processor_id() and might_sleep() debug checks earlier, it's
+required to add system states between SYSTEM_BOOTING and SYSTEM_RUNNING.
+
+Adjust the system_state check in pas_cpufreq_cpu_exit() to handle the extra
+states.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Viresh Kumar <viresh.kumar@linaro.org>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Cc: Mark Rutland <mark.rutland@arm.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Rafael J. Wysocki <rjw@rjwysocki.net>
+Cc: Steven Rostedt <rostedt@goodmis.org>
+Cc: linuxppc-dev@lists.ozlabs.org
+Link: http://lkml.kernel.org/r/20170516184735.620023128@linutronix.de
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ drivers/cpufreq/pasemi-cpufreq.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/cpufreq/pasemi-cpufreq.c
++++ b/drivers/cpufreq/pasemi-cpufreq.c
+@@ -226,7 +226,7 @@ static int pas_cpufreq_cpu_exit(struct c
+ 	 * We don't support CPU hotplug. Don't unmap after the system
+ 	 * has already made it to a running state.
+ 	 */
+-	if (system_state != SYSTEM_BOOTING)
++	if (system_state >= SYSTEM_RUNNING)
+ 		return 0;
+ 
+ 	if (sdcasr_mapbase)

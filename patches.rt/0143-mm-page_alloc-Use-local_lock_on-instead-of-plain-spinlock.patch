@@ -1,0 +1,31 @@
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Thu, 27 Sep 2012 11:11:46 +0200
+Subject: mm: page_alloc: Use local_lock_on() instead of plain spinlock
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 013d83037c6589d58a23ec9e16a4736c3b478e5c
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+The plain spinlock while sufficient does not update the local_lock
+internals. Use a proper local_lock function instead to ease debugging.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ mm/page_alloc.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -293,9 +293,9 @@ static DEFINE_LOCAL_IRQ_LOCK(pa_lock);
+ 
+ #ifdef CONFIG_PREEMPT_RT_BASE
+ # define cpu_lock_irqsave(cpu, flags)		\
+-	spin_lock_irqsave(&per_cpu(pa_lock, cpu).lock, flags)
++	local_lock_irqsave_on(pa_lock, flags, cpu)
+ # define cpu_unlock_irqrestore(cpu, flags)	\
+-	spin_unlock_irqrestore(&per_cpu(pa_lock, cpu).lock, flags)
++	local_unlock_irqrestore_on(pa_lock, flags, cpu)
+ #else
+ # define cpu_lock_irqsave(cpu, flags)		local_irq_save(flags)
+ # define cpu_unlock_irqrestore(cpu, flags)	local_irq_restore(flags)

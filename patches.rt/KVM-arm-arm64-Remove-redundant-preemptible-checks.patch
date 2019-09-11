@@ -1,0 +1,43 @@
+From: Christoffer Dall <christoffer.dall@linaro.org>
+Date: Fri, 8 Sep 2017 07:07:13 -0700
+Subject: KVM: arm/arm64: Remove redundant preemptible checks
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 8b2c70e9b65e75613de69a3bea5a349733760055
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+Upstream commit 5a24575032971c5a9a4580417a791c427ebdb8e5
+
+The __this_cpu_read() and __this_cpu_write() functions already implement
+checks for the required preemption levels when using
+CONFIG_DEBUG_PREEMPT which gives you nice error messages and such.
+Therefore there is no need to explicitly check this using a BUG_ON() in
+the code (which we don't do for other uses of per cpu variables either).
+
+Acked-by: Marc Zyngier <marc.zyngier@arm.com>
+Reviewed-by: Andre Przywara <andre.przywara@arm.com>
+Signed-off-by: Christoffer Dall <christoffer.dall@linaro.org>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ virt/kvm/arm/arm.c |    2 --
+ 1 file changed, 2 deletions(-)
+
+--- a/virt/kvm/arm/arm.c
++++ b/virt/kvm/arm/arm.c
+@@ -71,7 +71,6 @@ static DEFINE_PER_CPU(unsigned char, kvm
+ 
+ static void kvm_arm_set_running_vcpu(struct kvm_vcpu *vcpu)
+ {
+-	BUG_ON(preemptible());
+ 	__this_cpu_write(kvm_arm_running_vcpu, vcpu);
+ }
+ 
+@@ -81,7 +80,6 @@ static void kvm_arm_set_running_vcpu(str
+  */
+ struct kvm_vcpu *kvm_arm_get_running_vcpu(void)
+ {
+-	BUG_ON(preemptible());
+ 	return __this_cpu_read(kvm_arm_running_vcpu);
+ }
+ 

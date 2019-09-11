@@ -1,0 +1,57 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Wed, 28 Mar 2018 11:15:19 +0200
+Subject: posix-timers: move the rcu head out of the union
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: b8401365af110949f12c7cf1fa86b4c0ea069bbd
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+On RT the timer can be preempted while running and therefore we wait
+with timer_wait_for_callback() for the timer to complete (instead of
+busy looping). The RCU-readlock is held to ensure that this posix timer
+is not removed while we wait on it.
+If the timer is removed then it invokes call_rcu() with a pointer that
+is shared with the hrtimer because it is part of the same union.
+In order to avoid any possible side effects I am moving the rcu pointer
+out of the union.
+
+Cc: stable-rt@vger.kernel.org
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ include/linux/posix-timers.h |    2 +-
+ kernel/time/posix-timers.c   |    4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+--- a/include/linux/posix-timers.h
++++ b/include/linux/posix-timers.h
+@@ -82,8 +82,8 @@ struct k_itimer {
+ 			struct alarm alarmtimer;
+ 			ktime_t interval;
+ 		} alarm;
+-		struct rcu_head rcu;
+ 	} it;
++	struct rcu_head rcu;
+ };
+ 
+ struct k_clock {
+--- a/kernel/time/posix-timers.c
++++ b/kernel/time/posix-timers.c
+@@ -564,7 +564,7 @@ static struct k_itimer * alloc_posix_tim
+ 
+ static void k_itimer_rcu_free(struct rcu_head *head)
+ {
+-	struct k_itimer *tmr = container_of(head, struct k_itimer, it.rcu);
++	struct k_itimer *tmr = container_of(head, struct k_itimer, rcu);
+ 
+ 	kmem_cache_free(posix_timers_cache, tmr);
+ }
+@@ -581,7 +581,7 @@ static void release_posix_timer(struct k
+ 	}
+ 	put_pid(tmr->it_pid);
+ 	sigqueue_free(tmr->sigq);
+-	call_rcu(&tmr->it.rcu, k_itimer_rcu_free);
++	call_rcu(&tmr->rcu, k_itimer_rcu_free);
+ }
+ 
+ static struct k_clock *clockid_to_kclock(const clockid_t id)

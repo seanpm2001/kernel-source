@@ -1,0 +1,43 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Mon, 6 Nov 2017 18:45:30 +0100
+Subject: fs: convert two more BH_Uptodate_Lock related bitspinlocks
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: a043e49ad549b5f86630cb7002b07bec272bd924
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+We convert all BH_Uptodate_Lock based bit-spinlocks to use
+bh_uptodate_lock_irqsave() instead. Those two were introduced after the
+initial change in -RT and were not noticed before.
+
+Mike: fs/xfs/xfs_aops.c bits dropped
+
+Cc: stable-rt@vger.kernel.org
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ fs/ext4/page-io.c |    6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+--- a/fs/ext4/page-io.c
++++ b/fs/ext4/page-io.c
+@@ -94,8 +94,7 @@ static void ext4_finish_bio(struct bio *
+ 		 * We check all buffers in the page under BH_Uptodate_Lock
+ 		 * to avoid races with other end io clearing async_write flags
+ 		 */
+-		local_irq_save(flags);
+-		bit_spin_lock(BH_Uptodate_Lock, &head->b_state);
++		flags = bh_uptodate_lock_irqsave(head);
+ 		do {
+ 			if (bh_offset(bh) < bio_start ||
+ 			    bh_offset(bh) + bh->b_size > bio_end) {
+@@ -107,8 +106,7 @@ static void ext4_finish_bio(struct bio *
+ 			if (bio->bi_status)
+ 				buffer_io_error(bh);
+ 		} while ((bh = bh->b_this_page) != head);
+-		bit_spin_unlock(BH_Uptodate_Lock, &head->b_state);
+-		local_irq_restore(flags);
++		bh_uptodate_unlock_irqrestore(head, flags);
+ 		if (!under_io) {
+ #ifdef CONFIG_EXT4_FS_ENCRYPTION
+ 			if (data_page)

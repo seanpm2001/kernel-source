@@ -1,0 +1,34 @@
+Subject: revert s390: Prevent hotplug rwsem recursion
+From: Mike Galbraith <mgalbraith@suse.de>
+Date: Wed Aug 22 07:33:59 CEST 2018
+Patch-mainline: Never, -rt specific
+References: SLE Realtime Extension
+
+Part of massive/validated RT patch set all-in-one hotplug update.
+
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ arch/s390/kernel/jump_label.c |    2 +-
+ arch/s390/kernel/kprobes.c    |    4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+--- a/arch/s390/kernel/kprobes.c
++++ b/arch/s390/kernel/kprobes.c
+@@ -196,7 +196,7 @@ void arch_arm_kprobe(struct kprobe *p)
+ {
+ 	struct swap_insn_args args = {.p = p, .arm_kprobe = 1};
+ 
+-	stop_machine_cpuslocked(swap_instruction, &args, NULL);
++	stop_machine(swap_instruction, &args, NULL);
+ }
+ NOKPROBE_SYMBOL(arch_arm_kprobe);
+ 
+@@ -204,7 +204,7 @@ void arch_disarm_kprobe(struct kprobe *p
+ {
+ 	struct swap_insn_args args = {.p = p, .arm_kprobe = 0};
+ 
+-	stop_machine_cpuslocked(swap_instruction, &args, NULL);
++	stop_machine(swap_instruction, &args, NULL);
+ }
+ NOKPROBE_SYMBOL(arch_disarm_kprobe);
+ 

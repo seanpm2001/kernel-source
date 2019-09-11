@@ -1,0 +1,37 @@
+From: Julia Cartwright <julia@ni.com>
+Date: Thu, 26 Apr 2018 15:02:03 -0500
+Subject: seqlock: provide the same ordering semantics as mainline
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: e28115a132eb76fc0b95cb4928e7e227372fdff4
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+[ Upstream commit afa4c06b89a3c0fb7784ff900ccd707bef519cb7 ]
+
+The mainline implementation of read_seqbegin() orders prior loads w.r.t.
+the read-side critical section.  Fixup the RT writer-boosting
+implementation to provide the same guarantee.
+
+Also, while we're here, update the usage of ACCESS_ONCE() to use
+READ_ONCE().
+
+Fixes: e69f15cf77c23 ("seqlock: Prevent rt starvation")
+Cc: stable-rt@vger.kernel.org
+Signed-off-by: Julia Cartwright <julia@ni.com>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Steven Rostedt (VMware) <rostedt@goodmis.org>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ include/linux/seqlock.h |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/include/linux/seqlock.h
++++ b/include/linux/seqlock.h
+@@ -461,6 +461,7 @@ static inline unsigned read_seqbegin(seq
+ 		spin_unlock_wait(&sl->lock);
+ 		goto repeat;
+ 	}
++	smp_rmb();
+ 	return ret;
+ }
+ #endif

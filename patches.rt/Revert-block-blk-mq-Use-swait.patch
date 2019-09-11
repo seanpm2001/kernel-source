@@ -1,0 +1,97 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Tue, 13 Mar 2018 11:31:09 +0100
+Subject: Revert "block: blk-mq: Use swait"
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: ca3fd6cf836739fd59eac2f7a9b0261365e818bb
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+This reverts commit "block: blk-mq: Use swait". The issue remains but
+will be fixed differently.
+
+Cc: stable-rt@vger.kernel.org
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ block/blk-core.c       |    8 ++++----
+ block/blk-mq.c         |    6 +++---
+ include/linux/blkdev.h |    2 +-
+ 3 files changed, 8 insertions(+), 8 deletions(-)
+
+--- a/block/blk-core.c
++++ b/block/blk-core.c
+@@ -713,7 +713,7 @@ void blk_set_queue_dying(struct request_
+ 	}
+ 
+ 	/* Make blk_queue_enter() reexamine the DYING flag. */
+-	swake_up_all(&q->mq_freeze_wq);
++	wake_up_all(&q->mq_freeze_wq);
+ }
+ EXPORT_SYMBOL_GPL(blk_set_queue_dying);
+ 
+@@ -953,7 +953,7 @@ int blk_queue_enter(struct request_queue
+ 		 */
+ 		smp_rmb();
+ 
+-		swait_event(q->mq_freeze_wq,
++		wait_event(q->mq_freeze_wq,
+ 			   (atomic_read(&q->mq_freeze_depth) == 0 &&
+ 			    (preempt || !blk_queue_preempt_only(q))) ||
+ 			   blk_queue_dying(q));
+@@ -972,7 +972,7 @@ static void blk_queue_usage_counter_rele
+ 	struct request_queue *q =
+ 		container_of(ref, struct request_queue, q_usage_counter);
+ 
+-	swake_up_all(&q->mq_freeze_wq);
++	wake_up_all(&q->mq_freeze_wq);
+ }
+ 
+ static void blk_rq_timed_out_timer(struct timer_list *t)
+@@ -1063,7 +1063,7 @@ struct request_queue *blk_alloc_queue_no
+ 	q->bypass_depth = 1;
+ 	queue_flag_set_unlocked(QUEUE_FLAG_BYPASS, q);
+ 
+-	init_swait_queue_head(&q->mq_freeze_wq);
++	init_waitqueue_head(&q->mq_freeze_wq);
+ 	mutex_init(&q->mq_freeze_lock);
+ 
+ 	/*
+--- a/block/blk-mq.c
++++ b/block/blk-mq.c
+@@ -153,14 +153,14 @@ EXPORT_SYMBOL_GPL(blk_freeze_queue_start
+ 
+ void blk_mq_freeze_queue_wait(struct request_queue *q)
+ {
+-	swait_event(q->mq_freeze_wq, percpu_ref_is_zero(&q->q_usage_counter));
++	wait_event(q->mq_freeze_wq, percpu_ref_is_zero(&q->q_usage_counter));
+ }
+ EXPORT_SYMBOL_GPL(blk_mq_freeze_queue_wait);
+ 
+ int blk_mq_freeze_queue_wait_timeout(struct request_queue *q,
+ 				     unsigned long timeout)
+ {
+-	return swait_event_timeout(q->mq_freeze_wq,
++	return wait_event_timeout(q->mq_freeze_wq,
+ 					percpu_ref_is_zero(&q->q_usage_counter),
+ 					timeout);
+ }
+@@ -204,7 +204,7 @@ void blk_mq_unfreeze_queue(struct reques
+ 	WARN_ON_ONCE(freeze_depth < 0);
+ 	if (!freeze_depth) {
+ 		percpu_ref_reinit(&q->q_usage_counter);
+-		swake_up_all(&q->mq_freeze_wq);
++		wake_up_all(&q->mq_freeze_wq);
+ 	}
+ 	mutex_unlock(&q->mq_freeze_lock);
+ }
+--- a/include/linux/blkdev.h
++++ b/include/linux/blkdev.h
+@@ -654,7 +654,7 @@ struct request_queue {
+ 	struct throtl_data *td;
+ #endif
+ 	struct rcu_head		rcu_head;
+-	struct swait_queue_head	mq_freeze_wq;
++	wait_queue_head_t	mq_freeze_wq;
+ 	struct percpu_ref	q_usage_counter;
+ 	struct list_head	all_q_node;
+ 

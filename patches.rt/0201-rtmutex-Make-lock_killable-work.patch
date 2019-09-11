@@ -1,0 +1,49 @@
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Sat, 1 Apr 2017 12:50:59 +0200
+Subject: rtmutex: Make lock_killable work
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 508daaa45c9a99b15b0a7ab37beca6fe4eda4eb6
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+Locking an rt mutex killable does not work because signal handling is
+restricted to TASK_INTERRUPTIBLE.
+
+Use signal_pending_state() unconditionaly.
+
+Cc: rt-stable@vger.kernel.org
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/locking/rtmutex.c |   19 +++++++------------
+ 1 file changed, 7 insertions(+), 12 deletions(-)
+
+--- a/kernel/locking/rtmutex.c
++++ b/kernel/locking/rtmutex.c
+@@ -1202,18 +1202,13 @@ __rt_mutex_slowlock(struct rt_mutex *loc
+ 		if (try_to_take_rt_mutex(lock, current, waiter))
+ 			break;
+ 
+-		/*
+-		 * TASK_INTERRUPTIBLE checks for signals and
+-		 * timeout. Ignored otherwise.
+-		 */
+-		if (likely(state == TASK_INTERRUPTIBLE)) {
+-			/* Signal pending? */
+-			if (signal_pending(current))
+-				ret = -EINTR;
+-			if (timeout && !timeout->task)
+-				ret = -ETIMEDOUT;
+-			if (ret)
+-				break;
++		if (timeout && !timeout->task) {
++			ret = -ETIMEDOUT;
++			break;
++		}
++		if (signal_pending_state(state, current)) {
++			ret = -EINTR;
++			break;
+ 		}
+ 
+ 		raw_spin_unlock_irq(&lock->wait_lock);

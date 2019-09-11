@@ -1,0 +1,32 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Tue, 9 Feb 2016 18:17:18 +0100
+Subject: kernel: softirq: unlock with irqs on
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 39b038992d0b06ec4de964e9006870f5208f0fb1
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+We unlock the lock while the interrupts are off. This isn't a problem
+now but will get because the migrate_disable() + enable are not
+symmetrical in regard to the status of interrupts.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/softirq.c |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+--- a/kernel/softirq.c
++++ b/kernel/softirq.c
+@@ -560,8 +560,10 @@ static void do_current_softirqs(void)
+ 			do_single_softirq(i);
+ 		}
+ 		softirq_clr_runner(i);
+-		unlock_softirq(i);
+ 		WARN_ON(current->softirq_nestcnt != 1);
++		local_irq_enable();
++		unlock_softirq(i);
++		local_irq_disable();
+ 	}
+ }
+ 

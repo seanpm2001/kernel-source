@@ -1,0 +1,29 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Tue, 27 Jun 2017 15:18:26 +0200
+Subject: posixtimer: init timer only with CONFIG_POSIX_TIMERS enabled
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 7c39c88a1fb6450813d906c1f3d8f4af5dfa4f67
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+In v4.11 it is possible to disable the posix timers and so we must not
+attempt to initialize the task_struct on RT with !POSIX_TIMERS.
+This patch does so.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ include/linux/init_task.h |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/include/linux/init_task.h
++++ b/include/linux/init_task.h
+@@ -168,7 +168,7 @@ extern struct cred init_cred;
+ # define INIT_PERF_EVENTS(tsk)
+ #endif
+ 
+-#ifdef CONFIG_PREEMPT_RT_BASE
++#if defined(CONFIG_POSIX_TIMERS) && defined(CONFIG_PREEMPT_RT_BASE)
+ # define INIT_TIMER_LIST		.posix_timer_list = NULL,
+ #else
+ # define INIT_TIMER_LIST

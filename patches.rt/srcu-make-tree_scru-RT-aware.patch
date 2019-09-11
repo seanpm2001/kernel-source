@@ -1,0 +1,48 @@
+From: Mike Galbraith <mgalbraith@suse.de>
+Date: Wed Aug  2 10:55:41 CEST 2017
+Subject: srcu: make tree_scru RT aware
+Patch-mainline: Never, RT specific
+References: SLE Realtime Extension
+
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/rcu/srcutree.c |   10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+--- a/kernel/rcu/srcutree.c
++++ b/kernel/rcu/srcutree.c
+@@ -444,12 +444,12 @@ static bool srcu_queue_delayed_work_on(i
+ {
+ 	bool ret;
+ 
+-	preempt_disable();
++	migrate_disable();
+ 	if (READ_ONCE(per_cpu(srcu_online, cpu)))
+ 		ret = queue_delayed_work_on(cpu, wq, dwork, delay);
+ 	else
+ 		ret = queue_delayed_work(wq, dwork, delay);
+-	preempt_enable();
++	migrate_enable();
+ 	return ret;
+ }
+ 
+@@ -798,9 +798,8 @@ void __call_srcu(struct srcu_struct *sp,
+ 
+ 	check_init_srcu_struct(sp);
+ 	rhp->func = func;
+-	local_irq_save(flags);
+-	sdp = this_cpu_ptr(sp->sda);
+-	spin_lock(&sdp->lock);
++	sdp = get_local_ptr(sp->sda);
++	spin_lock_irqsave(&sdp->lock, flags);
+ 	rcu_segcblist_enqueue(&sdp->srcu_cblist, rhp, false);
+ 	rcu_segcblist_advance(&sdp->srcu_cblist,
+ 			      rcu_seq_current(&sp->srcu_gp_seq));
+@@ -815,6 +814,7 @@ void __call_srcu(struct srcu_struct *sp,
+ 		needexp = true;
+ 	}
+ 	spin_unlock_irqrestore(&sdp->lock, flags);
++	put_local_ptr(sp->sda);
+ 	if (needgp)
+ 		srcu_funnel_gp_start(sp, sdp, s, do_norm);
+ 	else if (needexp)

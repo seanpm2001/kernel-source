@@ -1,0 +1,30 @@
+From: Ingo Molnar <mingo@elte.hu>
+Date: Fri, 3 Jul 2009 08:29:27 -0500
+Subject: x86/ioapic: Do not unmask io_apic when interrupt is in progress
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 2228245d902a479bf1ab1ebbdb6a0f50764e82d5
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+With threaded interrupts we might see an interrupt in progress on
+migration. Do not unmask it when this is the case.
+
+Signed-off-by: Ingo Molnar <mingo@elte.hu>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ arch/x86/kernel/apic/io_apic.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/arch/x86/kernel/apic/io_apic.c
++++ b/arch/x86/kernel/apic/io_apic.c
+@@ -1711,7 +1711,8 @@ static bool io_apic_level_ack_pending(st
+ static inline bool ioapic_irqd_mask(struct irq_data *data)
+ {
+ 	/* If we are moving the irq we need to mask it */
+-	if (unlikely(irqd_is_setaffinity_pending(data))) {
++	if (unlikely(irqd_is_setaffinity_pending(data) &&
++		     !irqd_irq_inprogress(data))) {
+ 		mask_ioapic_irq(data);
+ 		return true;
+ 	}

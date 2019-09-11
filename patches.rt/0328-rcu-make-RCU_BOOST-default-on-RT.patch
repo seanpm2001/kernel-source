@@ -1,0 +1,39 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Fri, 21 Mar 2014 20:19:05 +0100
+Subject: rcu: make RCU_BOOST default on RT
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 1ca54168c86f6778d8f0b1151f9bb6008849a51e
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+Since it is no longer invoked from the softirq people run into OOM more
+often if the priority of the RCU thread is too low. Making boosting
+default on RT should help in those case and it can be switched off if
+someone knows better.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ init/Kconfig |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/init/Kconfig
++++ b/init/Kconfig
+@@ -526,7 +526,7 @@ config TINY_RCU
+ 
+ config RCU_EXPERT
+ 	bool "Make expert-level adjustments to RCU configuration"
+-	default n
++	default y if PREEMPT_RT_FULL
+ 	help
+ 	  This option needs to be enabled if you wish to make
+ 	  expert-level adjustments to RCU configuration.  By default,
+@@ -708,7 +708,7 @@ config TREE_RCU_TRACE
+ config RCU_BOOST
+ 	bool "Enable RCU priority boosting"
+ 	depends on RT_MUTEXES && PREEMPT_RCU && RCU_EXPERT
+-	default n
++	default y if PREEMPT_RT_FULL
+ 	help
+ 	  This option boosts the priority of preempted RCU readers that
+ 	  block the current preemptible RCU grace period for too long.

@@ -1,0 +1,55 @@
+From: Tom Zanussi <tom.zanussi@linux.intel.com>
+Date: Thu, 26 Apr 2018 20:04:49 -0500
+Subject: tracing: Add field modifier parsing hist error for hist triggers
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: b4d504aa874d5b016e19a8c2b0ff6a98641f5c6f
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+[ commit dcf234577cd31fa16874e828b90659166ad6b80d ]
+
+If the user specifies an invalid field modifier for a hist trigger,
+the current code correctly flags that as an error, but doesn't tell
+the user what happened.
+
+Fix this by invoking hist_err() with an appropriate message when
+invalid modifiers are specified.
+
+Before:
+
+  # echo 'hist:keys=pid:ts0=common_timestamp.junkusecs' >> /sys/kernel/debug/tracing/events/sched/sched_wakeup/trigger
+  -su: echo: write error: Invalid argument
+  # cat /sys/kernel/debug/tracing/events/sched/sched_wakeup/hist
+
+After:
+
+  # echo 'hist:keys=pid:ts0=common_timestamp.junkusecs' >> /sys/kernel/debug/tracing/events/sched/sched_wakeup/trigger
+  -su: echo: write error: Invalid argument
+  # cat /sys/kernel/debug/tracing/events/sched/sched_wakeup/hist
+  ERROR: Invalid field modifier: junkusecs
+    Last command: keys=pid:ts0=common_timestamp.junkusecs
+
+Link: http://lkml.kernel.org/r/b043c59fa79acd06a5f14a1d44dee9e5a3cd1248.1524790601.git.tom.zanussi@linux.intel.com
+
+Signed-off-by: Tom Zanussi <tom.zanussi@linux.intel.com>
+Signed-off-by: Steven Rostedt (VMware) <rostedt@goodmis.org>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/trace/trace_events_hist.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/kernel/trace/trace_events_hist.c b/kernel/trace/trace_events_hist.c
+index 37db86145c8b..b8fee11b5be9 100644
+--- a/kernel/trace/trace_events_hist.c
++++ b/kernel/trace/trace_events_hist.c
+@@ -2466,6 +2466,7 @@ parse_field(struct hist_trigger_data *hist_data, struct trace_event_file *file,
+ 		else if (strcmp(modifier, "usecs") == 0)
+ 			*flags |= HIST_FIELD_FL_TIMESTAMP_USECS;
+ 		else {
++			hist_err("Invalid field modifier: ", modifier);
+ 			field = ERR_PTR(-EINVAL);
+ 			goto out;
+ 		}
+-- 
+2.18.0
+

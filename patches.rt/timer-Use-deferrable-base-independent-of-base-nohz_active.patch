@@ -1,0 +1,62 @@
+From: Anna-Maria Gleixner <anna-maria@linutronix.de>
+Date: Fri, 22 Dec 2017 15:51:12 +0100
+Subject: timer: Use deferrable base independent of base::nohz_active
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: b2093c08f7e2fd101f33ff6f350294dd77fbf792
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+During boot and before base::nohz_active is set in the timer bases, deferrable
+timers are enqueued into the standard timer base. This works correctly as
+long as base::nohz_active is false.
+
+Once it base::nohz_active is set and a timer which was enqueued before that
+is accessed the lock selector code choses the lock of the deferred
+base. This causes unlocked access to the standard base and in case the
+timer is removed it does not clear the pending flag in the standard base
+bitmap which causes get_next_timer_interrupt() to return bogus values.
+
+To prevent that, the deferrable timers must be enqueued in the deferrable
+base, even when base::nohz_active is not set. Those deferrable timers also
+need to be expired unconditional.
+
+Fixes: 500462a9de65 ("timers: Switch to a non-cascading wheel")
+Signed-off-by: Anna-Maria Gleixner <anna-maria@linutronix.de>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Cc: stable@vger.kernel.org
+Cc: rt@linutronix.de
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/time/timer.c |    6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+--- a/kernel/time/timer.c
++++ b/kernel/time/timer.c
+@@ -847,7 +847,7 @@ static inline struct timer_base *get_tim
+ 	 * If the timer is deferrable and NO_HZ_COMMON is set then we need
+ 	 * to use the deferrable base.
+ 	 */
+-	if (is_timers_nohz_active() && (tflags & TIMER_DEFERRABLE))
++	if (IS_ENABLED(CONFIG_NO_HZ_COMMON) && (tflags & TIMER_DEFERRABLE))
+ 		base = per_cpu_ptr(&timer_bases[BASE_DEF], cpu);
+ 	return base;
+ }
+@@ -860,7 +860,7 @@ static inline struct timer_base *get_tim
+ 	 * If the timer is deferrable and NO_HZ_COMMON is set then we need
+ 	 * to use the deferrable base.
+ 	 */
+-	if (is_timers_nohz_active() && (tflags & TIMER_DEFERRABLE))
++	if (IS_ENABLED(CONFIG_NO_HZ_COMMON) && (tflags & TIMER_DEFERRABLE))
+ 		base = this_cpu_ptr(&timer_bases[BASE_DEF]);
+ 	return base;
+ }
+@@ -1695,7 +1695,7 @@ static __latent_entropy void run_timer_s
+ 	irq_work_tick_soft();
+ 
+ 	__run_timers(base);
+-	if (is_timers_nohz_active())
++	if (IS_ENABLED(CONFIG_NO_HZ_COMMON))
+ 		__run_timers(this_cpu_ptr(&timer_bases[BASE_DEF]));
+ }
+ 

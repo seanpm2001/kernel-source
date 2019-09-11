@@ -1,0 +1,51 @@
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Sat, 27 Feb 2016 10:22:23 +0100
+Subject: iommu/amd: Use WARN_ON_NORT in __attach_device()
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: dc618165f061c4d263dbf655106797d85817fc1e
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+RT does not disable interrupts here, but the protection is still
+correct. Fixup the WARN_ON so it won't yell on RT.
+
+Note: This WARN_ON is bogus anyway. The real thing this needs to check is that
+amd_iommu_devtable_lock is held.
+
+Reported-by: DIXLOR <dixlor@gmail.com>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ drivers/iommu/amd_iommu.c |   12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+--- a/drivers/iommu/amd_iommu.c
++++ b/drivers/iommu/amd_iommu.c
+@@ -2154,10 +2154,10 @@ static int __attach_device(struct iommu_
+ 	int ret;
+ 
+ 	/*
+-	 * Must be called with IRQs disabled. Warn here to detect early
+-	 * when its not.
++	 * Must be called with IRQs disabled on a non RT kernel. Warn here to
++	 * detect early when its not.
+ 	 */
+-	WARN_ON(!irqs_disabled());
++	WARN_ON_NONRT(!irqs_disabled());
+ 
+ 	/* lock domain */
+ 	spin_lock(&domain->lock);
+@@ -2325,10 +2325,10 @@ static void __detach_device(struct iommu
+ 	struct protection_domain *domain;
+ 
+ 	/*
+-	 * Must be called with IRQs disabled. Warn here to detect early
+-	 * when its not.
++	 * Must be called with IRQs disabled on a non RT kernel. Warn here to
++	 * detect early when its not.
+ 	 */
+-	WARN_ON(!irqs_disabled());
++	WARN_ON_NONRT(!irqs_disabled());
+ 
+ 	if (WARN_ON(!dev_data->domain))
+ 		return;

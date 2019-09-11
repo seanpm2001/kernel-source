@@ -1,0 +1,36 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Tue, 9 Jan 2018 11:31:04 +0100
+Subject: softirq: keep the 'softirq pending' check RT-only
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 5536f5491a2e098ba34995662dfc0e82d66d65c9
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+The patch "nohz: Prevent erroneous tick stop invocations" was merged
+differently upstream. The original issue where a slow box could lock up
+with a pending timer remained. I currently assume that this is a RT only
+issue and keep the patch as RT only.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/softirq.c |    7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+--- a/kernel/softirq.c
++++ b/kernel/softirq.c
+@@ -839,8 +839,13 @@ static inline void tick_irq_exit(void)
+ 	int cpu = smp_processor_id();
+ 
+ 	/* Make sure that timer wheel updates are propagated */
++#ifdef CONFIG_PREEMPT_RT_BASE
+ 	if ((idle_cpu(cpu) || tick_nohz_full_cpu(cpu)) &&
+-	    !need_resched() && !local_softirq_pending()) {
++	    !need_resched() && !local_softirq_pending())
++#else
++	if ((idle_cpu(cpu) && !need_resched()) || tick_nohz_full_cpu(cpu))
++#endif
++	{
+ 		if (!in_interrupt())
+ 			tick_nohz_irq_exit();
+ 	}

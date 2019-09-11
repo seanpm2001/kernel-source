@@ -1,0 +1,93 @@
+Subject: rt/fs/dcache: Convert s_anon_lock to a raw spinlock
+From: Mike Galbraith <mgalbraith@suse.de>
+Date: Mon Jan  8 11:13:47 CET 2018
+Patch-mainline: Never, SUSE/RT specific.
+References: SLE12 Realtime Extension
+
+We can't take a normal spinlock under write_seqlock(), as it
+disables preemption.  Convert s_anon_lock to a raw lock for RT.
+
+"Improve fairness when locking the per-superblock s_anon list"
+added this lock on Fri Jan 29 11:08:33 2016, how this did now
+show up MUCH sooner than a YEAR later is a mystery.
+
+[ 8252.753017] BUG: sleeping function called from invalid context at kernel/locking/rtmutex.c:996
+[ 8252.753018] in_atomic(): 1, irqs_disabled(): 0, pid: 2884, name: nfsd
+[ 8252.753022] Preemption disabled at:[<ffffffff8121ef4f>] __d_move+0x10f/0x5c0
+[ 8252.753024] 
+[ 8252.753025] CPU: 6 PID: 2884 Comm: nfsd Tainted: G            E   N  4.4.104-SP3-rt #2
+[ 8252.753026] Hardware name: MEDION MS-7848/MS-7848, BIOS M7848W08.20C 09/23/2013
+[ 8252.753028]  0000000000000000 ffffffff81329e0e ffffffff81e0e540 ffff8803f763b0b8
+[ 8252.753028]  ffffffff8160c2bc ffff880002fc0780 ffffffff8121e048 0000000000000000
+[ 8252.753031]  ffff8803fa40bb08
+[ 8252.753031]  ffff880002fc07d8
+[ 8252.753032]  ffffffff8121ef6b ffff8803fa40baf8
+[ 8252.753032] Call Trace:
+[ 8252.753040]  [<ffffffff81007009>] dump_trace+0x59/0x320
+[ 8252.753043]  [<ffffffff810073c3>] show_stack_log_lvl+0xf3/0x180
+[ 8252.753044]  [<ffffffff810081c1>] show_stack+0x21/0x40
+[ 8252.753047]  [<ffffffff81329e0e>] dump_stack+0x5c/0x7e
+[ 8252.753050]  [<ffffffff8160c2bc>] rt_spin_lock+0x1c/0x50
+[ 8252.753052]  [<ffffffff8121e048>] __d_drop+0x108/0x130
+[ 8252.753054]  [<ffffffff8121ef6b>] __d_move+0x12b/0x5c0
+[ 8252.753056]  [<ffffffff8121f68d>] d_splice_alias+0x23d/0x290
+[ 8252.753069]  [<ffffffffa010a4ed>] ext4_lookup+0xdd/0x130 [ext4]
+[ 8252.753072]  [<ffffffff81210bc9>] lookup_real+0x19/0x50
+[ 8252.753074]  [<ffffffff81210fbf>] __lookup_hash+0x2f/0x40
+[ 8252.753076]  [<ffffffff812126f5>] lookup_one_len+0xc5/0x120
+[ 8252.753079]  [<ffffffff81288889>] reconnect_path+0x109/0x2a0
+[ 8252.753082]  [<ffffffff81288b7d>] exportfs_decode_fh+0x10d/0x350
+[ 8252.753090]  [<ffffffffa05f862a>] fh_verify+0x2da/0x5a0 [nfsd]
+[ 8252.753099]  [<ffffffffa0607b20>] nfsd4_proc_compound+0x3b0/0x710 [nfsd]
+[ 8252.753105]  [<ffffffffa05f4f23>] nfsd_dispatch+0xc3/0x260 [nfsd]
+[ 8252.753115]  [<ffffffffa05830b8>] svc_process_common+0x418/0x6a0 [sunrpc]
+[ 8252.753124]  [<ffffffffa058343d>] svc_process+0xfd/0x230 [sunrpc]
+[ 8252.753129]  [<ffffffffa05f4964>] nfsd+0xf4/0x160 [nfsd]
+[ 8252.753133]  [<ffffffff8108fcf2>] kthread+0xd2/0xf0
+[ 8252.753136]  [<ffffffff8160cc5f>] ret_from_fork+0x3f/0x70
+
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ fs/dcache.c |   10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+--- a/fs/dcache.c
++++ b/fs/dcache.c
+@@ -113,7 +113,7 @@ static inline struct hlist_bl_head *d_ha
+ #define IN_LOOKUP_SHIFT 10
+ static struct hlist_bl_head in_lookup_hashtable[1 << IN_LOOKUP_SHIFT];
+ 
+-static DEFINE_SPINLOCK(s_anon_lock);
++static DEFINE_RAW_SPINLOCK(s_anon_lock);
+ 
+ static inline struct hlist_bl_head *in_lookup_hash(const struct dentry *parent,
+ 					unsigned int hash)
+@@ -483,12 +483,12 @@ static void ___d_drop(struct dentry *den
+ 			b = d_hash(dentry->d_name.hash);
+ 
+ 		if (b == &dentry->d_sb->s_anon)
+-			spin_lock(&s_anon_lock);
++			raw_spin_lock(&s_anon_lock);
+ 		hlist_bl_lock(b);
+ 		__hlist_bl_del(&dentry->d_hash);
+ 		hlist_bl_unlock(b);
+ 		if (b == &dentry->d_sb->s_anon)
+-			spin_unlock(&s_anon_lock);
++			raw_spin_unlock(&s_anon_lock);
+ 		/* After this call, in-progress rcu-walk path lookup will fail. */
+ 		write_seqcount_invalidate(&dentry->d_seq);
+ 	}
+@@ -2018,11 +2018,11 @@ static struct dentry *__d_obtain_alias(s
+ 	spin_lock(&tmp->d_lock);
+ 	__d_set_inode_and_type(tmp, inode, add_flags);
+ 	hlist_add_head(&tmp->d_u.d_alias, &inode->i_dentry);
+-	spin_lock(&s_anon_lock);
++	raw_spin_lock(&s_anon_lock);
+ 	hlist_bl_lock(&tmp->d_sb->s_anon);
+ 	hlist_bl_add_head(&tmp->d_hash, &tmp->d_sb->s_anon);
+ 	hlist_bl_unlock(&tmp->d_sb->s_anon);
+-	spin_unlock(&s_anon_lock);
++	raw_spin_unlock(&s_anon_lock);
+ 	spin_unlock(&tmp->d_lock);
+ 	spin_unlock(&inode->i_lock);
+ 

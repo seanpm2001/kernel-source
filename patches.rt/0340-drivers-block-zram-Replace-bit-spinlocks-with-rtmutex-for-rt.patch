@@ -1,0 +1,86 @@
+From: Mike Galbraith <umgwanakikbuti@gmail.com>
+Date: Thu, 31 Mar 2016 04:08:28 +0200
+Subject: drivers/block/zram: Replace bit spinlocks with rtmutex for -rt
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: fec3d3077c5c5fd05b721555b9f66b1eca48433c
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+They're nondeterministic, and lead to ___might_sleep() splats in -rt.
+OTOH, they're a lot less wasteful than an rtmutex per page.
+
+Signed-off-by: Mike Galbraith <umgwanakikbuti@gmail.com>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ drivers/block/zram/zram_drv.c |   12 ++++++++++++
+ drivers/block/zram/zram_drv.h |   19 +++++++++++++++++++
+ 2 files changed, 31 insertions(+)
+
+--- a/drivers/block/zram/zram_drv.c
++++ b/drivers/block/zram/zram_drv.c
+@@ -759,12 +759,22 @@ static DEVICE_ATTR_RO(debug_stat);
+ 
+ static void zram_slot_lock(struct zram *zram, u32 index)
+ {
++#ifndef CONFIG_PREEMPT_RT_BASE
+ 	bit_spin_lock(ZRAM_ACCESS, &zram->table[index].value);
++#else
++	spin_lock(&zram->table[index].lock);
++	__set_bit(ZRAM_ACCESS, &zram->table[index].value);
++#endif
+ }
+ 
+ static void zram_slot_unlock(struct zram *zram, u32 index)
+ {
++#ifndef CONFIG_PREEMPT_RT_BASE
+ 	bit_spin_unlock(ZRAM_ACCESS, &zram->table[index].value);
++#else
++	spin_unlock(&zram->table[index].lock);
++	__clear_bit(ZRAM_ACCESS, &zram->table[index].value);
++#endif
+ }
+ 
+ static void zram_meta_free(struct zram *zram, u64 disksize)
+@@ -795,6 +805,8 @@ static bool zram_meta_alloc(struct zram
+ 		return false;
+ 	}
+ 
++	zram_meta_init_table_locks(zram, disksize);
++
+ 	return true;
+ }
+ 
+--- a/drivers/block/zram/zram_drv.h
++++ b/drivers/block/zram/zram_drv.h
+@@ -76,6 +76,9 @@ struct zram_table_entry {
+ 		unsigned long element;
+ 	};
+ 	unsigned long value;
++#ifdef CONFIG_PREEMPT_RT_BASE
++	spinlock_t lock;
++#endif
+ };
+ 
+ struct zram_stats {
+@@ -124,4 +127,20 @@ struct zram {
+ 	spinlock_t bitmap_lock;
+ #endif
+ };
++
++#ifndef CONFIG_PREEMPT_RT_BASE
++static inline void zram_meta_init_table_locks(struct zram *zram, u64 disksize) { }
++#else /* CONFIG_PREEMPT_RT_BASE */
++static inline void zram_meta_init_table_locks(struct zram *zram, u64 disksize)
++{
++        size_t num_pages = disksize >> PAGE_SHIFT;
++        size_t index;
++
++        for (index = 0; index < num_pages; index++) {
++		spinlock_t *lock = &zram->table[index].lock;
++		spin_lock_init(lock);
++        }
++}
++#endif /* CONFIG_PREEMPT_RT_BASE */
++
+ #endif

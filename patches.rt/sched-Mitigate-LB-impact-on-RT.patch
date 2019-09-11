@@ -1,0 +1,86 @@
+From: Mike Galbraith <mgalbraith@suse.de>
+Date: Wed Aug  2 10:55:41 CEST 2017
+Subject: sched: Mitigate LB impact on RT
+Patch-mainline: Never, RT specific
+References: SLE Realtime Extension
+
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/sched/fair.c     |   15 +++++++++++++--
+ kernel/sched/features.h |    4 ++++
+ kernel/sched/sched.h    |   10 ++++++++++
+ 3 files changed, 27 insertions(+), 2 deletions(-)
+
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -6327,6 +6327,10 @@ pick_next_task_fair(struct rq *rq, struc
+ 	return p;
+ 
+ idle:
++	/* RT tasks have better things to do than play load balancer */
++	if (IS_ENABLED(CONFIG_PREEMPT_RT_FULL) && prev->sched_class != &fair_sched_class)
++		return NULL;
++
+ 	new_tasks = idle_balance(rq, rf);
+ 
+ 	/*
+@@ -6841,9 +6845,11 @@ static int detach_tasks(struct lb_env *e
+ 		/*
+ 		 * NEWIDLE balancing is a source of latency, so preemptible
+ 		 * kernels will stop after the first task is detached to minimize
+-		 * the critical section.
++		 * the critical section.  For PREEMPT_RT_FULL, minimize all
++		 * load balancing perturbation, it's better to nibble frequently
++		 * than to take big gulps.
+ 		 */
+-		if (env->idle == CPU_NEWLY_IDLE)
++		if (IS_ENABLED(CONFIG_PREEMPT_RT_FULL) || env->idle == CPU_NEWLY_IDLE)
+ 			break;
+ #endif
+ 
+@@ -8082,7 +8088,12 @@ static int load_balance(int this_cpu, st
+ 		env.loop_max  = min(sysctl_sched_nr_migrate, busiest->nr_running);
+ 
+ more_balance:
++#ifdef CONFIG_PREEMPT_RT_FULL
++		if (!rq_lock_trylock_irqsave(busiest, &rf))
++			goto out_balanced;
++#else
+ 		rq_lock_irqsave(busiest, &rf);
++#endif
+ 		update_rq_clock(busiest);
+ 
+ 		/*
+--- a/kernel/sched/features.h
++++ b/kernel/sched/features.h
+@@ -86,7 +86,11 @@ SCHED_FEAT(RT_PUSH_IPI, true)
+ #endif
+ 
+ SCHED_FEAT(RT_RUNTIME_SHARE, true)
++#ifdef CONFIG_PREEMPT_RT_FULL
++SCHED_FEAT(LB_MIN, true)
++#else
+ SCHED_FEAT(LB_MIN, false)
++#endif
+ SCHED_FEAT(ATTACH_AGE_LOAD, true)
+ 
+ SCHED_FEAT(WA_IDLE, true)
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -1670,6 +1670,16 @@ rq_lock_irqsave(struct rq *rq, struct rq
+ 	rq_pin_lock(rq, rf);
+ }
+ 
++static inline int
++rq_lock_trylock_irqsave(struct rq *rq, struct rq_flags *rf)
++	__acquires(rq->lock)
++{
++	if (!raw_spin_trylock_irqsave(&rq->lock, rf->flags))
++		return 0;
++	rq_pin_lock(rq, rf);
++	return 1;
++}
++
+ static inline void
+ rq_lock_irq(struct rq *rq, struct rq_flags *rf)
+ 	__acquires(rq->lock)

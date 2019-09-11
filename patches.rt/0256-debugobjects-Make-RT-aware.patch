@@ -1,0 +1,30 @@
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Sun, 17 Jul 2011 21:41:35 +0200
+Subject: debugobjects: Make RT aware
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: a1c796d207b80663a58e7cbf3add171ae963d079
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+Avoid filling the pool / allocating memory with irqs off().
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ lib/debugobjects.c |    5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/lib/debugobjects.c
++++ b/lib/debugobjects.c
+@@ -334,7 +334,10 @@ __debug_object_init(void *addr, struct d
+ 	struct debug_obj *obj;
+ 	unsigned long flags;
+ 
+-	fill_pool();
++#ifdef CONFIG_PREEMPT_RT_FULL
++	if (preempt_count() == 0 && !irqs_disabled())
++#endif
++		fill_pool();
+ 
+ 	db = get_bucket((unsigned long) addr);
+ 

@@ -1,0 +1,795 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Fri, 15 Dec 2017 18:49:49 +0100
+Subject: tracing: Update the "tracing: Inter-event (e.g. latency) support" patch
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 59ca9b1a9e05a98f7c0a10a6acc3d201df354521
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+This commit is an all-in-one update of Tom Zanussi's "tracing: Inter-event
+(e.g. latency) support" series from v6 to v7 as posted on 2017-12-06 It
+includes the following patches:
+ tracing: Move hist trigger Documentation to histogram.txt
+ tracing: Add Documentation for log2 modifier
+ tracing: Add support to detect and avoid duplicates
+ tracing: Remove code which merges duplicates
+ ring-buffer: Add interface for setting absolute time stamps
+ ring-buffer: Redefine the unimplemented RINGBUF_TYPE_TIME_STAMP
+ tracing: Add timestamp_mode trace file
+ tracing: Give event triggers access to ring_buffer_event
+ tracing: Add ring buffer event param to hist field functions
+ tracing: Break out hist trigger assignment parsing
+ tracing: Add hist trigger timestamp support
+ tracing: Add per-element variable support to tracing_map
+ tracing: Add hist_data member to hist_field
+ tracing: Add usecs modifier for hist trigger timestamps
+ tracing: Add variable support to hist triggers
+ tracing: Account for variables in named trigger compatibility
+ tracing: Move get_hist_field_flags()
+ tracing: Add simple expression support to hist triggers
+ tracing: Generalize per-element hist trigger data
+ tracing: Pass tracing_map_elt to hist_field accessor functions
+ tracing: Add hist_field 'type' field
+ tracing: Add variable reference handling to hist triggers
+ tracing: Add hist trigger action hook
+ tracing: Add support for 'synthetic' events
+ tracing: Add support for 'field variables'
+ tracing: Add 'onmatch' hist trigger action support
+ tracing: Add 'onmax' hist trigger action support
+ tracing: Allow whitespace to surround hist trigger filter
+ tracing: Add cpu field for hist triggers
+ tracing: Add hist trigger support for variable reference aliases
+ tracing: Add 'last error' error facility for hist triggers
+ tracing: Add inter-event hist trigger Documentation
+ tracing: Make tracing_set_clock() non-static
+ tracing: Add a clock attribute for hist triggers
+ tracing: Increase trace_recursive_lock() limit for synthetic events
+ tracing: Add inter-event blurb to HIST_TRIGGERS config option
+ selftests: ftrace: Add inter-event hist triggers testcases
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ Documentation/trace/histogram.txt                                                              |   45 +-
+ kernel/trace/Kconfig                                                                           |    2 
+ kernel/trace/trace.c                                                                           |    2 
+ kernel/trace/trace_events_hist.c                                                               |  187 +++++-----
+ tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-extended-error-support.tc    |    4 
+ tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-field-variable-support.tc    |    6 
+ tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-inter-event-combined-hist.tc |    8 
+ tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-onmatch-action-hist.tc       |    4 
+ tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-onmatch-onmax-action-hist.tc |    4 
+ tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-onmax-action-hist.tc         |    4 
+ 10 files changed, 138 insertions(+), 128 deletions(-)
+
+--- a/Documentation/trace/histogram.txt
++++ b/Documentation/trace/histogram.txt
+@@ -74,7 +74,7 @@
+ 	.syscall    display a syscall id as a system call name
+ 	.execname   display a common_pid as a program name
+ 	.log2       display log2 value rather than raw number
+-	.usecs      display a $common_timestamp in microseconds
++	.usecs      display a common_timestamp in microseconds
+ 
+   Note that in general the semantics of a given field aren't
+   interpreted when applying a modifier to it, but there are some
+@@ -180,11 +180,9 @@
+   they were actual event fields, but aren't really part of the event's
+   field definition or format file.  They are however available for any
+   event, and can be used anywhere an actual event field could be.
+-  'Special' field names are always prefixed with a '$' character to
+-  indicate that they're not normal fields (with the exception of
+-  'cpu', for compatibility with existing filter usage):
++  They are:
+ 
+-    $common_timestamp      u64 - timestamp (from ring buffer) associated
++    common_timestamp       u64 - timestamp (from ring buffer) associated
+                                  with the event, in nanoseconds.  May be
+ 				 modified by .usecs to have timestamps
+ 				 interpreted as microseconds.
+@@ -1666,15 +1664,14 @@ specification.  In support of this overa
+   - Trace events don't have a 'timestamp' associated with them, but
+     there is an implicit timestamp saved along with an event in the
+     underlying ftrace ring buffer.  This timestamp is now exposed as a
+-    a synthetic field named '$common_timestamp' which can be used in
+-    histograms as if it were any other event field.  Note that it has
+-    a '$' prefixed to it - this is meant to indicate that it isn't an
+-    actual field in the trace format but rather is a synthesized value
+-    that nonetheless can be used as if it were an actual field.  By
+-    default it is in units of nanoseconds; appending '.usecs' to a
++    a synthetic field named 'common_timestamp' which can be used in
++    histograms as if it were any other event field; it isn't an actual
++    field in the trace format but rather is a synthesized value that
++    nonetheless can be used as if it were an actual field.  By default
++    it is in units of nanoseconds; appending '.usecs' to a
+     common_timestamp field changes the units to microseconds.
+ 
+-A note on inter-event timestamps: If $common_timestamp is used in a
++A note on inter-event timestamps: If common_timestamp is used in a
+ histogram, the trace buffer is automatically switched over to using
+ absolute timestamps and the "global" trace clock, in order to avoid
+ bogus timestamp differences with other clocks that aren't coherent
+@@ -1711,7 +1708,7 @@ Either keys or values can be saved and r
+ creates a variable named 'ts0' for a histogram entry with the key
+ 'next_pid':
+ 
+-  # echo 'hist:keys=next_pid:vals=$ts0:ts0=$common_timestamp ... >> \
++  # echo 'hist:keys=next_pid:vals=$ts0:ts0=common_timestamp ... >> \
+ 	event/trigger
+ 
+ The ts0 variable can be accessed by any subsequent event having the
+@@ -1721,7 +1718,7 @@ Variable references are formed by prepen
+ the '$' sign.  Thus for example, the ts0 variable above would be
+ referenced as '$ts0' in expressions.
+ 
+-Because 'vals=' is used, the $common_timestamp variable value above
++Because 'vals=' is used, the common_timestamp variable value above
+ will also be summed as a normal histogram value would (though for a
+ timestamp it makes little sense).
+ 
+@@ -1733,35 +1730,35 @@ If a variable isn't a key variable or pr
+ associated event field will be saved in a variable but won't be summed
+ as a value:
+ 
+-  # echo 'hist:keys=next_pid:ts1=$common_timestamp ... >> event/trigger
++  # echo 'hist:keys=next_pid:ts1=common_timestamp ... >> event/trigger
+ 
+ Multiple variables can be assigned at the same time.  The below would
+ result in both ts0 and b being created as variables, with both
+ common_timestamp and field1 additionally being summed as values:
+ 
+-  # echo 'hist:keys=pid:vals=$ts0,$b:ts0=$common_timestamp,b=field1 ... >> \
++  # echo 'hist:keys=pid:vals=$ts0,$b:ts0=common_timestamp,b=field1 ... >> \
+ 	event/trigger
+ 
+ Note that variable assignments can appear either preceding or
+ following their use.  The command below behaves identically to the
+ command above:
+ 
+-  # echo 'hist:keys=pid:ts0=$common_timestamp,b=field1:vals=$ts0,$b ... >> \
++  # echo 'hist:keys=pid:ts0=common_timestamp,b=field1:vals=$ts0,$b ... >> \
+ 	event/trigger
+ 
+ Any number of variables not bound to a 'vals=' prefix can also be
+ assigned by simply separating them with colons.  Below is the same
+ thing but without the values being summed in the histogram:
+ 
+-  # echo 'hist:keys=pid:ts0=$common_timestamp:b=field1 ... >> event/trigger
++  # echo 'hist:keys=pid:ts0=common_timestamp:b=field1 ... >> event/trigger
+ 
+ Variables set as above can be referenced and used in expressions on
+ another event.
+ 
+ For example, here's how a latency can be calculated:
+ 
+-  # echo 'hist:keys=pid,prio:ts0=$common_timestamp ... >> event1/trigger
+-  # echo 'hist:keys=next_pid:wakeup_lat=$common_timestamp-$ts0 ... >> event2/trigger
++  # echo 'hist:keys=pid,prio:ts0=common_timestamp ... >> event1/trigger
++  # echo 'hist:keys=next_pid:wakeup_lat=common_timestamp-$ts0 ... >> event2/trigger
+ 
+ In the first line above, the event's timetamp is saved into the
+ variable ts0.  In the next line, ts0 is subtracted from the second
+@@ -1918,7 +1915,7 @@ hist trigger specification.
+     Next, we specify that whenever we see a sched_waking event for a
+     cyclictest thread, save the timestamp in a 'ts0' variable:
+ 
+-    # echo 'hist:keys=$saved_pid:saved_pid=pid:ts0=$common_timestamp.usecs \
++    # echo 'hist:keys=$saved_pid:saved_pid=pid:ts0=common_timestamp.usecs \
+             if comm=="cyclictest"' >> \
+ 	    /sys/kernel/debug/tracing/events/sched/sched_waking/trigger
+ 
+@@ -1927,7 +1924,7 @@ hist trigger specification.
+     along with another variable and an event field to generate a
+     wakeup_latency synthetic event:
+ 
+-    # echo 'hist:keys=next_pid:wakeup_lat=$common_timestamp.usecs-$ts0:\
++    # echo 'hist:keys=next_pid:wakeup_lat=common_timestamp.usecs-$ts0:\
+             onmatch(sched.sched_waking).wakeup_latency($wakeup_lat,\
+ 	            $saved_pid,next_prio) if next_comm=="cyclictest"' >> \
+ 	    /sys/kernel/debug/tracing/events/sched/sched_switch/trigger
+@@ -1966,12 +1963,12 @@ hist trigger specification.
+     maximum latency, the values specified in the save() fields are
+     recoreded:
+ 
+-    # echo 'hist:keys=pid:ts0=$common_timestamp.usecs \
++    # echo 'hist:keys=pid:ts0=common_timestamp.usecs \
+             if comm=="cyclictest"' >> \
+             /sys/kernel/debug/tracing/events/sched/sched_waking/trigger
+ 
+     # echo 'hist:keys=next_pid:\
+-            wakeup_lat=$common_timestamp.usecs-$ts0:\
++            wakeup_lat=common_timestamp.usecs-$ts0:\
+             onmax($wakeup_lat).save(next_comm,prev_pid,prev_prio,prev_comm) \
+             if next_comm=="cyclictest"' >> \
+             /sys/kernel/debug/tracing/events/sched/sched_switch/trigger
+--- a/kernel/trace/Kconfig
++++ b/kernel/trace/Kconfig
+@@ -588,7 +588,7 @@ config HIST_TRIGGERS
+ 	  Inter-event tracing of quantities such as latencies is also
+ 	  supported using hist triggers under this option.
+ 
+-	  See Documentation/trace/events.txt.
++	  See Documentation/trace/histogram.txt.
+ 	  If in doubt, say N.
+ 
+ config MMIOTRACE_TEST
+--- a/kernel/trace/trace.c
++++ b/kernel/trace/trace.c
+@@ -4590,7 +4590,7 @@ static const char readme_msg[] =
+ 	"\t            .execname   display a common_pid as a program name\n"
+ 	"\t            .syscall    display a syscall id as a syscall name\n"
+ 	"\t            .log2       display log2 value rather than raw number\n"
+-	"\t            .usecs      display a $common_timestamp in microseconds\n\n"
++	"\t            .usecs      display a common_timestamp in microseconds\n\n"
+ 	"\t    The 'pause' parameter can be used to pause an existing hist\n"
+ 	"\t    trigger or to start a hist trigger but not log any events\n"
+ 	"\t    until told to do so.  'continue' can be used to start or\n"
+--- a/kernel/trace/trace_events_hist.c
++++ b/kernel/trace/trace_events_hist.c
+@@ -288,8 +288,8 @@ struct hist_trigger_data {
+ 	struct action_data		*actions[HIST_ACTIONS_MAX];
+ 	unsigned int			n_actions;
+ 
+-	struct hist_field		*synth_var_refs[SYNTH_FIELDS_MAX];
+-	unsigned int			n_synth_var_refs;
++	struct hist_field               *synth_var_refs[SYNTH_FIELDS_MAX];
++	unsigned int                    n_synth_var_refs;
+ 	struct field_var		*field_vars[SYNTH_FIELDS_MAX];
+ 	unsigned int			n_field_vars;
+ 	unsigned int			n_field_var_str;
+@@ -575,7 +575,7 @@ static const char *synth_field_fmt(char
+ 		fmt = "%lu";
+ 	else if (strcmp(type, "pid_t") == 0)
+ 		fmt = "%d";
+-	else if (strchr(type, '[') != NULL)
++	else if (synth_field_is_string(type))
+ 		fmt = "%s";
+ 
+ 	return fmt;
+@@ -664,7 +664,7 @@ static notrace void trace_event_raw_even
+ 			strncpy(str_field, str_val, STR_VAR_LEN_MAX);
+ 			n_u64 += STR_VAR_LEN_MAX / sizeof(u64);
+ 		} else {
+-			entry->fields[i] = var_ref_vals[var_ref_idx + i];
++			entry->fields[n_u64] = var_ref_vals[var_ref_idx + i];
+ 			n_u64++;
+ 		}
+ 	}
+@@ -989,6 +989,20 @@ struct hist_var_data {
+ 	struct hist_trigger_data *hist_data;
+ };
+ 
++static void add_or_delete_synth_event(struct synth_event *event, int delete)
++{
++	if (delete)
++		free_synth_event(event);
++	else {
++		mutex_lock(&synth_event_mutex);
++		if (!find_synth_event(event->name))
++			list_add(&event->list, &synth_event_list);
++		else
++			free_synth_event(event);
++		mutex_unlock(&synth_event_mutex);
++	}
++}
++
+ static int create_synth_event(int argc, char **argv)
+ {
+ 	struct synth_field *field, *fields[SYNTH_FIELDS_MAX];
+@@ -1072,23 +1086,10 @@ static int create_synth_event(int argc,
+ 	if (event) {
+ 		if (delete_event) {
+ 			ret = unregister_synth_event(event);
+-			if (!ret)
+-				free_synth_event(event);
+-			else {
+-				mutex_lock(&synth_event_mutex);
+-				if (!find_synth_event(event->name))
+-					list_add(&event->list, &synth_event_list);
+-				mutex_unlock(&synth_event_mutex);
+-			}
++			add_or_delete_synth_event(event, !ret);
+ 		} else {
+ 			ret = register_synth_event(event);
+-			if (!ret) {
+-				mutex_lock(&synth_event_mutex);
+-				if (!find_synth_event(event->name))
+-					list_add(&event->list, &synth_event_list);
+-				mutex_unlock(&synth_event_mutex);
+-			} else
+-				free_synth_event(event);
++			add_or_delete_synth_event(event, ret);
+ 		}
+ 	}
+ 
+@@ -1120,10 +1121,8 @@ static int release_all_synth_events(void
+ 		}
+ 	}
+ 
+-	list_for_each_entry_safe(event, e, &synth_event_list, list) {
+-		list_del(&event->list);
+-		list_add(&event->list, &release_events);
+-	}
++	list_for_each_entry_safe(event, e, &synth_event_list, list)
++		list_move(&event->list, &release_events);
+ 
+ 	mutex_unlock(&synth_event_mutex);
+ 
+@@ -1131,15 +1130,7 @@ static int release_all_synth_events(void
+ 		list_del(&event->list);
+ 
+ 		ret = unregister_synth_event(event);
+-		if (ret == 0)
+-			free_synth_event(event);
+-		else {
+-			err = ret;
+-			mutex_lock(&synth_event_mutex);
+-			if (!find_synth_event(event->name))
+-				list_add(&event->list, &synth_event_list);
+-			mutex_unlock(&synth_event_mutex);
+-		}
++		add_or_delete_synth_event(event, !ret);
+ 	}
+ 
+ 	if (err)
+@@ -1314,6 +1305,14 @@ static struct hist_field *find_var_ref(s
+ 			return found;
+ 	}
+ 
++	for (i = 0; i < hist_data->n_synth_var_refs; i++) {
++		hist_field = hist_data->synth_var_refs[i];
++		found = check_field_for_var_refs(hist_data, hist_field,
++						 var_data, var_idx, 0);
++		if (found)
++			return found;
++	}
++
+ 	return found;
+ }
+ 
+@@ -1324,11 +1323,9 @@ static struct hist_field *find_any_var_r
+ 	struct hist_field *found = NULL;
+ 	struct hist_var_data *var_data;
+ 
+-	found = find_var_ref(hist_data, hist_data, var_idx);
+-	if (found)
+-		return found;
+-
+ 	list_for_each_entry(var_data, &tr->hist_vars, list) {
++		if (var_data->hist_data == hist_data)
++			continue;
+ 		found = find_var_ref(var_data->hist_data, hist_data, var_idx);
+ 		if (found)
+ 			break;
+@@ -1696,7 +1693,7 @@ static const char *hist_field_name(struc
+ 		 field->flags & HIST_FIELD_FL_ALIAS)
+ 		field_name = hist_field_name(field->operands[0], ++level);
+ 	else if (field->flags & HIST_FIELD_FL_TIMESTAMP)
+-		field_name = "$common_timestamp";
++		field_name = "common_timestamp";
+ 	else if (field->flags & HIST_FIELD_FL_CPU)
+ 		field_name = "cpu";
+ 	else if (field->flags & HIST_FIELD_FL_EXPR ||
+@@ -2078,6 +2075,8 @@ static char *expr_str(struct hist_field
+ 		strcat(expr, subexpr);
+ 		strcat(expr, ")");
+ 
++		kfree(subexpr);
++
+ 		return expr;
+ 	}
+ 
+@@ -2228,7 +2227,7 @@ static struct hist_field *create_hist_fi
+ 	if (flags & HIST_FIELD_FL_CPU) {
+ 		hist_field->fn = hist_field_cpu;
+ 		hist_field->size = sizeof(int);
+-		hist_field->type = kstrdup("int", GFP_KERNEL);
++		hist_field->type = kstrdup("unsigned int", GFP_KERNEL);
+ 		if (!hist_field->type)
+ 			goto free;
+ 		goto out;
+@@ -2356,18 +2355,9 @@ static struct hist_field *create_var_ref
+ 	return ref_field;
+ }
+ 
+-static bool is_common_field(char *var_name)
+-{
+-	if (strncmp(var_name, "$common_timestamp", strlen("$common_timestamp")) == 0)
+-		return true;
+-
+-	return false;
+-}
+-
+ static bool is_var_ref(char *var_name)
+ {
+-	if (!var_name || strlen(var_name) < 2 || var_name[0] != '$' ||
+-	    is_common_field(var_name))
++	if (!var_name || strlen(var_name) < 2 || var_name[0] != '$')
+ 		return false;
+ 
+ 	return true;
+@@ -2394,8 +2384,24 @@ static char *field_name_from_var(struct
+ }
+ 
+ static char *local_field_var_ref(struct hist_trigger_data *hist_data,
++				 char *system, char *event_name,
+ 				 char *var_name)
+ {
++	struct trace_event_call *call;
++
++	if (system && event_name) {
++		call = hist_data->event_file->event_call;
++
++		if (strcmp(system, call->class->system) != 0)
++			return NULL;
++
++		if (strcmp(event_name, trace_event_name(call)) != 0)
++			return NULL;
++	}
++
++	if (!!system != !!event_name)
++		return NULL;
++
+ 	if (!is_var_ref(var_name))
+ 		return NULL;
+ 
+@@ -2460,7 +2466,7 @@ parse_field(struct hist_trigger_data *hi
+ 		}
+ 	}
+ 
+-	if (strcmp(field_name, "$common_timestamp") == 0) {
++	if (strcmp(field_name, "common_timestamp") == 0) {
+ 		*flags |= HIST_FIELD_FL_TIMESTAMP;
+ 		hist_data->enable_timestamps = true;
+ 		if (*flags & HIST_FIELD_FL_TIMESTAMP_USECS)
+@@ -2529,7 +2535,7 @@ struct hist_field *parse_atom(struct his
+ 		}
+ 	}
+ 
+-	s = local_field_var_ref(hist_data, ref_var);
++	s = local_field_var_ref(hist_data, ref_system, ref_event, ref_var);
+ 	if (!s) {
+ 		hist_field = parse_var_ref(hist_data, ref_system, ref_event, ref_var);
+ 		if (hist_field) {
+@@ -2947,7 +2953,7 @@ create_field_var_hist(struct hist_trigge
+ 	/* See if a synthetic field variable has already been created */
+ 	event_var = find_synthetic_field_var(target_hist_data, subsys_name,
+ 					     event_name, field_name);
+-	if (event_var && !IS_ERR(event_var))
++	if (!IS_ERR_OR_NULL(event_var))
+ 		return event_var;
+ 
+ 	var_hist = kzalloc(sizeof(*var_hist), GFP_KERNEL);
+@@ -3011,8 +3017,7 @@ create_field_var_hist(struct hist_trigge
+ 	/* If we can't find the variable, something went wrong */
+ 	event_var = find_synthetic_field_var(target_hist_data, subsys_name,
+ 					     event_name, field_name);
+-	if (!event_var || IS_ERR(event_var)) {
+-		kfree(cmd);
++	if (IS_ERR_OR_NULL(event_var)) {
+ 		kfree(var_hist->cmd);
+ 		kfree(var_hist);
+ 		hist_err_event("onmatch: Couldn't find synthetic variable: ",
+@@ -3300,13 +3305,11 @@ static void onmax_destroy(struct action_
+ static int onmax_create(struct hist_trigger_data *hist_data,
+ 			struct action_data *data)
+ {
+-	struct trace_event_call *call = hist_data->event_file->event_call;
+ 	struct trace_event_file *file = hist_data->event_file;
+ 	struct hist_field *var_field, *ref_field, *max_var;
+ 	unsigned int var_ref_idx = hist_data->n_var_refs;
+ 	struct field_var *field_var;
+ 	char *onmax_var_str, *param;
+-	const char *event_name;
+ 	unsigned long flags;
+ 	unsigned int i;
+ 	int ret = 0;
+@@ -3318,7 +3321,6 @@ static int onmax_create(struct hist_trig
+ 	}
+ 	onmax_var_str++;
+ 
+-	event_name = trace_event_name(call);
+ 	var_field = find_target_event_var(hist_data, NULL, NULL, onmax_var_str);
+ 	if (!var_field) {
+ 		hist_err("onmax: Couldn't find onmax variable: ", onmax_var_str);
+@@ -3419,8 +3421,11 @@ static struct action_data *onmax_parse(c
+ 		return ERR_PTR(-ENOMEM);
+ 
+ 	onmax_var_str = strsep(&str, ")");
+-	if (!onmax_var_str || !str)
+-		return ERR_PTR(-EINVAL);
++	if (!onmax_var_str || !str) {
++		ret = -EINVAL;
++		goto free;
++	}
++
+ 	data->onmax.var_str = kstrdup(onmax_var_str, GFP_KERNEL);
+ 	if (!data->onmax.var_str) {
+ 		ret = -ENOMEM;
+@@ -3638,6 +3643,7 @@ static int onmatch_create(struct hist_tr
+ 		mutex_unlock(&synth_event_mutex);
+ 		return -EINVAL;
+ 	}
++	event->ref++;
+ 	mutex_unlock(&synth_event_mutex);
+ 
+ 	var_ref_idx = hist_data->n_var_refs;
+@@ -3648,7 +3654,7 @@ static int onmatch_create(struct hist_tr
+ 		p = param = kstrdup(data->params[i], GFP_KERNEL);
+ 		if (!param) {
+ 			ret = -ENOMEM;
+-			goto out;
++			goto err;
+ 		}
+ 
+ 		system = strsep(&param, ".");
+@@ -3660,7 +3666,7 @@ static int onmatch_create(struct hist_tr
+ 			if (!param) {
+ 				kfree(p);
+ 				ret = -EINVAL;
+-				goto out;
++				goto err;
+ 			}
+ 		}
+ 
+@@ -3676,7 +3682,7 @@ static int onmatch_create(struct hist_tr
+ 		if (!hist_field) {
+ 			kfree(p);
+ 			ret = -EINVAL;
+-			goto out;
++			goto err;
+ 		}
+ 
+ 		if (check_synth_field(event, hist_field, field_pos) == 0) {
+@@ -3684,7 +3690,7 @@ static int onmatch_create(struct hist_tr
+ 			if (!var_ref) {
+ 				kfree(p);
+ 				ret = -ENOMEM;
+-				goto out;
++				goto err;
+ 			}
+ 
+ 			save_synth_var_ref(hist_data, var_ref);
+@@ -3697,21 +3703,26 @@ static int onmatch_create(struct hist_tr
+ 			       system, event_name, param);
+ 		kfree(p);
+ 		ret = -EINVAL;
+-		goto out;
++		goto err;
+ 	}
+ 
+ 	if (field_pos != event->n_fields) {
+ 		hist_err("onmatch: Param count doesn't match synthetic event field count: ", event->name);
+ 		ret = -EINVAL;
+-		goto out;
++		goto err;
+ 	}
+ 
+ 	data->fn = action_trace;
+ 	data->onmatch.synth_event = event;
+ 	data->onmatch.var_ref_idx = var_ref_idx;
+-	event->ref++;
+  out:
+ 	return ret;
++ err:
++	mutex_lock(&synth_event_mutex);
++	event->ref--;
++	mutex_unlock(&synth_event_mutex);
++
++	goto out;
+ }
+ 
+ static struct action_data *onmatch_parse(struct trace_array *tr, char *str)
+@@ -4840,7 +4851,7 @@ static void hist_field_print(struct seq_
+ 		seq_printf(m, "%s=", hist_field->var.name);
+ 
+ 	if (hist_field->flags & HIST_FIELD_FL_TIMESTAMP)
+-		seq_puts(m, "$common_timestamp");
++		seq_puts(m, "common_timestamp");
+ 	else if (hist_field->flags & HIST_FIELD_FL_CPU)
+ 		seq_puts(m, "cpu");
+ 	else if (field_name) {
+@@ -4980,6 +4991,21 @@ static int event_hist_trigger_init(struc
+ 	return 0;
+ }
+ 
++static void unregister_field_var_hists(struct hist_trigger_data *hist_data)
++{
++	struct trace_event_file *file;
++	unsigned int i;
++	char *cmd;
++	int ret;
++
++	for (i = 0; i < hist_data->n_field_var_hists; i++) {
++		file = hist_data->field_var_hists[i]->hist_data->event_file;
++		cmd = hist_data->field_var_hists[i]->cmd;
++		ret = event_hist_trigger_func(&trigger_hist_cmd, file,
++					      "!hist", "hist", cmd);
++	}
++}
++
+ static void event_hist_trigger_free(struct event_trigger_ops *ops,
+ 				    struct event_trigger_data *data)
+ {
+@@ -4997,6 +5023,8 @@ static void event_hist_trigger_free(stru
+ 
+ 		remove_hist_vars(hist_data);
+ 
++		unregister_field_var_hists(hist_data);
++
+ 		destroy_hist_data(hist_data);
+ 	}
+ }
+@@ -5201,7 +5229,6 @@ static int hist_register_trigger(char *g
+ 		data->paused = true;
+ 
+ 	if (named_data) {
+-		destroy_hist_data(data->private_data);
+ 		data->private_data = named_data->private_data;
+ 		set_named_trigger_data(data, named_data);
+ 		data->ops = &event_hist_trigger_named_ops;
+@@ -5225,6 +5252,9 @@ static int hist_register_trigger(char *g
+ 		tracing_set_time_stamp_abs(file->tr, true);
+ 	}
+ 
++	if (named_data)
++		destroy_hist_data(hist_data);
++
+ 	ret++;
+  out:
+ 	return ret;
+@@ -5293,21 +5323,6 @@ static bool hist_trigger_check_refs(stru
+ 	return false;
+ }
+ 
+-static void unregister_field_var_hists(struct hist_trigger_data *hist_data)
+-{
+-	struct trace_event_file *file;
+-	unsigned int i;
+-	char *cmd;
+-	int ret;
+-
+-	for (i = 0; i < hist_data->n_field_var_hists; i++) {
+-		file = hist_data->field_var_hists[i]->hist_data->event_file;
+-		cmd = hist_data->field_var_hists[i]->cmd;
+-		ret = event_hist_trigger_func(&trigger_hist_cmd, file,
+-					      "!hist", "hist", cmd);
+-	}
+-}
+-
+ static void hist_unregister_trigger(char *glob, struct event_trigger_ops *ops,
+ 				    struct event_trigger_data *data,
+ 				    struct trace_event_file *file)
+@@ -5323,7 +5338,6 @@ static void hist_unregister_trigger(char
+ 		if (test->cmd_ops->trigger_type == ETT_EVENT_HIST) {
+ 			if (!hist_trigger_match(data, test, named_data, false))
+ 				continue;
+-			unregister_field_var_hists(test->private_data);
+ 			unregistered = true;
+ 			list_del_rcu(&test->list);
+ 			trace_event_trigger_enable_disable(file, 0);
+@@ -5370,7 +5384,6 @@ static void hist_unreg_all(struct trace_
+ 	list_for_each_entry_safe(test, n, &file->triggers, list) {
+ 		if (test->cmd_ops->trigger_type == ETT_EVENT_HIST) {
+ 			hist_data = test->private_data;
+-			unregister_field_var_hists(hist_data);
+ 			list_del_rcu(&test->list);
+ 			trace_event_trigger_enable_disable(file, 0);
+ 
+@@ -5382,10 +5395,10 @@ static void hist_unreg_all(struct trace_
+ 			mutex_unlock(&synth_event_mutex);
+ 
+ 			update_cond_flag(file);
+-			if (test->ops->free)
+-				test->ops->free(test->ops, test);
+ 			if (hist_data->enable_timestamps)
+ 				tracing_set_time_stamp_abs(file->tr, false);
++			if (test->ops->free)
++				test->ops->free(test->ops, test);
+ 		}
+ 	}
+ }
+@@ -5561,8 +5574,8 @@ static int event_hist_trigger_func(struc
+ 	remove_hist_vars(hist_data);
+ 
+ 	kfree(trigger_data);
+-	destroy_hist_data(hist_data);
+ 
++	destroy_hist_data(hist_data);
+ 	goto out;
+ }
+ 
+--- a/tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-extended-error-support.tc
++++ b/tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-extended-error-support.tc
+@@ -28,8 +28,8 @@ reset_tracer
+ do_reset
+ 
+ echo "Test extended error support"
+-echo 'hist:keys=pid:ts0=$common_timestamp.usecs if comm=="ping"' > events/sched/sched_wakeup/trigger
+-echo 'hist:keys=pid:ts0=$common_timestamp.usecs if comm=="ping"' >> events/sched/sched_wakeup/trigger &>/dev/null
++echo 'hist:keys=pid:ts0=common_timestamp.usecs if comm=="ping"' > events/sched/sched_wakeup/trigger
++echo 'hist:keys=pid:ts0=common_timestamp.usecs if comm=="ping"' >> events/sched/sched_wakeup/trigger &>/dev/null
+ if ! grep -q "ERROR:" events/sched/sched_wakeup/hist; then
+     fail "Failed to generate extended error in histogram"
+ fi
+--- a/tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-field-variable-support.tc
++++ b/tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-field-variable-support.tc
+@@ -30,8 +30,8 @@ do_reset
+ echo "Test field variable support"
+ 
+ echo 'wakeup_latency u64 lat; pid_t pid; int prio; char comm[16]' > synthetic_events
+-echo 'hist:keys=comm:ts0=$common_timestamp.usecs if comm=="ping"' > events/sched/sched_waking/trigger
+-echo 'hist:keys=next_comm:wakeup_lat=$common_timestamp.usecs-$ts0:onmatch(sched.sched_waking).wakeup_latency($wakeup_lat,next_pid,sched.sched_waking.prio,next_comm) if next_comm=="ping"' > events/sched/sched_switch/trigger
++echo 'hist:keys=comm:ts0=common_timestamp.usecs if comm=="ping"' > events/sched/sched_waking/trigger
++echo 'hist:keys=next_comm:wakeup_lat=common_timestamp.usecs-$ts0:onmatch(sched.sched_waking).wakeup_latency($wakeup_lat,next_pid,sched.sched_waking.prio,next_comm) if next_comm=="ping"' > events/sched/sched_switch/trigger
+ echo 'hist:keys=pid,prio,comm:vals=lat:sort=pid,prio' > events/synthetic/wakeup_latency/trigger
+ 
+ ping localhost -c 3
+@@ -43,7 +43,7 @@ if ! grep -q "synthetic_prio=prio" event
+     fail "Failed to create histogram with field variable"
+ fi
+ 
+-echo '!hist:keys=next_comm:wakeup_lat=$common_timestamp.usecs-$ts0:onmatch(sched.sched_waking).wakeup_latency($wakeup_lat,next_pid,sched.sched_waking.prio,next_comm) if next_comm=="ping"' >> events/sched/sched_switch/trigger
++echo '!hist:keys=next_comm:wakeup_lat=common_timestamp.usecs-$ts0:onmatch(sched.sched_waking).wakeup_latency($wakeup_lat,next_pid,sched.sched_waking.prio,next_comm) if next_comm=="ping"' >> events/sched/sched_switch/trigger
+ 
+ if grep -q "synthetic_prio=prio" events/sched/sched_waking/hist; then
+     fail "Failed to remove histogram with field variable"
+--- a/tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-inter-event-combined-hist.tc
++++ b/tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-inter-event-combined-hist.tc
+@@ -36,13 +36,13 @@ fi
+ 
+ echo "Test combined histogram"
+ 
+-echo 'hist:keys=pid:ts0=$common_timestamp.usecs if comm=="ping"' > events/sched/sched_waking/trigger
+-echo 'hist:keys=pid:waking_lat=$common_timestamp.usecs-$ts0:onmatch(sched.sched_waking).waking_latency($waking_lat,pid) if comm=="ping"' > events/sched/sched_wakeup/trigger
++echo 'hist:keys=pid:ts0=common_timestamp.usecs if comm=="ping"' > events/sched/sched_waking/trigger
++echo 'hist:keys=pid:waking_lat=common_timestamp.usecs-$ts0:onmatch(sched.sched_waking).waking_latency($waking_lat,pid) if comm=="ping"' > events/sched/sched_wakeup/trigger
+ echo 'hist:keys=pid,lat:sort=pid,lat' > events/synthetic/waking_latency/trigger
+ 
+ echo 'wakeup_latency u64 lat pid_t pid' >> synthetic_events
+-echo 'hist:keys=pid:ts1=$common_timestamp.usecs if comm=="ping"' >> events/sched/sched_wakeup/trigger
+-echo 'hist:keys=next_pid:wakeup_lat=$common_timestamp.usecs-$ts1:onmatch(sched.sched_wakeup).wakeup_latency($wakeup_lat,next_pid) if next_comm=="ping"' > events/sched/sched_switch/trigger
++echo 'hist:keys=pid:ts1=common_timestamp.usecs if comm=="ping"' >> events/sched/sched_wakeup/trigger
++echo 'hist:keys=next_pid:wakeup_lat=common_timestamp.usecs-$ts1:onmatch(sched.sched_wakeup).wakeup_latency($wakeup_lat,next_pid) if next_comm=="ping"' > events/sched/sched_switch/trigger
+ 
+ echo 'waking+wakeup_latency u64 lat; pid_t pid' >> synthetic_events
+ echo 'hist:keys=pid,lat:sort=pid,lat:ww_lat=$waking_lat+$wakeup_lat:onmatch(synthetic.wakeup_latency).waking+wakeup_latency($ww_lat,pid)' >> events/synthetic/wakeup_latency/trigger
+--- a/tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-onmatch-action-hist.tc
++++ b/tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-onmatch-action-hist.tc
+@@ -37,8 +37,8 @@ fi
+ echo "Test create histogram for synthetic event"
+ echo "Test histogram variables,simple expression support and onmatch action"
+ 
+-echo 'hist:keys=pid:ts0=$common_timestamp.usecs if comm=="ping"' > events/sched/sched_wakeup/trigger
+-echo 'hist:keys=next_pid:wakeup_lat=$common_timestamp.usecs-$ts0:onmatch(sched.sched_wakeup).wakeup_latency($wakeup_lat,next_pid,next_comm) if next_comm=="ping"' > events/sched/sched_switch/trigger
++echo 'hist:keys=pid:ts0=common_timestamp.usecs if comm=="ping"' > events/sched/sched_wakeup/trigger
++echo 'hist:keys=next_pid:wakeup_lat=common_timestamp.usecs-$ts0:onmatch(sched.sched_wakeup).wakeup_latency($wakeup_lat,next_pid,next_comm) if next_comm=="ping"' > events/sched/sched_switch/trigger
+ echo 'hist:keys=comm,pid,lat:wakeup_lat=lat:sort=lat' > events/synthetic/wakeup_latency/trigger
+ ping localhost -c 5
+ if ! grep -q "ping" events/synthetic/wakeup_latency/hist; then
+--- a/tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-onmatch-onmax-action-hist.tc
++++ b/tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-onmatch-onmax-action-hist.tc
+@@ -37,8 +37,8 @@ fi
+ echo "Test create histogram for synthetic event"
+ echo "Test histogram variables,simple expression support and onmatch-onmax action"
+ 
+-echo 'hist:keys=pid:ts0=$common_timestamp.usecs if comm=="ping"' > events/sched/sched_wakeup/trigger
+-echo 'hist:keys=next_pid:wakeup_lat=$common_timestamp.usecs-$ts0:onmatch(sched.sched_wakeup).wakeup_latency($wakeup_lat,next_pid,next_comm):onmax($wakeup_lat).save(next_comm,prev_pid,prev_prio,prev_comm) if next_comm=="ping"' >> events/sched/sched_switch/trigger
++echo 'hist:keys=pid:ts0=common_timestamp.usecs if comm=="ping"' > events/sched/sched_wakeup/trigger
++echo 'hist:keys=next_pid:wakeup_lat=common_timestamp.usecs-$ts0:onmatch(sched.sched_wakeup).wakeup_latency($wakeup_lat,next_pid,next_comm):onmax($wakeup_lat).save(next_comm,prev_pid,prev_prio,prev_comm) if next_comm=="ping"' >> events/sched/sched_switch/trigger
+ echo 'hist:keys=comm,pid,lat:wakeup_lat=lat:sort=lat' > events/synthetic/wakeup_latency/trigger
+ ping localhost -c 5
+ if [ ! grep -q "ping" events/synthetic/wakeup_latency/hist -o ! grep -q "max:" events/sched/sched_switch/hist]; then
+--- a/tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-onmax-action-hist.tc
++++ b/tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-onmax-action-hist.tc
+@@ -36,8 +36,8 @@ fi
+ 
+ echo "Test onmax action"
+ 
+-echo 'hist:keys=pid:ts0=$common_timestamp.usecs if comm=="ping"' >> events/sched/sched_waking/trigger
+-echo 'hist:keys=next_pid:wakeup_lat=$common_timestamp.usecs-$ts0:onmax($wakeup_lat).save(next_comm,prev_pid,prev_prio,prev_comm) if next_comm=="ping"' >> events/sched/sched_switch/trigger
++echo 'hist:keys=pid:ts0=common_timestamp.usecs if comm=="ping"' >> events/sched/sched_waking/trigger
++echo 'hist:keys=next_pid:wakeup_lat=common_timestamp.usecs-$ts0:onmax($wakeup_lat).save(next_comm,prev_pid,prev_prio,prev_comm) if next_comm=="ping"' >> events/sched/sched_switch/trigger
+ ping localhost -c 3
+ if ! grep -q "max:" events/sched/sched_switch/hist; then
+     fail "Failed to create onmax action inter-event histogram"

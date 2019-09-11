@@ -1,0 +1,37 @@
+From: Dan Carpenter <dan.carpenter@oracle.com>
+Date: Wed, 28 Mar 2018 14:48:15 +0300
+Subject: tracing: Uninitialized variable in create_tracing_map_fields()
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: bb9229b10f21d4f031b59ccefd8e7ca26957a4df
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+[ commit b28d7b2dc27f0eef1ae608b49d6860f2463910f1 ]
+
+Smatch complains that idx can be used uninitialized when we check if
+(idx < 0).  It has to be the first iteration through the loop and the
+HIST_FIELD_FL_STACKTRACE bit has to be clear and the HIST_FIELD_FL_VAR
+bit has to be set to reach the bug.
+
+Link: http://lkml.kernel.org/r/20180328114815.GC29050@mwanda
+
+Fixes: 30350d65ac56 ("tracing: Add variable support to hist triggers")
+Acked-by: Tom Zanussi <tom.zanussi@linux.intel.com>
+Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: Steven Rostedt (VMware) <rostedt@goodmis.org>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/trace/trace_events_hist.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/kernel/trace/trace_events_hist.c
++++ b/kernel/trace/trace_events_hist.c
+@@ -4458,7 +4458,7 @@ static int create_tracing_map_fields(str
+ 	struct tracing_map *map = hist_data->map;
+ 	struct ftrace_event_field *field;
+ 	struct hist_field *hist_field;
+-	int i, idx;
++	int i, idx = 0;
+ 
+ 	for_each_hist_field(i, hist_data) {
+ 		hist_field = hist_data->fields[i];

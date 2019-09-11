@@ -1,0 +1,27 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Mon, 11 Mar 2013 17:09:55 +0100
+Subject: x86/highmem: Add a "already used pte" check
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: de2c09025c0225d953d09ec4d3c7f1de427195c1
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+This is a copy from kmap_atomic_prot().
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ arch/x86/mm/iomap_32.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/arch/x86/mm/iomap_32.c
++++ b/arch/x86/mm/iomap_32.c
+@@ -66,6 +66,8 @@ void *kmap_atomic_prot_pfn(unsigned long
+ 	type = kmap_atomic_idx_push();
+ 	idx = type + KM_TYPE_NR * smp_processor_id();
+ 	vaddr = __fix_to_virt(FIX_KMAP_BEGIN + idx);
++	WARN_ON(!pte_none(*(kmap_pte - idx)));
++
+ #ifdef CONFIG_PREEMPT_RT_FULL
+ 	current->kmap_pte[type] = pte;
+ #endif

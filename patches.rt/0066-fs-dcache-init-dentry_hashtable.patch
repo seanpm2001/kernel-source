@@ -1,0 +1,51 @@
+From: Mike Galbraith <efault@gmx.de>
+Date: Wed, 14 Sep 2016 17:57:03 +0200
+Subject: fs/dcache: initialize dentry_hashtable
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 95f12397b61a084952bd13f16dc6fc3b354cab32
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+3d375d78 ("mm: update callers to use HASH_ZERO flag") removed dentry_hashtable
+hlist_bl_head initialization.  RT needs hlist_bl_head.lock (raw_spinlock_t) to
+be properly initialized, so put it back.
+
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ fs/dcache.c |   18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+--- a/fs/dcache.c
++++ b/fs/dcache.c
+@@ -3611,6 +3611,15 @@ static void __init dcache_init_early(voi
+ 					&d_hash_mask,
+ 					0,
+ 					0);
++
++#ifdef CONFIG_PREEMPT_RT_BASE
++	/* RT: hlist_bl_head.lock must be initialized regardless of HASH_ZERO */
++	{
++		unsigned int loop;
++		for (loop = 0; loop < (1U << d_hash_shift); loop++)
++			INIT_HLIST_BL_HEAD(dentry_hashtable + loop);
++	}
++#endif
+ }
+ 
+ static void __init dcache_init(void)
+@@ -3637,6 +3646,15 @@ static void __init dcache_init(void)
+ 					&d_hash_mask,
+ 					0,
+ 					0);
++
++#ifdef CONFIG_PREEMPT_RT_BASE
++	/* RT: hlist_bl_head.lock must be initialized regardless of HASH_ZERO */
++	{
++		unsigned int loop;
++		for (loop = 0; loop < (1U << d_hash_shift); loop++)
++			INIT_HLIST_BL_HEAD(dentry_hashtable + loop);
++	}
++#endif
+ }
+ 
+ /* SLAB cache for __getname() consumers */

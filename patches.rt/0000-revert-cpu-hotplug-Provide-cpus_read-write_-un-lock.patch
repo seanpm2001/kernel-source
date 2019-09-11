@@ -1,0 +1,219 @@
+Subject: revert cpu/hotplug: Provide cpus_read|write_[un]lock()
+From: Mike Galbraith |mgalbraith@suse.de>
+Date: Wed Aug 22 07:33:59 CEST 2018
+Patch-mainline: Never, -rt specific
+References: SLE Realtime Extension
+
+Part of massive/validated RT patch set all-in-one hotplug update.
+
+Signed-off-by: Mike Galbraith |mgalbraith@suse.de>
+---
+ include/linux/cpu.h |   32 ++++++++++++++------------------
+ kernel/cpu.c        |   36 ++++++++++++++++++------------------
+ 2 files changed, 32 insertions(+), 36 deletions(-)
+
+--- a/include/linux/cpu.h
++++ b/include/linux/cpu.h
+@@ -112,30 +112,26 @@ static inline void cpu_maps_update_done(
+ extern struct bus_type cpu_subsys;
+ 
+ #ifdef CONFIG_HOTPLUG_CPU
+-extern void cpus_write_lock(void);
+-extern void cpus_write_unlock(void);
+-extern void cpus_read_lock(void);
+-extern void cpus_read_unlock(void);
++/* Stop CPUs going up and down. */
++
++extern void cpu_hotplug_begin(void);
++extern void cpu_hotplug_done(void);
++extern void get_online_cpus(void);
++extern void put_online_cpus(void);
+ extern void cpu_hotplug_disable(void);
+ extern void cpu_hotplug_enable(void);
+ void clear_tasks_mm_cpumask(int cpu);
+ int cpu_down(unsigned int cpu);
+ 
+-#else /* CONFIG_HOTPLUG_CPU */
+-
+-static inline void cpus_write_lock(void) { }
+-static inline void cpus_write_unlock(void) { }
+-static inline void cpus_read_lock(void) { }
+-static inline void cpus_read_unlock(void) { }
+-static inline void cpu_hotplug_disable(void) { }
+-static inline void cpu_hotplug_enable(void) { }
+-#endif	/* !CONFIG_HOTPLUG_CPU */
++#else		/* CONFIG_HOTPLUG_CPU */
+ 
+-/* Wrappers which go away once all code is converted */
+-static inline void cpu_hotplug_begin(void) { cpus_write_lock(); }
+-static inline void cpu_hotplug_done(void) { cpus_write_unlock(); }
+-static inline void get_online_cpus(void) { cpus_read_lock(); }
+-static inline void put_online_cpus(void) { cpus_read_unlock(); }
++static inline void cpu_hotplug_begin(void) {}
++static inline void cpu_hotplug_done(void) {}
++#define get_online_cpus()	do { } while (0)
++#define put_online_cpus()	do { } while (0)
++#define cpu_hotplug_disable()	do { } while (0)
++#define cpu_hotplug_enable()	do { } while (0)
++#endif		/* CONFIG_HOTPLUG_CPU */
+ 
+ #ifdef CONFIG_PM_SLEEP_SMP
+ extern int freeze_secondary_cpus(int primary);
+--- a/kernel/cpu.c
++++ b/kernel/cpu.c
+@@ -237,7 +237,7 @@ static struct {
+ #define cpuhp_lock_release()      lock_map_release(&cpu_hotplug.dep_map)
+ 
+ 
+-void cpus_read_lock(void)
++void get_online_cpus(void)
+ {
+ 	might_sleep();
+ 	if (cpu_hotplug.active_writer == current)
+@@ -247,9 +247,9 @@ void cpus_read_lock(void)
+ 	atomic_inc(&cpu_hotplug.refcount);
+ 	mutex_unlock(&cpu_hotplug.lock);
+ }
+-EXPORT_SYMBOL_GPL(cpus_read_lock);
++EXPORT_SYMBOL_GPL(get_online_cpus);
+ 
+-void cpus_read_unlock(void)
++void put_online_cpus(void)
+ {
+ 	int refcount;
+ 
+@@ -266,7 +266,7 @@ void cpus_read_unlock(void)
+ 	cpuhp_lock_release();
+ 
+ }
+-EXPORT_SYMBOL_GPL(cpus_read_unlock);
++EXPORT_SYMBOL_GPL(put_online_cpus);
+ 
+ /*
+  * This ensures that the hotplug operation can begin only when the
+@@ -290,7 +290,7 @@ EXPORT_SYMBOL_GPL(cpus_read_unlock);
+  * get_online_cpus() not an api which is called all that often.
+  *
+  */
+-void cpus_write_lock(void)
++void cpu_hotplug_begin(void)
+ {
+ 	DEFINE_WAIT(wait);
+ 
+@@ -308,7 +308,7 @@ void cpus_write_lock(void)
+ 	finish_wait(&cpu_hotplug.wq, &wait);
+ }
+ 
+-void cpus_write_unlock(void)
++void cpu_hotplug_done(void)
+ {
+ 	cpu_hotplug.active_writer = NULL;
+ 	mutex_unlock(&cpu_hotplug.lock);
+@@ -858,7 +858,7 @@ static int __ref _cpu_down(unsigned int
+ 	if (!cpu_present(cpu))
+ 		return -EINVAL;
+ 
+-	cpus_write_lock();
++	cpu_hotplug_begin();
+ 
+ 	cpuhp_tasks_frozen = tasks_frozen;
+ 
+@@ -896,7 +896,7 @@ static int __ref _cpu_down(unsigned int
+ 	}
+ 
+ out:
+-	cpus_write_unlock();
++	cpu_hotplug_done();
+ 	return ret;
+ }
+ 
+@@ -967,7 +967,7 @@ static int _cpu_up(unsigned int cpu, int
+ 	struct task_struct *idle;
+ 	int ret = 0;
+ 
+-	cpus_write_lock();
++	cpu_hotplug_begin();
+ 
+ 	if (!cpu_present(cpu)) {
+ 		ret = -EINVAL;
+@@ -1015,7 +1015,7 @@ static int _cpu_up(unsigned int cpu, int
+ 	target = min((int)target, CPUHP_BRINGUP_CPU);
+ 	ret = cpuhp_up_callbacks(cpu, st, target);
+ out:
+-	cpus_write_unlock();
++	cpu_hotplug_done();
+ 	arch_smt_update();
+ 	return ret;
+ }
+@@ -1513,7 +1513,7 @@ int __cpuhp_state_add_instance(enum cpuh
+ 	if (sp->multi_instance == false)
+ 		return -EINVAL;
+ 
+-	cpus_read_lock();
++	get_online_cpus();
+ 	mutex_lock(&cpuhp_state_mutex);
+ 
+ 	if (!invoke || !sp->startup.multi)
+@@ -1542,7 +1542,7 @@ add_node:
+ 	hlist_add_head(node, &sp->list);
+ unlock:
+ 	mutex_unlock(&cpuhp_state_mutex);
+-	cpus_read_unlock();
++	put_online_cpus();
+ 	return ret;
+ }
+ EXPORT_SYMBOL_GPL(__cpuhp_state_add_instance);
+@@ -1575,7 +1575,7 @@ int __cpuhp_setup_state(enum cpuhp_state
+ 	if (cpuhp_cb_check(state) || !name)
+ 		return -EINVAL;
+ 
+-	cpus_read_lock();
++	get_online_cpus();
+ 	mutex_lock(&cpuhp_state_mutex);
+ 
+ 	ret = cpuhp_store_callbacks(state, name, startup, teardown,
+@@ -1611,7 +1611,7 @@ int __cpuhp_setup_state(enum cpuhp_state
+ 	}
+ out:
+ 	mutex_unlock(&cpuhp_state_mutex);
+-	cpus_read_unlock();
++	put_online_cpus();
+ 	/*
+ 	 * If the requested state is CPUHP_AP_ONLINE_DYN, return the
+ 	 * dynamically allocated state in case of success.
+@@ -1633,7 +1633,7 @@ int __cpuhp_state_remove_instance(enum c
+ 	if (!sp->multi_instance)
+ 		return -EINVAL;
+ 
+-	cpus_read_lock();
++	get_online_cpus();
+ 	mutex_lock(&cpuhp_state_mutex);
+ 
+ 	if (!invoke || !cpuhp_get_teardown_cb(state))
+@@ -1654,7 +1654,7 @@ int __cpuhp_state_remove_instance(enum c
+ remove:
+ 	hlist_del(node);
+ 	mutex_unlock(&cpuhp_state_mutex);
+-	cpus_read_unlock();
++	put_online_cpus();
+ 
+ 	return 0;
+ }
+@@ -1676,7 +1676,7 @@ void __cpuhp_remove_state(enum cpuhp_sta
+ 
+ 	BUG_ON(cpuhp_cb_check(state));
+ 
+-	cpus_read_lock();
++	get_online_cpus();
+ 
+ 	mutex_lock(&cpuhp_state_mutex);
+ 	if (sp->multi_instance) {
+@@ -1704,7 +1704,7 @@ void __cpuhp_remove_state(enum cpuhp_sta
+ remove:
+ 	cpuhp_store_callbacks(state, NULL, NULL, NULL, false);
+ 	mutex_unlock(&cpuhp_state_mutex);
+-	cpus_read_unlock();
++	put_online_cpus();
+ }
+ EXPORT_SYMBOL(__cpuhp_remove_state);
+ 

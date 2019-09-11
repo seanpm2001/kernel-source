@@ -1,0 +1,64 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Fri, 24 Nov 2017 19:09:40 +0100
+Subject: hrtimer: update the hrtimer patch
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 575a7cafbcf5d854df44a9cfd9eea861fb67fc6e
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+The hrtimer-softirq rewrite by Anna-Maria has been updated to upcomming
+v4.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ include/linux/hrtimer.h     |    1 +
+ kernel/time/tick-internal.h |    7 +++----
+ kernel/time/timer.c         |    8 +-------
+ 3 files changed, 5 insertions(+), 11 deletions(-)
+
+--- a/include/linux/hrtimer.h
++++ b/include/linux/hrtimer.h
+@@ -110,6 +110,7 @@ enum hrtimer_restart {
+  * @base:	pointer to the timer base (per cpu and per clock)
+  * @state:	state information (See bit values above)
+  * @is_rel:	Set if the timer was armed relative
++ * @is_soft:	Set if hrtimer will be expired in soft interrupt context.
+  *
+  * The hrtimer structure must be initialized by hrtimer_init()
+  */
+--- a/kernel/time/tick-internal.h
++++ b/kernel/time/tick-internal.h
+@@ -150,11 +150,10 @@ static inline void tick_nohz_init(void)
+ #ifdef CONFIG_NO_HZ_COMMON
+ extern unsigned long tick_nohz_active;
+ extern void timers_update_nohz(void);
+-
+-#ifdef CONFIG_SMP
++# ifdef CONFIG_SMP
+ extern struct static_key_false timers_migration_enabled;
+-#endif
+-#else
++# endif
++#else /* CONFIG_NO_HZ_COMMON */
+ static inline void timers_update_nohz(void) { }
+ #define tick_nohz_active (0)
+ #endif
+--- a/kernel/time/timer.c
++++ b/kernel/time/timer.c
+@@ -276,14 +276,8 @@ static inline bool is_timers_nohz_active
+ {
+ 	return static_branch_unlikely(&timers_nohz_active);
+ }
+-
+ #else
+-
+-static inline bool is_timers_nohz_active(void)
+-{
+-	return false;
+-}
+-
++static inline bool is_timers_nohz_active(void) { return false; }
+ #endif /* NO_HZ_COMMON */
+ 
+ static unsigned long round_jiffies_common(unsigned long j, int cpu,

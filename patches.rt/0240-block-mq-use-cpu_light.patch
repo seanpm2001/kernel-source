@@ -1,0 +1,34 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Wed, 9 Apr 2014 10:37:23 +0200
+Subject: block: mq: use cpu_light()
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: b51a57c822bb943395cc6658085daf0fa8d2a5b3
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+there is a might sleep splat because get_cpu() disables preemption and
+later we grab a lock. As a workaround for this we use get_cpu_light().
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ block/blk-mq.h |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/block/blk-mq.h
++++ b/block/blk-mq.h
+@@ -96,12 +96,12 @@ static inline struct blk_mq_ctx *__blk_m
+  */
+ static inline struct blk_mq_ctx *blk_mq_get_ctx(struct request_queue *q)
+ {
+-	return __blk_mq_get_ctx(q, get_cpu());
++	return __blk_mq_get_ctx(q, get_cpu_light());
+ }
+ 
+ static inline void blk_mq_put_ctx(struct blk_mq_ctx *ctx)
+ {
+-	put_cpu();
++	put_cpu_light();
+ }
+ 
+ struct blk_mq_alloc_data {

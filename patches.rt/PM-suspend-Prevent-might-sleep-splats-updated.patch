@@ -1,0 +1,38 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Tue, 29 May 2018 17:44:24 +0200
+Subject: PM / suspend: Prevent might sleep splats (updated)
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 1f824a198c749848b7f17789659eee4ef4210d27
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+[ Upstream commit ec7ff06b919647a2fd7d2761a26f5a1d465e819c ]
+
+This is an updated version of this patch which was merged upstream as
+commit c1a957d17086d20d52d7f9c8dffaeac2ee09d6f9
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Steven Rostedt (VMware) <rostedt@goodmis.org>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/time/tick-common.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/kernel/time/tick-common.c
++++ b/kernel/time/tick-common.c
+@@ -492,6 +492,7 @@ void tick_freeze(void)
+ 	if (tick_freeze_depth == num_online_cpus()) {
+ 		trace_suspend_resume(TPS("timekeeping_freeze"),
+ 				     smp_processor_id(), true);
++		system_state = SYSTEM_SUSPEND;
+ 		timekeeping_suspend();
+ 	} else {
+ 		tick_suspend_local();
+@@ -515,6 +516,7 @@ void tick_unfreeze(void)
+ 
+ 	if (tick_freeze_depth == num_online_cpus()) {
+ 		timekeeping_resume();
++		system_state = SYSTEM_RUNNING;
+ 		trace_suspend_resume(TPS("timekeeping_freeze"),
+ 				     smp_processor_id(), false);
+ 	} else {

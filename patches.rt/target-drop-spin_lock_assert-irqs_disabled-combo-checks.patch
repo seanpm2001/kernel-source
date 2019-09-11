@@ -1,0 +1,64 @@
+From: "bigeasy@linutronix.de" <bigeasy@linutronix.de>
+Date: Fri, 23 Mar 2018 18:17:36 +0100
+Subject: target: drop spin_lock_assert() + irqs_disabled() combo checks
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 9def1dd2d4581aae9cdd2a49857b5d8dddb16fe1
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+There are a few functions which check for if the lock is held
+(spin_lock_assert()) and the interrupts are disabled (irqs_disabled()).
+>From looking at the code, each function is static, the caller is near by
+and does spin_lock_irq|safe(). As Linus puts it:
+
+|It's not like this is some function that is exported to random users,
+|and we should check that the calling convention is right.
+|
+|This looks like "it may have been useful during coding to document
+|things, but it's not useful long-term".
+
+Remove those checks.
+
+Reviewed-by: Bart Van Assche <bart.vanassche@wdc.com>
+Reported-by: Arnaldo Carvalho de Melo <acme@kernel.org>
+Suggested-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ drivers/target/target_core_tmr.c       |    2 --
+ drivers/target/target_core_transport.c |    6 ------
+ 2 files changed, 8 deletions(-)
+
+--- a/drivers/target/target_core_tmr.c
++++ b/drivers/target/target_core_tmr.c
+@@ -114,8 +114,6 @@ static bool __target_check_io_state(stru
+ {
+ 	struct se_session *sess = se_cmd->se_sess;
+ 
+-	assert_spin_locked(&sess->sess_cmd_lock);
+-	WARN_ON_ONCE(!irqs_disabled());
+ 	/*
+ 	 * If command already reached CMD_T_COMPLETE state within
+ 	 * target_complete_cmd() or CMD_T_FABRIC_STOP due to shutdown,
+--- a/drivers/target/target_core_transport.c
++++ b/drivers/target/target_core_transport.c
+@@ -2962,9 +2962,6 @@ __transport_wait_for_tasks(struct se_cmd
+ 	__acquires(&cmd->t_state_lock)
+ {
+ 
+-	assert_spin_locked(&cmd->t_state_lock);
+-	WARN_ON_ONCE(!irqs_disabled());
+-
+ 	if (fabric_stop)
+ 		cmd->transport_state |= CMD_T_FABRIC_STOP;
+ 
+@@ -3247,9 +3244,6 @@ static int __transport_check_aborted_sta
+ {
+ 	int ret;
+ 
+-	assert_spin_locked(&cmd->t_state_lock);
+-	WARN_ON_ONCE(!irqs_disabled());
+-
+ 	if (!(cmd->transport_state & CMD_T_ABORTED))
+ 		return 0;
+ 	/*

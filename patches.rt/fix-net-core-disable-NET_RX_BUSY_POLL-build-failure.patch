@@ -1,0 +1,141 @@
+From: Mike Galbraith <mgalbraith@suse.de>
+Date: Wed Aug  2 10:55:41 CEST 2017
+Subject: net: Move napi_hash_add/del() inside CONFIG_NET_RX_BUSY_POLL
+Patch-mainline: Never, RT specific
+References: SLE12 Realtime Extension
+
+Since 545cd5e5ec54 ("net: Busy polling should ignore sender CPUs"),
+kernel build fails when CONFIG_NET_RX_BUSY_POLL is disabled.  Move
+napi_hash_add/del() accordingly.
+
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ include/linux/netdevice.h |   14 +++++++++++++-
+ net/core/dev.c            |   17 ++++++++++++-----
+ 2 files changed, 25 insertions(+), 6 deletions(-)
+
+--- a/include/linux/netdevice.h
++++ b/include/linux/netdevice.h
+@@ -492,6 +492,8 @@ static inline bool napi_complete(struct
+ 	return napi_complete_done(n, 0);
+ }
+ 
++#ifdef CONFIG_NET_RX_BUSY_POLL
++
+ /**
+  *	napi_hash_del - remove a NAPI from global table
+  *	@napi: NAPI context
+@@ -505,6 +507,17 @@ static inline bool napi_complete(struct
+  * the needed RCU grace periods into a single one.
+  */
+ bool napi_hash_del(struct napi_struct *napi);
++struct net_device *dev_get_by_napi_id(unsigned int napi_id);
++
++#else /* !CONFIG_NET_RX_BUSY_POLL */
++
++static inline bool napi_hash_del(struct napi_struct *napi) { return false; }
++static inline struct net_device *dev_get_by_napi_id(unsigned int napi_id)
++{
++	return NULL;
++}
++
++#endif /* CONFIG_NET_RX_BUSY_POLL */
+ 
+ /**
+  *	napi_disable - prevent NAPI from scheduling
+@@ -2678,7 +2691,6 @@ static inline void xmit_rec_dec(void)
+ struct net_device *dev_get_by_index(struct net *net, int ifindex);
+ struct net_device *__dev_get_by_index(struct net *net, int ifindex);
+ struct net_device *dev_get_by_index_rcu(struct net *net, int ifindex);
+-struct net_device *dev_get_by_napi_id(unsigned int napi_id);
+ int netdev_get_name(struct net *net, char *name, int ifindex);
+ int dev_restart(struct net_device *dev);
+ int skb_gro_receive(struct sk_buff *p, struct sk_buff *skb);
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -163,7 +163,6 @@ static struct list_head offload_base __r
+ static int netif_rx_internal(struct sk_buff *skb);
+ static int call_netdevice_notifiers_info(unsigned long val,
+ 					 struct netdev_notifier_info *info);
+-static struct napi_struct *napi_by_id(unsigned int napi_id);
+ 
+ /*
+  * The @dev_base_head list is protected by @dev_base_lock and the rtnl
+@@ -187,11 +186,15 @@ static struct napi_struct *napi_by_id(un
+ DEFINE_RWLOCK(dev_base_lock);
+ EXPORT_SYMBOL(dev_base_lock);
+ 
++#ifdef CONFIG_NET_RX_BUSY_POLL
++static struct napi_struct *napi_by_id(unsigned int napi_id);
++
+ /* protects napi_hash addition/deletion and napi_gen_id */
+ static DEFINE_SPINLOCK(napi_hash_lock);
+ 
+ static unsigned int napi_gen_id = NR_CPUS;
+ static DEFINE_READ_MOSTLY_HASHTABLE(napi_hash, 8);
++#endif
+ 
+ static seqcount_t devnet_rename_seq;
+ static DEFINE_MUTEX(devnet_rename_mutex);
+@@ -868,6 +871,7 @@ struct net_device *dev_get_by_index(stru
+ }
+ EXPORT_SYMBOL(dev_get_by_index);
+ 
++#ifdef CONFIG_NET_RX_BUSY_POLL
+ /**
+  *	dev_get_by_napi_id - find a device by napi_id
+  *	@napi_id: ID of the NAPI struct
+@@ -892,6 +896,7 @@ struct net_device *dev_get_by_napi_id(un
+ 	return napi ? napi->dev : NULL;
+ }
+ EXPORT_SYMBOL(dev_get_by_napi_id);
++#endif
+ 
+ /**
+  *	netdev_get_name - get a netdevice name, knowing its ifindex.
+@@ -5974,6 +5979,8 @@ bool napi_complete_done(struct napi_stru
+ }
+ EXPORT_SYMBOL(napi_complete_done);
+ 
++#if defined(CONFIG_NET_RX_BUSY_POLL)
++
+ /* must be called under rcu_read_lock(), as we dont take a reference */
+ static struct napi_struct *napi_by_id(unsigned int napi_id)
+ {
+@@ -5987,8 +5994,6 @@ static struct napi_struct *napi_by_id(un
+ 	return NULL;
+ }
+ 
+-#if defined(CONFIG_NET_RX_BUSY_POLL)
+-
+ #define BUSY_POLL_BUDGET 8
+ 
+ static void busy_poll_stop(struct napi_struct *napi, void *have_poll_lock)
+@@ -6089,8 +6094,6 @@ out:
+ }
+ EXPORT_SYMBOL(napi_busy_loop);
+ 
+-#endif /* CONFIG_NET_RX_BUSY_POLL */
+-
+ static void napi_hash_add(struct napi_struct *napi)
+ {
+ 	if (test_bit(NAPI_STATE_NO_BUSY_POLL, &napi->state) ||
+@@ -6130,6 +6133,8 @@ bool napi_hash_del(struct napi_struct *n
+ }
+ EXPORT_SYMBOL_GPL(napi_hash_del);
+ 
++#endif /* CONFIG_NET_RX_BUSY_POLL */
++
+ static enum hrtimer_restart napi_watchdog(struct hrtimer *timer)
+ {
+ 	struct napi_struct *napi;
+@@ -6176,7 +6181,9 @@ void netif_napi_add(struct net_device *d
+ 	napi->poll_owner = -1;
+ #endif
+ 	set_bit(NAPI_STATE_SCHED, &napi->state);
++#ifdef CONFIG_NET_RX_BUSY_POLL
+ 	napi_hash_add(napi);
++#endif
+ }
+ EXPORT_SYMBOL(netif_napi_add);
+ 

@@ -1,0 +1,42 @@
+From: Tom Zanussi <tom.zanussi@linux.intel.com>
+Date: Wed, 28 Mar 2018 15:10:56 -0500
+Subject: tracing: Make sure variable string fields are NULL-terminated
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: df4565f190d3bf38363ea504cafaad2dc9f5fbb7
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+The strncpy() currently being used for variable string fields can
+result in a lack of termination if the string length is equal to the
+field size.  Use the safer strscpy() instead, which will guarantee
+termination.
+
+Mike: add include/linux/string.h __must_check removal (see 08a77676f9c5)
+
+Signed-off-by: Tom Zanussi <tom.zanussi@linux.intel.com>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ kernel/trace/trace_events_hist.c |    4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+--- a/kernel/trace/trace_events_hist.c
++++ b/kernel/trace/trace_events_hist.c
+@@ -669,7 +669,7 @@ static notrace void trace_event_raw_even
+ 			char *str_val = (char *)(long)var_ref_vals[var_ref_idx + i];
+ 			char *str_field = (char *)&entry->fields[n_u64];
+ 
+-			strncpy(str_field, str_val, STR_VAR_LEN_MAX);
++			strscpy(str_field, str_val, STR_VAR_LEN_MAX);
+ 			n_u64 += STR_VAR_LEN_MAX / sizeof(u64);
+ 		} else {
+ 			entry->fields[n_u64] = var_ref_vals[var_ref_idx + i];
+@@ -3090,7 +3090,7 @@ static inline void __update_field_vars(s
+ 			char *str = elt_data->field_var_str[j++];
+ 			char *val_str = (char *)(uintptr_t)var_val;
+ 
+-			strncpy(str, val_str, STR_VAR_LEN_MAX);
++			strscpy(str, val_str, STR_VAR_LEN_MAX);
+ 			var_val = (u64)(uintptr_t)str;
+ 		}
+ 		tracing_map_set_var(elt, var_idx, var_val);

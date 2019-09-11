@@ -1,0 +1,75 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Fri, 12 May 2017 15:46:17 +0200
+Subject: random: avoid preempt_disable()ed section
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 4bed11300e24d5178829758e535cc4996490b7c8
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+extract_crng() will use sleeping locks while in a preempt_disable()
+section due to get_cpu_var().
+Work around it with local_locks.
+
+Cc: stable-rt@vger.kernel.org # where it applies to
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ drivers/char/random.c |   11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+--- a/drivers/char/random.c
++++ b/drivers/char/random.c
+@@ -262,6 +262,7 @@
+ #include <linux/syscalls.h>
+ #include <linux/completion.h>
+ #include <linux/uuid.h>
++#include <linux/locallock.h>
+ #include <crypto/chacha20.h>
+ 
+ #include <asm/processor.h>
+@@ -2047,6 +2048,7 @@ struct batched_entropy {
+  * at any point prior.
+  */
+ static DEFINE_PER_CPU(struct batched_entropy, batched_entropy_u64);
++static DEFINE_LOCAL_IRQ_LOCK(batched_entropy_u64_lock);
+ u64 get_random_u64(void)
+ {
+ 	u64 ret;
+@@ -2061,18 +2063,19 @@ u64 get_random_u64(void)
+ 	    return ret;
+ #endif
+ 
+-	batch = &get_cpu_var(batched_entropy_u64);
++	batch = &get_locked_var(batched_entropy_u64_lock, batched_entropy_u64);
+ 	if (batch->position % ARRAY_SIZE(batch->entropy_u64) == 0) {
+ 		extract_crng((u8 *)batch->entropy_u64);
+ 		batch->position = 0;
+ 	}
+ 	ret = batch->entropy_u64[batch->position++];
+-	put_cpu_var(batched_entropy_u64);
++	put_locked_var(batched_entropy_u64_lock, batched_entropy_u64);
+ 	return ret;
+ }
+ EXPORT_SYMBOL(get_random_u64);
+ 
+ static DEFINE_PER_CPU(struct batched_entropy, batched_entropy_u32);
++static DEFINE_LOCAL_IRQ_LOCK(batched_entropy_u32_lock);
+ u32 get_random_u32(void)
+ {
+ 	u32 ret;
+@@ -2081,13 +2084,13 @@ u32 get_random_u32(void)
+ 	if (arch_get_random_int(&ret))
+ 		return ret;
+ 
+-	batch = &get_cpu_var(batched_entropy_u32);
++	batch = &get_locked_var(batched_entropy_u32_lock, batched_entropy_u32);
+ 	if (batch->position % ARRAY_SIZE(batch->entropy_u32) == 0) {
+ 		extract_crng((u8 *)batch->entropy_u32);
+ 		batch->position = 0;
+ 	}
+ 	ret = batch->entropy_u32[batch->position++];
+-	put_cpu_var(batched_entropy_u32);
++	put_locked_var(batched_entropy_u32_lock, batched_entropy_u32);
+ 	return ret;
+ }
+ EXPORT_SYMBOL(get_random_u32);

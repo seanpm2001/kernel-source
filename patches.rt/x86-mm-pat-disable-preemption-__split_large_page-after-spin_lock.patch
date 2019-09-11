@@ -1,0 +1,61 @@
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Tue, 11 Dec 2018 21:53:43 +0100
+Subject: x86/mm/pat: disable preemption __split_large_page() after spin_lock()
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-rt-devel.git
+Git-commit: 3f75a77fadb2cd11af3b76a52581a9e139ded210
+Patch-mainline: Queued in subsystem maintainer repository
+References: SLE Realtime Extension
+
+[ Upstream commit 45c6ff4811878e5c1c2ae31303cd95cdc6ae2ab4 ]
+
+Commit "x86/mm/pat: Disable preemption around __flush_tlb_all()" added a
+warning if __flush_tlb_all() is invoked in preemptible context. On !RT
+the warning does not trigger because a spin lock is acquired which
+disables preemption. On RT the spin lock does not disable preemption and
+so the warning is seen.
+
+Disable preemption to avoid the warning __flush_tlb_all().
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Steven Rostedt (VMware) <rostedt@goodmis.org>
+Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
+---
+ arch/x86/mm/pageattr.c |    8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+--- a/arch/x86/mm/pageattr.c
++++ b/arch/x86/mm/pageattr.c
+@@ -662,11 +662,17 @@ __split_large_page(struct cpa_data *cpa,
+ 
+ 	spin_lock(&pgd_lock);
+ 	/*
++	 * Keep preemption disabled after __flush_tlb_all() which expects not be
++	 * preempted during the flush of the local TLB.
++	 */
++	preempt_disable();
++	/*
+ 	 * Check for races, another CPU might have split this page
+ 	 * up for us already:
+ 	 */
+ 	tmp = _lookup_address_cpa(cpa, address, &level);
+ 	if (tmp != kpte) {
++		preempt_enable();
+ 		spin_unlock(&pgd_lock);
+ 		return 1;
+ 	}
+@@ -696,6 +702,7 @@ __split_large_page(struct cpa_data *cpa,
+ 		break;
+ 
+ 	default:
++		preempt_enable();
+ 		spin_unlock(&pgd_lock);
+ 		return 1;
+ 	}
+@@ -743,6 +750,7 @@ __split_large_page(struct cpa_data *cpa,
+ 	 * going on.
+ 	 */
+ 	__flush_tlb_all();
++	preempt_enable();
+ 	spin_unlock(&pgd_lock);
+ 
+ 	return 0;
