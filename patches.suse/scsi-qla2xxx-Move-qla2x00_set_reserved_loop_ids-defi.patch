@@ -1,0 +1,66 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Wed, 17 Apr 2019 14:44:12 -0700
+Subject: scsi: qla2xxx: Move qla2x00_set_reserved_loop_ids() definition
+Patch-mainline: v5.2-rc1
+Git-commit: 0e145a595d4113caee8c1d9d3345781567c43826
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+Since qla2x00_set_reserved_loop_ids() only has a single caller, move it
+into the source file from where it is called.
+
+Cc: Himanshu Madhani <hmadhani@marvell.com>
+Cc: Giridhar Malavali <gmalavali@marvell.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Acked-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_inline.h |   14 --------------
+ drivers/scsi/qla2xxx/qla_os.c     |   13 +++++++++++++
+ 2 files changed, 13 insertions(+), 14 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_inline.h
++++ b/drivers/scsi/qla2xxx/qla_inline.h
+@@ -90,20 +90,6 @@ host_to_adap(uint8_t *src, uint8_t *dst,
+ 		*odest++ = cpu_to_le32(*isrc);
+ }
+ 
+-static inline void
+-qla2x00_set_reserved_loop_ids(struct qla_hw_data *ha)
+-{
+-	int i;
+-
+-	if (IS_FWI2_CAPABLE(ha))
+-		return;
+-
+-	for (i = 0; i < SNS_FIRST_LOOP_ID; i++)
+-		set_bit(i, ha->loop_id_map);
+-	set_bit(MANAGEMENT_SERVER, ha->loop_id_map);
+-	set_bit(BROADCAST, ha->loop_id_map);
+-}
+-
+ static inline int
+ qla2x00_is_reserved_id(scsi_qla_host_t *vha, uint16_t loop_id)
+ {
+--- a/drivers/scsi/qla2xxx/qla_os.c
++++ b/drivers/scsi/qla2xxx/qla_os.c
+@@ -4008,6 +4008,19 @@ qla2x00_mark_all_devices_lost(scsi_qla_h
+ 	}
+ }
+ 
++static void qla2x00_set_reserved_loop_ids(struct qla_hw_data *ha)
++{
++	int i;
++
++	if (IS_FWI2_CAPABLE(ha))
++		return;
++
++	for (i = 0; i < SNS_FIRST_LOOP_ID; i++)
++		set_bit(i, ha->loop_id_map);
++	set_bit(MANAGEMENT_SERVER, ha->loop_id_map);
++	set_bit(BROADCAST, ha->loop_id_map);
++}
++
+ /*
+ * qla2x00_mem_alloc
+ *      Allocates adapter memory.

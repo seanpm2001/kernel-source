@@ -1,0 +1,162 @@
+From: Hannes Reinecke <hare@suse.de>
+Date: Wed, 10 Apr 2019 16:16:19 +0200
+Subject: scsi: scsi_transport_fc: nvme: display FC-NVMe port roles
+Patch-mainline: v5.2-rc1
+Git-commit: a6a6d0589ac4ff3e1eb962f6c53e67d8f6386c18
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+Currently the FC-NVMe driver is leverating the SCSI FC transport class to
+access the remote ports. Which means that all FC-NVMe remote ports will be
+visible to the fc transport layer, but due to missing definitions the port
+roles will always be 'unknown'.  This patch adds the missing definitions to
+the fc transport class to that the port roles are correctly displayed.
+
+Signed-off-by: Hannes Reinecke <hare@suse.de>
+Reviewed-by: James Smart <james.smart@broadcom.com>
+Reviewed-by: Ewan D. Milne <emilne@redhat.com>
+Reviewed-by: Giridhar Malavali <gmalavali@marvell.com>
+Reviewed-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/nvme/host/fc.c           |    2 +-
+ drivers/scsi/lpfc/lpfc_hbadisc.c |   10 ++++++++--
+ drivers/scsi/qla2xxx/qla_def.h   |    5 ++++-
+ drivers/scsi/qla2xxx/qla_init.c  |   15 +++++++++++----
+ drivers/scsi/qla2xxx/qla_mbx.c   |    8 +++++++-
+ drivers/scsi/scsi_transport_fc.c |    3 +++
+ include/linux/nvme-fc-driver.h   |    6 ------
+ include/scsi/scsi_transport_fc.h |    3 +++
+ 8 files changed, 37 insertions(+), 15 deletions(-)
+
+--- a/drivers/nvme/host/fc.c
++++ b/drivers/nvme/host/fc.c
+@@ -26,7 +26,7 @@
+ #include "fabrics.h"
+ #include <linux/nvme-fc-driver.h>
+ #include <linux/nvme-fc.h>
+-
++#include <scsi/scsi_transport_fc.h>
+ 
+ /* *************************** Data Structures/Defines ****************** */
+ 
+--- a/drivers/scsi/lpfc/lpfc_hbadisc.c
++++ b/drivers/scsi/lpfc/lpfc_hbadisc.c
+@@ -4146,9 +4146,15 @@ lpfc_register_remote_port(struct lpfc_vp
+ 	rdata->pnode = lpfc_nlp_get(ndlp);
+ 
+ 	if (ndlp->nlp_type & NLP_FCP_TARGET)
+-		rport_ids.roles |= FC_RPORT_ROLE_FCP_TARGET;
++		rport_ids.roles |= FC_PORT_ROLE_FCP_TARGET;
+ 	if (ndlp->nlp_type & NLP_FCP_INITIATOR)
+-		rport_ids.roles |= FC_RPORT_ROLE_FCP_INITIATOR;
++		rport_ids.roles |= FC_PORT_ROLE_FCP_INITIATOR;
++	if (ndlp->nlp_type & NLP_NVME_INITIATOR)
++		rport_ids.roles |= FC_PORT_ROLE_NVME_INITIATOR;
++	if (ndlp->nlp_type & NLP_NVME_TARGET)
++		rport_ids.roles |= FC_PORT_ROLE_NVME_TARGET;
++	if (ndlp->nlp_type & NLP_NVME_DISCOVERY)
++		rport_ids.roles |= FC_PORT_ROLE_NVME_DISCOVERY;
+ 
+ 	if (rport_ids.roles !=  FC_RPORT_ROLE_UNKNOWN)
+ 		fc_remote_port_rolechg(rport, rport_ids.roles);
+--- a/drivers/scsi/qla2xxx/qla_def.h
++++ b/drivers/scsi/qla2xxx/qla_def.h
+@@ -2264,7 +2264,10 @@ typedef enum {
+ 	FCT_BROADCAST,
+ 	FCT_INITIATOR,
+ 	FCT_TARGET,
+-	FCT_NVME
++	FCT_NVME_INITIATOR = 0x10,
++	FCT_NVME_TARGET = 0x20,
++	FCT_NVME_DISCOVERY = 0x40,
++	FCT_NVME = 0xf0,
+ } fc_port_type_t;
+ 
+ enum qla_sess_deletion {
+--- a/drivers/scsi/qla2xxx/qla_init.c
++++ b/drivers/scsi/qla2xxx/qla_init.c
+@@ -5275,16 +5275,23 @@ qla2x00_reg_remote_port(scsi_qla_host_t
+ 
+ 	rport->supported_classes = fcport->supported_classes;
+ 
+-	rport_ids.roles = FC_RPORT_ROLE_UNKNOWN;
++	rport_ids.roles = FC_PORT_ROLE_UNKNOWN;
+ 	if (fcport->port_type == FCT_INITIATOR)
+-		rport_ids.roles |= FC_RPORT_ROLE_FCP_INITIATOR;
++		rport_ids.roles |= FC_PORT_ROLE_FCP_INITIATOR;
+ 	if (fcport->port_type == FCT_TARGET)
+-		rport_ids.roles |= FC_RPORT_ROLE_FCP_TARGET;
++		rport_ids.roles |= FC_PORT_ROLE_FCP_TARGET;
++	if (fcport->port_type & FCT_NVME_INITIATOR)
++		rport_ids.roles |= FC_PORT_ROLE_NVME_INITIATOR;
++	if (fcport->port_type & FCT_NVME_TARGET)
++		rport_ids.roles |= FC_PORT_ROLE_NVME_TARGET;
++	if (fcport->port_type & FCT_NVME_DISCOVERY)
++		rport_ids.roles |= FC_PORT_ROLE_NVME_DISCOVERY;
+ 
+ 	ql_dbg(ql_dbg_disc, vha, 0x20ee,
+ 	    "%s %8phN. rport %p is %s mode\n",
+ 	    __func__, fcport->port_name, rport,
+-	    (fcport->port_type == FCT_TARGET) ? "tgt" : "ini");
++	    (fcport->port_type == FCT_TARGET) ? "tgt" :
++	    ((fcport->port_type & FCT_NVME) ? "nvme" :"ini"));
+ 
+ 	fc_remote_port_rolechg(rport, rport_ids.roles);
+ }
+--- a/drivers/scsi/qla2xxx/qla_mbx.c
++++ b/drivers/scsi/qla2xxx/qla_mbx.c
+@@ -6387,7 +6387,13 @@ int __qla24xx_parse_gpdb(struct scsi_qla
+ 	fcport->d_id.b.rsvd_1 = 0;
+ 
+ 	if (fcport->fc4f_nvme) {
+-		fcport->port_type = FCT_NVME;
++		fcport->port_type = 0;
++		if ((pd->prli_svc_param_word_3[0] & BIT_5) == 0)
++			fcport->port_type |= FCT_NVME_INITIATOR;
++		if ((pd->prli_svc_param_word_3[0] & BIT_4) == 0)
++			fcport->port_type |= FCT_NVME_TARGET;
++		if ((pd->prli_svc_param_word_3[0] & BIT_3) == 0)
++			fcport->port_type |= FCT_NVME_DISCOVERY;
+ 	} else {
+ 		/* If not target must be initiator or unknown type. */
+ 		if ((pd->prli_svc_param_word_3[0] & BIT_4) == 0)
+--- a/drivers/scsi/scsi_transport_fc.c
++++ b/drivers/scsi/scsi_transport_fc.c
+@@ -296,6 +296,9 @@ static const struct {
+ 	{ FC_PORT_ROLE_FCP_INITIATOR,		"FCP Initiator" },
+ 	{ FC_PORT_ROLE_IP_PORT,			"IP Port" },
+ 	{ FC_PORT_ROLE_FCP_DUMMY_INITIATOR,	"FCP Dummy Initiator" },
++	{ FC_PORT_ROLE_NVME_INITIATOR,		"NVMe Initiator" },
++	{ FC_PORT_ROLE_NVME_TARGET,		"NVMe Target" },
++	{ FC_PORT_ROLE_NVME_DISCOVERY,		"NVMe Discovery" },
+ };
+ fc_bitfield_name_search(port_roles, fc_port_role_names)
+ 
+--- a/include/linux/nvme-fc-driver.h
++++ b/include/linux/nvme-fc-driver.h
+@@ -25,12 +25,6 @@
+ 
+ 
+ 
+-/* FC Port role bitmask - can merge with FC Port Roles in fc transport */
+-#define FC_PORT_ROLE_NVME_INITIATOR	0x10
+-#define FC_PORT_ROLE_NVME_TARGET	0x20
+-#define FC_PORT_ROLE_NVME_DISCOVERY	0x40
+-
+-
+ /**
+  * struct nvme_fc_port_info - port-specific ids and FC connection-specific
+  *                            data element used during NVME Host role
+--- a/include/scsi/scsi_transport_fc.h
++++ b/include/scsi/scsi_transport_fc.h
+@@ -165,6 +165,9 @@ enum fc_tgtid_binding_type  {
+ #define FC_PORT_ROLE_FCP_INITIATOR		0x02
+ #define FC_PORT_ROLE_IP_PORT			0x04
+ #define FC_PORT_ROLE_FCP_DUMMY_INITIATOR	0x08
++#define FC_PORT_ROLE_NVME_INITIATOR		0x10
++#define FC_PORT_ROLE_NVME_TARGET		0x20
++#define FC_PORT_ROLE_NVME_DISCOVERY		0x40
+ 
+ /* The following are for compatibility */
+ #define FC_RPORT_ROLE_UNKNOWN			FC_PORT_ROLE_UNKNOWN

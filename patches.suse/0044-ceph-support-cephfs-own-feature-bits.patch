@@ -3,19 +3,21 @@ Date: Fri, 11 May 2018 18:47:29 +0800
 Subject: ceph: support cephfs' own feature bits
 Git-commit: 342ce1823ebaec573ac269b56bca78c698fec5c3
 Patch-mainline: v4.19-rc1
-References: FATE#324714
+References: bsc#1146346
 
 Signed-off-by: "Yan, Zheng" <zyan@redhat.com>
 Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
 Acked-by: Luis Henriques <lhenriques@suse.com>
 ---
- fs/ceph/mds_client.c |   48 +++++++++++++++++++++++++++++++++++++++---------
- fs/ceph/mds_client.h |   12 ++++++++++++
+ fs/ceph/mds_client.c | 48 +++++++++++++++++++++++++++++++++++++++---------
+ fs/ceph/mds_client.h | 12 ++++++++++++
  2 files changed, 51 insertions(+), 9 deletions(-)
 
+diff --git a/fs/ceph/mds_client.c b/fs/ceph/mds_client.c
+index 8dbfca01c7ea..5b767cf1f780 100644
 --- a/fs/ceph/mds_client.c
 +++ b/fs/ceph/mds_client.c
-@@ -901,6 +901,27 @@ static struct ceph_msg *create_session_m
+@@ -902,6 +902,27 @@ static struct ceph_msg *create_session_msg(u32 op, u64 seq)
  	return msg;
  }
  
@@ -43,7 +45,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  /*
   * session message, specialization for CEPH_SESSION_REQUEST_OPEN
   * to include additional client metadata fields.
-@@ -910,11 +931,11 @@ static struct ceph_msg *create_session_o
+@@ -911,11 +932,11 @@ static struct ceph_msg *create_session_open_msg(struct ceph_mds_client *mdsc, u6
  	struct ceph_msg *msg;
  	struct ceph_mds_session_head *h;
  	int i = -1;
@@ -57,7 +59,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  
  	const char* metadata[][2] = {
  		{"hostname", mdsc->nodename},
-@@ -925,21 +946,26 @@ static struct ceph_msg *create_session_o
+@@ -926,21 +947,26 @@ static struct ceph_msg *create_session_open_msg(struct ceph_mds_client *mdsc, u6
  	};
  
  	/* Calculate serialized length of metadata */
@@ -88,7 +90,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  	h->op = cpu_to_le32(CEPH_SESSION_REQUEST_OPEN);
  	h->seq = cpu_to_le64(seq);
  
-@@ -949,11 +975,11 @@ static struct ceph_msg *create_session_o
+@@ -950,11 +976,11 @@ static struct ceph_msg *create_session_open_msg(struct ceph_mds_client *mdsc, u6
  	 *
  	 * ClientSession messages with metadata are v2
  	 */
@@ -102,7 +104,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  
  	/* Number of entries in the map */
  	ceph_encode_32(&p, metadata_key_count);
-@@ -971,6 +997,10 @@ static struct ceph_msg *create_session_o
+@@ -972,6 +998,10 @@ static struct ceph_msg *create_session_open_msg(struct ceph_mds_client *mdsc, u6
  		p += val_len;
  	}
  
@@ -113,7 +115,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  	return msg;
  }
  
-@@ -2746,7 +2776,7 @@ static void handle_session(struct ceph_m
+@@ -2749,7 +2779,7 @@ static void handle_session(struct ceph_mds_session *session,
  	int wake = 0;
  
  	/* decode */
@@ -122,9 +124,11 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  		goto bad;
  	op = le32_to_cpu(h->op);
  	seq = le64_to_cpu(h->seq);
+diff --git a/fs/ceph/mds_client.h b/fs/ceph/mds_client.h
+index 80a7523e1523..32fcce0d4d3c 100644
 --- a/fs/ceph/mds_client.h
 +++ b/fs/ceph/mds_client.h
-@@ -15,6 +15,18 @@
+@@ -16,6 +16,18 @@
  #include <linux/ceph/mdsmap.h>
  #include <linux/ceph/auth.h>
  
@@ -143,3 +147,4 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  /*
   * Some lock dependencies:
   *
+

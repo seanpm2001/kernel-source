@@ -1,0 +1,72 @@
+From: Long Li <longli@microsoft.com>
+Date: Wed, 22 Nov 2017 17:38:37 -0700
+Subject: [PATCH] CIFS: SMBD: Implement function to destroy a SMB Direct
+ connection
+Git-commit: 8ef130f9ec27973f7b49e20c5a3b9134ca33026c
+Patch-mainline: v4.15
+References: bsc#1144333
+
+Add function to tear down a SMB Direct connection. This is used by upper layer
+to free all SMB Direct connection and transport resources.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smbdirect.c | 16 ++++++++++++++++
+ fs/cifs/smbdirect.h |  3 +++
+ 2 files changed, 19 insertions(+)
+
+diff --git a/fs/cifs/smbdirect.c b/fs/cifs/smbdirect.c
+index a96058a3ad87..b462a2f3863b 100644
+--- a/fs/cifs/smbdirect.c
++++ b/fs/cifs/smbdirect.c
+@@ -1387,6 +1387,22 @@ static void idle_connection_timer(struct work_struct *work)
+ 			info->keep_alive_interval*HZ);
+ }
+ 
++/* Destroy this SMBD connection, called from upper layer */
++void smbd_destroy(struct smbd_connection *info)
++{
++	log_rdma_event(INFO, "destroying rdma session\n");
++
++	/* Kick off the disconnection process */
++	smbd_disconnect_rdma_connection(info);
++
++	log_rdma_event(INFO, "wait for transport being destroyed\n");
++	wait_event(info->wait_destroy,
++		info->transport_status == SMBD_DESTROYED);
++
++	destroy_workqueue(info->workqueue);
++	kfree(info);
++}
++
+ /*
+  * Reconnect this SMBD connection, called from upper layer
+  * return value: 0 on success, or actual error code
+diff --git a/fs/cifs/smbdirect.h b/fs/cifs/smbdirect.h
+index f1db2ee7c8c2..f0ce934650c1 100644
+--- a/fs/cifs/smbdirect.h
++++ b/fs/cifs/smbdirect.h
+@@ -249,6 +249,8 @@ struct smbd_connection *smbd_get_connection(
+ 
+ /* Reconnect SMBDirect session */
+ int smbd_reconnect(struct TCP_Server_Info *server);
++/* Destroy SMBDirect session */
++void smbd_destroy(struct smbd_connection *info);
+ 
+ #else
+ #define cifs_rdma_enabled(server)	0
+@@ -256,6 +258,7 @@ struct smbd_connection {};
+ static inline void *smbd_get_connection(
+ 	struct TCP_Server_Info *server, struct sockaddr *dstaddr) {return NULL;}
+ static inline int smbd_reconnect(struct TCP_Server_Info *server) {return -1; }
++static inline void smbd_destroy(struct smbd_connection *info) {}
+ #endif
+ 
+ #endif
+-- 
+2.16.4
+

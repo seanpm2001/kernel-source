@@ -1,0 +1,52 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Sat, 9 Mar 2019 18:12:18 -0600
+Subject: [PATCH] smb3: display security information in /proc/fs/cifs/DebugData
+ more accurately
+Git-commit: ffd1ef1e50727e96e360e871b89aa8cf329935f7
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+When the server required encryption (but we didn't connect to it with the
+"seal" mount option) we weren't displaying in /proc/fs/cifs/DebugData that
+the tcon for that share was encrypted. Similarly we were not displaying
+that signing was required when ses->sign was enabled (we only
+checked ses->server->sign).  This makes it easier to debug when in
+fact the connection is signed (or sealed), whether for performance
+or security questions.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifs_debug.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/cifs_debug.c b/fs/cifs/cifs_debug.c
+index e92a2fee3c57..faeb1452cc2d 100644
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -115,7 +115,9 @@ static void cifs_debug_tcon(struct seq_file *m, struct cifs_tcon *tcon)
+ 		seq_puts(m, " type: CDROM ");
+ 	else
+ 		seq_printf(m, " type: %d ", dev_type);
+-	if (tcon->seal)
++	if ((tcon->seal) ||
++	    (tcon->ses->session_flags & SMB2_SESSION_FLAG_ENCRYPT_DATA) ||
++	    (tcon->share_flags & SHI1005_FLAGS_ENCRYPT_DATA))
+ 		seq_printf(m, " Encrypted");
+ 	if (tcon->nocase)
+ 		seq_printf(m, " nocase");
+@@ -371,6 +373,10 @@ static int cifs_debug_data_proc_show(struct seq_file *m, void *v)
+ 				atomic_read(&server->in_send),
+ 				atomic_read(&server->num_waiters));
+ #endif
++			if (ses->session_flags & SMB2_SESSION_FLAG_ENCRYPT_DATA)
++				seq_puts(m, " encrypted");
++			if (ses->sign)
++				seq_puts(m, " signed");
+ 
+ 			seq_puts(m, "\n\tShares:");
+ 			j = 0;
+-- 
+2.16.4
+

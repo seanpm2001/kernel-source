@@ -1,0 +1,61 @@
+From: Long Li <longli@microsoft.com>
+Date: Wed, 22 Nov 2017 17:38:39 -0700
+Subject: [PATCH] CIFS: SMBD: Set SMB Direct maximum read or write size for I/O
+Git-commit: 09902f8dc849fd9d3f1258a5c926c5d5472646b1
+Patch-mainline: v4.15
+References: bsc#1144333
+
+When connecting over SMB Direct, the transport negotiates its maximum I/O sizes
+with the server and determines how to choose to do RDMA send/recv vs
+read/write. Expose these maximum I/O sizes to upper layer so we will get the
+correct sized payloads.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index ed88ab8a4774..c8fa4c4ccc50 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -32,6 +32,7 @@
+ #include "smb2status.h"
+ #include "smb2glob.h"
+ #include "cifs_ioctl.h"
++#include "smbdirect.h"
+ 
+ static int
+ change_conf(struct TCP_Server_Info *server)
+@@ -250,7 +251,11 @@ smb2_negotiate_wsize(struct cifs_tcon *tcon, struct smb_vol *volume_info)
+ 	/* start with specified wsize, or default */
+ 	wsize = volume_info->wsize ? volume_info->wsize : CIFS_DEFAULT_IOSIZE;
+ 	wsize = min_t(unsigned int, wsize, server->max_write);
+-
++#ifdef CONFIG_CIFS_SMB_DIRECT
++	if (server->rdma)
++		wsize = min_t(unsigned int,
++				wsize, server->smbd_conn->max_readwrite_size);
++#endif
+ 	if (!(server->capabilities & SMB2_GLOBAL_CAP_LARGE_MTU))
+ 		wsize = min_t(unsigned int, wsize, SMB2_MAX_BUFFER_SIZE);
+ 
+@@ -266,6 +271,11 @@ smb2_negotiate_rsize(struct cifs_tcon *tcon, struct smb_vol *volume_info)
+ 	/* start with specified rsize, or default */
+ 	rsize = volume_info->rsize ? volume_info->rsize : CIFS_DEFAULT_IOSIZE;
+ 	rsize = min_t(unsigned int, rsize, server->max_read);
++#ifdef CONFIG_CIFS_SMB_DIRECT
++	if (server->rdma)
++		rsize = min_t(unsigned int,
++				rsize, server->smbd_conn->max_readwrite_size);
++#endif
+ 
+ 	if (!(server->capabilities & SMB2_GLOBAL_CAP_LARGE_MTU))
+ 		rsize = min_t(unsigned int, rsize, SMB2_MAX_BUFFER_SIZE);
+-- 
+2.16.4
+

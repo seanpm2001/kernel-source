@@ -1,0 +1,112 @@
+From: "Yan, Zheng" <zyan@redhat.com>
+Date: Wed, 9 Jan 2019 11:07:02 +0800
+Subject: ceph: support getting ceph.dir.pin vxattr
+Git-commit: 08796873a5183bfaab52a3bd899fe82f9e64be94
+Patch-mainline: v5.1-rc1
+References: bsc#1146346
+
+Link: http://tracker.ceph.com/issues/37576
+Signed-off-by: "Yan, Zheng" <zyan@redhat.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+---
+ fs/ceph/inode.c      |    1 +
+ fs/ceph/mds_client.c |    9 +++++++++
+ fs/ceph/mds_client.h |    1 +
+ fs/ceph/super.h      |    2 ++
+ fs/ceph/xattr.c      |   20 +++++++++++++++++++-
+ 5 files changed, 32 insertions(+), 1 deletion(-)
+
+--- a/fs/ceph/inode.c
++++ b/fs/ceph/inode.c
+@@ -868,6 +868,7 @@ static int fill_inode(struct inode *inod
+ 			ci->i_rbytes = le64_to_cpu(info->rbytes);
+ 			ci->i_rfiles = le64_to_cpu(info->rfiles);
+ 			ci->i_rsubdirs = le64_to_cpu(info->rsubdirs);
++			ci->i_dir_pin = iinfo->dir_pin;
+ 			ceph_decode_timespec(&ci->i_rctime, &info->rctime);
+ 		}
+ 	}
+--- a/fs/ceph/mds_client.c
++++ b/fs/ceph/mds_client.c
+@@ -152,6 +152,13 @@ static int parse_reply_info_in(void **p,
+ 			ceph_decode_64_safe(p, end, change_attr, bad);
+ 		}
+ 
++		/* dir pin */
++		if (struct_v >= 2) {
++			ceph_decode_32_safe(p, end, info->dir_pin, bad);
++		} else {
++			info->dir_pin = -ENODATA;
++		}
++
+ 		*p = end;
+ 	} else {
+ 		if (features & CEPH_FEATURE_MDS_INLINE_DATA) {
+@@ -182,6 +189,8 @@ static int parse_reply_info_in(void **p,
+ 				*p += info->pool_ns_len;
+ 			}
+ 		}
++
++		info->dir_pin = -ENODATA;
+ 	}
+ 	return 0;
+ bad:
+--- a/fs/ceph/mds_client.h
++++ b/fs/ceph/mds_client.h
+@@ -65,6 +65,7 @@ struct ceph_mds_reply_info_in {
+ 	char *pool_ns_data;
+ 	u64 max_bytes;
+ 	u64 max_files;
++	s32 dir_pin;
+ };
+ 
+ struct ceph_mds_reply_dir_entry {
+--- a/fs/ceph/super.h
++++ b/fs/ceph/super.h
+@@ -314,6 +314,8 @@ struct ceph_inode_info {
+ 	/* quotas */
+ 	u64 i_max_bytes, i_max_files;
+ 
++	s32 i_dir_pin;
++
+ 	struct rb_root i_fragtree;
+ 	int i_fragtree_nsplits;
+ 	struct mutex i_fragtree_mutex;
+--- a/fs/ceph/xattr.c
++++ b/fs/ceph/xattr.c
+@@ -227,8 +227,19 @@ static size_t ceph_vxattrcb_dir_rctime(s
+ 			(long)ci->i_rctime.tv_nsec);
+ }
+ 
+-/* quotas */
++/* dir pin */
++static bool ceph_vxattrcb_dir_pin_exists(struct ceph_inode_info *ci)
++{
++	return ci->i_dir_pin != -ENODATA;
++}
++
++static size_t ceph_vxattrcb_dir_pin(struct ceph_inode_info *ci, char *val,
++                                    size_t size)
++{
++	return snprintf(val, size, "%d", (int)ci->i_dir_pin);
++}
+ 
++/* quotas */
+ static bool ceph_vxattrcb_quota_exists(struct ceph_inode_info *ci)
+ {
+ 	bool ret = false;
+@@ -314,6 +325,13 @@ static struct ceph_vxattr ceph_dir_vxatt
+ 	XATTR_RSTAT_FIELD(dir, rbytes),
+ 	XATTR_RSTAT_FIELD(dir, rctime),
+ 	{
++		.name = "ceph.dir.pin",
++		.name_size = sizeof("ceph.dir_pin"),
++		.getxattr_cb = ceph_vxattrcb_dir_pin,
++		.exists_cb = ceph_vxattrcb_dir_pin_exists,
++		.flags = VXATTR_FLAG_HIDDEN,
++	},
++	{
+ 		.name = "ceph.quota",
+ 		.name_size = sizeof("ceph.quota"),
+ 		.getxattr_cb = ceph_vxattrcb_quota,

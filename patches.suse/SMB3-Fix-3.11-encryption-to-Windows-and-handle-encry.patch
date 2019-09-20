@@ -1,0 +1,123 @@
+From 23657ad7305ee8b263d27335abdd00917764c9cf Mon Sep 17 00:00:00 2001
+From: Steve French <stfrench@microsoft.com>
+Date: Sun, 22 Apr 2018 15:14:58 -0500
+Subject: [PATCH] SMB3: Fix 3.11 encryption to Windows and handle encrypted
+ smb3 tcon
+Git-commit: 23657ad7305ee8b263d27335abdd00917764c9cf
+Patch-mainline: v4.17-rc3
+References: bsc#1051510, bsc#1144333
+
+Temporarily disable AES-GCM, as AES-CCM is only currently
+enabled mechanism on client side.  This fixes SMB3.11
+encrypted mounts to Windows.
+
+Also the tree connect request itself should be encrypted if
+requested encryption ("seal" on mount), in addition we should be
+enabling encryption in 3.11 based on whether we got any valid
+encryption ciphers back in negprot (the corresponding session flag is
+not set as it is in 3.0 and 3.02)
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+CC: Stable <stable@vger.kernel.org>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/connect.c | 32 ++++++++++++++++----------------
+ fs/cifs/smb2pdu.c |  9 +++++----
+ fs/cifs/smb2pdu.h |  2 +-
+ 3 files changed, 22 insertions(+), 21 deletions(-)
+
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index e8830f076a7f..a5aa158d535a 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -2959,6 +2959,22 @@ cifs_get_tcon(struct cifs_ses *ses, struct smb_vol *volume_info)
+ 		}
+ 	}
+ 
++	if (volume_info->seal) {
++		if (ses->server->vals->protocol_id == 0) {
++			cifs_dbg(VFS,
++				 "SMB3 or later required for encryption\n");
++			rc = -EOPNOTSUPP;
++			goto out_fail;
++		} else if (tcon->ses->server->capabilities &
++					SMB2_GLOBAL_CAP_ENCRYPTION)
++			tcon->seal = true;
++		else {
++			cifs_dbg(VFS, "Encryption is not supported on share\n");
++			rc = -EOPNOTSUPP;
++			goto out_fail;
++		}
++	}
++
+ 	/*
+ 	 * BB Do we need to wrap session_mutex around this TCon call and Unix
+ 	 * SetFS as we do on SessSetup and reconnect?
+@@ -3007,22 +3023,6 @@ cifs_get_tcon(struct cifs_ses *ses, struct smb_vol *volume_info)
+ 		tcon->use_resilient = true;
+ 	}
+ 
+-	if (volume_info->seal) {
+-		if (ses->server->vals->protocol_id == 0) {
+-			cifs_dbg(VFS,
+-				 "SMB3 or later required for encryption\n");
+-			rc = -EOPNOTSUPP;
+-			goto out_fail;
+-		} else if (tcon->ses->server->capabilities &
+-					SMB2_GLOBAL_CAP_ENCRYPTION)
+-			tcon->seal = true;
+-		else {
+-			cifs_dbg(VFS, "Encryption is not supported on share\n");
+-			rc = -EOPNOTSUPP;
+-			goto out_fail;
+-		}
+-	}
+-
+ 	/*
+ 	 * We can have only one retry value for a connection to a share so for
+ 	 * resources mounted more than once to the same server share the last
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 0f044c4a2dc9..9aea138dd71f 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -383,10 +383,10 @@ static void
+ build_encrypt_ctxt(struct smb2_encryption_neg_context *pneg_ctxt)
+ {
+ 	pneg_ctxt->ContextType = SMB2_ENCRYPTION_CAPABILITIES;
+-	pneg_ctxt->DataLength = cpu_to_le16(6);
+-	pneg_ctxt->CipherCount = cpu_to_le16(2);
+-	pneg_ctxt->Ciphers[0] = SMB2_ENCRYPTION_AES128_GCM;
+-	pneg_ctxt->Ciphers[1] = SMB2_ENCRYPTION_AES128_CCM;
++	pneg_ctxt->DataLength = cpu_to_le16(4); /* Cipher Count + le16 cipher */
++	pneg_ctxt->CipherCount = cpu_to_le16(1);
++/* pneg_ctxt->Ciphers[0] = SMB2_ENCRYPTION_AES128_GCM;*/ /* not supported yet */
++	pneg_ctxt->Ciphers[0] = SMB2_ENCRYPTION_AES128_CCM;
+ }
+ 
+ static void
+@@ -444,6 +444,7 @@ static int decode_encrypt_ctx(struct TCP_Server_Info *server,
+ 		return -EINVAL;
+ 	}
+ 	server->cipher_type = ctxt->Ciphers[0];
++	server->capabilities |= SMB2_GLOBAL_CAP_ENCRYPTION;
+ 	return 0;
+ }
+ 
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index 6093e5142b2b..d28f358022c5 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -297,7 +297,7 @@ struct smb2_encryption_neg_context {
+ 	__le16	DataLength;
+ 	__le32	Reserved;
+ 	__le16	CipherCount; /* AES-128-GCM and AES-128-CCM */
+-	__le16	Ciphers[2]; /* Ciphers[0] since only one used now */
++	__le16	Ciphers[1]; /* Ciphers[0] since only one used now */
+ } __packed;
+ 
+ struct smb2_negotiate_rsp {
+-- 
+2.16.4
+

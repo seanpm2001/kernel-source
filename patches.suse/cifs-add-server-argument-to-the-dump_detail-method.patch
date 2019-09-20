@@ -1,0 +1,96 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Sun, 22 Apr 2018 14:45:53 -0600
+Subject: [PATCH] cifs: add server argument to the dump_detail method
+Git-commit: 14547f7d74c4a2583214693f69d45374b8028649
+Patch-mainline: v4.17
+References: bsc#1144333
+
+We need a struct TCP_Server_Info *server to this method as it calls
+calc_size. The calc_size method will soon be changed to also
+take a server argument.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifs_debug.c | 5 +++--
+ fs/cifs/cifs_debug.h | 2 +-
+ fs/cifs/cifsglob.h   | 2 +-
+ fs/cifs/smb2ops.c    | 5 +++--
+ 4 files changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/fs/cifs/cifs_debug.c b/fs/cifs/cifs_debug.c
+index 9d69ea433330..43ae00cd160f 100644
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -42,7 +42,7 @@ cifs_dump_mem(char *label, void *data, int length)
+ 		       data, length, true);
+ }
+ 
+-void cifs_dump_detail(void *buf)
++void cifs_dump_detail(void *buf, struct TCP_Server_Info *server)
+ {
+ #ifdef CONFIG_CIFS_DEBUG2
+ 	struct smb_hdr *smb = (struct smb_hdr *)buf;
+@@ -50,7 +50,8 @@ void cifs_dump_detail(void *buf)
+ 	cifs_dbg(VFS, "Cmd: %d Err: 0x%x Flags: 0x%x Flgs2: 0x%x Mid: %d Pid: %d\n",
+ 		 smb->Command, smb->Status.CifsError,
+ 		 smb->Flags, smb->Flags2, smb->Mid, smb->Pid);
+-	cifs_dbg(VFS, "smb buf %p len %u\n", smb, smbCalcSize(smb));
++	cifs_dbg(VFS, "smb buf %p len %u\n", smb,
++		 server->ops->calc_smb_size(smb));
+ #endif /* CONFIG_CIFS_DEBUG2 */
+ }
+ 
+diff --git a/fs/cifs/cifs_debug.h b/fs/cifs/cifs_debug.h
+index 0e74690d11bc..f4f3f0853c6e 100644
+--- a/fs/cifs/cifs_debug.h
++++ b/fs/cifs/cifs_debug.h
+@@ -23,7 +23,7 @@
+ #define _H_CIFS_DEBUG
+ 
+ void cifs_dump_mem(char *label, void *data, int length);
+-void cifs_dump_detail(void *);
++void cifs_dump_detail(void *buf, struct TCP_Server_Info *ptcp_info);
+ void cifs_dump_mids(struct TCP_Server_Info *);
+ extern bool traceSMB;		/* flag which enables the function below */
+ void dump_smb(void *, int);
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 6cc27f9c33a4..0e2b145aba46 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -244,7 +244,7 @@ struct smb_version_operations {
+ 	int (*map_error)(char *, bool);
+ 	/* find mid corresponding to the response message */
+ 	struct mid_q_entry * (*find_mid)(struct TCP_Server_Info *, char *);
+-	void (*dump_detail)(void *);
++	void (*dump_detail)(void *buf, struct TCP_Server_Info *ptcp_info);
+ 	void (*clear_stats)(struct cifs_tcon *);
+ 	void (*print_stats)(struct seq_file *m, struct cifs_tcon *);
+ 	void (*dump_share_caps)(struct seq_file *, struct cifs_tcon *);
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 12875d55c5a9..b3fb2909445b 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -212,7 +212,7 @@ smb2_find_mid(struct TCP_Server_Info *server, char *buf)
+ }
+ 
+ static void
+-smb2_dump_detail(void *buf)
++smb2_dump_detail(void *buf, struct TCP_Server_Info *server)
+ {
+ #ifdef CONFIG_CIFS_DEBUG2
+ 	struct smb2_sync_hdr *shdr = get_sync_hdr(buf);
+@@ -220,7 +220,8 @@ smb2_dump_detail(void *buf)
+ 	cifs_dbg(VFS, "Cmd: %d Err: 0x%x Flags: 0x%x Mid: %llu Pid: %d\n",
+ 		 shdr->Command, shdr->Status, shdr->Flags, shdr->MessageId,
+ 		 shdr->ProcessId);
+-	cifs_dbg(VFS, "smb buf %p len %u\n", buf, smb2_calc_size(buf));
++	cifs_dbg(VFS, "smb buf %p len %u\n", buf,
++		 server->ops->calc_smb_size(buf));
+ #endif
+ }
+ 
+-- 
+2.16.4
+

@@ -1,0 +1,34 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Tue, 23 Oct 2018 21:04:57 -0500
+Subject: [PATCH] smb3: add debug for unexpected mid cancellation
+Git-commit: 43de1db36424fd21bbcfbe11a018f25c1566f246
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+We have hit this intermittently, increase the verbosity of
+warning message on unexpected mid cancellation.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/transport.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index fd80749c7838..f8112433f0c8 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -876,8 +876,8 @@ compound_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 	for (i = 0; i < num_rqst; i++) {
+ 		rc = wait_for_response(ses->server, midQ[i]);
+ 		if (rc != 0) {
+-			cifs_dbg(FYI, "Cancelling wait for mid %llu\n",
+-				 midQ[i]->mid);
++			cifs_dbg(VFS, "Cancelling wait for mid %llu cmd: %d\n",
++				 midQ[i]->mid, le16_to_cpu(midQ[i]->command));
+ 			send_cancel(ses->server, &rqst[i], midQ[i]);
+ 			spin_lock(&GlobalMid_Lock);
+ 			if (midQ[i]->mid_state == MID_REQUEST_SUBMITTED) {
+-- 
+2.16.4
+

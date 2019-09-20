@@ -1,0 +1,293 @@
+From: Pavel Shilovsky <pshilov@microsoft.com>
+Date: Wed, 23 Jan 2019 18:15:52 -0800
+Subject: [PATCH] CIFS: Adjust MTU credits before reopening a file
+Git-commit: 9a1c67e8d5dad143d5166dac1ee6776f433dac00
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Currently we adjust MTU credits before sending an IO request
+and after reopening a file. This approach doesn't allow the
+reopen routine to use existing credits that are not needed
+for IO. Reorder credit adjustment and reopening a file to
+use credits available to the client more efficiently. Also
+unwrap complex if statement into few pieces to improve
+readability.
+
+Signed-off-by: Pavel Shilovsky <pshilov@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsglob.h | 12 ++++++++++++
+ fs/cifs/file.c     | 53 +++++++++++++++++++++++++++++++++++++++--------------
+ fs/cifs/smb2ops.c  | 35 +++++++++++++++++++++++++++++++++++
+ fs/cifs/smb2pdu.c  | 36 ++++++++----------------------------
+ 4 files changed, 94 insertions(+), 42 deletions(-)
+
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 84ce388de89d..f293e052e351 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -457,6 +457,10 @@ struct smb_version_operations {
+ 	/* get mtu credits */
+ 	int (*wait_mtu_credits)(struct TCP_Server_Info *, unsigned int,
+ 				unsigned int *, struct cifs_credits *);
++	/* adjust previously taken mtu credits to request size */
++	int (*adjust_credits)(struct TCP_Server_Info *server,
++			      struct cifs_credits *credits,
++			      const unsigned int payload_size);
+ 	/* check if we need to issue closedir */
+ 	bool (*dir_needs_close)(struct cifsFileInfo *);
+ 	long (*fallocate)(struct file *, struct cifs_tcon *, int, loff_t,
+@@ -763,6 +767,14 @@ set_credits(struct TCP_Server_Info *server, const int val)
+ 	server->ops->set_credits(server, val);
+ }
+ 
++static inline int
++adjust_credits(struct TCP_Server_Info *server, struct cifs_credits *credits,
++	       const unsigned int payload_size)
++{
++	return server->ops->adjust_credits ?
++		server->ops->adjust_credits(server, credits, payload_size) : 0;
++}
++
+ static inline __le64
+ get_next_mid64(struct TCP_Server_Info *server)
+ {
+diff --git a/fs/cifs/file.c b/fs/cifs/file.c
+index 61b4dc7cfb91..67b361afb076 100644
+--- a/fs/cifs/file.c
++++ b/fs/cifs/file.c
+@@ -2076,11 +2076,11 @@ wdata_prepare_pages(struct cifs_writedata *wdata, unsigned int found_pages,
+ }
+ 
+ static int
+-wdata_send_pages(struct cifs_writedata *wdata, unsigned int nr_pages,
+-		 struct address_space *mapping, struct writeback_control *wbc)
++wdata_send_pages(struct TCP_Server_Info *server, struct cifs_writedata *wdata,
++		 unsigned int nr_pages, struct address_space *mapping,
++		 struct writeback_control *wbc)
+ {
+ 	int rc = 0;
+-	struct TCP_Server_Info *server;
+ 	unsigned int i;
+ 
+ 	wdata->sync_mode = wbc->sync_mode;
+@@ -2092,6 +2092,10 @@ wdata_send_pages(struct cifs_writedata *wdata, unsigned int nr_pages,
+ 			(loff_t)PAGE_SIZE);
+ 	wdata->bytes = ((nr_pages - 1) * PAGE_SIZE) + wdata->tailsz;
+ 
++	rc = adjust_credits(server, &wdata->credits, wdata->bytes);
++	if (rc)
++		goto send_pages_out;
++
+ 	if (wdata->cfile != NULL)
+ 		cifsFileInfo_put(wdata->cfile);
+ 	wdata->cfile = find_writable_file(CIFS_I(mapping->host), false);
+@@ -2100,10 +2104,10 @@ wdata_send_pages(struct cifs_writedata *wdata, unsigned int nr_pages,
+ 		rc = -EBADF;
+ 	} else {
+ 		wdata->pid = wdata->cfile->pid;
+-		server = tlink_tcon(wdata->cfile->tlink)->ses->server;
+ 		rc = server->ops->async_writev(wdata, cifs_writedata_release);
+ 	}
+ 
++send_pages_out:
+ 	for (i = 0; i < nr_pages; ++i)
+ 		unlock_page(wdata->pages[i]);
+ 
+@@ -2184,7 +2188,7 @@ static int cifs_writepages(struct address_space *mapping,
+ 
+ 		wdata->credits = credits_on_stack;
+ 
+-		rc = wdata_send_pages(wdata, nr_pages, mapping, wbc);
++		rc = wdata_send_pages(server, wdata, nr_pages, mapping, wbc);
+ 
+ 		/* send failure -- clean up the mess */
+ 		if (rc != 0) {
+@@ -2743,10 +2747,17 @@ cifs_write_from_iter(loff_t offset, size_t len, struct iov_iter *from,
+ 		wdata->ctx = ctx;
+ 		kref_get(&ctx->refcount);
+ 
+-		if (!wdata->cfile->invalidHandle ||
+-		    !(rc = cifs_reopen_file(wdata->cfile, false)))
+-			rc = server->ops->async_writev(wdata,
++		rc = adjust_credits(server, &wdata->credits, wdata->bytes);
++
++		if (!rc) {
++			if (wdata->cfile->invalidHandle)
++				rc = cifs_reopen_file(wdata->cfile, false);
++
++			if (!rc)
++				rc = server->ops->async_writev(wdata,
+ 					cifs_uncached_writedata_release);
++		}
++
+ 		if (rc) {
+ 			add_credits_and_wake_if(server, &wdata->credits, 0);
+ 			kref_put(&wdata->refcount,
+@@ -3423,9 +3434,16 @@ cifs_send_async_read(loff_t offset, size_t len, struct cifsFileInfo *open_file,
+ 		rdata->ctx = ctx;
+ 		kref_get(&ctx->refcount);
+ 
+-		if (!rdata->cfile->invalidHandle ||
+-		    !(rc = cifs_reopen_file(rdata->cfile, true)))
+-			rc = server->ops->async_readv(rdata);
++		rc = adjust_credits(server, &rdata->credits, rdata->bytes);
++
++		if (!rc) {
++			if (rdata->cfile->invalidHandle)
++				rc = cifs_reopen_file(rdata->cfile, true);
++
++			if (!rc)
++				rc = server->ops->async_readv(rdata);
++		}
++
+ 		if (rc) {
+ 			add_credits_and_wake_if(server, &rdata->credits, 0);
+ 			kref_put(&rdata->refcount,
+@@ -4163,9 +4181,16 @@ static int cifs_readpages(struct file *file, struct address_space *mapping,
+ 			rdata->pages[rdata->nr_pages++] = page;
+ 		}
+ 
+-		if (!rdata->cfile->invalidHandle ||
+-		    !(rc = cifs_reopen_file(rdata->cfile, true)))
+-			rc = server->ops->async_readv(rdata);
++		rc = adjust_credits(server, &rdata->credits, rdata->bytes);
++
++		if (!rc) {
++			if (rdata->cfile->invalidHandle)
++				rc = cifs_reopen_file(rdata->cfile, true);
++
++			if (!rc)
++				rc = server->ops->async_readv(rdata);
++		}
++
+ 		if (rc) {
+ 			add_credits_and_wake_if(server, &rdata->credits, 0);
+ 			for (i = 0; i < rdata->nr_pages; i++) {
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 6f1a5f504c02..085e91436da7 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -222,6 +222,38 @@ smb2_wait_mtu_credits(struct TCP_Server_Info *server, unsigned int size,
+ 	return rc;
+ }
+ 
++static int
++smb2_adjust_credits(struct TCP_Server_Info *server,
++		    struct cifs_credits *credits,
++		    const unsigned int payload_size)
++{
++	int new_val = DIV_ROUND_UP(payload_size, SMB2_MAX_BUFFER_SIZE);
++
++	if (!credits->value || credits->value == new_val)
++		return 0;
++
++	if (credits->value < new_val) {
++		WARN_ONCE(1, "request has less credits (%d) than required (%d)",
++			  credits->value, new_val);
++		return -ENOTSUPP;
++	}
++
++	spin_lock(&server->req_lock);
++
++	if (server->reconnect_instance != credits->instance) {
++		spin_unlock(&server->req_lock);
++		cifs_dbg(VFS, "trying to return %d credits to old session\n",
++			 credits->value - new_val);
++		return -EAGAIN;
++	}
++
++	server->credits += credits->value - new_val;
++	spin_unlock(&server->req_lock);
++	wake_up(&server->request_q);
++	credits->value = new_val;
++	return 0;
++}
++
+ static __u64
+ smb2_get_next_mid(struct TCP_Server_Info *server)
+ {
+@@ -3678,6 +3710,7 @@ struct smb_version_operations smb21_operations = {
+ 	.get_credits_field = smb2_get_credits_field,
+ 	.get_credits = smb2_get_credits,
+ 	.wait_mtu_credits = smb2_wait_mtu_credits,
++	.adjust_credits = smb2_adjust_credits,
+ 	.get_next_mid = smb2_get_next_mid,
+ 	.revert_current_mid = smb2_revert_current_mid,
+ 	.read_data_offset = smb2_read_data_offset,
+@@ -3775,6 +3808,7 @@ struct smb_version_operations smb30_operations = {
+ 	.get_credits_field = smb2_get_credits_field,
+ 	.get_credits = smb2_get_credits,
+ 	.wait_mtu_credits = smb2_wait_mtu_credits,
++	.adjust_credits = smb2_adjust_credits,
+ 	.get_next_mid = smb2_get_next_mid,
+ 	.revert_current_mid = smb2_revert_current_mid,
+ 	.read_data_offset = smb2_read_data_offset,
+@@ -3881,6 +3915,7 @@ struct smb_version_operations smb311_operations = {
+ 	.get_credits_field = smb2_get_credits_field,
+ 	.get_credits = smb2_get_credits,
+ 	.wait_mtu_credits = smb2_wait_mtu_credits,
++	.adjust_credits = smb2_adjust_credits,
+ 	.get_next_mid = smb2_get_next_mid,
+ 	.revert_current_mid = smb2_revert_current_mid,
+ 	.read_data_offset = smb2_read_data_offset,
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 710531245ed7..7d1e069cdcb8 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -3322,21 +3322,11 @@ smb2_async_readv(struct cifs_readdata *rdata)
+ 						SMB2_MAX_BUFFER_SIZE));
+ 		shdr->CreditRequest =
+ 			cpu_to_le16(le16_to_cpu(shdr->CreditCharge) + 1);
+-		spin_lock(&server->req_lock);
+-		if (server->reconnect_instance == rdata->credits.instance)
+-			server->credits += rdata->credits.value -
+-						le16_to_cpu(shdr->CreditCharge);
+-		else {
+-			spin_unlock(&server->req_lock);
+-			cifs_dbg(VFS, "trying to return %u credits to old session\n",
+-				 rdata->credits.value
+-				 - le16_to_cpu(shdr->CreditCharge));
+-			rc = -EAGAIN;
++
++		rc = adjust_credits(server, &rdata->credits, rdata->bytes);
++		if (rc)
+ 			goto async_readv_out;
+-		}
+-		spin_unlock(&server->req_lock);
+-		wake_up(&server->request_q);
+-		rdata->credits.value = le16_to_cpu(shdr->CreditCharge);
++
+ 		flags |= CIFS_HAS_CREDITS;
+ 	}
+ 
+@@ -3626,21 +3616,11 @@ smb2_async_writev(struct cifs_writedata *wdata,
+ 						    SMB2_MAX_BUFFER_SIZE));
+ 		shdr->CreditRequest =
+ 			cpu_to_le16(le16_to_cpu(shdr->CreditCharge) + 1);
+-		spin_lock(&server->req_lock);
+-		if (server->reconnect_instance == wdata->credits.instance)
+-			server->credits += wdata->credits.value -
+-						le16_to_cpu(shdr->CreditCharge);
+-		else {
+-			spin_unlock(&server->req_lock);
+-			cifs_dbg(VFS, "trying to return %d credits to old session\n",
+-				 wdata->credits.value
+-				 - le16_to_cpu(shdr->CreditCharge));
+-			rc = -EAGAIN;
++
++		rc = adjust_credits(server, &wdata->credits, wdata->bytes);
++		if (rc)
+ 			goto async_writev_out;
+-		}
+-		spin_unlock(&server->req_lock);
+-		wake_up(&server->request_q);
+-		wdata->credits.value = le16_to_cpu(shdr->CreditCharge);
++
+ 		flags |= CIFS_HAS_CREDITS;
+ 	}
+ 
+-- 
+2.16.4
+

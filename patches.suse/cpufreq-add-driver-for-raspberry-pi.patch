@@ -1,0 +1,179 @@
+From: Nicolas Saenz Julienne <nsaenzjulienne@suse.de>
+Date: Wed, 12 Jun 2019 20:24:56 +0200
+Subject: cpufreq: add driver for Raspberry Pi
+Git-commit: d3df18a97e586702920337056540267807b23f8e
+Patch-mainline: v5.3-rc1
+References: jsc#SLE-7294
+
+Raspberry Pi's firmware offers and interface though which update it's
+performance requirements. It allows us to request for specific runtime
+frequencies, which the firmware might or might not respect, depending on
+the firmware configuration and thermals.
+
+As the maximum and minimum frequencies are configurable in the firmware
+there is no way to know in advance their values. So the Raspberry Pi
+cpufreq driver queries them, builds an opp frequency table to then
+launch cpufreq-dt.
+
+Also, as the firmware interface might be configured as a module, making
+the cpu clock unavailable during init, this implements a full fledged
+driver, as opposed to most drivers registering cpufreq-dt, which only
+make use of an init routine.
+
+NOTE: I added a change in cpufreq-dt which is somewhat dirty, but it's way
+better that the mess that would have been backporting the feature needed for
+ondemand to work with raspberrypi-cpufreq without breaking kABI (I actually
+think it's impssible).
+
+Signed-off-by: Nicolas Saenz Julienne <nsaenzjulienne@suse.de>
+Acked-by: Eric Anholt <eric@anholt.net>
+Reviewed-by: Stephen Boyd <sboyd@kernel.org>
+Acked-by: Stefan Wahren <stefan.wahren@i2se.com>
+Signed-off-by: Viresh Kumar <viresh.kumar@linaro.org>
+---
+ drivers/cpufreq/Kconfig.arm           |    8 ++
+ drivers/cpufreq/Makefile              |    1 
+ drivers/cpufreq/cpufreq-dt.c          |    4 +
+ drivers/cpufreq/raspberrypi-cpufreq.c |   97 ++++++++++++++++++++++++++++++++++
+ 4 files changed, 110 insertions(+)
+
+--- a/drivers/cpufreq/Kconfig.arm
++++ b/drivers/cpufreq/Kconfig.arm
+@@ -110,6 +110,14 @@ config ARM_OMAP2PLUS_CPUFREQ
+ 	depends on ARCH_OMAP2PLUS
+ 	default ARCH_OMAP2PLUS
+ 
++config ARM_RASPBERRYPI_CPUFREQ
++	tristate "Raspberry Pi cpufreq support"
++	depends on CLK_RASPBERRYPI || COMPILE_TEST
++	help
++	  This adds the CPUFreq driver for Raspberry Pi
++
++	  If in doubt, say N.
++
+ config ARM_S3C_CPUFREQ
+ 	bool
+ 	help
+--- a/drivers/cpufreq/Makefile
++++ b/drivers/cpufreq/Makefile
+@@ -62,6 +62,7 @@ obj-$(CONFIG_ARM_MT8173_CPUFREQ)	+= mt81
+ obj-$(CONFIG_ARM_OMAP2PLUS_CPUFREQ)	+= omap-cpufreq.o
+ obj-$(CONFIG_ARM_PXA2xx_CPUFREQ)	+= pxa2xx-cpufreq.o
+ obj-$(CONFIG_PXA3xx)			+= pxa3xx-cpufreq.o
++obj-$(CONFIG_ARM_RASPBERRYPI_CPUFREQ) 	+= raspberrypi-cpufreq.o
+ obj-$(CONFIG_ARM_S3C24XX_CPUFREQ)	+= s3c24xx-cpufreq.o
+ obj-$(CONFIG_ARM_S3C24XX_CPUFREQ_DEBUGFS) += s3c24xx-cpufreq-debugfs.o
+ obj-$(CONFIG_ARM_S3C2410_CPUFREQ)	+= s3c2410-cpufreq.o
+--- /dev/null
++++ b/drivers/cpufreq/raspberrypi-cpufreq.c
+@@ -0,0 +1,97 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Raspberry Pi cpufreq driver
++ *
++ * Copyright (C) 2019, Nicolas Saenz Julienne <nsaenzjulienne@suse.de>
++ */
++
++#include <linux/clk.h>
++#include <linux/cpu.h>
++#include <linux/cpufreq.h>
++#include <linux/module.h>
++#include <linux/platform_device.h>
++#include <linux/pm_opp.h>
++
++#define RASPBERRYPI_FREQ_INTERVAL	100000000
++
++static struct platform_device *cpufreq_dt;
++
++static int raspberrypi_cpufreq_probe(struct platform_device *pdev)
++{
++	struct device *cpu_dev;
++	unsigned long min, max;
++	unsigned long rate;
++	struct clk *clk;
++	int ret;
++
++	cpu_dev = get_cpu_device(0);
++	if (!cpu_dev) {
++		pr_err("Cannot get CPU for cpufreq driver\n");
++		return -ENODEV;
++	}
++
++	clk = clk_get(cpu_dev, NULL);
++	if (IS_ERR(clk)) {
++		dev_err(cpu_dev, "Cannot get clock for CPU0\n");
++		return PTR_ERR(clk);
++	}
++
++	/*
++	 * The max and min frequencies are configurable in the Raspberry Pi
++	 * firmware, so we query them at runtime.
++	 */
++	min = roundup(clk_round_rate(clk, 0), RASPBERRYPI_FREQ_INTERVAL);
++	max = roundup(clk_round_rate(clk, ULONG_MAX), RASPBERRYPI_FREQ_INTERVAL);
++	clk_put(clk);
++
++	for (rate = min; rate <= max; rate += RASPBERRYPI_FREQ_INTERVAL) {
++		ret = dev_pm_opp_add(cpu_dev, rate, 0);
++		if (ret)
++			goto remove_opp;
++	}
++
++	cpufreq_dt = platform_device_register_simple("cpufreq-dt", -1, NULL, 0);
++	ret = PTR_ERR_OR_ZERO(cpufreq_dt);
++	if (ret) {
++		dev_err(cpu_dev, "Failed to create platform device, %d\n", ret);
++		goto remove_opp;
++	}
++
++	return 0;
++
++remove_opp:
++	dev_pm_opp_remove_table(cpu_dev);
++
++	return ret;
++}
++
++static int raspberrypi_cpufreq_remove(struct platform_device *pdev)
++{
++	struct device *cpu_dev;
++
++	cpu_dev = get_cpu_device(0);
++	if (cpu_dev)
++		dev_pm_opp_remove_table(cpu_dev);
++
++	platform_device_unregister(cpufreq_dt);
++
++	return 0;
++}
++
++/*
++ * Since the driver depends on clk-raspberrypi, which may return EPROBE_DEFER,
++ * all the activity is performed in the probe, which may be defered as well.
++ */
++static struct platform_driver raspberrypi_cpufreq_driver = {
++	.driver = {
++		.name = "raspberrypi-cpufreq",
++	},
++	.probe          = raspberrypi_cpufreq_probe,
++	.remove		= raspberrypi_cpufreq_remove,
++};
++module_platform_driver(raspberrypi_cpufreq_driver);
++
++MODULE_AUTHOR("Nicolas Saenz Julienne <nsaenzjulienne@suse.de");
++MODULE_DESCRIPTION("Raspberry Pi cpufreq driver");
++MODULE_LICENSE("GPL");
++MODULE_ALIAS("platform:raspberrypi-cpufreq");
+--- a/drivers/cpufreq/cpufreq-dt.c
++++ b/drivers/cpufreq/cpufreq-dt.c
+@@ -273,6 +273,10 @@ static int cpufreq_init(struct cpufreq_p
+ 	if (!transition_latency)
+ 		transition_latency = CPUFREQ_ETERNAL;
+ 
++	if (of_machine_is_compatible("brcm,bcm2837") ||
++	    of_machine_is_compatible("brcm,bcm2711"))
++		transition_latency = 335000;
++
+ 	policy->cpuinfo.transition_latency = transition_latency;
+ 
+ 	return 0;

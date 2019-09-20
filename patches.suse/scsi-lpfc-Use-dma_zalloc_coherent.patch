@@ -1,0 +1,41 @@
+From: Sabyasachi Gupta <sabyasachi.linux@gmail.com>
+Date: Sun, 18 Nov 2018 20:08:48 +0530
+Subject: [PATCH] scsi: lpfc: Use dma_zalloc_coherent
+Git-commit: 359d0ac1e806caa6c233e32d33c8970aa94f6cb7
+Patch-Mainline: v5.0-rc1
+References: bsc#1148308
+
+Replaced dma_alloc_coherent + memset with dma_zalloc_coherent.
+
+Signed-off-by: Sabyasachi Gupta <sabyasachi.linux@gmail.com>
+Acked-by: James Smart <james.smart@broadcom.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Hannes Reinecke <hare@suse.com>
+---
+ drivers/scsi/lpfc/lpfc_sli.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/scsi/lpfc/lpfc_sli.c b/drivers/scsi/lpfc/lpfc_sli.c
+index 0e97f6405ddd..3912a2d0b95d 100644
+--- a/drivers/scsi/lpfc/lpfc_sli.c
++++ b/drivers/scsi/lpfc/lpfc_sli.c
+@@ -6229,7 +6229,7 @@ lpfc_sli4_ras_dma_alloc(struct lpfc_hba *phba,
+ 			goto free_mem;
+ 		}
+ 
+-		dmabuf->virt = dma_alloc_coherent(&phba->pcidev->dev,
++		dmabuf->virt = dma_zalloc_coherent(&phba->pcidev->dev,
+ 						  LPFC_RAS_MAX_ENTRY_SIZE,
+ 						  &dmabuf->phys,
+ 						  GFP_KERNEL);
+@@ -6240,7 +6240,6 @@ lpfc_sli4_ras_dma_alloc(struct lpfc_hba *phba,
+ 					"6187 DMA Alloc Failed FW logging");
+ 			goto free_mem;
+ 		}
+-		memset(dmabuf->virt, 0, LPFC_RAS_MAX_ENTRY_SIZE);
+ 		dmabuf->buffer_tag = i;
+ 		list_add_tail(&dmabuf->list, &ras_fwlog->fwlog_buff_list);
+ 	}
+-- 
+2.16.4
+

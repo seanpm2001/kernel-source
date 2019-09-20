@@ -1,0 +1,46 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Sun, 20 May 2018 01:27:03 -0500
+Subject: [PATCH] smb3: print tree id in debugdata in proc to be able to help
+ logging
+Git-commit: e0386e449af3e893cd811c4c932829b981c83817
+Patch-mainline: v4.17
+References: bsc#1144333
+
+When loooking at the logs for the new trace-cmd tracepoints for cifs,
+it would help to know which tid is for which share (UNC name) so
+update /proc/fs/cifs/DebugData to display the tid.
+Also display Maximal Access which was missing as well.
+
+Now the entry for typical entry for a tcon (in proc/fs/cifs/) looks
+like:
+
+1) \\localhost\test Mounts: 1 DevInfo: 0x20 Attributes: 0x1006f
+	PathComponentMax: 255 Status: 1 type: DISK
+	Share Capabilities: None Aligned, Partition Aligned,	Share Flags: 0x0
+	tid: 0xe0632a55	Optimal sector size: 0x200	Maximal Access: 0x1f01ff
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index f0ae47e69cb3..7c0edd2ab784 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -748,9 +748,11 @@ smb2_dump_share_caps(struct seq_file *m, struct cifs_tcon *tcon)
+ 		seq_puts(m, " TRIM-support,");
+ 
+ 	seq_printf(m, "\tShare Flags: 0x%x", tcon->share_flags);
++	seq_printf(m, "\n\ttid: 0x%x", tcon->tid);
+ 	if (tcon->perf_sector_size)
+ 		seq_printf(m, "\tOptimal sector size: 0x%x",
+ 			   tcon->perf_sector_size);
++	seq_printf(m, "\tMaximal Access: 0x%x", tcon->maximal_access);
+ }
+ 
+ static void
+-- 
+2.16.4
+

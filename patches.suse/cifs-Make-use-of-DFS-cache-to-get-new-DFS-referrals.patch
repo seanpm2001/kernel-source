@@ -1,10 +1,9 @@
-From 1c780228e9d47b966983a8bbf475dd45967bf0d5 Mon Sep 17 00:00:00 2001
 From: Paulo Alcantara <palcantara@suse.de>
 Date: Wed, 14 Nov 2018 16:24:03 -0200
 Subject: [PATCH] cifs: Make use of DFS cache to get new DFS referrals
 Git-commit: 1c780228e9d47b966983a8bbf475dd45967bf0d5
 Patch-mainline: v5.0-rc1
-References: FATE#325270
+References: bsc#1144333
 
 This patch will make use of DFS cache routines where appropriate and
 do not always request a new referral from server.
@@ -12,16 +11,18 @@ do not always request a new referral from server.
 Signed-off-by: Paulo Alcantara <palcantara@suse.de>
 Reviewed-by: Aurelien Aptel <aaptel@suse.com>
 Signed-off-by: Steve French <stfrench@microsoft.com>
-Acked-by: Paulo Alcantara <palcantara@suse.de>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
 ---
- fs/cifs/cifs_dfs_ref.c |  100 ++++++++++++++++++++++++++++++-------------------
- fs/cifs/cifsfs.c       |   17 +++++++-
- fs/cifs/cifsglob.h     |    1 
- fs/cifs/cifsproto.h    |   19 ++++++---
- fs/cifs/connect.c      |   43 ++++++---------------
- fs/cifs/smb1ops.c      |   15 +++----
- 6 files changed, 112 insertions(+), 83 deletions(-)
+ fs/cifs/cifs_dfs_ref.c | 100 ++++++++++++++++++++++++++++++-------------------
+ fs/cifs/cifsfs.c       |  17 ++++++++-
+ fs/cifs/cifsglob.h     |   1 -
+ fs/cifs/cifsproto.h    |  19 +++++++---
+ fs/cifs/connect.c      |  45 +++++++---------------
+ fs/cifs/smb1ops.c      |  15 ++++----
+ 6 files changed, 113 insertions(+), 84 deletions(-)
 
+diff --git a/fs/cifs/cifs_dfs_ref.c b/fs/cifs/cifs_dfs_ref.c
+index 7adbdf9eb137..6e6953f35db2 100644
 --- a/fs/cifs/cifs_dfs_ref.c
 +++ b/fs/cifs/cifs_dfs_ref.c
 @@ -25,6 +25,7 @@
@@ -32,7 +33,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  
  static LIST_HEAD(cifs_dfs_automount_list);
  
-@@ -285,16 +286,16 @@ static void dump_referral(const struct d
+@@ -285,16 +286,16 @@ static void dump_referral(const struct dfs_info3_param *ref)
   */
  static struct vfsmount *cifs_dfs_do_automount(struct dentry *mntpt)
  {
@@ -54,7 +55,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  
  	cifs_dbg(FYI, "in %s\n", __func__);
  	BUG_ON(IS_ROOT(mntpt));
-@@ -313,53 +314,76 @@ static struct vfsmount *cifs_dfs_do_auto
+@@ -313,53 +314,76 @@ static struct vfsmount *cifs_dfs_do_automount(struct dentry *mntpt)
  		goto cdda_exit;
  	}
  
@@ -70,31 +71,34 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 -		mnt = ERR_CAST(tlink);
 +	cifs_dbg(FYI, "%s: full_path: %s\n", __func__, full_path);
 +
-+	if (!cifs_sb->master_tlink) {
++	if (!cifs_sb_master_tlink(cifs_sb)) {
 +		cifs_dbg(FYI, "%s: master tlink is NULL\n", __func__);
++		goto free_full_path;
++	}
++
++	tcon = cifs_sb_master_tcon(cifs_sb);
++	if (!tcon) {
++		cifs_dbg(FYI, "%s: master tcon is NULL\n", __func__);
  		goto free_full_path;
  	}
 -	ses = tlink_tcon(tlink)->ses;
  
--	xid = get_xid();
--	rc = get_dfs_path(xid, ses, full_path + 1, cifs_sb->local_nls,
--		&num_referrals, &referrals,
--		cifs_remap(cifs_sb));
--	free_xid(xid);
-+	tcon = cifs_sb_master_tcon(cifs_sb);
-+	if (!tcon) {
-+		cifs_dbg(FYI, "%s: master tcon is NULL\n", __func__);
-+		goto free_full_path;
-+	}
- 
--	cifs_put_tlink(tlink);
 +	root_path = kstrdup(tcon->treeName, GFP_KERNEL);
 +	if (!root_path) {
 +		mnt = ERR_PTR(-ENOMEM);
 +		goto free_full_path;
 +	}
 +	cifs_dbg(FYI, "%s: root path: %s\n", __func__, root_path);
++
++	ses = tcon->ses;
+ 	xid = get_xid();
+-	rc = get_dfs_path(xid, ses, full_path + 1, cifs_sb->local_nls,
+-		&num_referrals, &referrals,
+-		cifs_remap(cifs_sb));
+-	free_xid(xid);
  
+-	cifs_put_tlink(tlink);
+-
 -	mnt = ERR_PTR(-ENOENT);
 -	for (i = 0; i < num_referrals; i++) {
 -		int len;
@@ -113,9 +117,6 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 -			 __func__, referrals[i].node_name, mnt);
 -		if (!IS_ERR(mnt))
 -			goto success;
-+	ses = tcon->ses;
-+	xid = get_xid();
-+
 +	/*
 +	 * If DFS root has been expired, then unconditionally fetch it again to
 +	 * refresh DFS referral cache.
@@ -137,11 +138,11 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  		mnt = ERR_PTR(rc);
 +		goto free_root_path;
 +	}
-+
-+	dump_referral(&referral);
  
 -success:
 -	free_dfs_info_array(referrals, num_referrals);
++	dump_referral(&referral);
++
 +	len = strlen(referral.node_name);
 +	if (len < 2) {
 +		cifs_dbg(VFS, "%s: Net Address path too short: %s\n",
@@ -164,6 +165,8 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  free_full_path:
  	kfree(full_path);
  cdda_exit:
+diff --git a/fs/cifs/cifsfs.c b/fs/cifs/cifsfs.c
+index 865706edb307..62d48d486d8f 100644
 --- a/fs/cifs/cifsfs.c
 +++ b/fs/cifs/cifsfs.c
 @@ -52,6 +52,9 @@
@@ -176,7 +179,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  
  int cifsFYI = 0;
  bool traceSMB;
-@@ -1407,10 +1410,15 @@ init_cifs(void)
+@@ -1494,10 +1497,15 @@ init_cifs(void)
  	if (rc)
  		goto out_destroy_mids;
  
@@ -193,7 +196,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  #endif /* CONFIG_CIFS_UPCALL */
  
  #ifdef CONFIG_CIFS_ACL
-@@ -1432,6 +1440,10 @@ out_register_key_type:
+@@ -1525,6 +1533,10 @@ init_cifs(void)
  #endif
  #ifdef CONFIG_CIFS_UPCALL
  	exit_cifs_spnego();
@@ -204,19 +207,21 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  out_destroy_request_bufs:
  #endif
  	cifs_destroy_request_bufs();
-@@ -1462,6 +1474,9 @@ exit_cifs(void)
+@@ -1555,6 +1567,9 @@ exit_cifs(void)
+ #endif
  #ifdef CONFIG_CIFS_UPCALL
  	exit_cifs_spnego();
- #endif
++#endif
 +#ifdef CONFIG_CIFS_DFS_UPCALL
 +	dfs_cache_destroy();
-+#endif
+ #endif
  	cifs_destroy_request_bufs();
  	cifs_destroy_mids();
- 	cifs_destroy_inodecache();
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 66c487634c9e..45feb3ff7806 100644
 --- a/fs/cifs/cifsglob.h
 +++ b/fs/cifs/cifsglob.h
-@@ -1478,7 +1478,6 @@ static inline void free_dfs_info_param(s
+@@ -1551,7 +1551,6 @@ static inline void free_dfs_info_param(struct dfs_info3_param *param)
  	if (param) {
  		kfree(param->path_name);
  		kfree(param->node_name);
@@ -224,19 +229,21 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	}
  }
  
+diff --git a/fs/cifs/cifsproto.h b/fs/cifs/cifsproto.h
+index efa5e36b3762..f277bc5a0c4e 100644
 --- a/fs/cifs/cifsproto.h
 +++ b/fs/cifs/cifsproto.h
-@@ -21,6 +21,9 @@
- #ifndef _CIFSPROTO_H
+@@ -22,6 +22,9 @@
  #define _CIFSPROTO_H
  #include <linux/nls.h>
+ #include "trace.h"
 +#ifdef CONFIG_CIFS_DFS_UPCALL
 +#include "dfs_cache.h"
 +#endif
  
  struct statfs;
  struct smb_vol;
-@@ -282,11 +285,6 @@ extern int CIFSGetDFSRefer(const unsigne
+@@ -294,11 +297,6 @@ extern int CIFSGetDFSRefer(const unsigned int xid, struct cifs_ses *ses,
  			   unsigned int *num_of_nodes,
  			   const struct nls_table *nls_codepage, int remap);
  
@@ -248,9 +255,9 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  extern int parse_dfs_referrals(struct get_dfs_referral_rsp *rsp, u32 rsp_size,
  			       unsigned int *num_of_nodes,
  			       struct dfs_info3_param **target_nodes,
-@@ -549,4 +547,15 @@ int cifs_alloc_hash(const char *name, st
- 		    struct sdesc **sdesc);
- void cifs_free_hash(struct crypto_shash **shash, struct sdesc **sdesc);
+@@ -567,4 +565,15 @@ void cifs_free_hash(struct crypto_shash **shash, struct sdesc **sdesc);
+ extern void rqst_page_get_length(struct smb_rqst *rqst, unsigned int page,
+ 				unsigned int *len, unsigned int *offset);
  
 +#ifdef CONFIG_CIFS_DFS_UPCALL
 +static inline int get_dfs_path(const unsigned int xid, struct cifs_ses *ses,
@@ -264,20 +271,22 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 +#endif
 +
  #endif			/* _CIFSPROTO_H */
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 5feb3bf97d70..182b16e56749 100644
 --- a/fs/cifs/connect.c
 +++ b/fs/cifs/connect.c
 @@ -56,6 +56,10 @@
- #include "rfc1002pdu.h"
  #include "fscache.h"
  #include "smb2proto.h"
+ #include "smbdirect.h"
 +#include "dns_resolve.h"
 +#ifdef CONFIG_CIFS_DFS_UPCALL
 +#include "dfs_cache.h"
 +#endif
  
- #define CIFS_PORT 445
- #define RFC1001_PORT 139
-@@ -3068,25 +3072,6 @@ out:
+ extern mempool_t *cifs_req_poolp;
+ extern bool disable_legacy_dialects;
+@@ -3262,25 +3266,6 @@ cifs_match_super(struct super_block *sb, void *data)
  	return rc;
  }
  
@@ -303,7 +312,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  #ifdef CONFIG_DEBUG_LOCK_ALLOC
  static struct lock_class_key cifs_key[2];
  static struct lock_class_key cifs_slock_key[2];
-@@ -3731,8 +3716,9 @@ build_unc_path_to_root(const struct smb_
+@@ -3931,8 +3916,9 @@ build_unc_path_to_root(const struct smb_vol *vol,
  	return full_path;
  }
  
@@ -315,7 +324,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
   *
   * If a referral is found, cifs_sb->mountdata will be (re-)allocated
   * to a string containing updated options for the submount.  Otherwise it
-@@ -3747,8 +3733,7 @@ expand_dfs_referral(const unsigned int x
+@@ -3947,8 +3933,7 @@ expand_dfs_referral(const unsigned int xid, struct cifs_ses *ses,
  		    int check_prefix)
  {
  	int rc;
@@ -325,7 +334,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	char *full_path = NULL, *ref_path = NULL, *mdata = NULL;
  
  	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_NO_DFS)
-@@ -3761,17 +3746,15 @@ expand_dfs_referral(const unsigned int x
+@@ -3961,17 +3946,15 @@ expand_dfs_referral(const unsigned int xid, struct cifs_ses *ses,
  	/* For DFS paths, skip the first '\' of the UNC */
  	ref_path = check_prefix ? full_path + 1 : volume_info->UNC + 1;
  
@@ -348,9 +357,20 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  
  		if (IS_ERR(mdata)) {
  			rc = PTR_ERR(mdata);
+@@ -3979,7 +3962,7 @@ expand_dfs_referral(const unsigned int xid, struct cifs_ses *ses,
+ 		} else {
+ 			cifs_cleanup_volume_info_contents(volume_info);
+ 			rc = cifs_setup_volume_info(volume_info, mdata,
+-							fake_devname, false);
++						    fake_devname, false);
+ 		}
+ 		kfree(fake_devname);
+ 		kfree(cifs_sb->mountdata);
+diff --git a/fs/cifs/smb1ops.c b/fs/cifs/smb1ops.c
+index 378151e09e91..32a6c020478f 100644
 --- a/fs/cifs/smb1ops.c
 +++ b/fs/cifs/smb1ops.c
-@@ -931,19 +931,18 @@ cifs_unix_dfs_readlink(const unsigned in
+@@ -929,19 +929,18 @@ cifs_unix_dfs_readlink(const unsigned int xid, struct cifs_tcon *tcon,
  {
  #ifdef CONFIG_CIFS_DFS_UPCALL
  	int rc;
@@ -377,3 +397,6 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	}
  	return rc;
  #else /* No DFS support */
+-- 
+2.16.4
+

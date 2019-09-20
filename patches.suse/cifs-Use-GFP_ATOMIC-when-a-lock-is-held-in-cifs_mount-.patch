@@ -1,0 +1,36 @@
+From: YueHaibing <yuehaibing@huawei.com>
+Date: Tue, 18 Dec 2018 01:34:39 +0000
+Subject: [PATCH] cifs: Use GFP_ATOMIC when a lock is held in cifs_mount()
+Git-commit: 2f0a617448945a2c63d68983212302e9f2f8ae2f
+Patch-mainline: v5.0-rc1
+References: bsc#1144333
+
+A spin lock is held before kstrndup, it may sleep with holding
+the spinlock, so we should use GFP_ATOMIC instead.
+
+Fixes: e58c31d5e387 ("cifs: Add support for failover in cifs_reconnect()")
+Signed-off-by: YueHaibing <yuehaibing@huawei.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Paulo Alcantara <palcantara@suse.de>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/connect.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index ef51cf748db7..8de2173efdc5 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -4585,7 +4585,8 @@ int cifs_mount(struct cifs_sb_info *cifs_sb, struct smb_vol *vol)
+ 		tcon->remap = cifs_remap(cifs_sb);
+ 	}
+ 	cifs_sb->origin_fullpath = kstrndup(tcon->dfs_path,
+-					    strlen(tcon->dfs_path), GFP_KERNEL);
++					    strlen(tcon->dfs_path),
++					    GFP_ATOMIC);
+ 	if (!cifs_sb->origin_fullpath) {
+ 		spin_unlock(&cifs_tcp_ses_lock);
+ 		rc = -ENOMEM;
+-- 
+2.16.4
+

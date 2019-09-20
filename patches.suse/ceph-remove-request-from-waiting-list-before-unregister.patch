@@ -1,0 +1,37 @@
+From: "Yan, Zheng" <zyan@redhat.com>
+Date: Fri, 14 Jun 2019 10:55:05 +0800
+Subject: ceph: remove request from waiting list before unregister
+Git-commit: 428138c9892fac19a682973bbb6d8c2a904b6639
+Patch-mainline: v5.3-rc1
+References: bsc#1148133
+
+Link: https://tracker.ceph.com/issues/40339
+Signed-off-by: "Yan, Zheng" <zyan@redhat.com>
+Reviewed-by: Jeff Layton <jlayton@redhat.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+---
+ fs/ceph/mds_client.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/ceph/mds_client.c b/fs/ceph/mds_client.c
+index fcea46a54622..598a3fa280a7 100644
+--- a/fs/ceph/mds_client.c
++++ b/fs/ceph/mds_client.c
+@@ -727,6 +727,7 @@ void ceph_mdsc_release_request(struct kref *kref)
+ 		ceph_pagelist_release(req->r_pagelist);
+ 	put_request_session(req);
+ 	ceph_unreserve_caps(req->r_mdsc, &req->r_caps_reservation);
++	WARN_ON_ONCE(!list_empty(&req->r_wait));
+ 	kfree(req);
+ }
+ 
+@@ -4162,6 +4163,7 @@ static void wait_requests(struct ceph_mds_client *mdsc)
+ 		while ((req = __get_oldest_req(mdsc))) {
+ 			dout("wait_requests timed out on tid %llu\n",
+ 			     req->r_tid);
++			list_del_init(&req->r_wait);
+ 			__unregister_request(mdsc, req);
+ 		}
+ 	}
+

@@ -1,0 +1,36 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Wed, 8 May 2019 22:41:37 -0500
+Subject: [PATCH] smb3: display session id in debug data
+Git-commit: b63a9de02d64ecd5ff0749e90253f5b30ba5b9c0
+Patch-mainline: v5.2-rc1
+References: bsc#1144333
+
+Displaying the session id in /proc/fs/cifs/DebugData
+is needed in order to correlate Linux client information
+with network and server traces for many common support
+scenarios.  Turned out to be very important for debugging.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+CC: Stable <stable@vger.kernel.org>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/cifs_debug.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/cifs/cifs_debug.c b/fs/cifs/cifs_debug.c
+index 6a69f11aacf7..45e74da40f3a 100644
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -380,6 +380,8 @@ static int cifs_debug_data_proc_show(struct seq_file *m, void *v)
+ 				atomic_read(&server->in_send),
+ 				atomic_read(&server->num_waiters));
+ #endif
++			/* dump session id helpful for use with network trace */
++			seq_printf(m, " SessionId: 0x%llx", ses->Suid);
+ 			if (ses->session_flags & SMB2_SESSION_FLAG_ENCRYPT_DATA)
+ 				seq_puts(m, " encrypted");
+ 			if (ses->sign)
+-- 
+2.22.0
+

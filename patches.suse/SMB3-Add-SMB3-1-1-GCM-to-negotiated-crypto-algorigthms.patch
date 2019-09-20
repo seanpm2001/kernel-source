@@ -1,0 +1,86 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Fri, 7 Jun 2019 08:59:40 -0500
+Subject: [PATCH] SMB3: Add SMB3.1.1 GCM to negotiated crypto algorigthms
+Git-commit: 9ac63ec7760957658700890038d804ec6c26ed34
+Patch-mainline: v5.3-rc1
+References: bsc#1144333
+
+GCM is faster. Request it during negotiate protocol.
+Followon patch will add callouts to GCM crypto
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smb2ops.c | 4 ++--
+ fs/cifs/smb2pdu.c | 8 ++++----
+ fs/cifs/smb2pdu.h | 4 ++--
+ 3 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 9fd56b0acd7e..9bbe3de67013 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -3376,7 +3376,7 @@ fill_transform_hdr(struct smb2_transform_hdr *tr_hdr, unsigned int orig_len,
+ 	tr_hdr->ProtocolId = SMB2_TRANSFORM_PROTO_NUM;
+ 	tr_hdr->OriginalMessageSize = cpu_to_le32(orig_len);
+ 	tr_hdr->Flags = cpu_to_le16(0x01);
+-	get_random_bytes(&tr_hdr->Nonce, SMB3_AES128CMM_NONCE);
++	get_random_bytes(&tr_hdr->Nonce, SMB3_AES128CCM_NONCE);
+ 	memcpy(&tr_hdr->SessionId, &shdr->SessionId, 8);
+ }
+ 
+@@ -3535,7 +3535,7 @@ crypt_message(struct TCP_Server_Info *server, int num_rqst,
+ 		goto free_sg;
+ 	}
+ 	iv[0] = 3;
+-	memcpy(iv + 1, (char *)tr_hdr->Nonce, SMB3_AES128CMM_NONCE);
++	memcpy(iv + 1, (char *)tr_hdr->Nonce, SMB3_AES128CCM_NONCE);
+ 
+ 	aead_request_set_crypt(req, sg, sg, crypt_len, iv);
+ 	aead_request_set_ad(req, assoc_data_len);
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index ab8dc73d2282..ab3300a39071 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -489,10 +489,10 @@ static void
+ build_encrypt_ctxt(struct smb2_encryption_neg_context *pneg_ctxt)
+ {
+ 	pneg_ctxt->ContextType = SMB2_ENCRYPTION_CAPABILITIES;
+-	pneg_ctxt->DataLength = cpu_to_le16(4); /* Cipher Count + le16 cipher */
+-	pneg_ctxt->CipherCount = cpu_to_le16(1);
+-/* pneg_ctxt->Ciphers[0] = SMB2_ENCRYPTION_AES128_GCM;*/ /* not supported yet */
+-	pneg_ctxt->Ciphers[0] = SMB2_ENCRYPTION_AES128_CCM;
++	pneg_ctxt->DataLength = cpu_to_le16(6); /* Cipher Count + two ciphers */
++	pneg_ctxt->CipherCount = cpu_to_le16(2);
++	pneg_ctxt->Ciphers[0] = SMB2_ENCRYPTION_AES128_GCM;
++	pneg_ctxt->Ciphers[1] = SMB2_ENCRYPTION_AES128_CCM;
+ }
+ 
+ static void
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index 858353d20c39..c09d9244b728 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -123,7 +123,7 @@ struct smb2_sync_pdu {
+ 	__le16 StructureSize2; /* size of wct area (varies, request specific) */
+ } __packed;
+ 
+-#define SMB3_AES128CMM_NONCE 11
++#define SMB3_AES128CCM_NONCE 11
+ #define SMB3_AES128GCM_NONCE 12
+ 
+ struct smb2_transform_hdr {
+@@ -293,7 +293,7 @@ struct smb2_encryption_neg_context {
+ 	__le16	DataLength;
+ 	__le32	Reserved;
+ 	__le16	CipherCount; /* AES-128-GCM and AES-128-CCM */
+-	__le16	Ciphers[1]; /* Ciphers[0] since only one used now */
++	__le16	Ciphers[2];
+ } __packed;
+ 
+ /* See MS-SMB2 2.2.3.1.3 */
+-- 
+2.22.0
+

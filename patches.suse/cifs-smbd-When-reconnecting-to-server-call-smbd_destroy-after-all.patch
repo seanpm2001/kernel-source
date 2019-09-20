@@ -1,0 +1,90 @@
+From: Long Li <longli@microsoft.com>
+Date: Mon, 13 May 2019 21:01:28 -0700
+Subject: [PATCH] cifs:smbd When reconnecting to server, call smbd_destroy()
+ after all MIDs have been called
+Git-commit: 1d2a4f57cebdab1d496b976a1e6ea998dc9b03c8
+Patch-mainline: v5.2-rc1
+References: bsc#1144333
+
+commit 214bab448476 ("cifs: Call MID callback before destroying transport")
+assumes that the MID callback should not take srv_mutex, this may not always
+be true. SMB Direct requires the MID callback completed before calling
+transport so all pending memory registration can be freed. So restore the
+original calling sequence so TCP transport will use the same code, but moving
+smbd_destroy() after all MID has been called.
+
+fixes: 214bab448476 ("cifs: Call MID callback before destroying transport")
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/connect.c | 37 ++++++++++++++++++++-----------------
+ 1 file changed, 20 insertions(+), 17 deletions(-)
+
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 084756cfdaee..0b3ac8b76d18 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -528,6 +528,21 @@ cifs_reconnect(struct TCP_Server_Info *server)
+ 	/* do not want to be sending data on a socket we are freeing */
+ 	cifs_dbg(FYI, "%s: tearing down socket\n", __func__);
+ 	mutex_lock(&server->srv_mutex);
++	if (server->ssocket) {
++		cifs_dbg(FYI, "State: 0x%x Flags: 0x%lx\n",
++			 server->ssocket->state, server->ssocket->flags);
++		kernel_sock_shutdown(server->ssocket, SHUT_WR);
++		cifs_dbg(FYI, "Post shutdown state: 0x%x Flags: 0x%lx\n",
++			 server->ssocket->state, server->ssocket->flags);
++		sock_release(server->ssocket);
++		server->ssocket = NULL;
++	}
++	server->sequence_number = 0;
++	server->session_estab = false;
++	kfree(server->session_key.response);
++	server->session_key.response = NULL;
++	server->session_key.len = 0;
++	server->lstrp = jiffies;
+ 
+ 	/* mark submitted MIDs for retry and issue callback */
+ 	INIT_LIST_HEAD(&retry_list);
+@@ -540,6 +555,7 @@ cifs_reconnect(struct TCP_Server_Info *server)
+ 		list_move(&mid_entry->qhead, &retry_list);
+ 	}
+ 	spin_unlock(&GlobalMid_Lock);
++	mutex_unlock(&server->srv_mutex);
+ 
+ 	cifs_dbg(FYI, "%s: issuing mid callbacks\n", __func__);
+ 	list_for_each_safe(tmp, tmp2, &retry_list) {
+@@ -548,24 +564,11 @@ cifs_reconnect(struct TCP_Server_Info *server)
+ 		mid_entry->callback(mid_entry);
+ 	}
+ 
+-	if (server->ssocket) {
+-		cifs_dbg(FYI, "State: 0x%x Flags: 0x%lx\n",
+-			 server->ssocket->state, server->ssocket->flags);
+-		kernel_sock_shutdown(server->ssocket, SHUT_WR);
+-		cifs_dbg(FYI, "Post shutdown state: 0x%x Flags: 0x%lx\n",
+-			 server->ssocket->state, server->ssocket->flags);
+-		sock_release(server->ssocket);
+-		server->ssocket = NULL;
+-	} else if (cifs_rdma_enabled(server))
++	if (cifs_rdma_enabled(server)) {
++		mutex_lock(&server->srv_mutex);
+ 		smbd_destroy(server);
+-	server->sequence_number = 0;
+-	server->session_estab = false;
+-	kfree(server->session_key.response);
+-	server->session_key.response = NULL;
+-	server->session_key.len = 0;
+-	server->lstrp = jiffies;
+-
+-	mutex_unlock(&server->srv_mutex);
++		mutex_unlock(&server->srv_mutex);
++	}
+ 
+ 	do {
+ 		try_to_freeze();
+-- 
+2.22.0
+

@@ -1,0 +1,77 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Mon, 3 Sep 2018 13:33:47 +1000
+Subject: [PATCH] cifs: remove the is_falloc argument to SMB2_set_eof
+Git-commit: 3764cbd179f061ddb308cd58c1e9bbf987505a18
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+We never pass is_falloc==true here anyway and if we ever need to support
+is_falloc in the future, SMB2_set_eof is such a trivial wrapper around
+send_set_info() that we can/should just create a differently named wrapper
+for that new functionality.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c   | 2 +-
+ fs/cifs/smb2pdu.c   | 9 ++-------
+ fs/cifs/smb2proto.h | 2 +-
+ 3 files changed, 4 insertions(+), 9 deletions(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 55ae6918be25..11b4f397a713 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1307,7 +1307,7 @@ smb2_set_file_size(const unsigned int xid, struct cifs_tcon *tcon,
+ 	}
+ 
+ 	return SMB2_set_eof(xid, tcon, cfile->fid.persistent_fid,
+-			    cfile->fid.volatile_fid, cfile->pid, &eof, false);
++			    cfile->fid.volatile_fid, cfile->pid, &eof);
+ }
+ 
+ static int
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 29ed580d6629..3c7574513283 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -3925,7 +3925,7 @@ SMB2_set_hardlink(const unsigned int xid, struct cifs_tcon *tcon,
+ 
+ int
+ SMB2_set_eof(const unsigned int xid, struct cifs_tcon *tcon, u64 persistent_fid,
+-	     u64 volatile_fid, u32 pid, __le64 *eof, bool is_falloc)
++	     u64 volatile_fid, u32 pid, __le64 *eof)
+ {
+ 	struct smb2_file_eof_info info;
+ 	void *data;
+@@ -3936,12 +3936,7 @@ SMB2_set_eof(const unsigned int xid, struct cifs_tcon *tcon, u64 persistent_fid,
+ 	data = &info;
+ 	size = sizeof(struct smb2_file_eof_info);
+ 
+-	if (is_falloc)
+-		return send_set_info(xid, tcon, persistent_fid, volatile_fid,
+-			pid, FILE_ALLOCATION_INFORMATION, SMB2_O_INFO_FILE,
+-			0, 1, &data, &size);
+-	else
+-		return send_set_info(xid, tcon, persistent_fid, volatile_fid,
++	return send_set_info(xid, tcon, persistent_fid, volatile_fid,
+ 			pid, FILE_END_OF_FILE_INFORMATION, SMB2_O_INFO_FILE,
+ 			0, 1, &data, &size);
+ }
+diff --git a/fs/cifs/smb2proto.h b/fs/cifs/smb2proto.h
+index 5881213a7290..91c261a71059 100644
+--- a/fs/cifs/smb2proto.h
++++ b/fs/cifs/smb2proto.h
+@@ -190,7 +190,7 @@ extern int SMB2_set_hardlink(const unsigned int xid, struct cifs_tcon *tcon,
+ 			     __le16 *target_file);
+ extern int SMB2_set_eof(const unsigned int xid, struct cifs_tcon *tcon,
+ 			u64 persistent_fid, u64 volatile_fid, u32 pid,
+-			__le64 *eof, bool is_fallocate);
++			__le64 *eof);
+ extern int SMB2_set_info_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
+ 			      u64 persistent_fid, u64 volatile_fid, u32 pid,
+ 			      u8 info_class, u8 info_type, u32 additional_info,
+-- 
+2.16.4
+

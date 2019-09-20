@@ -1,0 +1,31 @@
+From: Xiang Chen <chenxiang66@hisilicon.com>
+Date: Fri, 25 Jan 2019 22:22:30 +0800
+Subject: scsi: hisi_sas: send primitive NOTIFY to SSP situation only
+Patch-mainline: v5.1-rc1
+Git-commit: 569eddcf3a0f4efff4ef96a7012010e0f7daa8b4
+References: bsc#1137322 bsc#1137323 bsc#1138099 bsc#1138100
+
+Send primitive NOTIFY to SSP situation only, or it causes underflow issue
+when sending IO. Also rename hisi_sas_hw.sl_notify() to hisi_sas_hw.
+sl_notify_ssp().
+
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: John Garry <john.garry@huawei.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+[dwagner: Revert renaming sl_notify]
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/hisi_sas/hisi_sas_main.c  |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+--- a/drivers/scsi/hisi_sas/hisi_sas_main.c
++++ b/drivers/scsi/hisi_sas/hisi_sas_main.c
+@@ -778,7 +778,8 @@ static void hisi_sas_phyup_work(struct w
+ 	struct asd_sas_phy *sas_phy = &phy->sas_phy;
+ 	int phy_no = sas_phy->id;
+ 
+-	hisi_hba->hw->sl_notify(hisi_hba, phy_no); /* This requires a sleep */
++	if (phy->identify.target_port_protocols == SAS_PROTOCOL_SSP)
++		hisi_hba->hw->sl_notify(hisi_hba, phy_no);
+ 	hisi_sas_bytes_dmaed(hisi_hba, phy_no);
+ }
+ 

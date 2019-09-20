@@ -1,0 +1,432 @@
+From 6e2ef5e4f6cc57344762932d70d38ba4ec65fa8b Mon Sep 17 00:00:00 2001
+From: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Date: Thu, 27 Oct 2016 12:41:39 +0200
+Subject: [PATCH] s390/time: add support for the TOD clock epoch extension
+
+References: FATE#327411, bsc#1145044, ltc#179926
+Patch-mainline: v4.14-rc1
+Git-commit: 6e2ef5e4f6cc57344762932d70d38ba4ec65fa8b
+
+The TOD epoch extension adds 8 epoch bits to the TOD clock to provide
+a continuous clock after 2042/09/17. The store-clock-extended (STCKE)
+instruction will store the epoch index in the first byte of the
+16 bytes stored by the instruction. The read_boot_clock64 and the
+read_presistent_clock64 functions need to take the additional bits
+into account to give the correct result after 2042/09/17.
+
+The clock-comparator register will stay 64 bit wide. The comparison
+of the clock-comparator with the TOD clock is limited to bytes
+1 to 8 of the extended TOD format. To deal with the overflow problem
+due to an epoch change the clock-comparator sign control in CR0 can
+be used to switch the comparison of the 64-bit TOD clock with the
+clock-comparator to a signed comparison.
+
+The decision between the signed vs. unsigned clock-comparator
+comparisons is done at boot time. Only if the TOD clock is in the
+second half of a 142 year epoch the signed comparison is used.
+This solves the epoch overflow issue as long as the machine is
+booted at least once in an epoch.
+
+[Note: move boot_clock to a padding area to avoid reordering struct
+lowcore]
+
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/s390/include/asm/lowcore.h | 48 ++++++++++++------------
+ arch/s390/include/asm/setup.h   |  2 +
+ arch/s390/include/asm/timex.h   | 38 +++++++++++++++++--
+ arch/s390/kernel/asm-offsets.c  |  1 +
+ arch/s390/kernel/debug.c        |  9 +++--
+ arch/s390/kernel/early.c        | 15 ++++++--
+ arch/s390/kernel/head.S         |  3 +-
+ arch/s390/kernel/head64.S       |  4 +-
+ arch/s390/kernel/irq.c          |  3 +-
+ arch/s390/kernel/setup.c        |  2 +-
+ arch/s390/kernel/time.c         | 65 +++++++++++++++++++++++----------
+ arch/s390/lib/delay.c           |  2 +-
+ 12 files changed, 130 insertions(+), 62 deletions(-)
+
+--- a/arch/s390/include/asm/lowcore.h
++++ b/arch/s390/include/asm/lowcore.h
+@@ -134,7 +134,8 @@ struct lowcore {
+ 	__u64	gmap;				/* 0x03b0 */
+ 	__u32	spinlock_lockval;		/* 0x03b8 */
+ 	__u32	fpu_flags;			/* 0x03bc */
+-	__u8	pad_0x03c0[0x0400-0x03c0];	/* 0x03c0 */
++	__u8	pad_0x03c0[0x03f0-0x03c0];	/* 0x03c0 */
++	__u64	boot_clock[2];			/* 0x03f0 */
+ 
+ 	/* Per cpu primary space access list */
+ 	__u32	paste[16];			/* 0x0400 */
+--- a/arch/s390/include/asm/setup.h
++++ b/arch/s390/include/asm/setup.h
+@@ -32,6 +32,7 @@
+ #define MACHINE_FLAG_TLB_GUEST	_BITUL(14)
+ #define MACHINE_FLAG_NX		_BITUL(15)
+ #define MACHINE_FLAG_GS		_BITUL(16)
++#define MACHINE_FLAG_SCC	_BITUL(17)
+ 
+ #define LPP_MAGIC		_BITUL(31)
+ #define LPP_PFAULT_PID_MASK	_AC(0xffffffff, UL)
+@@ -72,6 +73,7 @@ extern void detect_memory_memblock(void)
+ #define MACHINE_HAS_TLB_GUEST	(S390_lowcore.machine_flags & MACHINE_FLAG_TLB_GUEST)
+ #define MACHINE_HAS_NX		(S390_lowcore.machine_flags & MACHINE_FLAG_NX)
+ #define MACHINE_HAS_GS		(S390_lowcore.machine_flags & MACHINE_FLAG_GS)
++#define MACHINE_HAS_SCC		(S390_lowcore.machine_flags & MACHINE_FLAG_SCC)
+ 
+ /*
+  * Console mode. Override with conmode=
+--- a/arch/s390/include/asm/timex.h
++++ b/arch/s390/include/asm/timex.h
+@@ -15,6 +15,8 @@
+ /* The value of the TOD clock for 1.1.1970. */
+ #define TOD_UNIX_EPOCH 0x7d91048bca000000ULL
+ 
++extern u64 clock_comparator_max;
++
+ /* Inline functions for clock register access. */
+ static inline int set_tod_clock(__u64 time)
+ {
+@@ -126,7 +128,7 @@ static inline unsigned long long local_t
+ 	unsigned long long old;
+ 
+ 	old = S390_lowcore.clock_comparator;
+-	S390_lowcore.clock_comparator = -1ULL;
++	S390_lowcore.clock_comparator = clock_comparator_max;
+ 	set_clock_comparator(S390_lowcore.clock_comparator);
+ 	return old;
+ }
+@@ -178,20 +180,20 @@ int get_phys_clock(unsigned long long *c
+ void init_cpu_timer(void);
+ unsigned long long monotonic_clock(void);
+ 
+-extern u64 sched_clock_base_cc;
++extern unsigned char tod_clock_base[16] __aligned(8);
+ 
+ /**
+  * get_clock_monotonic - returns current time in clock rate units
+  *
+  * The caller must ensure that preemption is disabled.
+- * The clock and sched_clock_base get changed via stop_machine.
++ * The clock and tod_clock_base get changed via stop_machine.
+  * Therefore preemption must be disabled when calling this
+  * function, otherwise the returned value is not guaranteed to
+  * be monotonic.
+  */
+ static inline unsigned long long get_tod_clock_monotonic(void)
+ {
+-	return get_tod_clock() - sched_clock_base_cc;
++	return get_tod_clock() - *(unsigned long long *) &tod_clock_base[1];
+ }
+ 
+ /**
+@@ -218,4 +220,32 @@ static inline unsigned long long tod_to_
+ 	return ((todval >> 9) * 125) + (((todval & 0x1ff) * 125) >> 9);
+ }
+ 
++/**
++ * tod_after - compare two 64 bit TOD values
++ * @a: first 64 bit TOD timestamp
++ * @b: second 64 bit TOD timestamp
++ *
++ * Returns: true if a is later than b
++ */
++static inline int tod_after(unsigned long long a, unsigned long long b)
++{
++	if (MACHINE_HAS_SCC)
++		return (long long) a > (long long) b;
++	return a > b;
++}
++
++/**
++ * tod_after_eq - compare two 64 bit TOD values
++ * @a: first 64 bit TOD timestamp
++ * @b: second 64 bit TOD timestamp
++ *
++ * Returns: true if a is later than b
++ */
++static inline int tod_after_eq(unsigned long long a, unsigned long long b)
++{
++	if (MACHINE_HAS_SCC)
++		return (long long) a >= (long long) b;
++	return a >= b;
++}
++
+ #endif
+--- a/arch/s390/kernel/asm-offsets.c
++++ b/arch/s390/kernel/asm-offsets.c
+@@ -158,6 +158,7 @@ int main(void)
+ 	OFFSET(__LC_LAST_UPDATE_CLOCK, lowcore, last_update_clock);
+ 	OFFSET(__LC_INT_CLOCK, lowcore, int_clock);
+ 	OFFSET(__LC_MCCK_CLOCK, lowcore, mcck_clock);
++	OFFSET(__LC_BOOT_CLOCK, lowcore, boot_clock);
+ 	OFFSET(__LC_CURRENT, lowcore, current_task);
+ 	OFFSET(__LC_KERNEL_STACK, lowcore, kernel_stack);
+ 	OFFSET(__LC_ASYNC_STACK, lowcore, async_stack);
+--- a/arch/s390/kernel/debug.c
++++ b/arch/s390/kernel/debug.c
+@@ -866,7 +866,8 @@ static inline void
+ debug_finish_entry(debug_info_t * id, debug_entry_t* active, int level,
+ 			int exception)
+ {
+-	active->id.stck = get_tod_clock_fast() - sched_clock_base_cc;
++	active->id.stck = get_tod_clock_fast() -
++		*(unsigned long long *) &tod_clock_base[1];
+ 	active->id.fields.cpuid = smp_processor_id();
+ 	active->caller = __builtin_return_address(0);
+ 	active->id.fields.exception = exception;
+@@ -1455,15 +1456,15 @@ int
+ debug_dflt_header_fn(debug_info_t * id, struct debug_view *view,
+ 			 int area, debug_entry_t * entry, char *out_buf)
+ {
+-	unsigned long sec, usec;
++	unsigned long base, sec, usec;
+ 	char *except_str;
+ 	unsigned long caller;
+ 	int rc = 0;
+ 	unsigned int level;
+ 
+ 	level = entry->id.fields.level;
+-	sec = (entry->id.stck >> 12) + (sched_clock_base_cc >> 12);
+-	sec = sec - (TOD_UNIX_EPOCH >> 12);
++	base = (*(unsigned long *) &tod_clock_base[0]) >> 4;
++	sec = (entry->id.stck >> 12) + base - (TOD_UNIX_EPOCH >> 12);
+ 	usec = do_div(sec, USEC_PER_SEC);
+ 
+ 	if (entry->id.fields.exception)
+--- a/arch/s390/kernel/early.c
++++ b/arch/s390/kernel/early.c
+@@ -53,8 +53,9 @@ static void __init reset_tod_clock(void)
+ 	if (set_tod_clock(TOD_UNIX_EPOCH) != 0 || store_tod_clock(&time) != 0)
+ 		disabled_wait(0);
+ 
+-	sched_clock_base_cc = TOD_UNIX_EPOCH;
+-	S390_lowcore.last_update_clock = sched_clock_base_cc;
++	memset(tod_clock_base, 0, 16);
++	*(__u64 *) &tod_clock_base[1] = TOD_UNIX_EPOCH;
++	S390_lowcore.last_update_clock = TOD_UNIX_EPOCH;
+ }
+ 
+ #ifdef CONFIG_SHARED_KERNEL
+@@ -165,8 +166,8 @@ static noinline __init void create_kerne
+ 	}
+ 
+ 	/* re-initialize cputime accounting. */
+-	sched_clock_base_cc = get_tod_clock();
+-	S390_lowcore.last_update_clock = sched_clock_base_cc;
++	get_tod_clock_ext(tod_clock_base);
++	S390_lowcore.last_update_clock = *(__u64 *) &tod_clock_base[1];
+ 	S390_lowcore.last_update_timer = 0x7fffffffffffffffULL;
+ 	S390_lowcore.user_timer = 0;
+ 	S390_lowcore.system_timer = 0;
+@@ -387,6 +388,12 @@ static __init void detect_machine_facili
+ 	}
+ 	if (test_facility(133))
+ 		S390_lowcore.machine_flags |= MACHINE_FLAG_GS;
++	if (test_facility(139) && (tod_clock_base[1] & 0x80)) {
++		/* Enabled signed clock comparator comparisons */
++		S390_lowcore.machine_flags |= MACHINE_FLAG_SCC;
++		clock_comparator_max = -1ULL >> 1;
++		__ctl_set_bit(0, 53);
++	}
+ }
+ 
+ static inline void save_vector_registers(void)
+--- a/arch/s390/kernel/head.S
++++ b/arch/s390/kernel/head.S
+@@ -302,7 +302,8 @@ ENTRY(startup_kdump)
+ 	xc	0xe00(256),0xe00
+ 	xc	0xf00(256),0xf00
+ 	lctlg	%c0,%c15,0x200(%r0)	# initialize control registers
+-	stck	__LC_LAST_UPDATE_CLOCK
++	stcke	__LC_BOOT_CLOCK
++	mvc	__LC_LAST_UPDATE_CLOCK(8),__LC_BOOT_CLOCK+1
+ 	spt	6f-.LPG0(%r13)
+ 	mvc	__LC_LAST_UPDATE_TIMER(8),6f-.LPG0(%r13)
+ 	l	%r15,.Lstack-.LPG0(%r13)
+--- a/arch/s390/kernel/head64.S
++++ b/arch/s390/kernel/head64.S
+@@ -21,8 +21,8 @@ ENTRY(startup_continue)
+ 	xc	__LC_LPP+1(7,0),__LC_LPP+1	# clear lpp and current_pid
+ 	mvi	__LC_LPP,0x80			#   and set LPP_MAGIC
+ 	.insn	s,0xb2800000,__LC_LPP		# load program parameter
+-0:	larl	%r1,sched_clock_base_cc
+-	mvc	0(8,%r1),__LC_LAST_UPDATE_CLOCK
++0:	larl	%r1,tod_clock_base
++	mvc	0(16,%r1),__LC_BOOT_CLOCK
+ 	larl	%r13,.LPG1		# get base
+ 	lctlg	%c0,%c15,.Lctl-.LPG1(%r13)	# load control registers
+ 	lg	%r12,.Lparmaddr-.LPG1(%r13)	# pointer to parameter area
+--- a/arch/s390/kernel/irq.c
++++ b/arch/s390/kernel/irq.c
+@@ -105,7 +105,8 @@ void do_IRQ(struct pt_regs *regs, int ir
+ 
+ 	old_regs = set_irq_regs(regs);
+ 	irq_enter();
+-	if (S390_lowcore.int_clock >= S390_lowcore.clock_comparator)
++	if (tod_after_eq(S390_lowcore.int_clock,
++			 S390_lowcore.clock_comparator))
+ 		/* Serve timer interrupts first. */
+ 		clock_comparator_work();
+ 	generic_handle_irq(irq);
+--- a/arch/s390/kernel/setup.c
++++ b/arch/s390/kernel/setup.c
+@@ -323,7 +323,7 @@ static void __init setup_lowcore(void)
+ 	lc->io_new_psw.mask = PSW_KERNEL_BITS |
+ 		PSW_MASK_DAT | PSW_MASK_MCHECK;
+ 	lc->io_new_psw.addr = (unsigned long) io_int_handler;
+-	lc->clock_comparator = -1ULL;
++	lc->clock_comparator = clock_comparator_max;
+ 	lc->kernel_stack = ((unsigned long) &init_thread_union)
+ 		+ THREAD_SIZE - STACK_FRAME_OVERHEAD - sizeof(struct pt_regs);
+ 	lc->async_stack = (unsigned long)
+--- a/arch/s390/kernel/time.c
++++ b/arch/s390/kernel/time.c
+@@ -51,8 +51,15 @@
+ #include <asm/cio.h>
+ #include "entry.h"
+ 
+-u64 sched_clock_base_cc = -1;	/* Force to data section. */
+-EXPORT_SYMBOL_GPL(sched_clock_base_cc);
++unsigned char tod_clock_base[16] __aligned(8) = {
++	/* Force to data section. */
++	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
++};
++EXPORT_SYMBOL_GPL(tod_clock_base);
++
++u64 clock_comparator_max = -1ULL;
++EXPORT_SYMBOL_GPL(clock_comparator_max);
+ 
+ static DEFINE_PER_CPU(struct clock_event_device, comparators);
+ 
+@@ -75,7 +82,7 @@ void __init time_early_init(void)
+ 	struct ptff_qui qui;
+ 
+ 	/* Initialize TOD steering parameters */
+-	tod_steering_end = sched_clock_base_cc;
++	tod_steering_end = *(unsigned long long *) &tod_clock_base[1];
+ 	vdso_data->ts_end = tod_steering_end;
+ 
+ 	if (!test_facility(28))
+@@ -111,22 +118,27 @@ unsigned long long monotonic_clock(void)
+ }
+ EXPORT_SYMBOL(monotonic_clock);
+ 
+-static void tod_to_timeval(__u64 todval, struct timespec64 *xt)
++static void ext_to_timespec64(unsigned char *clk, struct timespec64 *xt)
+ {
+-	unsigned long long sec;
++	unsigned long long high, low, rem, sec, nsec;
++
++	/* Split extendnd TOD clock to micro-seconds and sub-micro-seconds */
++	high = (*(unsigned long long *) clk) >> 4;
++	low = (*(unsigned long long *)&clk[7]) << 4;
++	/* Calculate seconds and nano-seconds */
++	sec = high;
++	rem = do_div(sec, 1000000);
++	nsec = (((low >> 32) + (rem << 32)) * 1000) >> 32;
+ 
+-	sec = todval >> 12;
+-	do_div(sec, 1000000);
+ 	xt->tv_sec = sec;
+-	todval -= (sec * 1000000) << 12;
+-	xt->tv_nsec = ((todval * 1000) >> 12);
++	xt->tv_nsec = nsec;
+ }
+ 
+ void clock_comparator_work(void)
+ {
+ 	struct clock_event_device *cd;
+ 
+-	S390_lowcore.clock_comparator = -1ULL;
++	S390_lowcore.clock_comparator = clock_comparator_max;
+ 	cd = this_cpu_ptr(&comparators);
+ 	cd->event_handler(cd);
+ }
+@@ -148,7 +160,7 @@ void init_cpu_timer(void)
+ 	struct clock_event_device *cd;
+ 	int cpu;
+ 
+-	S390_lowcore.clock_comparator = -1ULL;
++	S390_lowcore.clock_comparator = clock_comparator_max;
+ 	set_clock_comparator(S390_lowcore.clock_comparator);
+ 
+ 	cpu = smp_processor_id();
+@@ -179,7 +191,7 @@ static void clock_comparator_interrupt(s
+ 				       unsigned long param64)
+ {
+ 	inc_irq_stat(IRQEXT_CLK);
+-	if (S390_lowcore.clock_comparator == -1ULL)
++	if (S390_lowcore.clock_comparator == clock_comparator_max)
+ 		set_clock_comparator(S390_lowcore.clock_comparator);
+ }
+ 
+@@ -197,18 +209,28 @@ static void stp_reset(void);
+ 
+ void read_persistent_clock64(struct timespec64 *ts)
+ {
+-	__u64 clock;
++	unsigned char clk[STORE_CLOCK_EXT_SIZE];
++	__u64 delta;
+ 
+-	clock = get_tod_clock() - initial_leap_seconds;
+-	tod_to_timeval(clock - TOD_UNIX_EPOCH, ts);
++	delta = initial_leap_seconds + TOD_UNIX_EPOCH;
++	get_tod_clock_ext(clk);
++	*(__u64 *) &clk[1] -= delta;
++	if (*(__u64 *) &clk[1] > delta)
++		clk[0]--;
++	ext_to_timespec64(clk, ts);
+ }
+ 
+ void read_boot_clock64(struct timespec64 *ts)
+ {
+-	__u64 clock;
++	unsigned char clk[STORE_CLOCK_EXT_SIZE];
++	__u64 delta;
+ 
+-	clock = sched_clock_base_cc - initial_leap_seconds;
+-	tod_to_timeval(clock - TOD_UNIX_EPOCH, ts);
++	delta = initial_leap_seconds + TOD_UNIX_EPOCH;
++	memcpy(clk, tod_clock_base, 16);
++	*(__u64 *) &clk[1] -= delta;
++	if (*(__u64 *) &clk[1] > delta)
++		clk[0]--;
++	ext_to_timespec64(clk, ts);
+ }
+ 
+ static u64 read_tod_clock(struct clocksource *cs)
+@@ -406,7 +428,10 @@ static void clock_sync_global(unsigned l
+ 	struct ptff_qto qto;
+ 
+ 	/* Fixup the monotonic sched clock. */
+-	sched_clock_base_cc += delta;
++	*(unsigned long long *) &tod_clock_base[1] += delta;
++	if (*(unsigned long long *) &tod_clock_base[1] < delta)
++		/* Epoch overflow */
++		tod_clock_base[0]++;
+ 	/* Adjust TOD steering parameters. */
+ 	vdso_data->tb_update_count++;
+ 	now = get_tod_clock();
+@@ -437,7 +462,7 @@ static void clock_sync_global(unsigned l
+ static void clock_sync_local(unsigned long long delta)
+ {
+ 	/* Add the delta to the clock comparator. */
+-	if (S390_lowcore.clock_comparator != -1ULL) {
++	if (S390_lowcore.clock_comparator != clock_comparator_max) {
+ 		S390_lowcore.clock_comparator += delta;
+ 		set_clock_comparator(S390_lowcore.clock_comparator);
+ 	}
+--- a/arch/s390/lib/delay.c
++++ b/arch/s390/lib/delay.c
+@@ -57,7 +57,7 @@ static void __udelay_enabled(unsigned lo
+ 	end = get_tod_clock_fast() + (usecs << 12);
+ 	do {
+ 		clock_saved = 0;
+-		if (end < S390_lowcore.clock_comparator) {
++		if (tod_after(S390_lowcore.clock_comparator, end)) {
+ 			clock_saved = local_tick_disable();
+ 			set_clock_comparator(end);
+ 		}

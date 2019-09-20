@@ -1,0 +1,96 @@
+From: "Gustavo A. R. Silva" <gustavo@embeddedor.com>
+Date: Tue, 27 Nov 2018 22:27:23 -0600
+Subject: scsi: bfa: bfa_fcs_rport: Mark expected switch fall-throughs
+Git-commit: d14e4cd45ac83edf96b249a222b02344889fb6f9
+Patch-mainline: v5.1-rc1
+References: bsc#1136496 jsc#SLE-4698
+
+In preparation to enabling -Wimplicit-fallthrough, mark switch cases where
+we are expecting to fall through.
+
+Notice that I replaced "!! fall through !!" and "!!! fall through !!!"
+comments with "fall through" annotations, which is what GCC is expecting to
+find.
+
+Addresses-Coverity-ID: 744899 ("Missing break in switch")
+Addresses-Coverity-ID: 744900 ("Missing break in switch")
+Addresses-Coverity-ID: 744901 ("Missing break in switch")
+Signed-off-by: Gustavo A. R. Silva <gustavo@embeddedor.com>
+Acked-by: Sudarsana Kalluru <Sudarsana.Kalluru@qlogic.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/bfa/bfa_fcs_rport.c | 19 +++++++------------
+ 1 file changed, 7 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/scsi/bfa/bfa_fcs_rport.c b/drivers/scsi/bfa/bfa_fcs_rport.c
+index de50349a39ce..1e400f2aaece 100644
+--- a/drivers/scsi/bfa/bfa_fcs_rport.c
++++ b/drivers/scsi/bfa/bfa_fcs_rport.c
+@@ -427,17 +427,13 @@ bfa_fcs_rport_sm_plogi(struct bfa_fcs_rport_s *rport, enum rport_event event)
+ 
+ 	case RPSM_EVENT_LOGO_RCVD:
+ 		bfa_fcs_rport_send_logo_acc(rport);
+-		/*
+-		 * !! fall through !!
+-		 */
++		/* fall through */
+ 	case RPSM_EVENT_PRLO_RCVD:
+ 		if (rport->prlo == BFA_TRUE)
+ 			bfa_fcs_rport_send_prlo_acc(rport);
+ 
+ 		bfa_fcxp_discard(rport->fcxp);
+-		/*
+-		 * !! fall through !!
+-		 */
++		/* fall through */
+ 	case RPSM_EVENT_FAILED:
+ 		if (rport->plogi_retries < BFA_FCS_RPORT_MAX_RETRIES) {
+ 			rport->plogi_retries++;
+@@ -868,9 +864,7 @@ bfa_fcs_rport_sm_adisc_online(struct bfa_fcs_rport_s *rport,
+ 		 * At least go offline when a PLOGI is received.
+ 		 */
+ 		bfa_fcxp_discard(rport->fcxp);
+-		/*
+-		 * !!! fall through !!!
+-		 */
++		/* fall through */
+ 
+ 	case RPSM_EVENT_FAILED:
+ 	case RPSM_EVENT_ADDRESS_CHANGE:
+@@ -1056,6 +1050,7 @@ bfa_fcs_rport_sm_fc4_logosend(struct bfa_fcs_rport_s *rport,
+ 
+ 	case RPSM_EVENT_LOGO_RCVD:
+ 		bfa_fcs_rport_send_logo_acc(rport);
++		/* fall through */
+ 	case RPSM_EVENT_PRLO_RCVD:
+ 		if (rport->prlo == BFA_TRUE)
+ 			bfa_fcs_rport_send_prlo_acc(rport);
+@@ -1144,9 +1139,7 @@ bfa_fcs_rport_sm_hcb_offline(struct bfa_fcs_rport_s *rport,
+ 			bfa_fcs_rport_send_plogiacc(rport, NULL);
+ 			break;
+ 		}
+-		/*
+-		 * !! fall through !!
+-		 */
++		/* fall through */
+ 
+ 	case RPSM_EVENT_ADDRESS_CHANGE:
+ 		if (!bfa_fcs_lport_is_online(rport->port)) {
+@@ -1303,6 +1296,7 @@ bfa_fcs_rport_sm_hcb_logosend(struct bfa_fcs_rport_s *rport,
+ 
+ 	case RPSM_EVENT_LOGO_RCVD:
+ 		bfa_fcs_rport_send_logo_acc(rport);
++		/* fall through */
+ 	case RPSM_EVENT_PRLO_RCVD:
+ 		if (rport->prlo == BFA_TRUE)
+ 			bfa_fcs_rport_send_prlo_acc(rport);
+@@ -1346,6 +1340,7 @@ bfa_fcs_rport_sm_logo_sending(struct bfa_fcs_rport_s *rport,
+ 
+ 	case RPSM_EVENT_LOGO_RCVD:
+ 		bfa_fcs_rport_send_logo_acc(rport);
++		/* fall through */
+ 	case RPSM_EVENT_PRLO_RCVD:
+ 		if (rport->prlo == BFA_TRUE)
+ 			bfa_fcs_rport_send_prlo_acc(rport);
+

@@ -1,0 +1,54 @@
+From: Sean Christopherson <sean.j.christopherson@intel.com>
+Date: Tue, 7 May 2019 12:17:53 -0700
+Subject: KVM: nVMX: Use adjusted pin controls for vmcs02
+Git-commit: c075c3e49d7ae3599106f1af53352268030469db
+Patch-mainline: v5.3-rc1
+References: bsc#1145392
+
+KVM provides a module parameter to allow disabling virtual NMI support
+to simplify testing (hardware *without* virtual NMI support is hard to
+come by but it does have users).  When preparing vmcs02, use the accessor
+for pin controls to ensure that the module param is respected for nested
+guests.
+
+Opportunistically swap the order of applying L0's and L1's pin controls
+to better align with other controls and to prepare for a future patche
+that will ignore L1's, but not L0's, preemption timer flag.
+
+Fixes: d02fcf50779ec ("kvm: vmx: Allow disabling virtual NMI support")
+Cc: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Sean Christopherson <sean.j.christopherson@intel.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Joerg Roedel <jroedel@suse.de>
+---
+ arch/x86/kvm/vmx/nested.c | 5 ++---
+ arch/x86/kvm/vmx/vmx.c    | 2 +-
+ arch/x86/kvm/vmx/vmx.h    | 1 +
+ 3 files changed, 4 insertions(+), 4 deletions(-)
+
+--- a/arch/x86/kvm/vmx.c
++++ b/arch/x86/kvm/vmx.c
+@@ -5608,7 +5608,7 @@ static void set_cr4_guest_host_mask(stru
+ 	vmcs_writel(CR4_GUEST_HOST_MASK, ~vmx->vcpu.arch.cr4_guest_owned_bits);
+ }
+ 
+-static u32 vmx_pin_based_exec_ctrl(struct vcpu_vmx *vmx)
++u32 vmx_pin_based_exec_ctrl(struct vcpu_vmx *vmx)
+ {
+ 	u32 pin_based_exec_ctrl = vmcs_config.pin_based_exec_ctrl;
+ 
+@@ -10981,11 +10981,11 @@ static int prepare_vmcs02(struct kvm_vcp
+ 		vmcs_write64(XSS_EXIT_BITMAP, vmcs12->xss_exit_bitmap);
+ 	vmcs_write64(VMCS_LINK_POINTER, -1ull);
+ 
+-	exec_control = vmcs12->pin_based_vm_exec_control;
++	exec_control = vmx_pin_based_exec_ctrl(vmx);
++	exec_control |= vmcs12->pin_based_vm_exec_control;
+ 
+ 	/* Preemption timer setting is only taken from vmcs01.  */
+ 	exec_control &= ~PIN_BASED_VMX_PREEMPTION_TIMER;
+-	exec_control |= vmcs_config.pin_based_exec_ctrl;
+ 	if (vmx->hv_deadline_tsc == -1)
+ 		exec_control &= ~PIN_BASED_VMX_PREEMPTION_TIMER;
+ 
+

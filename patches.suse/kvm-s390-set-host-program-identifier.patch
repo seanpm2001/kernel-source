@@ -1,0 +1,70 @@
+From: Collin Walling <walling@linux.ibm.com>
+Date: Fri, 31 Aug 2018 12:51:19 -0400
+Subject: KVM: s390: set host program identifier
+Git-commit: 67d49d52ae502eaea8858fbcb97e3c2891f78da9
+Patch-mainline: v4.20-rc1
+References: jsc#SLE-6412
+
+A host program identifier (HPID) provides information regarding the
+underlying host environment. A level-2 (VM) guest will have an HPID
+denoting Linux/KVM, which is set during VCPU setup. A level-3 (VM on a
+VM) and beyond guest will have an HPID denoting KVM vSIE, which is set
+for all shadow control blocks, overriding the original value of the
+HPID.
+
+Signed-off-by: Collin Walling <walling@linux.ibm.com>
+Reviewed-by: Janosch Frank <frankja@linux.ibm.com>
+Message-Id: <1535734279-10204-4-git-send-email-walling@linux.ibm.com>
+Reviewed-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Signed-off-by: Bruce Rogers <brogers@suse.com>
+---
+ arch/s390/include/asm/kvm_host.h | 6 +++++-
+ arch/s390/kvm/kvm-s390.c         | 2 ++
+ arch/s390/kvm/vsie.c             | 2 ++
+ 3 files changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/arch/s390/include/asm/kvm_host.h b/arch/s390/include/asm/kvm_host.h
+index 40e9487b6896..ecc3017d68b6 100644
+--- a/arch/s390/include/asm/kvm_host.h
++++ b/arch/s390/include/asm/kvm_host.h
+@@ -242,7 +242,11 @@ struct kvm_s390_sie_block {
+ 	psw_t	gpsw;			/* 0x0090 */
+ 	__u64	gg14;			/* 0x00a0 */
+ 	__u64	gg15;			/* 0x00a8 */
+-	__u8	reservedb0[20];		/* 0x00b0 */
++	__u8	reservedb0[8];		/* 0x00b0 */
++#define HPID_KVM	0x4
++#define HPID_VSIE	0x5
++	__u8	hpid;			/* 0x00b8 */
++	__u8	reservedb9[11];		/* 0x00b9 */
+ 	__u16	extcpuaddr;		/* 0x00c4 */
+ 	__u16	eic;			/* 0x00c6 */
+ 	__u32	reservedc8;		/* 0x00c8 */
+diff --git a/arch/s390/kvm/kvm-s390.c b/arch/s390/kvm/kvm-s390.c
+index 701bb8dcfd4a..26d540b91e73 100644
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -2689,6 +2689,8 @@ int kvm_arch_vcpu_setup(struct kvm_vcpu *vcpu)
+ 	hrtimer_init(&vcpu->arch.ckc_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+ 	vcpu->arch.ckc_timer.function = kvm_s390_idle_wakeup;
+ 
++	vcpu->arch.sie_block->hpid = HPID_KVM;
++
+ 	kvm_s390_vcpu_crypto_setup(vcpu);
+ 
+ 	return rc;
+diff --git a/arch/s390/kvm/vsie.c b/arch/s390/kvm/vsie.c
+index 3c1f53e2d5c0..b3f135354d5e 100644
+--- a/arch/s390/kvm/vsie.c
++++ b/arch/s390/kvm/vsie.c
+@@ -542,6 +542,8 @@ static int shadow_scb(struct kvm_vcpu *vcpu, struct vsie_page *vsie_page)
+ 	if (test_kvm_facility(vcpu->kvm, 156))
+ 		scb_s->ecd |= scb_o->ecd & ECD_ETOKENF;
+ 
++	scb_s->hpid = HPID_VSIE;
++
+ 	prepare_ibc(vcpu, vsie_page);
+ 	rc = shadow_crycb(vcpu, vsie_page);
+ out:
+

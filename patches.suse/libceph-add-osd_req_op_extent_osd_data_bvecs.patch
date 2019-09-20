@@ -1,0 +1,133 @@
+From: Ilya Dryomov <idryomov@gmail.com>
+Date: Fri, 4 May 2018 16:57:30 +0200
+Subject: libceph: add osd_req_op_extent_osd_data_bvecs()
+Git-commit: 0010f7052d6cb71c4b120238e28cd3fa413913d1
+Patch-mainline: v4.17-rc5
+References: FATE#324714 bsc#1141450
+
+... and store num_bvecs for client code's convenience.
+
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Reviewed-by: Jeff Layton <jlayton@redhat.com>
+Reviewed-by: "Yan, Zheng" <zyan@redhat.com>
+[luis: adjusted rbd context, as we don't have commit
+ 3da691bf4366 ("rbd: new request handling code")]
+Acked-by: Luis Henriques <lhenriques@suse.com>
+---
+ drivers/block/rbd.c             |    1 +
+ include/linux/ceph/osd_client.h |   12 ++++++++++--
+ net/ceph/osd_client.c           |   27 +++++++++++++++++++++++----
+ 3 files changed, 34 insertions(+), 6 deletions(-)
+
+--- a/drivers/block/rbd.c
++++ b/drivers/block/rbd.c
+@@ -2459,6 +2459,7 @@ rbd_img_obj_parent_read_full_callback(st
+ 
+ 	osd_req_op_cls_init(osd_req, 0, CEPH_OSD_OP_CALL, "rbd", "copyup");
+ 	osd_req_op_cls_request_data_bvecs(osd_req, 0, orig_request->copyup_bvecs,
++					  orig_request->copyup_bvec_count,
+ 					  parent_length);
+ 
+ 	/* Add the other op(s) */
+--- a/include/linux/ceph/osd_client.h
++++ b/include/linux/ceph/osd_client.h
+@@ -76,7 +76,10 @@ struct ceph_osd_data {
+ 			u32			bio_length;
+ 		};
+ #endif /* CONFIG_BLOCK */
+-		struct ceph_bvec_iter	bvec_pos;
++		struct {
++			struct ceph_bvec_iter	bvec_pos;
++			u32			num_bvecs;
++		};
+ 	};
+ };
+ 
+@@ -411,6 +414,10 @@ void osd_req_op_extent_osd_data_bio(stru
+ 				    struct ceph_bio_iter *bio_pos,
+ 				    u32 bio_length);
+ #endif /* CONFIG_BLOCK */
++void osd_req_op_extent_osd_data_bvecs(struct ceph_osd_request *osd_req,
++				      unsigned int which,
++				      struct bio_vec *bvecs, u32 num_bvecs,
++				      u32 bytes);
+ void osd_req_op_extent_osd_data_bvec_pos(struct ceph_osd_request *osd_req,
+ 					 unsigned int which,
+ 					 struct ceph_bvec_iter *bvec_pos);
+@@ -425,7 +432,8 @@ extern void osd_req_op_cls_request_data_
+ 					bool own_pages);
+ void osd_req_op_cls_request_data_bvecs(struct ceph_osd_request *osd_req,
+ 				       unsigned int which,
+-				       struct bio_vec *bvecs, u32 bytes);
++				       struct bio_vec *bvecs, u32 num_bvecs,
++				       u32 bytes);
+ extern void osd_req_op_cls_response_data_pages(struct ceph_osd_request *,
+ 					unsigned int which,
+ 					struct page **pages, u64 length,
+--- a/net/ceph/osd_client.c
++++ b/net/ceph/osd_client.c
+@@ -157,10 +157,12 @@ static void ceph_osd_data_bio_init(struc
+ #endif /* CONFIG_BLOCK */
+ 
+ static void ceph_osd_data_bvecs_init(struct ceph_osd_data *osd_data,
+-				     struct ceph_bvec_iter *bvec_pos)
++				     struct ceph_bvec_iter *bvec_pos,
++				     u32 num_bvecs)
+ {
+ 	osd_data->type = CEPH_OSD_DATA_TYPE_BVECS;
+ 	osd_data->bvec_pos = *bvec_pos;
++	osd_data->num_bvecs = num_bvecs;
+ }
+ 
+ #define osd_req_op_data(oreq, whch, typ, fld)				\
+@@ -237,6 +239,22 @@ void osd_req_op_extent_osd_data_bio(stru
+ EXPORT_SYMBOL(osd_req_op_extent_osd_data_bio);
+ #endif /* CONFIG_BLOCK */
+ 
++void osd_req_op_extent_osd_data_bvecs(struct ceph_osd_request *osd_req,
++				      unsigned int which,
++				      struct bio_vec *bvecs, u32 num_bvecs,
++				      u32 bytes)
++{
++	struct ceph_osd_data *osd_data;
++	struct ceph_bvec_iter it = {
++		.bvecs = bvecs,
++		.iter = { .bi_size = bytes },
++	};
++
++	osd_data = osd_req_op_data(osd_req, which, extent, osd_data);
++	ceph_osd_data_bvecs_init(osd_data, &it, num_bvecs);
++}
++EXPORT_SYMBOL(osd_req_op_extent_osd_data_bvecs);
++
+ void osd_req_op_extent_osd_data_bvec_pos(struct ceph_osd_request *osd_req,
+ 					 unsigned int which,
+ 					 struct ceph_bvec_iter *bvec_pos)
+@@ -244,7 +262,7 @@ void osd_req_op_extent_osd_data_bvec_pos
+ 	struct ceph_osd_data *osd_data;
+ 
+ 	osd_data = osd_req_op_data(osd_req, which, extent, osd_data);
+-	ceph_osd_data_bvecs_init(osd_data, bvec_pos);
++	ceph_osd_data_bvecs_init(osd_data, bvec_pos, 0);
+ }
+ EXPORT_SYMBOL(osd_req_op_extent_osd_data_bvec_pos);
+ 
+@@ -287,7 +305,8 @@ EXPORT_SYMBOL(osd_req_op_cls_request_dat
+ 
+ void osd_req_op_cls_request_data_bvecs(struct ceph_osd_request *osd_req,
+ 				       unsigned int which,
+-				       struct bio_vec *bvecs, u32 bytes)
++				       struct bio_vec *bvecs, u32 num_bvecs,
++				       u32 bytes)
+ {
+ 	struct ceph_osd_data *osd_data;
+ 	struct ceph_bvec_iter it = {
+@@ -296,7 +315,7 @@ void osd_req_op_cls_request_data_bvecs(s
+ 	};
+ 
+ 	osd_data = osd_req_op_data(osd_req, which, cls, request_data);
+-	ceph_osd_data_bvecs_init(osd_data, &it);
++	ceph_osd_data_bvecs_init(osd_data, &it, num_bvecs);
+ 	osd_req->r_ops[which].cls.indata_len += bytes;
+ 	osd_req->r_ops[which].indata_len += bytes;
+ }

@@ -1,0 +1,48 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Sat, 22 Sep 2018 11:25:04 -0500
+Subject: [PATCH] smb3: Add debug message later in smb2/smb3 reconnect path
+Git-commit: 6e4d3bbe92120f8482d31e4138e5fc2983caec3e
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+As we reset credits later in the reconnect path, useful
+to have optional (cifsFYI) debug message.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/connect.c | 2 +-
+ fs/cifs/smb2ops.c | 3 +++
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 6221aef45ff5..1605bf250691 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -347,7 +347,7 @@ cifs_reconnect(struct TCP_Server_Info *server)
+ 	server->maxBuf = 0;
+ 	server->max_read = 0;
+ 
+-	cifs_dbg(FYI, "Reconnecting tcp session\n");
++	cifs_dbg(FYI, "Mark tcp session as need reconnect\n");
+ 	trace_smb3_reconnect(server->CurrentMid, server->hostname);
+ 
+ 	/* before reconnecting the tcp session, mark the smb session (uid)
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 41342a8dc53e..c599fc6acba6 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -113,6 +113,9 @@ smb2_set_credits(struct TCP_Server_Info *server, const int val)
+ 	if (val == 1)
+ 		server->reconnect_instance++;
+ 	spin_unlock(&server->req_lock);
++	/* don't log while holding the lock */
++	if (val == 1)
++		cifs_dbg(FYI, "set credits to 1 due to smb2 reconnect\n");
+ }
+ 
+ static int *
+-- 
+2.16.4
+

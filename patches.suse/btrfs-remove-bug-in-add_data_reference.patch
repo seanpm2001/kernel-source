@@ -1,0 +1,35 @@
+From: Liu Bo <bo.li.liu@oracle.com>
+Date: Fri, 18 Aug 2017 15:15:22 -0600
+Subject: Btrfs: remove BUG() in add_data_reference
+Git-commit: b14c55a191263889c379aeee85223bb72501824d
+Patch-mainline: v4.14-rc1
+References: bsc#1149325
+
+Now that we have a helper to report invalid value of extent inline ref
+type, we need to quit gracefully instead of throwing out a kernel panic.
+
+Signed-off-by: Liu Bo <bo.li.liu@oracle.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Johannes Thumshirn <jthumshirn@suse.de>
+---
+ fs/btrfs/relocation.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/fs/btrfs/relocation.c b/fs/btrfs/relocation.c
+index 96f816aa9ed3..1c086d0667be 100644
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -3772,7 +3772,10 @@ int add_data_references(struct reloc_control *rc,
+ 			ret = find_data_references(rc, extent_key,
+ 						   eb, dref, blocks);
+ 		} else {
+-			BUG();
++			ret = -EINVAL;
++			btrfs_err(rc->extent_root->fs_info,
++		     "extent %llu slot %d has an invalid inline ref type",
++			     eb->start, path->slots[0]);
+ 		}
+ 		if (ret) {
+ 			err = ret;
+

@@ -1,0 +1,31 @@
+From: Giridhar Malavali <gmalavali@marvell.com>
+Date: Tue, 2 Apr 2019 14:24:24 -0700
+Subject: scsi: qla2xxx: Disable T10-DIF feature with FC-NVMe during probe
+Patch-mainline: v5.2-rc1
+Git-commit: 5da05a26b8305a625bc9d537671b981795b46dab
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+With FC-NVMe enabled, driver does not support T10 DIF/DIX.  This patch
+disables T10-PI information when ql2xnvmeenable is set.
+
+Signed-off-by: Giridhar Malavali <gmalavali@marvell.com>
+Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_os.c |    4 ++++
+ 1 file changed, 4 insertions(+)
+
+--- a/drivers/scsi/qla2xxx/qla_os.c
++++ b/drivers/scsi/qla2xxx/qla_os.c
+@@ -2898,6 +2898,10 @@ qla2x00_probe_one(struct pci_dev *pdev,
+ 	/* This may fail but that's ok */
+ 	pci_enable_pcie_error_reporting(pdev);
+ 
++	/* Turn off T10-DIF when FC-NVMe is enabled */
++	if (ql2xnvmeenable)
++		ql2xenabledif = 0;
++
+ 	ha = kzalloc(sizeof(struct qla_hw_data), GFP_KERNEL);
+ 	if (!ha) {
+ 		ql_log_pci(ql_log_fatal, pdev, 0x0009,

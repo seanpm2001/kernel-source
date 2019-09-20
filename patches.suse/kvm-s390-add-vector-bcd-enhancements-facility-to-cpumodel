@@ -1,0 +1,37 @@
+From: Christian Borntraeger <borntraeger@de.ibm.com>
+Date: Fri, 28 Dec 2018 09:45:58 +0100
+Subject: KVM: s390: add vector BCD enhancements facility to cpumodel
+Git-commit: d5cb6ab1e3d4d7e0648a167f6290e89f6e86964e
+Patch-mainline: v5.2-rc1
+References: jsc#SLE-6240 FATE#327380
+
+If vector support is enabled, the vector BCD enhancements facility
+might also be enabled.
+We can directly forward this facility to the guest if available
+and VX is requested by user space.
+
+Please note that user space can and will have the final decision
+on the facility bits for a guests.
+
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Reviewed-by: Janosch Frank <frankja@linux.ibm.com>
+Reviewed-by: Collin Walling <walling@linux.ibm.com>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Acked-by: Petr Tesarik <ptesarik@suse.com>
+---
+ arch/s390/kvm/kvm-s390.c |    4 ++++
+ 1 file changed, 4 insertions(+)
+
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -624,6 +624,10 @@ static int kvm_vm_ioctl_enable_cap(struc
+ 				set_kvm_facility(kvm->arch.model.fac_mask, 148);
+ 				set_kvm_facility(kvm->arch.model.fac_list, 148);
+ 			}
++			if (test_facility(152)) {
++				set_kvm_facility(kvm->arch.model.fac_mask, 152);
++				set_kvm_facility(kvm->arch.model.fac_list, 152);
++			}
+ 			r = 0;
+ 		} else
+ 			r = -EINVAL;

@@ -1,0 +1,96 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Tue, 26 Feb 2019 19:08:12 -0600
+Subject: [PATCH] smb3: improve dynamic tracing of open and posix mkdir
+Git-commit: efe2e9f369c72bb72410741ac101b90573256ec0
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Add dynamic trace point for open_enter (and posix mkdir enter)
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c |  5 +++++
+ fs/cifs/trace.h   | 41 ++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 45 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index b774b43edfbd..5e34a7b54d1e 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -2196,6 +2196,8 @@ int smb311_posix_mkdir(const unsigned int xid, struct inode *inode,
+ 	rqst.rq_iov = iov;
+ 	rqst.rq_nvec = n_iov;
+ 
++	trace_smb3_posix_mkdir_enter(xid, tcon->tid, ses->Suid, CREATE_NOT_FILE,
++				    FILE_WRITE_ATTRIBUTES);
+ 	/* resource #4: response buffer */
+ 	rc = cifs_send_recv(xid, ses, &rqst, &resp_buftype, flags, &rsp_iov);
+ 	if (rc) {
+@@ -2414,6 +2416,9 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
+ 	if (rc)
+ 		goto creat_exit;
+ 
++	trace_smb3_open_enter(xid, tcon->tid, tcon->ses->Suid,
++		oparms->create_options, oparms->desired_access);
++
+ 	rc = cifs_send_recv(xid, ses, &rqst, &resp_buftype, flags,
+ 			    &rsp_iov);
+ 	rsp = (struct smb2_create_rsp *)rsp_iov.iov_base;
+diff --git a/fs/cifs/trace.h b/fs/cifs/trace.h
+index 660176e34dde..b6352b68f18b 100644
+--- a/fs/cifs/trace.h
++++ b/fs/cifs/trace.h
+@@ -411,8 +411,47 @@ DEFINE_SMB3_TCON_EVENT(tcon);
+ 
+ 
+ /*
+- * For smb2/smb3 open call
++ * For smb2/smb3 open (including create and mkdir) calls
+  */
++
++DECLARE_EVENT_CLASS(smb3_open_enter_class,
++	TP_PROTO(unsigned int xid,
++		__u32	tid,
++		__u64	sesid,
++		int	create_options,
++		int	desired_access),
++	TP_ARGS(xid, tid, sesid, create_options, desired_access),
++	TP_STRUCT__entry(
++		__field(unsigned int, xid)
++		__field(__u32, tid)
++		__field(__u64, sesid)
++		__field(int, create_options)
++		__field(int, desired_access)
++	),
++	TP_fast_assign(
++		__entry->xid = xid;
++		__entry->tid = tid;
++		__entry->sesid = sesid;
++		__entry->create_options = create_options;
++		__entry->desired_access = desired_access;
++	),
++	TP_printk("xid=%u sid=0x%llx tid=0x%x cr_opts=0x%x des_access=0x%x",
++		__entry->xid, __entry->sesid, __entry->tid,
++		__entry->create_options, __entry->desired_access)
++)
++
++#define DEFINE_SMB3_OPEN_ENTER_EVENT(name)        \
++DEFINE_EVENT(smb3_open_enter_class, smb3_##name,  \
++	TP_PROTO(unsigned int xid,		\
++		__u32	tid,			\
++		__u64	sesid,			\
++		int	create_options,		\
++		int	desired_access),	\
++	TP_ARGS(xid, tid, sesid, create_options, desired_access))
++
++DEFINE_SMB3_OPEN_ENTER_EVENT(open_enter);
++DEFINE_SMB3_OPEN_ENTER_EVENT(posix_mkdir_enter);
++
+ DECLARE_EVENT_CLASS(smb3_open_err_class,
+ 	TP_PROTO(unsigned int xid,
+ 		__u32	tid,
+-- 
+2.16.4
+

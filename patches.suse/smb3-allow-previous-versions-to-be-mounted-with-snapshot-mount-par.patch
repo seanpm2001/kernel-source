@@ -1,0 +1,148 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Fri, 10 Aug 2018 02:25:06 -0500
+Subject: [PATCH] smb3: allow previous versions to be mounted with snapshot=
+ mount parm
+Git-commit: cdeaf9d04a5a0f51220d2f025385c553220bfb5c
+Patch-mainline: v4.18
+References: bsc#1144333
+
+mounting with the "snapshots=" mount parm allows a read-only
+view of a previous version of a file system (see MS-SMB2
+and "timewarp" tokens, section 2.2.13.2.6) based on the timestamp
+passed in on the snapshots mount parm.
+
+Add processing to optionally send this create context.
+
+Example output:
+
+/mnt1 is mounted with "snapshots=..." and will see an earlier
+version of the directory, with three fewer files than /mnt2
+the current version of the directory.
+
+root@Ubuntu-17-Virtual-Machine:~/cifs-2.6# cat /proc/mounts | grep cifs
+//172.22.149.186/public /mnt1 cifs
+ro,relatime,vers=default,cache=strict,username=smfrench,uid=0,noforceuid,gid=0,noforcegid,addr=172.22.149.186,file_mode=0755,dir_mode=0755,soft,nounix,mapposix,rsize=1048576,wsize=1048576,echo_interval=60,snapshot=131748608570000000,actimeo=1
+
+//172.22.149.186/public /mnt2 cifs
+rw,relatime,vers=default,cache=strict,username=smfrench,uid=0,noforceuid,gid=0,noforcegid,addr=172.22.149.186,file_mode=0755,dir_mode=0755,soft,nounix,mapposix,rsize=1048576,wsize=1048576,echo_interval=60,actimeo=1
+
+root@Ubuntu-17-Virtual-Machine:~/cifs-2.6# ls /mnt1
+EmptyDir  newerdir
+root@Ubuntu-17-Virtual-Machine:~/cifs-2.6# ls /mnt1/newerdir
+
+root@Ubuntu-17-Virtual-Machine:~/cifs-2.6# ls /mnt2
+EmptyDir  file  newerdir  newestdir  timestamp-trace.cap
+root@Ubuntu-17-Virtual-Machine:~/cifs-2.6# ls /mnt2/newerdir
+new-file-not-in-snapshot
+
+Snapshots are extremely useful for comparing previous versions of files or directories,
+and recovering from data corruptions or mistakes.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c | 60 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/cifs/smb2pdu.h |  8 ++++++++
+ 2 files changed, 68 insertions(+)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index faf2b779e5cb..2f1938011395 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -1856,6 +1856,51 @@ add_durable_context(struct kvec *iov, unsigned int *num_iovec,
+ 	return 0;
+ }
+ 
++/* See MS-SMB2 2.2.13.2.7 */
++static struct crt_twarp_ctxt *
++create_twarp_buf(__u64 timewarp)
++{
++	struct crt_twarp_ctxt *buf;
++
++	buf = kzalloc(sizeof(struct crt_twarp_ctxt), GFP_KERNEL);
++	if (!buf)
++		return NULL;
++
++	buf->ccontext.DataOffset = cpu_to_le16(offsetof
++					(struct crt_twarp_ctxt, Timestamp));
++	buf->ccontext.DataLength = cpu_to_le32(8);
++	buf->ccontext.NameOffset = cpu_to_le16(offsetof
++				(struct crt_twarp_ctxt, Name));
++	buf->ccontext.NameLength = cpu_to_le16(4);
++	/* SMB2_CREATE_TIMEWARP_TOKEN is "TWrp" */
++	buf->Name[0] = 'T';
++	buf->Name[1] = 'W';
++	buf->Name[2] = 'r';
++	buf->Name[3] = 'p';
++	buf->Timestamp = cpu_to_le64(timewarp);
++	return buf;
++}
++
++/* See MS-SMB2 2.2.13.2.7 */
++static int
++add_twarp_context(struct kvec *iov, unsigned int *num_iovec, __u64 timewarp)
++{
++	struct smb2_create_req *req = iov[0].iov_base;
++	unsigned int num = *num_iovec;
++
++	iov[num].iov_base = create_twarp_buf(timewarp);
++	if (iov[num].iov_base == NULL)
++		return -ENOMEM;
++	iov[num].iov_len = sizeof(struct crt_twarp_ctxt);
++	if (!req->CreateContextsOffset)
++		req->CreateContextsOffset = cpu_to_le32(
++				sizeof(struct smb2_create_req) +
++				iov[num - 1].iov_len);
++	le32_add_cpu(&req->CreateContextsLength, sizeof(struct crt_twarp_ctxt));
++	*num_iovec = num + 1;
++	return 0;
++}
++
+ static int
+ alloc_path_with_tree_prefix(__le16 **out_path, int *out_size, int *out_len,
+ 			    const char *treename, const __le16 *path)
+@@ -2168,6 +2213,21 @@ SMB2_open_init(struct cifs_tcon *tcon, struct smb_rqst *rqst, __u8 *oplock,
+ 			return rc;
+ 	}
+ 
++	if (tcon->snapshot_time) {
++		cifs_dbg(FYI, "adding snapshot context\n");
++		if (n_iov > 2) {
++			struct create_context *ccontext =
++			    (struct create_context *)iov[n_iov-1].iov_base;
++			ccontext->Next =
++				cpu_to_le32(iov[n_iov-1].iov_len);
++		}
++
++		rc = add_twarp_context(iov, &n_iov, tcon->snapshot_time);
++		if (rc)
++			return rc;
++	}
++
++
+ 	rqst->rq_nvec = n_iov;
+ 	return 0;
+ }
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index cf37c2f3f3b8..a2eeae9e0432 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -767,6 +767,14 @@ struct create_durable_handle_reconnect_v2 {
+ 	struct durable_reconnect_context_v2 dcontext;
+ } __packed;
+ 
++/* See MS-SMB2 2.2.13.2.5 */
++struct crt_twarp_ctxt {
++	struct create_context ccontext;
++	__u8	Name[8];
++	__le64	Timestamp;
++
++} __packed;
++
+ #define COPY_CHUNK_RES_KEY_SIZE	24
+ struct resume_key_req {
+ 	char ResumeKey[COPY_CHUNK_RES_KEY_SIZE];
+-- 
+2.16.4
+

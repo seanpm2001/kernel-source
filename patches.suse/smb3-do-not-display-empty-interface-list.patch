@@ -1,0 +1,35 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Thu, 14 Jun 2018 21:59:31 -0500
+Subject: [PATCH] smb3: do not display empty interface list
+Git-commit: 115d5d288dc3368e3d6e7eb9ee213b342f072c23
+Patch-mainline: v4.18-rc1
+References: bsc#1144333
+
+If server does not support listing interfaces then do not
+display empty "Server interfaces" line to avoid confusing users.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+CC: Aurelien Aptel <aaptel@suse.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifs_debug.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/cifs_debug.c b/fs/cifs/cifs_debug.c
+index e8db245194e7..bfe999505815 100644
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -333,7 +333,9 @@ static int cifs_debug_data_proc_show(struct seq_file *m, void *v)
+ 			spin_unlock(&GlobalMid_Lock);
+ 
+ 			spin_lock(&ses->iface_lock);
+-			seq_printf(m, "\n\tServer interfaces: %zu\n", ses->iface_count);
++			if (ses->iface_count)
++				seq_printf(m, "\n\tServer interfaces: %zu\n",
++					   ses->iface_count);
+ 			for (j = 0; j < ses->iface_count; j++) {
+ 				seq_printf(m, "\t%d)\n", j);
+ 				cifs_dump_iface(m, &ses->iface_list[j]);
+-- 
+2.16.4
+

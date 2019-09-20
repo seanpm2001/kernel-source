@@ -1,0 +1,52 @@
+From: "Yan, Zheng" <zyan@redhat.com>
+Date: Fri, 31 May 2019 20:19:18 +0800
+Subject: ceph: fix infinite loop in get_quota_realm()
+Git-commit: 2ef5df1abe6777b463cdfec20211d9846b116d24
+Patch-mainline: v5.3-rc1
+References: bsc#1148133
+
+get_quota_realm() enters infinite loop if quota inode has no caps.
+This can happen after client gets evicted.
+
+Signed-off-by: "Yan, Zheng" <zyan@redhat.com>
+Reviewed-by: Luis Henriques <lhenriques@suse.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+---
+ fs/ceph/quota.c | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ceph/quota.c b/fs/ceph/quota.c
+index d629fc857450..de56dee60540 100644
+--- a/fs/ceph/quota.c
++++ b/fs/ceph/quota.c
+@@ -135,7 +135,7 @@ static struct inode *lookup_quotarealm_inode(struct ceph_mds_client *mdsc,
+ 		return NULL;
+ 
+ 	mutex_lock(&qri->mutex);
+-	if (qri->inode) {
++	if (qri->inode && ceph_is_any_caps(qri->inode)) {
+ 		/* A request has already returned the inode */
+ 		mutex_unlock(&qri->mutex);
+ 		return qri->inode;
+@@ -146,7 +146,18 @@ static struct inode *lookup_quotarealm_inode(struct ceph_mds_client *mdsc,
+ 		mutex_unlock(&qri->mutex);
+ 		return NULL;
+ 	}
+-	in = ceph_lookup_inode(sb, realm->ino);
++	if (qri->inode) {
++		/* get caps */
++		int ret = __ceph_do_getattr(qri->inode, NULL,
++					    CEPH_STAT_CAP_INODE, true);
++		if (ret >= 0)
++			in = qri->inode;
++		else
++			in = ERR_PTR(ret);
++	}  else {
++		in = ceph_lookup_inode(sb, realm->ino);
++	}
++
+ 	if (IS_ERR(in)) {
+ 		pr_warn("Can't lookup inode %llx (err: %ld)\n",
+ 			realm->ino, PTR_ERR(in));
+

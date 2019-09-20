@@ -1,0 +1,77 @@
+From dcdc46794b7bb76733d9792cca2f45871d66881f Mon Sep 17 00:00:00 2001
+From: Michal Suchanek <msuchanek@suse.de>
+Date: Mon, 26 Jun 2017 16:06:01 +0200
+Subject: [PATCH] powerpc/fadump: use kstrtoint to handle sysfs store
+
+References: bsc#1146376
+Patch-mainline: v4.15-rc1
+Git-commit: dcdc46794b7bb76733d9792cca2f45871d66881f
+
+Currently sysfs store handlers in fadump use if buf[0] == 'char'.
+
+This means input "100foo" is interpreted as '1' and "01" as '0'.
+
+Change to kstrtoint so leading zeroes and the like is handled in
+expected way.
+
+Signed-off-by: Michal Suchanek <msuchanek@suse.de>
+Acked-by: Hari Bathini <hbathini@linux.vnet.ibm.com>
+Signed-off-by: Michal Suchanek <a class="moz-txt-link-rfc2396E" href="mailto:msuchanek@suse.de">&lt;msuchanek@suse.de&gt;</a></pre>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+---
+ arch/powerpc/kernel/fadump.c | 17 +++++++++++++----
+ 1 file changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/arch/powerpc/kernel/fadump.c b/arch/powerpc/kernel/fadump.c
+index e1431800bfb9..04ea5c04fd24 100644
+--- a/arch/powerpc/kernel/fadump.c
++++ b/arch/powerpc/kernel/fadump.c
+@@ -1270,10 +1270,15 @@ static ssize_t fadump_release_memory_store(struct kobject *kobj,
+ 					struct kobj_attribute *attr,
+ 					const char *buf, size_t count)
+ {
++	int input = -1;
++
+ 	if (!fw_dump.dump_active)
+ 		return -EPERM;
+ 
+-	if (buf[0] == '1') {
++	if (kstrtoint(buf, 0, &input))
++		return -EINVAL;
++
++	if (input == 1) {
+ 		/*
+ 		 * Take away the '/proc/vmcore'. We are releasing the dump
+ 		 * memory, hence it will not be valid anymore.
+@@ -1307,21 +1312,25 @@ static ssize_t fadump_register_store(struct kobject *kobj,
+ 					const char *buf, size_t count)
+ {
+ 	int ret = 0;
++	int input = -1;
+ 
+ 	if (!fw_dump.fadump_enabled || fdm_active)
+ 		return -EPERM;
+ 
++	if (kstrtoint(buf, 0, &input))
++		return -EINVAL;
++
+ 	mutex_lock(&fadump_mutex);
+ 
+-	switch (buf[0]) {
+-	case '0':
++	switch (input) {
++	case 0:
+ 		if (fw_dump.dump_registered == 0) {
+ 			goto unlock_out;
+ 		}
+ 		/* Un-register Firmware-assisted dump */
+ 		fadump_unregister_dump(&fdm);
+ 		break;
+-	case '1':
++	case 1:
+ 		if (fw_dump.dump_registered == 1) {
+ 			ret = -EEXIST;
+ 			goto unlock_out;
+-- 
+2.22.0
+

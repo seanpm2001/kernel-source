@@ -1,0 +1,45 @@
+From: YueHaibing <yuehaibing@huawei.com>
+Date: Fri, 7 Dec 2018 07:05:38 +0000
+Subject: [PATCH] cifs: remove set but not used variable 'smb_buf'
+Git-commit: 0f57451eebf1945790785df106497bf62812f62a
+Patch-mainline: v5.0-rc1
+References: bsc#1144333
+
+Fixes gcc '-Wunused-but-set-variable' warning:
+
+fs/cifs/sess.c: In function '_sess_auth_rawntlmssp_assemble_req':
+fs/cifs/sess.c:1157:18: warning:
+ variable 'smb_buf' set but not used [-Wunused-but-set-variable]
+
+It never used since commit cc87c47d9d7a ("cifs: Separate rawntlmssp auth
+from CIFS_SessSetup()")
+
+Signed-off-by: YueHaibing <yuehaibing@huawei.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/sess.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/fs/cifs/sess.c b/fs/cifs/sess.c
+index 7fa447aa2b50..dcd49ad60c83 100644
+--- a/fs/cifs/sess.c
++++ b/fs/cifs/sess.c
+@@ -1154,14 +1154,12 @@ sess_auth_kerberos(struct sess_data *sess_data)
+ static int
+ _sess_auth_rawntlmssp_assemble_req(struct sess_data *sess_data)
+ {
+-	struct smb_hdr *smb_buf;
+ 	SESSION_SETUP_ANDX *pSMB;
+ 	struct cifs_ses *ses = sess_data->ses;
+ 	__u32 capabilities;
+ 	char *bcc_ptr;
+ 
+ 	pSMB = (SESSION_SETUP_ANDX *)sess_data->iov[0].iov_base;
+-	smb_buf = (struct smb_hdr *)pSMB;
+ 
+ 	capabilities = cifs_ssetup_hdr(ses, pSMB);
+ 	if ((pSMB->req.hdr.Flags2 & SMBFLG2_UNICODE) == 0) {
+-- 
+2.16.4
+

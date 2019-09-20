@@ -1,0 +1,89 @@
+From: David Disseldorp <ddiss@suse.de>
+Date: Thu, 18 Apr 2019 14:15:46 +0200
+Subject: ceph: carry snapshot creation time with inodes
+Git-commit: 193e7b37628e97c6e66ec26a2c062dace68b4acd
+Patch-mainline: v5.3-rc1
+References: bsc#1148133 bsc#1148570
+
+MDS InodeStat v3 wire structures include a trailing snapshot creation
+time member. Unmarshall this and retain it for a future vxattr.
+
+Signed-off-by: David Disseldorp <ddiss@suse.de>
+Reviewed-by: "Yan, Zheng" <zyan@redhat.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+[luis: replaced all occurrences of timespec64 by timespec, including the
+ ceph_inode_info field i_snap_btime.  This is because we're not carrying
+ commit 473bd2d780d1 ("libceph: use timespec64 in for keepalive2 and
+ticket validity").]
+---
+ fs/ceph/inode.c      |  1 +
+ fs/ceph/mds_client.c | 10 ++++++++++
+ fs/ceph/mds_client.h |  1 +
+ fs/ceph/super.h      |  1 +
+ 4 files changed, 13 insertions(+)
+
+diff --git a/fs/ceph/inode.c b/fs/ceph/inode.c
+index 761451f36e2d..eb35d47d4e2e 100644
+--- a/fs/ceph/inode.c
++++ b/fs/ceph/inode.c
+@@ -811,6 +811,7 @@ static int fill_inode(struct inode *inod
+ 		dout("%p mode 0%o uid.gid %d.%d\n", inode, inode->i_mode,
+ 		     from_kuid(&init_user_ns, inode->i_uid),
+ 		     from_kgid(&init_user_ns, inode->i_gid));
++		ceph_decode_timespec(&ci->i_snap_btime, &iinfo->snap_btime);
+ 	}
+ 
+ 	if ((new_version || (new_issued & CEPH_CAP_LINK_SHARED)) &&
+diff --git a/fs/ceph/mds_client.c b/fs/ceph/mds_client.c
+index c8a9b89b922d..0b78507eccb0 100644
+--- a/fs/ceph/mds_client.c
++++ b/fs/ceph/mds_client.c
+@@ -159,6 +159,15 @@ static int parse_reply_info_in(void **p,
+ 			info->dir_pin = -ENODATA;
+ 		}
+ 
++		/* snapshot birth time, remains zero for v<=2 */
++		if (struct_v >= 3) {
++			ceph_decode_need(p, end, sizeof(info->snap_btime), bad);
++			ceph_decode_copy(p, &info->snap_btime,
++					 sizeof(info->snap_btime));
++		} else {
++			memset(&info->snap_btime, 0, sizeof(info->snap_btime));
++		}
++
+ 		*p = end;
+ 	} else {
+ 		if (features & CEPH_FEATURE_MDS_INLINE_DATA) {
+@@ -191,6 +200,7 @@ static int parse_reply_info_in(void **p,
+ 		}
+ 
+ 		info->dir_pin = -ENODATA;
++		/* info->snap_btime remains zero */
+ 	}
+ 	return 0;
+ bad:
+diff --git a/fs/ceph/mds_client.h b/fs/ceph/mds_client.h
+index a83f28bc2387..9c28b86abcf4 100644
+--- a/fs/ceph/mds_client.h
++++ b/fs/ceph/mds_client.h
+@@ -66,6 +66,7 @@ struct ceph_mds_reply_info_in {
+ 	u64 max_bytes;
+ 	u64 max_files;
+ 	s32 dir_pin;
++	struct ceph_timespec snap_btime;
+ };
+ 
+ struct ceph_mds_reply_dir_entry {
+diff --git a/fs/ceph/super.h b/fs/ceph/super.h
+index 5f27e1f7f2d6..1de6b1f4f094 100644
+--- a/fs/ceph/super.h
++++ b/fs/ceph/super.h
+@@ -372,6 +372,7 @@ struct ceph_inode_info {
+ 	int i_snap_realm_counter; /* snap realm (if caps) */
+ 	struct list_head i_snap_realm_item;
+ 	struct list_head i_snap_flush_item;
++	struct timespec i_snap_btime;
+ 
+ 	struct work_struct i_wb_work;  /* writeback work */
+ 	struct work_struct i_pg_inv_work;  /* page invalidation work */

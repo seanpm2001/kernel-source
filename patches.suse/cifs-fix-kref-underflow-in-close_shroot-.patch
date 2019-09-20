@@ -1,0 +1,61 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Thu, 28 Mar 2019 11:20:02 +1000
+Subject: [PATCH] cifs: fix kref underflow in close_shroot()
+Git-commit: 2f94a3125b8742b05a011d62b16f52eb8f9ebe1c
+Patch-mainline: v5.1-rc4
+References: bsc#1144333
+
+Fix a bug where we used to not initialize the cached fid structure at all
+in open_shroot() if the open was successful but we did not get a lease.
+This would leave the structure uninitialized and later when we close the handle
+we would in close_shroot() try to kref_put() an uninitialized refcount.
+
+Fix this by always initializing this structure if the open was successful
+but only do the extra get() if we got a lease.
+This extra get() is only used to hold the structure until we get a lease
+break from the server at which point we will kref_put() it during lease
+processing.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+CC: Stable <stable@vger.kernel.org>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c | 16 +++++++---------
+ 1 file changed, 7 insertions(+), 9 deletions(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 1022a3771e14..7cfafac255aa 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -717,20 +717,18 @@ int open_shroot(unsigned int xid, struct cifs_tcon *tcon, struct cifs_fid *pfid)
+ 	oparms.fid->mid = le64_to_cpu(o_rsp->sync_hdr.MessageId);
+ #endif /* CIFS_DEBUG2 */
+ 
+-	if (o_rsp->OplockLevel == SMB2_OPLOCK_LEVEL_LEASE)
+-		oplock = smb2_parse_lease_state(server, o_rsp,
+-						&oparms.fid->epoch,
+-						oparms.fid->lease_key);
+-	else
+-		goto oshr_exit;
+-
+-
+ 	memcpy(tcon->crfid.fid, pfid, sizeof(struct cifs_fid));
+ 	tcon->crfid.tcon = tcon;
+ 	tcon->crfid.is_valid = true;
+ 	kref_init(&tcon->crfid.refcount);
+-	kref_get(&tcon->crfid.refcount);
+ 
++	if (o_rsp->OplockLevel == SMB2_OPLOCK_LEVEL_LEASE) {
++		kref_get(&tcon->crfid.refcount);
++		oplock = smb2_parse_lease_state(server, o_rsp,
++						&oparms.fid->epoch,
++						oparms.fid->lease_key);
++	} else
++		goto oshr_exit;
+ 
+ 	qi_rsp = (struct smb2_query_info_rsp *)rsp_iov[1].iov_base;
+ 	if (le32_to_cpu(qi_rsp->OutputBufferLength) < sizeof(struct smb2_file_all_info))
+-- 
+2.16.4
+

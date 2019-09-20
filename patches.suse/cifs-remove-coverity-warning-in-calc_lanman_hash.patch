@@ -1,0 +1,53 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Wed, 12 Dec 2018 11:50:00 +1000
+Subject: [PATCH] cifs: remove coverity warning in calc_lanman_hash
+Git-commit: 52baa51d30573273341b78a3e3ed0d9a845d3e55
+Patch-mainline: v5.0-rc1
+References: bsc#1144333
+
+password_with_pad is a fixed size buffer of 16 bytes, it contains a
+password string, to be padded with \0 if shorter than 16 bytes
+but is just truncated if longer.
+It is not, and we do not depend on it to be, nul terminated.
+
+As such, do not use strncpy() to populate this buffer since
+the str* prefix suggests that this is a string, which it is not,
+and it also confuses coverity causing a false warning.
+
+Detected by CoverityScan CID#113743 ("Buffer not null terminated")
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsencrypt.c | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/fs/cifs/cifsencrypt.c b/fs/cifs/cifsencrypt.c
+index ecdff344e8fe..d2a05e46d6f5 100644
+--- a/fs/cifs/cifsencrypt.c
++++ b/fs/cifs/cifsencrypt.c
+@@ -304,12 +304,17 @@ int setup_ntlm_response(struct cifs_ses *ses, const struct nls_table *nls_cp)
+ int calc_lanman_hash(const char *password, const char *cryptkey, bool encrypt,
+ 			char *lnm_session_key)
+ {
+-	int i;
++	int i, len;
+ 	int rc;
+ 	char password_with_pad[CIFS_ENCPWD_SIZE] = {0};
+ 
+-	if (password)
+-		strncpy(password_with_pad, password, CIFS_ENCPWD_SIZE);
++	if (password) {
++		for (len = 0; len < CIFS_ENCPWD_SIZE; len++)
++			if (!password[len])
++				break;
++
++		memcpy(password_with_pad, password, len);
++	}
+ 
+ 	if (!encrypt && global_secflags & CIFSSEC_MAY_PLNTXT) {
+ 		memcpy(lnm_session_key, password_with_pad,
+-- 
+2.16.4
+

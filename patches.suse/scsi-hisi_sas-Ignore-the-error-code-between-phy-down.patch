@@ -1,0 +1,53 @@
+From: Luo Jiaxing <luojiaxing@huawei.com>
+Date: Wed, 29 May 2019 17:58:46 +0800
+Subject: scsi: hisi_sas: Ignore the error code between phy down to phy up
+Patch-mainline: v5.3-rc1
+Git-commit: e4c19deba6078c41fab2cb2ea0088088db228c21
+References: bsc#1137322 bsc#1137323 bsc#1138099 bsc#1138100
+
+Several error codes will be generated between PHY down to up.
+
+This issue was introduced by HW design. The designers came to the
+conclusion that we should ignore these errors.
+
+Signed-off-by: Jiaxing Luo <luojiaxing@huawei.com>
+Signed-off-by: John Garry <john.garry@huawei.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/hisi_sas/hisi_sas_v3_hw.c |   15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+--- a/drivers/scsi/hisi_sas/hisi_sas_v3_hw.c
++++ b/drivers/scsi/hisi_sas/hisi_sas_v3_hw.c
+@@ -907,8 +907,14 @@ static void enable_phy_v3_hw(struct hisi
+ static void disable_phy_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
+ {
+ 	u32 cfg = hisi_sas_phy_read32(hisi_hba, phy_no, PHY_CFG);
++	u32 irq_msk = hisi_sas_phy_read32(hisi_hba, phy_no, CHL_INT2_MSK);
++	static const u32 msk = BIT(CHL_INT2_RX_DISP_ERR_OFF) |
++			       BIT(CHL_INT2_RX_CODE_ERR_OFF) |
++			       BIT(CHL_INT2_RX_INVLD_DW_OFF);
+ 	u32 state;
+ 
++	hisi_sas_phy_write32(hisi_hba, phy_no, CHL_INT2_MSK, msk | irq_msk);
++
+ 	cfg &= ~PHY_CFG_ENA_MSK;
+ 	hisi_sas_phy_write32(hisi_hba, phy_no, PHY_CFG, cfg);
+ 
+@@ -919,6 +925,15 @@ static void disable_phy_v3_hw(struct his
+ 		cfg |= PHY_CFG_PHY_RST_MSK;
+ 		hisi_sas_phy_write32(hisi_hba, phy_no, PHY_CFG, cfg);
+ 	}
++
++	udelay(1);
++
++	hisi_sas_phy_read32(hisi_hba, phy_no, ERR_CNT_INVLD_DW);
++	hisi_sas_phy_read32(hisi_hba, phy_no, ERR_CNT_DISP_ERR);
++	hisi_sas_phy_read32(hisi_hba, phy_no, ERR_CNT_CODE_ERR);
++
++	hisi_sas_phy_write32(hisi_hba, phy_no, CHL_INT2, msk);
++	hisi_sas_phy_write32(hisi_hba, phy_no, CHL_INT2_MSK, irq_msk);
+ }
+ 
+ static void start_phy_v3_hw(struct hisi_hba *hisi_hba, int phy_no)

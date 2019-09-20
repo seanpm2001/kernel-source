@@ -1,0 +1,104 @@
+From: Jeff Layton <jlayton@kernel.org>
+Date: Wed, 29 May 2019 11:19:42 -0400
+Subject: ceph: add btime field to ceph_inode_info
+Git-commit: 245ce991cca55eb16cfc43d1655574121b8ed85f
+Patch-mainline: v5.3-rc1
+References: bsc#1148133 bsc#1136682
+
+Signed-off-by: Jeff Layton <jlayton@kernel.org>
+Reviewed-by: "Yan, Zheng" <zyan@redhat.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+[luis: s/timespec64/timespec]
+---
+ fs/ceph/inode.c      |  3 +++
+ fs/ceph/mds_client.c | 21 +++++++++++++--------
+ fs/ceph/mds_client.h |  1 +
+ fs/ceph/super.h      |  1 +
+ 4 files changed, 17 insertions(+), 8 deletions(-)
+
+diff --git a/fs/ceph/inode.c b/fs/ceph/inode.c
+index b2988e9f8e15..909f13d4d664 100644
+--- a/fs/ceph/inode.c
++++ b/fs/ceph/inode.c
+@@ -513,6 +513,8 @@ struct inode *ceph_alloc_inode(struct su
+ 
+ 	INIT_WORK(&ci->i_vmtruncate_work, ceph_vmtruncate_work);
+ 
++	memset(&ci->i_btime, '\0', sizeof(ci->i_btime));
++
+ 	ceph_fscache_inode_init(ci);
+ 
+ 	return &ci->vfs_inode;
+@@ -811,6 +813,7 @@ static int fill_inode(struct inode *inod
+ 		dout("%p mode 0%o uid.gid %d.%d\n", inode, inode->i_mode,
+ 		     from_kuid(&init_user_ns, inode->i_uid),
+ 		     from_kgid(&init_user_ns, inode->i_gid));
++		ceph_decode_timespec(&ci->i_btime, &iinfo->btime);
+ 		ceph_decode_timespec(&ci->i_snap_btime, &iinfo->snap_btime);
+ 	}
+ 
+diff --git a/fs/ceph/mds_client.c b/fs/ceph/mds_client.c
+index 598a3fa280a7..636d3df47df6 100644
+--- a/fs/ceph/mds_client.c
++++ b/fs/ceph/mds_client.c
+@@ -143,14 +143,13 @@ static int parse_reply_info_in(void **p,
+ 			info->pool_ns_data = *p;
+ 			*p += info->pool_ns_len;
+ 		}
+-		/* btime, change_attr */
+-		{
+-			struct ceph_timespec btime;
+-			u64 change_attr;
+-			ceph_decode_need(p, end, sizeof(btime), bad);
+-			ceph_decode_copy(p, &btime, sizeof(btime));
+-			ceph_decode_64_safe(p, end, change_attr, bad);
+-		}
++
++		/* btime */
++		ceph_decode_need(p, end, sizeof(info->btime), bad);
++		ceph_decode_copy(p, &info->btime, sizeof(info->btime));
++
++		/* change attribute */
++		ceph_decode_skip_64(p, end, bad);
+ 
+ 		/* dir pin */
+ 		if (struct_v >= 2) {
+@@ -199,6 +198,12 @@ static int parse_reply_info_in(void **p,
+ 			}
+ 		}
+ 
++		if (features & CEPH_FEATURE_FS_BTIME) {
++			ceph_decode_need(p, end, sizeof(info->btime), bad);
++			ceph_decode_copy(p, &info->btime, sizeof(info->btime));
++			ceph_decode_skip_64(p, end, bad);
++		}
++
+ 		info->dir_pin = -ENODATA;
+ 		/* info->snap_btime remains zero */
+ 	}
+diff --git a/fs/ceph/mds_client.h b/fs/ceph/mds_client.h
+index 330769ecb601..da2f53646217 100644
+--- a/fs/ceph/mds_client.h
++++ b/fs/ceph/mds_client.h
+@@ -66,6 +66,7 @@ struct ceph_mds_reply_info_in {
+ 	u64 max_bytes;
+ 	u64 max_files;
+ 	s32 dir_pin;
++	struct ceph_timespec btime;
+ 	struct ceph_timespec snap_btime;
+ };
+ 
+diff --git a/fs/ceph/super.h b/fs/ceph/super.h
+index 81bbb197fc3c..859d1f3a0d4a 100644
+--- a/fs/ceph/super.h
++++ b/fs/ceph/super.h
+@@ -372,6 +372,7 @@ struct ceph_inode_info {
+ 	int i_snap_realm_counter; /* snap realm (if caps) */
+ 	struct list_head i_snap_realm_item;
+ 	struct list_head i_snap_flush_item;
++	struct timespec i_btime;
+ 	struct timespec i_snap_btime;
+ 
+ 	struct work_struct i_wb_work;  /* writeback work */
+

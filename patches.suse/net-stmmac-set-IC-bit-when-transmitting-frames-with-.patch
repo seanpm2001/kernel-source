@@ -1,0 +1,55 @@
+From: Roland Hii <roland.king.guan.hii@intel.com>
+Date: Wed, 19 Jun 2019 22:41:48 +0800
+Subject: net: stmmac: set IC bit when transmitting frames with HW timestamp
+Git-commit: d0bb82fd60183868f46c8ccc595a3d61c3334a18
+Patch-mainline: 5.2-rc7
+References: networking-stable-19_07_02
+
+When transmitting certain PTP frames, e.g. SYNC and DELAY_REQ, the
+PTP daemon, e.g. ptp4l, is polling the driver for the frame transmit
+hardware timestamp. The polling will most likely timeout if the tx
+coalesce is enabled due to the Interrupt-on-Completion (IC) bit is
+not set in tx descriptor for those frames.
+
+This patch will ignore the tx coalesce parameter and set the IC bit
+when transmitting PTP frames which need to report out the frame
+transmit hardware timestamp to user space.
+
+[js] the if is not switched in 4.12 yet, so just add the conditions
+
+Fixes: f748be531d70 ("net: stmmac: Rework coalesce timer and fix multi-queue races")
+Signed-off-by: Roland Hii <roland.king.guan.hii@intel.com>
+Signed-off-by: Ong Boon Leong <boon.leong.ong@intel.com>
+Signed-off-by: Voon Weifeng <weifeng.voon@intel.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ drivers/net/ethernet/stmicro/stmmac/stmmac_main.c |   10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+@@ -2937,7 +2937,10 @@ static netdev_tx_t stmmac_tso_xmit(struc
+ 
+ 	/* Manage tx mitigation */
+ 	priv->tx_count_frames += nfrags + 1;
+-	if (likely(priv->tx_coal_frames > priv->tx_count_frames)) {
++	if (likely(priv->tx_coal_frames > priv->tx_count_frames) &&
++	    !(priv->synopsys_id >= DWMAC_CORE_4_00 &&
++	    (skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP) &&
++	    priv->hwts_tx_en)) {
+ 		mod_timer(&priv->txtimer,
+ 			  STMMAC_COAL_TIMER(priv->tx_coal_timer));
+ 	} else {
+@@ -3148,7 +3151,10 @@ static netdev_tx_t stmmac_xmit(struct sk
+ 	 * element in case of no SG.
+ 	 */
+ 	priv->tx_count_frames += nfrags + 1;
+-	if (likely(priv->tx_coal_frames > priv->tx_count_frames)) {
++	if (likely(priv->tx_coal_frames > priv->tx_count_frames) &&
++	    !(priv->synopsys_id >= DWMAC_CORE_4_00 &&
++	    (skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP) &&
++	    priv->hwts_tx_en)) {
+ 		mod_timer(&priv->txtimer,
+ 			  STMMAC_COAL_TIMER(priv->tx_coal_timer));
+ 	} else {

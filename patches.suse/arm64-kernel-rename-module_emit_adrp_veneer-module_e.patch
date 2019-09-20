@@ -1,0 +1,87 @@
+From: Kim Phillips <kim.phillips@arm.com>
+Date: Tue, 24 Apr 2018 10:39:43 -0500
+Subject: arm64/kernel: rename
+ module_emit_adrp_veneer->module_emit_veneer_for_adrp
+
+Git-commit: ed231ae384fdfcb546b63b2fe7add65029e3a94c
+Patch-mainline: v4.17-rc3
+References: bsc#1148219
+
+Commit a257e02579e ("arm64/kernel: don't ban ADRP to work around
+Cortex-A53 erratum #843419") introduced a function whose name ends with
+"_veneer".
+
+This clashes with commit bd8b22d2888e ("Kbuild: kallsyms: ignore veneers
+emitted by the ARM linker"), which removes symbols ending in "_veneer"
+from kallsyms.
+
+The problem was manifested as 'perf test -vvvvv vmlinux' failed,
+correctly claiming the symbol 'module_emit_adrp_veneer' was present in
+vmlinux, but not in kallsyms.
+
+...
+    ERR : 0xffff00000809aa58: module_emit_adrp_veneer not on kallsyms
+...
+    test child finished with -1
+    ---- end ----
+    vmlinux symtab matches kallsyms: FAILED!
+
+Fix the problem by renaming module_emit_adrp_veneer to
+module_emit_veneer_for_adrp.  Now the test passes.
+
+Fixes: a257e02579e ("arm64/kernel: don't ban ADRP to work around Cortex-A53 erratum #843419")
+Acked-by: Ard Biesheuvel <ard.biesheuvel@linaro.org>
+Cc: Will Deacon <will.deacon@arm.com>
+Cc: Catalin Marinas <catalin.marinas@arm.com>
+Cc: Michal Marek <mmarek@suse.cz>
+Signed-off-by: Kim Phillips <kim.phillips@arm.com>
+Signed-off-by: Will Deacon <will.deacon@arm.com>
+Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
+---
+ arch/arm64/include/asm/module.h | 2 +-
+ arch/arm64/kernel/module-plts.c | 2 +-
+ arch/arm64/kernel/module.c      | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm64/include/asm/module.h b/arch/arm64/include/asm/module.h
+index b6dbbe3123a9..97d0ef12e2ff 100644
+--- a/arch/arm64/include/asm/module.h
++++ b/arch/arm64/include/asm/module.h
+@@ -39,7 +39,7 @@ struct mod_arch_specific {
+ u64 module_emit_plt_entry(struct module *mod, void *loc, const Elf64_Rela *rela,
+ 			  Elf64_Sym *sym);
+ 
+-u64 module_emit_adrp_veneer(struct module *mod, void *loc, u64 val);
++u64 module_emit_veneer_for_adrp(struct module *mod, void *loc, u64 val);
+ 
+ #ifdef CONFIG_RANDOMIZE_BASE
+ extern u64 module_alloc_base;
+diff --git a/arch/arm64/kernel/module-plts.c b/arch/arm64/kernel/module-plts.c
+index fa3637284a3d..f0690c2ca3e0 100644
+--- a/arch/arm64/kernel/module-plts.c
++++ b/arch/arm64/kernel/module-plts.c
+@@ -43,7 +43,7 @@ u64 module_emit_plt_entry(struct module *mod, void *loc, const Elf64_Rela *rela,
+ }
+ 
+ #ifdef CONFIG_ARM64_ERRATUM_843419
+-u64 module_emit_adrp_veneer(struct module *mod, void *loc, u64 val)
++u64 module_emit_veneer_for_adrp(struct module *mod, void *loc, u64 val)
+ {
+ 	struct mod_plt_sec *pltsec = !in_init(mod, loc) ? &mod->arch.core :
+ 							  &mod->arch.init;
+diff --git a/arch/arm64/kernel/module.c b/arch/arm64/kernel/module.c
+index 719fde8dcc19..155fd91e78f4 100644
+--- a/arch/arm64/kernel/module.c
++++ b/arch/arm64/kernel/module.c
+@@ -215,7 +215,7 @@ static int reloc_insn_adrp(struct module *mod, __le32 *place, u64 val)
+ 		insn &= ~BIT(31);
+ 	} else {
+ 		/* out of range for ADR -> emit a veneer */
+-		val = module_emit_adrp_veneer(mod, place, val & ~0xfff);
++		val = module_emit_veneer_for_adrp(mod, place, val & ~0xfff);
+ 		if (!val)
+ 			return -ENOEXEC;
+ 		insn = aarch64_insn_gen_branch_imm((u64)place, val,
+-- 
+2.11.0
+

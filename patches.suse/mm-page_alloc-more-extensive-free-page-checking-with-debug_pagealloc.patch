@@ -1,0 +1,172 @@
+From: Vlastimil Babka <vbabka@suse.cz>
+Date: Thu, 11 Jul 2019 20:55:09 -0700
+Subject: mm, page_alloc: more extensive free page checking with debug_pagealloc
+Git-commit: 4462b32c9285b521ef378907aa66a5ca485aae41
+Patch-mainline: v5.3-rc1
+References: PM-1168, bsc#1144653, VM Debug Functionality
+
+The page allocator checks struct pages for expected state (mapcount,
+flags etc) as pages are being allocated (check_new_page()) and freed
+(free_pages_check()) to provide some defense against errors in page
+allocator users.
+
+Prior commits 479f854a207c ("mm, page_alloc: defer debugging checks of
+pages allocated from the PCP") and 4db7548ccbd9 ("mm, page_alloc: defer
+debugging checks of freed pages until a PCP drain") this has happened
+for order-0 pages as they were allocated from or freed to the per-cpu
+caches (pcplists).  Since those are fast paths, the checks are now
+performed only when pages are moved between pcplists and global free
+lists.  This however lowers the chances of catching errors soon enough.
+
+In order to increase the chances of the checks to catch errors, the
+kernel has to be rebuilt with CONFIG_DEBUG_VM, which also enables
+multiple other internal debug checks (VM_BUG_ON() etc), which is
+suboptimal when the goal is to catch errors in mm users, not in mm code
+itself.
+
+To catch some wrong users of the page allocator we have
+CONFIG_DEBUG_PAGEALLOC, which is designed to have virtually no overhead
+unless enabled at boot time.  Memory corruptions when writing to freed
+pages have often the same underlying errors (use-after-free, double free)
+as corrupting the corresponding struct pages, so this existing debugging
+functionality is a good fit to extend by also perform struct page checks
+at least as often as if CONFIG_DEBUG_VM was enabled.
+
+Specifically, after this patch, when debug_pagealloc is enabled on boot,
+and CONFIG_DEBUG_VM disabled, pages are checked when allocated from or
+freed to the pcplists *in addition* to being moved between pcplists and
+free lists.  When both debug_pagealloc and CONFIG_DEBUG_VM are enabled,
+pages are checked when being moved between pcplists and free lists *in
+addition* to when allocated from or freed to the pcplists.
+
+When debug_pagealloc is not enabled on boot, the overhead in fast paths
+should be virtually none thanks to the use of static key.
+
+Link: http://lkml.kernel.org/r/20190603143451.27353-3-vbabka@suse.cz
+Signed-off-by: Vlastimil Babka <vbabka@suse.cz>
+Reviewed-by: Andrew Morton <akpm@linux-foundation.org>
+Cc: Mel Gorman <mgorman@techsingularity.net>
+Cc: Joonsoo Kim <iamjoonsoo.kim@lge.com>
+Cc: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+Cc: Matthew Wilcox <willy@infradead.org>
+Cc: Michal Hocko <mhocko@kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+---
+ mm/Kconfig.debug |   13 +++++++++----
+ mm/page_alloc.c  |   53 +++++++++++++++++++++++++++++++++++++++++++----------
+ 2 files changed, 52 insertions(+), 14 deletions(-)
+
+--- a/mm/Kconfig.debug
++++ b/mm/Kconfig.debug
+@@ -19,12 +19,17 @@ config DEBUG_PAGEALLOC
+ 	  Depending on runtime enablement, this results in a small or large
+ 	  slowdown, but helps to find certain types of memory corruption.
+ 
++	  Also, the state of page tracking structures is checked more often as
++	  pages are being allocated and freed, as unexpected state changes
++	  often happen for same reasons as memory corruption (e.g. double free,
++	  use-after-free).
++
+ 	  For architectures which don't enable ARCH_SUPPORTS_DEBUG_PAGEALLOC,
+ 	  fill the pages with poison patterns after free_pages() and verify
+-	  the patterns before alloc_pages().  Additionally,
+-	  this option cannot be enabled in combination with hibernation as
+-	  that would result in incorrect warnings of memory corruption after
+-	  a resume because free pages are not saved to the suspend image.
++	  the patterns before alloc_pages(). Additionally, this option cannot
++	  be enabled in combination with hibernation as that would result in
++	  incorrect warnings of memory corruption after a resume because free
++	  pages are not saved to the suspend image.
+ 
+ 	  By default this option will have a small overhead, e.g. by not
+ 	  allowing the kernel mapping to be backed by large pages on some
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -1089,19 +1089,36 @@ static __always_inline bool free_pages_p
+ }
+ 
+ #ifdef CONFIG_DEBUG_VM
+-static inline bool free_pcp_prepare(struct page *page)
++/*
++ * With DEBUG_VM enabled, order-0 pages are checked immediately when being freed
++ * to pcp lists. With debug_pagealloc also enabled, they are also rechecked when
++ * moved from pcp lists to free lists.
++ */
++static bool free_pcp_prepare(struct page *page)
+ {
+ 	return free_pages_prepare(page, 0, true);
+ }
+ 
+-static inline bool bulkfree_pcp_prepare(struct page *page)
++static bool bulkfree_pcp_prepare(struct page *page)
+ {
+-	return false;
++	if (debug_pagealloc_enabled())
++		return free_pages_check(page);
++	else
++		return false;
+ }
+ #else
++/*
++ * With DEBUG_VM disabled, order-0 pages being freed are checked only when
++ * moving from pcp lists to free list in order to reduce overhead. With
++ * debug_pagealloc enabled, they are checked also immediately when being freed
++ * to the pcp lists.
++ */
+ static bool free_pcp_prepare(struct page *page)
+ {
+-	return free_pages_prepare(page, 0, false);
++	if (debug_pagealloc_enabled())
++		return free_pages_prepare(page, 0, true);
++	else
++		return free_pages_prepare(page, 0, false);
+ }
+ 
+ static bool bulkfree_pcp_prepare(struct page *page)
+@@ -1774,23 +1791,39 @@ static inline bool free_pages_prezeroed(
+ }
+ 
+ #ifdef CONFIG_DEBUG_VM
+-static bool check_pcp_refill(struct page *page)
++/*
++ * With DEBUG_VM enabled, order-0 pages are checked for expected state when
++ * being allocated from pcp lists. With debug_pagealloc also enabled, they are
++ * also checked when pcp lists are refilled from the free lists.
++ */
++static inline bool check_pcp_refill(struct page *page)
+ {
+-	return false;
++	if (debug_pagealloc_enabled())
++		return check_new_page(page);
++	else
++		return false;
+ }
+ 
+-static bool check_new_pcp(struct page *page)
++static inline bool check_new_pcp(struct page *page)
+ {
+ 	return check_new_page(page);
+ }
+ #else
+-static bool check_pcp_refill(struct page *page)
++/*
++ * With DEBUG_VM disabled, free order-0 pages are checked for expected state
++ * when pcp lists are being refilled from the free lists. With debug_pagealloc
++ * enabled, they are also checked when being allocated from the pcp lists.
++ */
++static inline bool check_pcp_refill(struct page *page)
+ {
+ 	return check_new_page(page);
+ }
+-static bool check_new_pcp(struct page *page)
++static inline bool check_new_pcp(struct page *page)
+ {
+-	return false;
++	if (debug_pagealloc_enabled())
++		return check_new_page(page);
++	else
++		return false;
+ }
+ #endif /* CONFIG_DEBUG_VM */
+ 

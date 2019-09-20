@@ -1,0 +1,62 @@
+From: Julian Wiedmann <jwi@linux.ibm.com>
+Date: Mon, 4 Feb 2019 17:40:06 +0100
+Subject: s390/qeth: release cmd buffer in error paths
+Git-commit: 5065b2dd3e5f9247a6c9d67974bc0472bf561b9d
+Patch-mainline: v5.0-rc6
+References: bsc#1142109 LTC#179339
+
+Whenever we fail before/while starting an IO, make sure to release the
+IO buffer. Usually qeth_irq() would do this for us, but if the IO
+doesn't even start we obviously won't get an interrupt for it either.
+
+Signed-off-by: Julian Wiedmann <jwi@linux.ibm.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+[ ptesarik: Use iob->channel where channel is not declared. ]
+Signed-off-by: Petr Tesarik <ptesarik@suse.com>
+---
+ drivers/s390/net/qeth_core_main.c |    6 ++++++
+ 1 file changed, 6 insertions(+)
+
+--- a/drivers/s390/net/qeth_core_main.c
++++ b/drivers/s390/net/qeth_core_main.c
+@@ -559,6 +559,7 @@ static int __qeth_issue_next_read(struct
+ 		QETH_DBF_MESSAGE(2, "error %i on device %x when starting next read ccw!\n",
+ 				 rc, CARD_DEVID(card));
+ 		atomic_set(&channel->irq_pending, 0);
++		qeth_release_buffer(iob->channel, iob);
+ 		card->read_or_write_problem = 1;
+ 		qeth_schedule_recovery(card);
+ 		wake_up(&card->wait_q);
+@@ -1187,6 +1188,8 @@ static void qeth_irq(struct ccw_device *
+ 		rc = qeth_get_problem(card, cdev, irb);
+ 		if (rc) {
+ 			card->read_or_write_problem = 1;
++			if (iob)
++				qeth_release_buffer(iob->channel, iob);
+ 			qeth_clear_ipacmd_list(card);
+ 			qeth_schedule_recovery(card);
+ 			goto out;
+@@ -1835,6 +1838,7 @@ static int qeth_idx_activate_get_answer(
+ 		QETH_DBF_MESSAGE(2, "Error2 in activating channel rc=%d\n", rc);
+ 		QETH_DBF_TEXT_(SETUP, 2, "2err%d", rc);
+ 		atomic_set(&channel->irq_pending, 0);
++		qeth_release_buffer(channel, iob);
+ 		wake_up(&card->wait_q);
+ 		return rc;
+ 	}
+@@ -1907,6 +1911,7 @@ static int qeth_idx_activate_channel(str
+ 			rc);
+ 		QETH_DBF_TEXT_(SETUP, 2, "1err%d", rc);
+ 		atomic_set(&channel->irq_pending, 0);
++		qeth_release_buffer(channel, iob);
+ 		wake_up(&card->wait_q);
+ 		return rc;
+ 	}
+@@ -2089,6 +2094,7 @@ int qeth_send_control_data(struct qeth_c
+ 	}
+ 	reply = qeth_alloc_reply(card);
+ 	if (!reply) {
++		qeth_release_buffer(iob->channel, iob);
+ 		return -ENOMEM;
+ 	}
+ 	reply->callback = reply_cb;

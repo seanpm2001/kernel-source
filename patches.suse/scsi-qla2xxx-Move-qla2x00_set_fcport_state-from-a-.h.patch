@@ -1,0 +1,88 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Thu, 11 Apr 2019 14:53:25 -0700
+Subject: scsi: qla2xxx: Move qla2x00_set_fcport_state() from a .h into a .c
+ file
+Patch-mainline: v5.2-rc1
+Git-commit: a630bdc54f6d41a525694766168ddb9b8ffe8392
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+The qla2x00_set_fcport_state() function is not in the hot path so move its
+definition from a .h into a .c file.
+
+Cc: Himanshu Madhani <hmadhani@marvell.com>
+Cc: Giridhar Malavali <gmalavali@marvell.com>
+Reviewed-by: Johannes Thumshirn <jthumshirn@suse.de>
+Acked-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_gbl.h    |    1 +
+ drivers/scsi/qla2xxx/qla_init.c   |   17 +++++++++++++++++
+ drivers/scsi/qla2xxx/qla_inline.h |   19 -------------------
+ 3 files changed, 18 insertions(+), 19 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_gbl.h
++++ b/drivers/scsi/qla2xxx/qla_gbl.h
+@@ -80,6 +80,7 @@ int qla2x00_post_work(struct scsi_qla_ho
+ extern void *qla2x00_alloc_iocbs_ready(struct qla_qpair *, srb_t *);
+ extern int qla24xx_update_fcport_fcp_prio(scsi_qla_host_t *, fc_port_t *);
+ 
++extern void qla2x00_set_fcport_state(fc_port_t *fcport, int state);
+ extern fc_port_t *
+ qla2x00_alloc_fcport(scsi_qla_host_t *, gfp_t );
+ 
+--- a/drivers/scsi/qla2xxx/qla_init.c
++++ b/drivers/scsi/qla2xxx/qla_init.c
+@@ -4757,6 +4757,23 @@ qla2x00_rport_del(void *data)
+ 	}
+ }
+ 
++void qla2x00_set_fcport_state(fc_port_t *fcport, int state)
++{
++	int old_state;
++
++	old_state = atomic_read(&fcport->state);
++	atomic_set(&fcport->state, state);
++
++	/* Don't print state transitions during initial allocation of fcport */
++	if (old_state && old_state != state) {
++		ql_dbg(ql_dbg_disc, fcport->vha, 0x207d,
++		       "FCPort %8phC state transitioned from %s to %s - portid=%02x%02x%02x.\n",
++		       fcport->port_name, port_state_str[old_state],
++		       port_state_str[state], fcport->d_id.b.domain,
++		       fcport->d_id.b.area, fcport->d_id.b.al_pa);
++	}
++}
++
+ /**
+  * qla2x00_alloc_fcport() - Allocate a generic fcport.
+  * @vha: HA context
+--- a/drivers/scsi/qla2xxx/qla_inline.h
++++ b/drivers/scsi/qla2xxx/qla_inline.h
+@@ -142,25 +142,6 @@ qla2x00_clean_dsd_pool(struct qla_hw_dat
+ 	INIT_LIST_HEAD(&ctx->dsd_list);
+ }
+ 
+-static inline void
+-qla2x00_set_fcport_state(fc_port_t *fcport, int state)
+-{
+-	int old_state;
+-
+-	old_state = atomic_read(&fcport->state);
+-	atomic_set(&fcport->state, state);
+-
+-	/* Don't print state transitions during initial allocation of fcport */
+-	if (old_state && old_state != state) {
+-		ql_dbg(ql_dbg_disc, fcport->vha, 0x207d,
+-		    "FCPort %8phC state transitioned from %s to %s - "
+-			"portid=%02x%02x%02x.\n", fcport->port_name,
+-		    port_state_str[old_state], port_state_str[state],
+-		    fcport->d_id.b.domain, fcport->d_id.b.area,
+-		    fcport->d_id.b.al_pa);
+-	}
+-}
+-
+ static inline int
+ qla2x00_hba_err_chk_enabled(srb_t *sp)
+ {

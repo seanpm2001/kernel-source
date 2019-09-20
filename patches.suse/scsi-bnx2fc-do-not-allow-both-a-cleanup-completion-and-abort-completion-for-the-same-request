@@ -1,0 +1,89 @@
+From: Saurav Kashyap <skashyap@marvell.com>
+Date: Mon, 24 Jun 2019 01:29:58 -0700
+Subject: scsi: bnx2fc: Do not allow both a cleanup completion and abort
+ completion for the same request
+Git-commit: 25ad7394c7783a5bc73f7a930bda3a7a7f3195cb
+Patch-mainline: v5.3-rc1
+References: bsc#1144582
+
+If firmware sends either cleanup or abort completion, it means other won't
+be sent. Clean out flags for other as well.
+
+Signed-off-by: Saurav Kashyap <skashyap@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/bnx2fc/bnx2fc.h    |  1 +
+ drivers/scsi/bnx2fc/bnx2fc_io.c | 32 ++++++++++++++++++++++++++++++++
+ 2 files changed, 33 insertions(+)
+
+diff --git a/drivers/scsi/bnx2fc/bnx2fc.h b/drivers/scsi/bnx2fc/bnx2fc.h
+index 5d7e21a818c5..14cc6921a1b8 100644
+--- a/drivers/scsi/bnx2fc/bnx2fc.h
++++ b/drivers/scsi/bnx2fc/bnx2fc.h
+@@ -457,6 +457,7 @@ struct bnx2fc_cmd {
+ #define BNX2FC_FLAG_ELS_TIMEOUT		0xb
+ #define BNX2FC_FLAG_CMD_LOST		0xc
+ #define BNX2FC_FLAG_SRR_SENT		0xd
++#define BNX2FC_FLAG_ISSUE_CLEANUP_REQ	0xe
+ 	u8 rec_retry;
+ 	u8 srr_retry;
+ 	u32 srr_offset;
+diff --git a/drivers/scsi/bnx2fc/bnx2fc_io.c b/drivers/scsi/bnx2fc/bnx2fc_io.c
+index 88c392ba80a9..d7eb5e16efd3 100644
+--- a/drivers/scsi/bnx2fc/bnx2fc_io.c
++++ b/drivers/scsi/bnx2fc/bnx2fc_io.c
+@@ -1048,6 +1048,9 @@ int bnx2fc_initiate_cleanup(struct bnx2fc_cmd *io_req)
+ 	/* Obtain free SQ entry */
+ 	bnx2fc_add_2_sq(tgt, xid);
+ 
++	/* Set flag that cleanup request is pending with the firmware */
++	set_bit(BNX2FC_FLAG_ISSUE_CLEANUP_REQ, &io_req->req_flags);
++
+ 	/* Ring doorbell */
+ 	bnx2fc_ring_doorbell(tgt);
+ 
+@@ -1324,6 +1327,25 @@ void bnx2fc_process_cleanup_compl(struct bnx2fc_cmd *io_req,
+ 	BNX2FC_IO_DBG(io_req, "Entered process_cleanup_compl "
+ 			      "refcnt = %d, cmd_type = %d\n",
+ 		   kref_read(&io_req->refcount), io_req->cmd_type);
++	/*
++	 * Test whether there is a cleanup request pending. If not just
++	 * exit.
++	 */
++	if (!test_and_clear_bit(BNX2FC_FLAG_ISSUE_CLEANUP_REQ,
++				&io_req->req_flags))
++		return;
++	/*
++	 * If we receive a cleanup completion for this request then the
++	 * firmware will not give us an abort completion for this request
++	 * so clear any ABTS pending flags.
++	 */
++	if (test_bit(BNX2FC_FLAG_ISSUE_ABTS, &io_req->req_flags) &&
++	    !test_bit(BNX2FC_FLAG_ABTS_DONE, &io_req->req_flags)) {
++		set_bit(BNX2FC_FLAG_ABTS_DONE, &io_req->req_flags);
++		if (io_req->wait_for_abts_comp)
++			complete(&io_req->abts_done);
++	}
++
+ 	bnx2fc_scsi_done(io_req, DID_ERROR);
+ 	kref_put(&io_req->refcount, bnx2fc_cmd_release);
+ 	if (io_req->wait_for_cleanup_comp)
+@@ -1351,6 +1373,16 @@ void bnx2fc_process_abts_compl(struct bnx2fc_cmd *io_req,
+ 		return;
+ 	}
+ 
++	/*
++	 * If we receive an ABTS completion here then we will not receive
++	 * a cleanup completion so clear any cleanup pending flags.
++	 */
++	if (test_bit(BNX2FC_FLAG_ISSUE_CLEANUP_REQ, &io_req->req_flags)) {
++		clear_bit(BNX2FC_FLAG_ISSUE_CLEANUP_REQ, &io_req->req_flags);
++		if (io_req->wait_for_cleanup_comp)
++			complete(&io_req->cleanup_done);
++	}
++
+ 	/* Do not issue RRQ as this IO is already cleanedup */
+ 	if (test_and_set_bit(BNX2FC_FLAG_IO_CLEANUP,
+ 				&io_req->req_flags))
+

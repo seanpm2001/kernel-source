@@ -1,0 +1,48 @@
+From 93d2cb6c82f4d50a1b35b9de379ebb1d022801ac Mon Sep 17 00:00:00 2001
+From: Long Li <longli@microsoft.com>
+Date: Wed, 28 Jun 2017 15:55:55 -0700
+Subject: [PATCH] cifs: Do not modify mid entry after submitting I/O in
+ cifs_call_async
+Git-commit: 93d2cb6c82f4d50a1b35b9de379ebb1d022801ac
+Patch-mainline: v4.13-rc1
+References: bsc#1051510, bsc#1144333
+
+In cifs_call_async, server may respond as soon as I/O is submitted. Because
+mid entry is freed on the return path, it should not be modified after I/O
+is submitted.
+
+cifs_save_when_sent modifies the sent timestamp in mid entry, and should not
+be called after I/O. Call it before I/O.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/transport.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 47a125ece11e..7efbab013957 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -536,11 +536,14 @@ cifs_call_async(struct TCP_Server_Info *server, struct smb_rqst *rqst,
+ 	list_add_tail(&mid->qhead, &server->pending_mid_q);
+ 	spin_unlock(&GlobalMid_Lock);
+ 
+-
++	/*
++	 * Need to store the time in mid before calling I/O. For call_async,
++	 * I/O response may come back and free the mid entry on another thread.
++	 */
++	cifs_save_when_sent(mid);
+ 	cifs_in_send_inc(server);
+ 	rc = smb_send_rqst(server, rqst, flags);
+ 	cifs_in_send_dec(server);
+-	cifs_save_when_sent(mid);
+ 
+ 	if (rc < 0) {
+ 		server->sequence_number -= 2;
+-- 
+2.16.4
+

@@ -1,0 +1,153 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Thu, 28 Mar 2019 11:06:18 -0700
+Subject: [PATCH] scsi: lpfc: Annotate switch/case fall-through
+References: bsc#1136217,jsc#SLE-4722
+Git-commit: cd05c155d720f9a499c0796aecb58397dfa8618d
+Patch-mainline: v5.2-rc1
+
+This patch avoids that the compiler warns about missing fall-through
+annotation when building with W=1.
+
+Cc: James Smart <james.smart@broadcom.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Acked-by: James Smart <james.smart@broadcom.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Signed-off-by: Hannes Reinecke <hare@suse.de>
+---
+ drivers/scsi/lpfc/lpfc_ct.c        | 2 ++
+ drivers/scsi/lpfc/lpfc_els.c       | 2 +-
+ drivers/scsi/lpfc/lpfc_hbadisc.c   | 5 ++++-
+ drivers/scsi/lpfc/lpfc_nportdisc.c | 1 +
+ drivers/scsi/lpfc/lpfc_nvme.c      | 1 +
+ drivers/scsi/lpfc/lpfc_scsi.c      | 8 ++++----
+ 6 files changed, 13 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/scsi/lpfc/lpfc_ct.c b/drivers/scsi/lpfc/lpfc_ct.c
+index a85389191a0b..41af481d3ea8 100644
+--- a/drivers/scsi/lpfc/lpfc_ct.c
++++ b/drivers/scsi/lpfc/lpfc_ct.c
+@@ -3099,6 +3099,7 @@ lpfc_fdmi_cmd(struct lpfc_vport *vport, struct lpfc_nodelist *ndlp,
+ 	case SLI_MGMT_GHAT:
+ 	case SLI_MGMT_GRPL:
+ 		rsp_size = FC_MAX_NS_RSP;
++		/* fall through */
+ 	case SLI_MGMT_DHBA:
+ 	case SLI_MGMT_DHAT:
+ 		pe = (struct lpfc_fdmi_port_entry *)&CtReq->un.PortID;
+@@ -3111,6 +3112,7 @@ lpfc_fdmi_cmd(struct lpfc_vport *vport, struct lpfc_nodelist *ndlp,
+ 	case SLI_MGMT_GPAT:
+ 	case SLI_MGMT_GPAS:
+ 		rsp_size = FC_MAX_NS_RSP;
++		/* fall through */
+ 	case SLI_MGMT_DPRT:
+ 	case SLI_MGMT_DPA:
+ 		pe = (struct lpfc_fdmi_port_entry *)&CtReq->un.PortID;
+diff --git a/drivers/scsi/lpfc/lpfc_els.c b/drivers/scsi/lpfc/lpfc_els.c
+index 15a5fb7b03ce..14fd3493b0fa 100644
+--- a/drivers/scsi/lpfc/lpfc_els.c
++++ b/drivers/scsi/lpfc/lpfc_els.c
+@@ -8775,7 +8775,7 @@ lpfc_cmpl_reg_new_vport(struct lpfc_hba *phba, LPFC_MBOXQ_t *pmb)
+ 				lpfc_nlp_put(ndlp);
+ 				return;
+ 			}
+-
++			/* fall through */
+ 		default:
+ 			/* Try to recover from this error */
+ 			if (phba->sli_rev == LPFC_SLI_REV4)
+diff --git a/drivers/scsi/lpfc/lpfc_hbadisc.c b/drivers/scsi/lpfc/lpfc_hbadisc.c
+index 4810db387783..5581eb156d42 100644
+--- a/drivers/scsi/lpfc/lpfc_hbadisc.c
++++ b/drivers/scsi/lpfc/lpfc_hbadisc.c
+@@ -4667,12 +4667,15 @@ lpfc_check_sli_ndlp(struct lpfc_hba *phba,
+ 		case CMD_GEN_REQUEST64_CR:
+ 			if (iocb->context_un.ndlp == ndlp)
+ 				return 1;
++			/* fall through */
+ 		case CMD_ELS_REQUEST64_CR:
+ 			if (icmd->un.elsreq64.remoteID == ndlp->nlp_DID)
+ 				return 1;
++			/* fall through */
+ 		case CMD_XMIT_ELS_RSP64_CX:
+ 			if (iocb->context1 == (uint8_t *) ndlp)
+ 				return 1;
++			/* fall through */
+ 		}
+ 	} else if (pring->ringno == LPFC_FCP_RING) {
+ 		/* Skip match check if waiting to relogin to FCP target */
+@@ -5866,7 +5869,7 @@ lpfc_disc_timeout_handler(struct lpfc_vport *vport)
+ 
+ 	case LPFC_LINK_UP:
+ 		lpfc_issue_clear_la(phba, vport);
+-		/* Drop thru */
++		/* fall through */
+ 	case LPFC_LINK_UNKNOWN:
+ 	case LPFC_WARM_START:
+ 	case LPFC_INIT_START:
+diff --git a/drivers/scsi/lpfc/lpfc_nportdisc.c b/drivers/scsi/lpfc/lpfc_nportdisc.c
+index e8dcd3d181ff..e27ba2ad422f 100644
+--- a/drivers/scsi/lpfc/lpfc_nportdisc.c
++++ b/drivers/scsi/lpfc/lpfc_nportdisc.c
+@@ -360,6 +360,7 @@ lpfc_rcv_plogi(struct lpfc_vport *vport, struct lpfc_nodelist *ndlp,
+ 	case  NLP_STE_NPR_NODE:
+ 		if (!(ndlp->nlp_flag & NLP_NPR_ADISC))
+ 			break;
++		/* fall through */
+ 	case  NLP_STE_REG_LOGIN_ISSUE:
+ 	case  NLP_STE_PRLI_ISSUE:
+ 	case  NLP_STE_UNMAPPED_NODE:
+diff --git a/drivers/scsi/lpfc/lpfc_nvme.c b/drivers/scsi/lpfc/lpfc_nvme.c
+index 9bed4829a5b8..45efbff47906 100644
+--- a/drivers/scsi/lpfc/lpfc_nvme.c
++++ b/drivers/scsi/lpfc/lpfc_nvme.c
+@@ -1105,6 +1105,7 @@ lpfc_nvme_io_cmd_wqe_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pwqeIn,
+ 					 lpfc_ncmd, nCmd,
+ 					 lpfc_ncmd->cur_iocbq.sli4_xritag,
+ 					 bf_get(lpfc_wcqe_c_xb, wcqe));
++			/* fall through */
+ 		default:
+ out_err:
+ 			lpfc_printf_vlog(vport, KERN_INFO, LOG_NVME_IOERR,
+diff --git a/drivers/scsi/lpfc/lpfc_scsi.c b/drivers/scsi/lpfc/lpfc_scsi.c
+index 95ce25ee3ad4..c5d9bce80c9b 100644
+--- a/drivers/scsi/lpfc/lpfc_scsi.c
++++ b/drivers/scsi/lpfc/lpfc_scsi.c
+@@ -1137,7 +1137,7 @@ lpfc_bg_err_inject(struct lpfc_hba *phba, struct scsi_cmnd *sc,
+ 
+ 					break;
+ 				}
+-				/* Drop thru */
++				/* fall through */
+ 			case SCSI_PROT_WRITE_INSERT:
+ 				/*
+ 				 * For WRITE_INSERT, force the error
+@@ -1256,7 +1256,7 @@ lpfc_bg_err_inject(struct lpfc_hba *phba, struct scsi_cmnd *sc,
+ 					rc = BG_ERR_TGT | BG_ERR_CHECK;
+ 					break;
+ 				}
+-				/* Drop thru */
++				/* fall through */
+ 			case SCSI_PROT_WRITE_INSERT:
+ 				/*
+ 				 * For WRITE_INSERT, force the
+@@ -1338,7 +1338,7 @@ lpfc_bg_err_inject(struct lpfc_hba *phba, struct scsi_cmnd *sc,
+ 			switch (op) {
+ 			case SCSI_PROT_WRITE_PASS:
+ 				rc = BG_ERR_CHECK;
+-				/* Drop thru */
++				/* fall through */
+ 
+ 			case SCSI_PROT_WRITE_INSERT:
+ 				/*
+@@ -3822,7 +3822,7 @@ lpfc_scsi_cmd_iocb_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pIocbIn,
+ 					lpfc_cmd->cur_iocbq.sli4_lxritag,
+ 					0, 0);
+ 			}
+-		/* else: fall through */
++			/* fall through */
+ 		default:
+ 			cmd->result = DID_ERROR << 16;
+ 			break;
+-- 
+2.16.4
+

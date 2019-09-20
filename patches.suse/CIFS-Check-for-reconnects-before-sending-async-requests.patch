@@ -1,0 +1,139 @@
+From: Pavel Shilovsky <pshilov@microsoft.com>
+Date: Tue, 15 Jan 2019 15:52:29 -0800
+Subject: [PATCH] CIFS: Check for reconnects before sending async requests
+Git-commit: 3349c3a79fb5d7632bfe426c014cbb589d1ca8e0
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+The reconnect might have happended after we obtained credits
+and before we acquired srv_mutex. Check for that under the mutex
+and retry an async operation if the reconnect is detected.
+
+Signed-off-by: Pavel Shilovsky <pshilov@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsproto.h |  3 ++-
+ fs/cifs/cifssmb.c   |  6 +++---
+ fs/cifs/smb2pdu.c   |  7 ++++---
+ fs/cifs/transport.c | 18 ++++++++++++++++--
+ 4 files changed, 25 insertions(+), 9 deletions(-)
+
+diff --git a/fs/cifs/cifsproto.h b/fs/cifs/cifsproto.h
+index 7a9a9fd12ea9..9e8394fee29e 100644
+--- a/fs/cifs/cifsproto.h
++++ b/fs/cifs/cifsproto.h
+@@ -93,7 +93,8 @@ extern int cifs_discard_remaining_data(struct TCP_Server_Info *server);
+ extern int cifs_call_async(struct TCP_Server_Info *server,
+ 			struct smb_rqst *rqst,
+ 			mid_receive_t *receive, mid_callback_t *callback,
+-			mid_handle_t *handle, void *cbdata, const int flags);
++			mid_handle_t *handle, void *cbdata, const int flags,
++			const struct cifs_credits *exist_credits);
+ extern int cifs_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 			  struct smb_rqst *rqst, int *resp_buf_type,
+ 			  const int flags, struct kvec *resp_iov);
+diff --git a/fs/cifs/cifssmb.c b/fs/cifs/cifssmb.c
+index d4f94406a808..f9a37e951dd8 100644
+--- a/fs/cifs/cifssmb.c
++++ b/fs/cifs/cifssmb.c
+@@ -860,7 +860,7 @@ CIFSSMBEcho(struct TCP_Server_Info *server)
+ 	iov[1].iov_base = (char *)smb + 4;
+ 
+ 	rc = cifs_call_async(server, &rqst, NULL, cifs_echo_callback, NULL,
+-			     server, CIFS_ASYNC_OP | CIFS_ECHO_OP);
++			     server, CIFS_ASYNC_OP | CIFS_ECHO_OP, NULL);
+ 	if (rc)
+ 		cifs_dbg(FYI, "Echo request failed: %d\n", rc);
+ 
+@@ -1812,7 +1812,7 @@ cifs_async_readv(struct cifs_readdata *rdata)
+ 
+ 	kref_get(&rdata->refcount);
+ 	rc = cifs_call_async(tcon->ses->server, &rqst, cifs_readv_receive,
+-			     cifs_readv_callback, NULL, rdata, 0);
++			     cifs_readv_callback, NULL, rdata, 0, NULL);
+ 
+ 	if (rc == 0)
+ 		cifs_stats_inc(&tcon->stats.cifs_stats.num_reads);
+@@ -2352,7 +2352,7 @@ cifs_async_writev(struct cifs_writedata *wdata,
+ 
+ 	kref_get(&wdata->refcount);
+ 	rc = cifs_call_async(tcon->ses->server, &rqst, NULL,
+-				cifs_writev_callback, NULL, wdata, 0);
++			     cifs_writev_callback, NULL, wdata, 0, NULL);
+ 
+ 	if (rc == 0)
+ 		cifs_stats_inc(&tcon->stats.cifs_stats.num_writes);
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 7d8f1d234906..710531245ed7 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -3034,7 +3034,7 @@ SMB2_echo(struct TCP_Server_Info *server)
+ 	iov[0].iov_base = (char *)req;
+ 
+ 	rc = cifs_call_async(server, &rqst, NULL, smb2_echo_callback, NULL,
+-			     server, CIFS_ECHO_OP);
++			     server, CIFS_ECHO_OP, NULL);
+ 	if (rc)
+ 		cifs_dbg(FYI, "Echo request failed: %d\n", rc);
+ 
+@@ -3343,7 +3343,8 @@ smb2_async_readv(struct cifs_readdata *rdata)
+ 	kref_get(&rdata->refcount);
+ 	rc = cifs_call_async(io_parms.tcon->ses->server, &rqst,
+ 			     cifs_readv_receive, smb2_readv_callback,
+-			     smb3_handle_read_data, rdata, flags);
++			     smb3_handle_read_data, rdata, flags,
++			     &rdata->credits);
+ 	if (rc) {
+ 		kref_put(&rdata->refcount, cifs_readdata_release);
+ 		cifs_stats_fail_inc(io_parms.tcon, SMB2_READ_HE);
+@@ -3645,7 +3646,7 @@ smb2_async_writev(struct cifs_writedata *wdata,
+ 
+ 	kref_get(&wdata->refcount);
+ 	rc = cifs_call_async(server, &rqst, NULL, smb2_writev_callback, NULL,
+-			     wdata, flags);
++			     wdata, flags, &wdata->credits);
+ 
+ 	if (rc) {
+ 		trace_smb3_write_err(0 /* no xid */, req->PersistentFileId,
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 0ee36c3e66d3..5a3e499caec8 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -607,7 +607,8 @@ cifs_setup_async_request(struct TCP_Server_Info *server, struct smb_rqst *rqst)
+ int
+ cifs_call_async(struct TCP_Server_Info *server, struct smb_rqst *rqst,
+ 		mid_receive_t *receive, mid_callback_t *callback,
+-		mid_handle_t *handle, void *cbdata, const int flags)
++		mid_handle_t *handle, void *cbdata, const int flags,
++		const struct cifs_credits *exist_credits)
+ {
+ 	int rc, timeout, optype;
+ 	struct mid_q_entry *mid;
+@@ -623,9 +624,22 @@ cifs_call_async(struct TCP_Server_Info *server, struct smb_rqst *rqst,
+ 			return rc;
+ 		credits.value = 1;
+ 		credits.instance = instance;
+-	}
++	} else
++		instance = exist_credits->instance;
+ 
+ 	mutex_lock(&server->srv_mutex);
++
++	/*
++	 * We can't use credits obtained from the previous session to send this
++	 * request. Check if there were reconnects after we obtained credits and
++	 * return -EAGAIN in such cases to let callers handle it.
++	 */
++	if (instance != server->reconnect_instance) {
++		mutex_unlock(&server->srv_mutex);
++		add_credits_and_wake_if(server, &credits, optype);
++		return -EAGAIN;
++	}
++
+ 	mid = server->ops->setup_async_request(server, rqst);
+ 	if (IS_ERR(mid)) {
+ 		mutex_unlock(&server->srv_mutex);
+-- 
+2.16.4
+

@@ -1,0 +1,37 @@
+From: Phillip Potter <phil@philpotter.co.uk>
+Date: Sat, 17 Mar 2018 21:06:56 +0000
+Subject: [PATCH] fs: cifs: Replace _free_xid call in cifs_root_iget function
+Git-commit: 31cd106bb141b54ba4db5c1078c3f58f0c6e8dfa
+Patch-mainline: v4.17-rc1
+References: bsc#1144333
+
+Modify end of cifs_root_iget function in fs/cifs/inode.c to call
+free_xid(xid) instead of _free_xid(xid), thereby allowing debug
+notification of this action when enabled.
+
+Signed-off-by: Phillip Potter <phil@philpotter.co.uk>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/inode.c | 5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/fs/cifs/inode.c b/fs/cifs/inode.c
+index 8f9a8cc7cc62..c98a852180b1 100644
+--- a/fs/cifs/inode.c
++++ b/fs/cifs/inode.c
+@@ -1066,10 +1066,7 @@ struct inode *cifs_root_iget(struct super_block *sb)
+ 
+ out:
+ 	kfree(path);
+-	/* can not call macro free_xid here since in a void func
+-	 * TODO: This is no longer true
+-	 */
+-	_free_xid(xid);
++	free_xid(xid);
+ 	return inode;
+ }
+ 
+-- 
+2.16.4
+

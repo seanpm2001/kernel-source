@@ -1,0 +1,78 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Wed, 17 Apr 2019 14:44:17 -0700
+Subject: scsi: qla2xxx: Uninline qla2x00_init_timer()
+Patch-mainline: v5.2-rc1
+Git-commit: 12975426d8889ce42821e9e0348f9a2da343779a
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+Since qla2x00_init_timer() is not used for I/O commands there is no need to
+inline this function. Hence uninline this function.
+
+Cc: Himanshu Madhani <hmadhani@marvell.com>
+Cc: Giridhar Malavali <gmalavali@marvell.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Acked-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_gbl.h    |    1 +
+ drivers/scsi/qla2xxx/qla_inline.h |   14 --------------
+ drivers/scsi/qla2xxx/qla_iocb.c   |   14 ++++++++++++++
+ 3 files changed, 15 insertions(+), 14 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_gbl.h
++++ b/drivers/scsi/qla2xxx/qla_gbl.h
+@@ -281,6 +281,7 @@ extern int qla2x00_start_sp(srb_t *);
+ extern int qla24xx_dif_start_scsi(srb_t *);
+ extern int qla2x00_start_bidir(srb_t *, struct scsi_qla_host *, uint32_t);
+ extern int qla2xxx_dif_start_scsi_mq(srb_t *);
++extern void qla2x00_init_timer(srb_t *sp, unsigned long tmo);
+ extern unsigned long qla2x00_get_async_timeout(struct scsi_qla_host *);
+ 
+ extern void *qla2x00_alloc_iocbs(struct scsi_qla_host *, srb_t *);
+--- a/drivers/scsi/qla2xxx/qla_inline.h
++++ b/drivers/scsi/qla2xxx/qla_inline.h
+@@ -219,20 +219,6 @@ qla2x00_rel_sp(srb_t *sp)
+ 	qla2xxx_rel_qpair_sp(sp->qpair, sp);
+ }
+ 
+-static inline void
+-qla2x00_init_timer(srb_t *sp, unsigned long tmo)
+-{
+-	init_timer(&sp->u.iocb_cmd.timer);
+-	sp->u.iocb_cmd.timer.expires = jiffies + tmo * HZ;
+-	sp->u.iocb_cmd.timer.data = (unsigned long)sp;
+-	sp->u.iocb_cmd.timer.function = qla2x00_sp_timeout;
+-	sp->free = qla2x00_sp_free;
+-	init_completion(&sp->comp);
+-	if (IS_QLAFX00(sp->vha->hw) && (sp->type == SRB_FXIOCB_DCMD))
+-		init_completion(&sp->u.iocb_cmd.u.fxiocb.fxiocb_comp);
+-	add_timer(&sp->u.iocb_cmd.timer);
+-}
+-
+ static inline int
+ qla2x00_gid_list_size(struct qla_hw_data *ha)
+ {
+--- a/drivers/scsi/qla2xxx/qla_iocb.c
++++ b/drivers/scsi/qla2xxx/qla_iocb.c
+@@ -2570,6 +2570,20 @@ qla24xx_tm_iocb(srb_t *sp, struct tsk_mg
+ 	}
+ }
+ 
++void
++qla2x00_init_timer(srb_t *sp, unsigned long tmo)
++{
++	init_timer(&sp->u.iocb_cmd.timer);
++	sp->u.iocb_cmd.timer.expires = jiffies + tmo * HZ;
++	sp->u.iocb_cmd.timer.data = (unsigned long)sp;
++	sp->u.iocb_cmd.timer.function = qla2x00_sp_timeout;
++	sp->free = qla2x00_sp_free;
++	init_completion(&sp->comp);
++	if (IS_QLAFX00(sp->vha->hw) && (sp->type == SRB_FXIOCB_DCMD))
++		init_completion(&sp->u.iocb_cmd.u.fxiocb.fxiocb_comp);
++	add_timer(&sp->u.iocb_cmd.timer);
++}
++
+ static void
+ qla2x00_els_dcmd_sp_free(void *data)
+ {

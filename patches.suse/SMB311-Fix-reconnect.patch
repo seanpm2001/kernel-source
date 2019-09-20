@@ -1,0 +1,47 @@
+From 0d5ec281c0175d10f8d9be4d4a9c5fb37767ed00 Mon Sep 17 00:00:00 2001
+From: Steve French <stfrench@microsoft.com>
+Date: Sun, 22 Apr 2018 19:51:22 -0500
+Subject: [PATCH] SMB311: Fix reconnect
+Git-commit: 0d5ec281c0175d10f8d9be4d4a9c5fb37767ed00
+Patch-mainline: v4.17-rc3
+References: bsc#1051510, bsc#1144333
+
+The preauth hash was not being recalculated properly on reconnect
+of SMB3.11 dialect mounts (which caused access denied repeatedly
+on auto-reconnect).
+
+Fixes: 8bd68c6e47ab ("CIFS: implement v3.11 preauth integrity")
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+CC: Stable <stable@vger.kernel.org>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/transport.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 3fb0e433b8e2..927226a2122f 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -753,7 +753,7 @@ cifs_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 		goto out;
+ 
+ #ifdef CONFIG_CIFS_SMB311
+-	if (ses->status == CifsNew)
++	if ((ses->status == CifsNew) || (optype & CIFS_NEG_OP))
+ 		smb311_update_preauth_hash(ses, rqst->rq_iov+1,
+ 					   rqst->rq_nvec-1);
+ #endif
+@@ -798,7 +798,7 @@ cifs_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 		*resp_buf_type = CIFS_SMALL_BUFFER;
+ 
+ #ifdef CONFIG_CIFS_SMB311
+-	if (ses->status == CifsNew) {
++	if ((ses->status == CifsNew) || (optype & CIFS_NEG_OP)) {
+ 		struct kvec iov = {
+ 			.iov_base = buf + 4,
+ 			.iov_len = get_rfc1002_length(buf)
+-- 
+2.16.4
+

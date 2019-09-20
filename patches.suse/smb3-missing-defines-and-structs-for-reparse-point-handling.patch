@@ -1,0 +1,82 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Wed, 31 Oct 2018 11:24:33 -0500
+Subject: [PATCH] smb3: missing defines and structs for reparse point handling
+Git-commit: 0df444a00f32a3ab4d37c3c101bb960ee38a9617
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+We were missing some structs from MS-FSCC relating to
+reparse point handling.  Add them to protocol defines
+in smb2pdu.h
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifspdu.h |  3 +++
+ fs/cifs/smb2pdu.h | 35 +++++++++++++++++++++++++++++++++++
+ 2 files changed, 38 insertions(+)
+
+diff --git a/fs/cifs/cifspdu.h b/fs/cifs/cifspdu.h
+index 1ce733f3582f..79d842e7240c 100644
+--- a/fs/cifs/cifspdu.h
++++ b/fs/cifs/cifspdu.h
+@@ -1539,6 +1539,9 @@ struct reparse_symlink_data {
+ 	char	PathBuffer[0];
+ } __attribute__((packed));
+ 
++/* Flag above */
++#define SYMLINK_FLAG_RELATIVE 0x00000001
++
+ /* For IO_REPARSE_TAG_NFS */
+ #define NFS_SPECFILE_LNK	0x00000000014B4E4C
+ #define NFS_SPECFILE_CHR	0x0000000000524843
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index f753f424d7f1..5671d5ee7f58 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -842,6 +842,41 @@ struct fsctl_get_integrity_information_rsp {
+ /* Integrity flags for above */
+ #define FSCTL_INTEGRITY_FLAG_CHECKSUM_ENFORCEMENT_OFF	0x00000001
+ 
++/* Reparse structures - see MS-FSCC 2.1.2 */
++
++/* struct fsctl_reparse_info_req is empty, only response structs (see below) */
++
++struct reparse_data_buffer {
++	__le32	ReparseTag;
++	__le16	ReparseDataLength;
++	__u16	Reserved;
++	__u8	DataBuffer[0]; /* Variable Length */
++} __packed;
++
++struct reparse_guid_data_buffer {
++	__le32	ReparseTag;
++	__le16	ReparseDataLength;
++	__u16	Reserved;
++	__u8	ReparseGuid[16];
++	__u8	DataBuffer[0]; /* Variable Length */
++} __packed;
++
++struct reparse_mount_point_data_buffer {
++	__le32	ReparseTag;
++	__le16	ReparseDataLength;
++	__u16	Reserved;
++	__le16	SubstituteNameOffset;
++	__le16	SubstituteNameLength;
++	__le16	PrintNameOffset;
++	__le16	PrintNameLength;
++	__u8	PathBuffer[0]; /* Variable Length */
++} __packed;
++
++/* See MS-FSCC 2.1.2.4 and cifspdu.h for struct reparse_symlink_data */
++
++/* See MS-FSCC 2.1.2.6 and cifspdu.h for struct reparse_posix_data */
++
++
+ /* See MS-DFSC 2.2.2 */
+ struct fsctl_get_dfs_referral_req {
+ 	__le16 MaxReferralLevel;
+-- 
+2.16.4
+

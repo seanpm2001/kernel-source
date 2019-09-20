@@ -1,0 +1,50 @@
+From: =?UTF-8?q?Bj=C3=B6rn=20JACKE?= <bjacke@samba.org>
+Date: Thu, 1 Jun 2017 11:00:06 +0200
+Subject: [PATCH] CIFS: add SFM mapping for 0x01-0x1F
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Git-commit: 7e46f0900acdd8cc26588d8f6abdf2ed75dfbcd8
+Patch-mainline: v4.13-rc1
+References: bsc#1144333
+
+
+
+0x1-0x1F has to be mapped to 0xF001-0xF01F
+
+Signed-off-by: Bjoern Jacke <bjacke@samba.org>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifs_unicode.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/fs/cifs/cifs_unicode.c b/fs/cifs/cifs_unicode.c
+index a0b3e7d1be48..e0445e2075b2 100644
+--- a/fs/cifs/cifs_unicode.c
++++ b/fs/cifs/cifs_unicode.c
+@@ -79,6 +79,10 @@ convert_sfu_char(const __u16 src_char, char *target)
+ static bool
+ convert_sfm_char(const __u16 src_char, char *target)
+ {
++	if (src_char >= 0xF001 && src_char <= 0xF01F) {
++		*target = src_char - 0xF000;
++		return true;
++	}
+ 	switch (src_char) {
+ 	case SFM_COLON:
+ 		*target = ':';
+@@ -417,6 +421,10 @@ static __le16 convert_to_sfm_char(char src_char, bool end_of_string)
+ {
+ 	__le16 dest_char;
+ 
++	if (src_char >= 0x01 && src_char <= 0x1F) {
++		dest_char = cpu_to_le16(src_char + 0xF000);
++		return dest_char;
++	}
+ 	switch (src_char) {
+ 	case ':':
+ 		dest_char = cpu_to_le16(SFM_COLON);
+-- 
+2.16.4
+

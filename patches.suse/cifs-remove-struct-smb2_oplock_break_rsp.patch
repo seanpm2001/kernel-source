@@ -1,0 +1,89 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Fri, 1 Jun 2018 10:53:03 +1000
+Subject: [PATCH] cifs: remove struct smb2_oplock_break_rsp
+Git-commit: 0d5a288d25291707bfab128f23585e6d07cf7d42
+Patch-mainline: v4.17
+References: bsc#1144333
+
+The two structures smb2_oplock_breaq_req/rsp are now basically identical.
+Replace this with a single definition of a smb2_oplock_break structure.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2misc.c |  4 ++--
+ fs/cifs/smb2pdu.c  |  2 +-
+ fs/cifs/smb2pdu.h  | 14 +-------------
+ 3 files changed, 4 insertions(+), 16 deletions(-)
+
+diff --git a/fs/cifs/smb2misc.c b/fs/cifs/smb2misc.c
+index 8e45e28ce3ac..e66e91227967 100644
+--- a/fs/cifs/smb2misc.c
++++ b/fs/cifs/smb2misc.c
+@@ -617,7 +617,7 @@ smb2_is_valid_lease_break(char *buffer)
+ bool
+ smb2_is_valid_oplock_break(char *buffer, struct TCP_Server_Info *server)
+ {
+-	struct smb2_oplock_break_rsp *rsp = (struct smb2_oplock_break_rsp *)buffer;
++	struct smb2_oplock_break *rsp = (struct smb2_oplock_break *)buffer;
+ 	struct list_head *tmp, *tmp1, *tmp2;
+ 	struct cifs_ses *ses;
+ 	struct cifs_tcon *tcon;
+@@ -626,7 +626,7 @@ smb2_is_valid_oplock_break(char *buffer, struct TCP_Server_Info *server)
+ 
+ 	cifs_dbg(FYI, "Checking for oplock break\n");
+ 
+-	if (rsp->hdr.sync_hdr.Command != SMB2_OPLOCK_BREAK)
++	if (rsp->sync_hdr.Command != SMB2_OPLOCK_BREAK)
+ 		return false;
+ 
+ 	if (rsp->StructureSize !=
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index d6e53d818812..35fbd9261ca0 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -3663,7 +3663,7 @@ SMB2_oplock_break(const unsigned int xid, struct cifs_tcon *tcon,
+ 		  __u8 oplock_level)
+ {
+ 	int rc;
+-	struct smb2_oplock_break_req *req = NULL;
++	struct smb2_oplock_break *req = NULL;
+ 	struct cifs_ses *ses = tcon->ses;
+ 	int flags = CIFS_OBREAK_OP;
+ 	unsigned int total_len;
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index 1581dda58730..3448a5d33b67 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -1165,8 +1165,7 @@ struct smb2_set_info_rsp {
+ 	__le16 StructureSize; /* Must be 2 */
+ } __packed;
+ 
+-/* oplock break without an rfc1002 header */
+-struct smb2_oplock_break_req {
++struct smb2_oplock_break {
+ 	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize; /* Must be 24 */
+ 	__u8   OplockLevel;
+@@ -1176,17 +1175,6 @@ struct smb2_oplock_break_req {
+ 	__u64  VolatileFid;
+ } __packed;
+ 
+-/* oplock break with an rfc1002 header */
+-struct smb2_oplock_break_rsp {
+-	struct smb2_hdr hdr;
+-	__le16 StructureSize; /* Must be 24 */
+-	__u8   OplockLevel;
+-	__u8   Reserved;
+-	__le32 Reserved2;
+-	__u64  PersistentFid;
+-	__u64  VolatileFid;
+-} __packed;
+-
+ #define SMB2_NOTIFY_BREAK_LEASE_FLAG_ACK_REQUIRED cpu_to_le32(0x01)
+ 
+ struct smb2_lease_break {
+-- 
+2.16.4
+

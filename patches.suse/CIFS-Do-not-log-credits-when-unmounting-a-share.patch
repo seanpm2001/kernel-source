@@ -1,0 +1,35 @@
+From: Pavel Shilovsky <pshilov@microsoft.com>
+Date: Fri, 25 Jan 2019 10:56:41 -0800
+Subject: [PATCH] CIFS: Do not log credits when unmounting a share
+Git-commit: 82e0457af5f92126a0a6389d827b1e4daad8e0fd
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Currently we only skip credits logging on reconnects. When
+unmounting a share the number of credits on the client doesn't
+matter, so skip logging in such cases too.
+
+Signed-off-by: Pavel Shilovsky <pshilov@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index ea56b1cdbdde..90b1a8e218c9 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -102,7 +102,8 @@ smb2_add_credits(struct TCP_Server_Info *server, const unsigned int add,
+ 	spin_unlock(&server->req_lock);
+ 	wake_up(&server->request_q);
+ 
+-	if (server->tcpStatus == CifsNeedReconnect)
++	if (server->tcpStatus == CifsNeedReconnect
++	    || server->tcpStatus == CifsExiting)
+ 		return;
+ 
+ 	switch (rc) {
+-- 
+2.16.4
+

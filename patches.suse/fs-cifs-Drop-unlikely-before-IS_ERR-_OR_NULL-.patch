@@ -1,0 +1,35 @@
+From: Kefeng Wang <wangkefeng.wang@huawei.com>
+Date: Wed, 5 Jun 2019 22:24:25 +0800
+Subject: [PATCH] fs: cifs: Drop unlikely before IS_ERR(_OR_NULL)
+Git-commit: 06f2fca7ff51d87c82fc911759373be5e1d0f7b6
+Patch-mainline: v5.3-rc1
+References: bsc#1144333
+
+IS_ERR(_OR_NULL) already contain an 'unlikely' compiler flag,
+so no need to do that again from its callers. Drop it.
+
+Cc: linux-cifs@vger.kernel.org
+Signed-off-by: Kefeng Wang <wangkefeng.wang@huawei.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Paulo Alcantara <palcantara@suse.de>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/dfs_cache.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/cifs/dfs_cache.c b/fs/cifs/dfs_cache.c
+index e3e1c13df439..1692c0c6c23a 100644
+--- a/fs/cifs/dfs_cache.c
++++ b/fs/cifs/dfs_cache.c
+@@ -492,7 +492,7 @@ static struct dfs_cache_entry *__find_cache_entry(unsigned int hash,
+ #ifdef CONFIG_CIFS_DEBUG2
+ 			char *name = get_tgt_name(ce);
+ 
+-			if (unlikely(IS_ERR(name))) {
++			if (IS_ERR(name)) {
+ 				rcu_read_unlock();
+ 				return ERR_CAST(name);
+ 			}
+-- 
+2.22.0
+

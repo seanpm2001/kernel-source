@@ -1,0 +1,35 @@
+From: Jeff Layton <jlayton@kernel.org>
+Date: Tue, 4 Jun 2019 15:17:32 -0400
+Subject: ceph: fix decode_locker to use ceph_decode_entity_addr
+Git-commit: 2f9800c899dc1f4ad0ca32105069bfa83e80a05b
+Patch-mainline: v5.3-rc1
+References: bsc#1148133 bsc#1136682
+
+Signed-off-by: Jeff Layton <jlayton@kernel.org>
+Reviewed-by: "Yan, Zheng" <zyan@redhat.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+
+---
+ net/ceph/cls_lock_client.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/net/ceph/cls_lock_client.c b/net/ceph/cls_lock_client.c
+index 4cc28541281b..b1d12bf4b83e 100644
+--- a/net/ceph/cls_lock_client.c
++++ b/net/ceph/cls_lock_client.c
+@@ -264,8 +264,11 @@ static int decode_locker(void **p, void *end, struct ceph_locker *locker)
+ 		return ret;
+ 
+ 	*p += sizeof(struct ceph_timespec); /* skip expiration */
+-	ceph_decode_copy(p, &locker->info.addr, sizeof(locker->info.addr));
+-	ceph_decode_addr(&locker->info.addr);
++
++	ret = ceph_decode_entity_addr(p, end, &locker->info.addr);
++	if (ret)
++		return ret;
++
+ 	len = ceph_decode_32(p);
+ 	*p += len; /* skip description */
+ 
+

@@ -1,0 +1,74 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Mon, 3 Sep 2018 13:33:42 +1000
+Subject: [PATCH] cifs: change mkdir to use a compound
+Git-commit: f733e3936da462265a155f4dd44a333e56d197ed
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+This with the previous patch changes mkdir() from needing 6 roundtrips to
+just 3.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2inode.c | 22 +++++++++++++---------
+ 1 file changed, 13 insertions(+), 9 deletions(-)
+
+diff --git a/fs/cifs/smb2inode.c b/fs/cifs/smb2inode.c
+index 9d3ada937715..9a742164b5f1 100644
+--- a/fs/cifs/smb2inode.c
++++ b/fs/cifs/smb2inode.c
+@@ -105,6 +105,12 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 		smb2_set_next_command(server, &rqst[num_rqst]);
+ 		smb2_set_related(&rqst[num_rqst++]);
+ 		break;
++	case SMB2_OP_MKDIR:
++		/*
++		 * Directories are created through parameters in the
++		 * SMB2_open() call.
++		 */
++		break;
+ 	default:
+ 		cifs_dbg(VFS, "Invalid command\n");
+ 		rc = -EINVAL;
+@@ -142,6 +148,10 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 		if (rqst[2].rq_iov)
+ 			SMB2_close_free(&rqst[2]);
+ 		break;
++	case SMB2_OP_MKDIR:
++		if (rqst[1].rq_iov)
++			SMB2_close_free(&rqst[1]);
++		break;
+ 	}
+ 	free_rsp_buf(resp_buftype[0], rsp_iov[0].iov_base);
+ 	free_rsp_buf(resp_buftype[1], rsp_iov[1].iov_base);
+@@ -194,12 +204,6 @@ smb2_open_op_close(const unsigned int xid, struct cifs_tcon *tcon,
+ 	switch (command) {
+ 	case SMB2_OP_DELETE:
+ 		break;
+-	case SMB2_OP_MKDIR:
+-		/*
+-		 * Directories are created through parameters in the
+-		 * SMB2_open() call.
+-		 */
+-		break;
+ 	case SMB2_OP_RMDIR:
+ 		tmprc = SMB2_rmdir(xid, tcon, fid.persistent_fid,
+ 				   fid.volatile_fid);
+@@ -287,9 +291,9 @@ int
+ smb2_mkdir(const unsigned int xid, struct cifs_tcon *tcon, const char *name,
+ 	   struct cifs_sb_info *cifs_sb)
+ {
+-	return smb2_open_op_close(xid, tcon, cifs_sb, name,
+-				  FILE_WRITE_ATTRIBUTES, FILE_CREATE,
+-				  CREATE_NOT_FILE, NULL, SMB2_OP_MKDIR);
++	return smb2_compound_op(xid, tcon, cifs_sb, name,
++				FILE_WRITE_ATTRIBUTES, FILE_CREATE,
++				CREATE_NOT_FILE, NULL, SMB2_OP_MKDIR);
+ }
+ 
+ void
+-- 
+2.16.4
+

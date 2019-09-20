@@ -1,0 +1,50 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Mon, 30 Jul 2018 14:23:58 -0500
+Subject: [PATCH] smb3: add tracepoint for session expired or deleted
+Git-commit: e68a932b0b8e38eaa2111fc3aab31ff66988f1c4
+Patch-mainline: v4.18
+References: bsc#1144333
+
+In debugging reconnection problems, want to be able to more easily
+trace cases in which the server has marked the SMB3 session
+expired or deleted (to distinguish from timeout cases).
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c | 4 ++++
+ fs/cifs/trace.h   | 1 +
+ 2 files changed, 5 insertions(+)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index dad6dc763200..314556c083f3 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1483,7 +1483,11 @@ smb2_is_session_expired(char *buf)
+ 	    shdr->Status != STATUS_USER_SESSION_DELETED)
+ 		return false;
+ 
++	trace_smb3_ses_expired(shdr->TreeId, shdr->SessionId,
++			       le16_to_cpu(shdr->Command),
++			       le64_to_cpu(shdr->MessageId));
+ 	cifs_dbg(FYI, "Session expired or deleted\n");
++
+ 	return true;
+ }
+ 
+diff --git a/fs/cifs/trace.h b/fs/cifs/trace.h
+index 67e413f6ee4d..0fdf2f5c07ba 100644
+--- a/fs/cifs/trace.h
++++ b/fs/cifs/trace.h
+@@ -281,6 +281,7 @@ DEFINE_EVENT(smb3_cmd_done_class, smb3_##name,    \
+ 	TP_ARGS(tid, sesid, cmd, mid))
+ 
+ DEFINE_SMB3_CMD_DONE_EVENT(cmd_done);
++DEFINE_SMB3_CMD_DONE_EVENT(ses_expired);
+ 
+ DECLARE_EVENT_CLASS(smb3_exit_err_class,
+ 	TP_PROTO(unsigned int xid,
+-- 
+2.16.4
+

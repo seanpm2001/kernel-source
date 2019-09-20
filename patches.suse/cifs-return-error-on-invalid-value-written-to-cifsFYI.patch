@@ -1,0 +1,37 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Thu, 24 May 2018 09:53:39 +1000
+Subject: [PATCH] cifs: return error on invalid value written to cifsFYI
+Git-commit: 25ad1cbd02fc9939089dafeb0a5698a7ca054237
+Patch-mainline: v4.17
+References: bsc#1144333
+
+RHBZ: 1539617
+
+Check that, if it is not a boolean, the value the user tries
+to write to /proc/fs/cifs/cifsFYI is valid and return an error
+if not.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reported-by: Xiaoli Feng <xifeng@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifs_debug.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/cifs/cifs_debug.c b/fs/cifs/cifs_debug.c
+index e6025e93c5eb..ef93d60ca416 100644
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -584,6 +584,8 @@ static ssize_t cifsFYI_proc_write(struct file *file, const char __user *buffer,
+ 		cifsFYI = bv;
+ 	else if ((c[0] > '1') && (c[0] <= '9'))
+ 		cifsFYI = (int) (c[0] - '0'); /* see cifs_debug.h for meanings */
++	else
++		return -EINVAL;
+ 
+ 	return count;
+ }
+-- 
+2.16.4
+

@@ -1,0 +1,33 @@
+From: Varun Prakash <varun@chelsio.com>
+Date: Thu, 21 Feb 2019 20:12:16 +0530
+Subject: scsi: cxgb4i: validate tcp sequence number only if chip version <= T5
+Git-commit: 26af1a368e40618d67956b1f883fbcfec292c5d8
+Patch-mainline: v5.1-rc1
+References: bsc#1136346 jsc#SLE-4682
+
+T6 adapters generates DDP completion message on receiving all iSCSI pdus in
+a sequence. Because of this, driver can not keep track of tcp sequence
+number for T6 adapters.
+
+Signed-off-by: Varun Prakash <varun@chelsio.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/cxgbi/cxgb4i/cxgb4i.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/scsi/cxgbi/cxgb4i/cxgb4i.c b/drivers/scsi/cxgbi/cxgb4i/cxgb4i.c
+index ba14a4cdf120..bab06b947af3 100644
+--- a/drivers/scsi/cxgbi/cxgb4i/cxgb4i.c
++++ b/drivers/scsi/cxgbi/cxgb4i/cxgb4i.c
+@@ -1210,7 +1210,8 @@ static void do_rx_iscsi_hdr(struct cxgbi_device *cdev, struct sk_buff *skb)
+ 		csk->skb_ulp_lhdr = skb;
+ 		cxgbi_skcb_set_flag(skb, SKCBF_RX_HDR);
+ 
+-		if (cxgbi_skcb_tcp_seq(skb) != csk->rcv_nxt) {
++		if ((CHELSIO_CHIP_VERSION(lldi->adapter_type) <= CHELSIO_T5) &&
++		    (cxgbi_skcb_tcp_seq(skb) != csk->rcv_nxt)) {
+ 			pr_info("tid %u, CPL_ISCSI_HDR, bad seq, 0x%x/0x%x.\n",
+ 				csk->tid, cxgbi_skcb_tcp_seq(skb),
+ 				csk->rcv_nxt);
+

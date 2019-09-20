@@ -1,0 +1,356 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Wed, 25 Apr 2018 22:19:09 -0500
+Subject: [PATCH] smb3: fix redundant opens on root
+Git-commit: 3d4ef9a15343f038ccae17f60468569f23113312
+Patch-mainline: v4.17
+References: bsc#1144333
+
+In SMB2/SMB3 unlike in cifs we unnecessarily open the root of the share
+over and over again in various places during mount and path revalidation
+and also in statfs.  This patch cuts redundant traffic (opens and closes)
+by simply keeping the directory handle for the root around (and reopening
+it as needed on reconnect), so query calls don't require three round
+trips to copmlete - just one, and eases load on network, client and
+server (on mount alone, cuts network traffic by more than a third).
+
+Also add a new cifs mount parm "nohandlecache" to allow users whose
+servers might have resource constraints (eg in case they have a server
+with so many users connecting to it that this extra handle per mount
+could possibly be a resource concern).
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifs_fs_sb.h |  1 +
+ fs/cifs/cifsfs.c     |  2 ++
+ fs/cifs/cifsglob.h   |  5 +++++
+ fs/cifs/cifssmb.c    |  6 ++++++
+ fs/cifs/connect.c    | 13 +++++++++++++
+ fs/cifs/misc.c       |  3 +++
+ fs/cifs/smb2inode.c  | 43 ++++++++++++++++++++++++++++---------------
+ fs/cifs/smb2ops.c    | 47 +++++++++++++++++++++++++++++++++++++++++++++--
+ fs/cifs/smb2proto.h  |  2 ++
+ 9 files changed, 105 insertions(+), 17 deletions(-)
+
+diff --git a/fs/cifs/cifs_fs_sb.h b/fs/cifs/cifs_fs_sb.h
+index 350fa55a1bf7..9731d0d891e7 100644
+--- a/fs/cifs/cifs_fs_sb.h
++++ b/fs/cifs/cifs_fs_sb.h
+@@ -50,6 +50,7 @@
+ 					      * root mountable
+ 					      */
+ #define CIFS_MOUNT_UID_FROM_ACL 0x2000000 /* try to get UID via special SID */
++#define CIFS_MOUNT_NO_HANDLE_CACHE 0x4000000 /* disable caching dir handles */
+ 
+ struct cifs_sb_info {
+ 	struct rb_root tlink_tree;
+diff --git a/fs/cifs/cifsfs.c b/fs/cifs/cifsfs.c
+index 5a5a0158cc8f..62f166270459 100644
+--- a/fs/cifs/cifsfs.c
++++ b/fs/cifs/cifsfs.c
+@@ -495,6 +495,8 @@ cifs_show_options(struct seq_file *s, struct dentry *root)
+ 		seq_puts(s, ",sfu");
+ 	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_NO_BRL)
+ 		seq_puts(s, ",nobrl");
++	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_NO_HANDLE_CACHE)
++		seq_puts(s, ",nohandlecache");
+ 	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_CIFS_ACL)
+ 		seq_puts(s, ",cifsacl");
+ 	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_DYNPERM)
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index cb950a5fa078..6cc27f9c33a4 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -525,6 +525,7 @@ struct smb_vol {
+ 	bool nullauth:1;   /* attempt to authenticate with null user */
+ 	bool nocase:1;     /* request case insensitive filenames */
+ 	bool nobrl:1;      /* disable sending byte range locks to srv */
++	bool nohandlecache:1; /* disable caching dir handles if srvr probs */
+ 	bool mand_lock:1;  /* send mandatory not posix byte range lock reqs */
+ 	bool seal:1;       /* request transport encryption on share */
+ 	bool nodfs:1;      /* Do not request DFS, even if available */
+@@ -953,6 +954,7 @@ struct cifs_tcon {
+ 	bool print:1; /* set if connection to printer share */
+ 	bool retry:1;
+ 	bool nocase:1;
++	bool nohandlecache:1; /* if strange server resource prob can turn off */
+ 	bool seal:1;      /* transport encryption for this mounted share */
+ 	bool unix_ext:1;  /* if false disable Linux extensions to CIFS protocol
+ 				for this mount even if server would support */
+@@ -979,6 +981,9 @@ struct cifs_tcon {
+ 	struct fscache_cookie *fscache;	/* cookie for share */
+ #endif
+ 	struct list_head pending_opens;	/* list of incomplete opens */
++	bool valid_root_fid:1;	/* Do we have a useable root fid */
++	struct mutex prfid_mutex; /* prevents reopen race after dead ses*/
++	struct cifs_fid *prfid;	/* handle to the directory at top of share */
+ 	/* BB add field for back pointer to sb struct(s)? */
+ };
+ 
+diff --git a/fs/cifs/cifssmb.c b/fs/cifs/cifssmb.c
+index 1529a088383d..c8e42785d261 100644
+--- a/fs/cifs/cifssmb.c
++++ b/fs/cifs/cifssmb.c
+@@ -106,6 +106,12 @@ cifs_mark_open_files_invalid(struct cifs_tcon *tcon)
+ 		open_file->oplock_break_cancelled = true;
+ 	}
+ 	spin_unlock(&tcon->open_file_lock);
++
++	mutex_lock(&tcon->prfid_mutex);
++	tcon->valid_root_fid = false;
++	memset(tcon->prfid, 0, sizeof(struct cifs_fid));
++	mutex_unlock(&tcon->prfid_mutex);
++
+ 	/*
+ 	 * BB Add call to invalidate_inodes(sb) for all superblocks mounted
+ 	 * to this tcon.
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 7a10a5d0731f..be3308b44944 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -79,6 +79,7 @@ enum {
+ 	Opt_noposixpaths, Opt_nounix,
+ 	Opt_nocase,
+ 	Opt_brl, Opt_nobrl,
++	Opt_handlecache, Opt_nohandlecache,
+ 	Opt_forcemandatorylock, Opt_setuidfromacl, Opt_setuids,
+ 	Opt_nosetuids, Opt_dynperm, Opt_nodynperm,
+ 	Opt_nohard, Opt_nosoft,
+@@ -148,6 +149,8 @@ static const match_table_t cifs_mount_option_tokens = {
+ 	{ Opt_nocase, "ignorecase" },
+ 	{ Opt_brl, "brl" },
+ 	{ Opt_nobrl, "nobrl" },
++	{ Opt_handlecache, "handlecache" },
++	{ Opt_nohandlecache, "nohandlecache" },
+ 	{ Opt_nobrl, "nolock" },
+ 	{ Opt_forcemandatorylock, "forcemandatorylock" },
+ 	{ Opt_forcemandatorylock, "forcemand" },
+@@ -1445,6 +1448,12 @@ cifs_parse_mount_options(const char *mountdata, const char *devname,
+ 				(S_IALLUGO & ~(S_ISUID | S_IXGRP)))
+ 				vol->file_mode = S_IALLUGO;
+ 			break;
++		case Opt_nohandlecache:
++			vol->nohandlecache = 1;
++			break;
++		case Opt_handlecache:
++			vol->nohandlecache = 0;
++			break;
+ 		case Opt_forcemandatorylock:
+ 			vol->mand_lock = 1;
+ 			break;
+@@ -3022,6 +3031,7 @@ cifs_get_tcon(struct cifs_ses *ses, struct smb_vol *volume_info)
+ 	 */
+ 	tcon->retry = volume_info->retry;
+ 	tcon->nocase = volume_info->nocase;
++	tcon->nohandlecache = volume_info->nohandlecache;
+ 	tcon->local_lease = volume_info->local_lease;
+ 	INIT_LIST_HEAD(&tcon->pending_opens);
+ 
+@@ -3580,6 +3590,8 @@ int cifs_setup_cifs_sb(struct smb_vol *pvolume_info,
+ 		cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_UNX_EMUL;
+ 	if (pvolume_info->nobrl)
+ 		cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_NO_BRL;
++	if (pvolume_info->nohandlecache)
++		cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_NO_HANDLE_CACHE;
+ 	if (pvolume_info->nostrictsync)
+ 		cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_NOSSYNC;
+ 	if (pvolume_info->mand_lock)
+@@ -4353,6 +4365,7 @@ cifs_construct_tcon(struct cifs_sb_info *cifs_sb, kuid_t fsuid)
+ 	vol_info->UNC = master_tcon->treeName;
+ 	vol_info->retry = master_tcon->retry;
+ 	vol_info->nocase = master_tcon->nocase;
++	vol_info->nohandlecache = master_tcon->nohandlecache;
+ 	vol_info->local_lease = master_tcon->local_lease;
+ 	vol_info->no_linux_ext = !master_tcon->unix_ext;
+ 	vol_info->sectype = master_tcon->ses->sectype;
+diff --git a/fs/cifs/misc.c b/fs/cifs/misc.c
+index 460084a8eac5..247a59774b7f 100644
+--- a/fs/cifs/misc.c
++++ b/fs/cifs/misc.c
+@@ -117,6 +117,8 @@ tconInfoAlloc(void)
+ 		INIT_LIST_HEAD(&ret_buf->openFileList);
+ 		INIT_LIST_HEAD(&ret_buf->tcon_list);
+ 		spin_lock_init(&ret_buf->open_file_lock);
++		mutex_init(&ret_buf->prfid_mutex);
++		ret_buf->prfid = kzalloc(sizeof(struct cifs_fid), GFP_KERNEL);
+ #ifdef CONFIG_CIFS_STATS
+ 		spin_lock_init(&ret_buf->stat_lock);
+ #endif
+@@ -134,6 +136,7 @@ tconInfoFree(struct cifs_tcon *buf_to_free)
+ 	atomic_dec(&tconInfoAllocCount);
+ 	kfree(buf_to_free->nativeFileSystem);
+ 	kzfree(buf_to_free->password);
++	kfree(buf_to_free->prfid);
+ 	kfree(buf_to_free);
+ }
+ 
+diff --git a/fs/cifs/smb2inode.c b/fs/cifs/smb2inode.c
+index 1238cd3552f9..a6e786e39248 100644
+--- a/fs/cifs/smb2inode.c
++++ b/fs/cifs/smb2inode.c
+@@ -44,26 +44,38 @@ smb2_open_op_close(const unsigned int xid, struct cifs_tcon *tcon,
+ 		   __u32 create_options, void *data, int command)
+ {
+ 	int rc, tmprc = 0;
+-	__le16 *utf16_path;
++	__le16 *utf16_path = NULL;
+ 	__u8 oplock = SMB2_OPLOCK_LEVEL_NONE;
+ 	struct cifs_open_parms oparms;
+ 	struct cifs_fid fid;
++	bool use_cached_root_handle = false;
+ 
+-	utf16_path = cifs_convert_path_to_utf16(full_path, cifs_sb);
+-	if (!utf16_path)
+-		return -ENOMEM;
++	if ((strcmp(full_path, "") == 0) && (create_options == 0) &&
++	    (desired_access == FILE_READ_ATTRIBUTES) &&
++	    (create_disposition == FILE_OPEN) &&
++	    (tcon->nohandlecache == false)) {
++		rc = open_shroot(xid, tcon, &fid);
++		if (rc == 0)
++			use_cached_root_handle = true;
++	}
++
++	if (use_cached_root_handle == false) {
++		utf16_path = cifs_convert_path_to_utf16(full_path, cifs_sb);
++		if (!utf16_path)
++			return -ENOMEM;
+ 
+-	oparms.tcon = tcon;
+-	oparms.desired_access = desired_access;
+-	oparms.disposition = create_disposition;
+-	oparms.create_options = create_options;
+-	oparms.fid = &fid;
+-	oparms.reconnect = false;
++		oparms.tcon = tcon;
++		oparms.desired_access = desired_access;
++		oparms.disposition = create_disposition;
++		oparms.create_options = create_options;
++		oparms.fid = &fid;
++		oparms.reconnect = false;
+ 
+-	rc = SMB2_open(xid, &oparms, utf16_path, &oplock, NULL, NULL);
+-	if (rc) {
+-		kfree(utf16_path);
+-		return rc;
++		rc = SMB2_open(xid, &oparms, utf16_path, &oplock, NULL, NULL);
++		if (rc) {
++			kfree(utf16_path);
++			return rc;
++		}
+ 	}
+ 
+ 	switch (command) {
+@@ -107,7 +119,8 @@ smb2_open_op_close(const unsigned int xid, struct cifs_tcon *tcon,
+ 		break;
+ 	}
+ 
+-	rc = SMB2_close(xid, tcon, fid.persistent_fid, fid.volatile_fid);
++	if (use_cached_root_handle == false)
++		rc = SMB2_close(xid, tcon, fid.persistent_fid, fid.volatile_fid);
+ 	if (tmprc)
+ 		rc = tmprc;
+ 	kfree(utf16_path);
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 9c6d95ffca97..12875d55c5a9 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -322,6 +322,40 @@ SMB3_request_interfaces(const unsigned int xid, struct cifs_tcon *tcon)
+ }
+ #endif /* STATS2 */
+ 
++/*
++ * Open the directory at the root of a share
++ */
++int open_shroot(unsigned int xid, struct cifs_tcon *tcon, struct cifs_fid *pfid)
++{
++	struct cifs_open_parms oparams;
++	int rc;
++	__le16 srch_path = 0; /* Null - since an open of top of share */
++	u8 oplock = SMB2_OPLOCK_LEVEL_NONE;
++
++	mutex_lock(&tcon->prfid_mutex);
++	if (tcon->valid_root_fid) {
++		cifs_dbg(FYI, "found a cached root file handle\n");
++		memcpy(pfid, tcon->prfid, sizeof(struct cifs_fid));
++		mutex_unlock(&tcon->prfid_mutex);
++		return 0;
++	}
++
++	oparams.tcon = tcon;
++	oparams.create_options = 0;
++	oparams.desired_access = FILE_READ_ATTRIBUTES;
++	oparams.disposition = FILE_OPEN;
++	oparams.fid = pfid;
++	oparams.reconnect = false;
++
++	rc = SMB2_open(xid, &oparams, &srch_path, &oplock, NULL, NULL);
++	if (rc == 0) {
++		memcpy(tcon->prfid, pfid, sizeof(struct cifs_fid));
++		tcon->valid_root_fid = true;
++	}
++	mutex_unlock(&tcon->prfid_mutex);
++	return rc;
++}
++
+ static void
+ smb3_qfs_tcon(const unsigned int xid, struct cifs_tcon *tcon)
+ {
+@@ -330,6 +364,7 @@ smb3_qfs_tcon(const unsigned int xid, struct cifs_tcon *tcon)
+ 	u8 oplock = SMB2_OPLOCK_LEVEL_NONE;
+ 	struct cifs_open_parms oparms;
+ 	struct cifs_fid fid;
++	bool no_cached_open = tcon->nohandlecache;
+ 
+ 	oparms.tcon = tcon;
+ 	oparms.desired_access = FILE_READ_ATTRIBUTES;
+@@ -338,7 +373,11 @@ smb3_qfs_tcon(const unsigned int xid, struct cifs_tcon *tcon)
+ 	oparms.fid = &fid;
+ 	oparms.reconnect = false;
+ 
+-	rc = SMB2_open(xid, &oparms, &srch_path, &oplock, NULL, NULL);
++	if (no_cached_open)
++		rc = SMB2_open(xid, &oparms, &srch_path, &oplock, NULL, NULL);
++	else
++		rc = open_shroot(xid, tcon, &fid);
++
+ 	if (rc)
+ 		return;
+ 
+@@ -352,7 +391,8 @@ smb3_qfs_tcon(const unsigned int xid, struct cifs_tcon *tcon)
+ 			FS_DEVICE_INFORMATION);
+ 	SMB2_QFS_attr(xid, tcon, fid.persistent_fid, fid.volatile_fid,
+ 			FS_SECTOR_SIZE_INFORMATION); /* SMB3 specific */
+-	SMB2_close(xid, tcon, fid.persistent_fid, fid.volatile_fid);
++	if (no_cached_open)
++		SMB2_close(xid, tcon, fid.persistent_fid, fid.volatile_fid);
+ 	return;
+ }
+ 
+@@ -394,6 +434,9 @@ smb2_is_path_accessible(const unsigned int xid, struct cifs_tcon *tcon,
+ 	struct cifs_open_parms oparms;
+ 	struct cifs_fid fid;
+ 
++	if ((*full_path == 0) && tcon->valid_root_fid)
++		return 0;
++
+ 	utf16_path = cifs_convert_path_to_utf16(full_path, cifs_sb);
+ 	if (!utf16_path)
+ 		return -ENOMEM;
+diff --git a/fs/cifs/smb2proto.h b/fs/cifs/smb2proto.h
+index 8ba24a95db71..800270b729e2 100644
+--- a/fs/cifs/smb2proto.h
++++ b/fs/cifs/smb2proto.h
+@@ -65,6 +65,8 @@ extern struct cifs_ses *smb2_find_smb_ses(struct TCP_Server_Info *server,
+ extern int smb3_handle_read_data(struct TCP_Server_Info *server,
+ 				 struct mid_q_entry *mid);
+ 
++extern int open_shroot(unsigned int xid, struct cifs_tcon *tcon,
++			struct cifs_fid *pfid);
+ extern void move_smb2_info_to_cifs(FILE_ALL_INFO *dst,
+ 				   struct smb2_file_all_info *src);
+ extern int smb2_query_path_info(const unsigned int xid, struct cifs_tcon *tcon,
+-- 
+2.16.4
+

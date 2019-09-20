@@ -1,0 +1,86 @@
+From: YueHaibing <yuehaibing@huawei.com>
+Date: Fri, 31 May 2019 23:28:41 +0800
+Subject: [PATCH] scsi: lpfc: Make some symbols static
+Git-commit: d7b761b0694986ea811c0daaa1178bfaaddf036d
+Patch-Mainline: v5.3-rc1
+References: bsc#1148308
+
+Fix sparse warnings:
+
+drivers/scsi/lpfc/lpfc_sli.c:115:1: warning: symbol 'lpfc_sli4_pcimem_bcopy' was not declared. Should it be static?
+drivers/scsi/lpfc/lpfc_sli.c:7854:1: warning: symbol 'lpfc_sli4_process_missed_mbox_completions' was not declared. Should it be static?
+drivers/scsi/lpfc/lpfc_nvmet.c:223:27: warning: symbol 'lpfc_nvmet_get_ctx_for_xri' was not declared. Should it be static?
+drivers/scsi/lpfc/lpfc_nvmet.c:245:27: warning: symbol 'lpfc_nvmet_get_ctx_for_oxid' was not declared. Should it be static?
+drivers/scsi/lpfc/lpfc_init.c:75:10: warning: symbol 'lpfc_present_cpu' was not declared. Should it be static?
+
+Reported-by: Hulk Robot <hulkci@huawei.com>
+Signed-off-by: YueHaibing <yuehaibing@huawei.com>
+Acked-by: James Smart <james.smart@broadcom.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Hannes Reinecke <hare@suse.com>
+---
+ drivers/scsi/lpfc/lpfc_init.c  | 2 +-
+ drivers/scsi/lpfc/lpfc_nvmet.c | 4 ++--
+ drivers/scsi/lpfc/lpfc_sli.c   | 4 ++--
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/scsi/lpfc/lpfc_init.c b/drivers/scsi/lpfc/lpfc_init.c
+index 3096a444ef01..6d6b14295734 100644
+--- a/drivers/scsi/lpfc/lpfc_init.c
++++ b/drivers/scsi/lpfc/lpfc_init.c
+@@ -72,7 +72,7 @@ unsigned long _dump_buf_dif_order;
+ spinlock_t _dump_buf_lock;
+ 
+ /* Used when mapping IRQ vectors in a driver centric manner */
+-uint32_t lpfc_present_cpu;
++static uint32_t lpfc_present_cpu;
+ 
+ static void lpfc_get_hba_model_desc(struct lpfc_hba *, uint8_t *, uint8_t *);
+ static int lpfc_post_rcv_buf(struct lpfc_hba *);
+diff --git a/drivers/scsi/lpfc/lpfc_nvmet.c b/drivers/scsi/lpfc/lpfc_nvmet.c
+index eb93189f4544..e471bbcca838 100644
+--- a/drivers/scsi/lpfc/lpfc_nvmet.c
++++ b/drivers/scsi/lpfc/lpfc_nvmet.c
+@@ -220,7 +220,7 @@ lpfc_nvmet_cmd_template(void)
+ 	/* Word 12, 13, 14, 15 - is zero */
+ }
+ 
+-struct lpfc_nvmet_rcv_ctx *
++static struct lpfc_nvmet_rcv_ctx *
+ lpfc_nvmet_get_ctx_for_xri(struct lpfc_hba *phba, u16 xri)
+ {
+ 	struct lpfc_nvmet_rcv_ctx *ctxp;
+@@ -242,7 +242,7 @@ lpfc_nvmet_get_ctx_for_xri(struct lpfc_hba *phba, u16 xri)
+ 	return NULL;
+ }
+ 
+-struct lpfc_nvmet_rcv_ctx *
++static struct lpfc_nvmet_rcv_ctx *
+ lpfc_nvmet_get_ctx_for_oxid(struct lpfc_hba *phba, u16 oxid, u32 sid)
+ {
+ 	struct lpfc_nvmet_rcv_ctx *ctxp;
+diff --git a/drivers/scsi/lpfc/lpfc_sli.c b/drivers/scsi/lpfc/lpfc_sli.c
+index d55259fc0af5..337e4f105f23 100644
+--- a/drivers/scsi/lpfc/lpfc_sli.c
++++ b/drivers/scsi/lpfc/lpfc_sli.c
+@@ -108,7 +108,7 @@ lpfc_get_iocb_from_iocbq(struct lpfc_iocbq *iocbq)
+  * endianness. This function can be called with or without
+  * lock.
+  **/
+-void
++static void
+ lpfc_sli4_pcimem_bcopy(void *srcp, void *destp, uint32_t cnt)
+ {
+ 	uint64_t *src = srcp;
+@@ -7859,7 +7859,7 @@ lpfc_sli4_mbox_completions_pending(struct lpfc_hba *phba)
+  * and will process all the completions associated with the eq for the
+  * mailbox completion queue.
+  **/
+-bool
++static bool
+ lpfc_sli4_process_missed_mbox_completions(struct lpfc_hba *phba)
+ {
+ 	struct lpfc_sli4_hba *sli4_hba = &phba->sli4_hba;
+-- 
+2.16.4
+

@@ -1,0 +1,38 @@
+From 5d9e06d60eee95e021ffccf0d2c7ed800ae9dc14 Mon Sep 17 00:00:00 2001
+From: Wei Yongjun <weiyongjun1@huawei.com>
+Date: Mon, 22 Jul 2019 22:12:36 +0800
+Subject: [PATCH] bcache: fix possible memory leak in bch_cached_dev_run()
+Git-commit: 5d9e06d60eee95e021ffccf0d2c7ed800ae9dc14
+Patch-mainline: v5.3-rc2
+References: git fixes
+
+memory malloced in bch_cached_dev_run() and should be freed before
+leaving from the error handling cases, otherwise it will cause
+memory leak.
+
+Fixes: 0b13efecf5f2 ("bcache: add return value check to bch_cached_dev_run()")
+Signed-off-by: Wei Yongjun <weiyongjun1@huawei.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+
+---
+ drivers/md/bcache/super.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/md/bcache/super.c b/drivers/md/bcache/super.c
+index 26e374fbf57c..20ed838e9413 100644
+--- a/drivers/md/bcache/super.c
++++ b/drivers/md/bcache/super.c
+@@ -931,6 +931,9 @@ int bch_cached_dev_run(struct cached_dev *dc)
+ 	if (dc->io_disable) {
+ 		pr_err("I/O disabled on cached dev %s",
+ 		       dc->backing_dev_name);
++		kfree(env[1]);
++		kfree(env[2]);
++		kfree(buf);
+ 		return -EIO;
+ 	}
+ 
+-- 
+2.16.4
+

@@ -1,0 +1,96 @@
+From: Chandrakanth Patil <chandrakanth.patil@broadcom.com>
+Date: Tue, 25 Jun 2019 16:34:23 +0530
+Subject: scsi: megaraid_sas: Release Mutex lock before OCR in case of DCMD
+ timeout
+Patch-mainline: v5.3-rc1
+Git-commit: 7fa3174b3ef4e517ebb8a08078871ceab705a969
+References: bsc#1143962
+
+Issue: There is possibility of few DCMDs timing out with 'reset_mutex' lock
+held. As part of DCMD timeout handling, driver calls function
+megasas_reset_fusion which also tries to acquire same lock 'reset_mutex'
+and end up with deadlock.
+
+Fix: Upon timeout of DCMDs (which are fired with 'reset_mutex' lock held),
+driver will release 'reset_mutex' before calling OCR function and will
+acquire lock again after OCR function returns.
+
+Signed-off-by: Sumit Saxena <sumit.saxena@broadcom.com>
+Signed-off-by: Chandrakanth Patil <chandrakanth.patil@broadcom.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/megaraid/megaraid_sas_base.c |   13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+--- a/drivers/scsi/megaraid/megaraid_sas_base.c
++++ b/drivers/scsi/megaraid/megaraid_sas_base.c
+@@ -4275,8 +4275,10 @@ megasas_get_pd_info(struct megasas_insta
+ 		switch (dcmd_timeout_ocr_possible(instance)) {
+ 		case INITIATE_OCR:
+ 			cmd->flags |= DRV_DCMD_SKIP_REFIRE;
++			mutex_unlock(&instance->reset_mutex);
+ 			megasas_reset_fusion(instance->host,
+ 				MFI_IO_TIMEOUT_OCR);
++			mutex_lock(&instance->reset_mutex);
+ 			break;
+ 		case KILL_ADAPTER:
+ 			megaraid_sas_kill_hba(instance);
+@@ -4734,8 +4736,10 @@ megasas_host_device_list_query(struct me
+ 		switch (dcmd_timeout_ocr_possible(instance)) {
+ 		case INITIATE_OCR:
+ 			cmd->flags |= DRV_DCMD_SKIP_REFIRE;
++			mutex_unlock(&instance->reset_mutex);
+ 			megasas_reset_fusion(instance->host,
+ 				MFI_IO_TIMEOUT_OCR);
++			mutex_lock(&instance->reset_mutex);
+ 			break;
+ 		case KILL_ADAPTER:
+ 			megaraid_sas_kill_hba(instance);
+@@ -4883,8 +4887,10 @@ void megasas_get_snapdump_properties(str
+ 		switch (dcmd_timeout_ocr_possible(instance)) {
+ 		case INITIATE_OCR:
+ 			cmd->flags |= DRV_DCMD_SKIP_REFIRE;
++			mutex_unlock(&instance->reset_mutex);
+ 			megasas_reset_fusion(instance->host,
+ 				MFI_IO_TIMEOUT_OCR);
++			mutex_lock(&instance->reset_mutex);
+ 			break;
+ 		case KILL_ADAPTER:
+ 			megaraid_sas_kill_hba(instance);
+@@ -5014,8 +5020,10 @@ megasas_get_ctrl_info(struct megasas_ins
+ 		switch (dcmd_timeout_ocr_possible(instance)) {
+ 		case INITIATE_OCR:
+ 			cmd->flags |= DRV_DCMD_SKIP_REFIRE;
++			mutex_unlock(&instance->reset_mutex);
+ 			megasas_reset_fusion(instance->host,
+ 				MFI_IO_TIMEOUT_OCR);
++			mutex_lock(&instance->reset_mutex);
+ 			break;
+ 		case KILL_ADAPTER:
+ 			megaraid_sas_kill_hba(instance);
+@@ -6250,8 +6258,10 @@ megasas_get_target_prop(struct megasas_i
+ 		switch (dcmd_timeout_ocr_possible(instance)) {
+ 		case INITIATE_OCR:
+ 			cmd->flags |= DRV_DCMD_SKIP_REFIRE;
++			mutex_unlock(&instance->reset_mutex);
+ 			megasas_reset_fusion(instance->host,
+ 					     MFI_IO_TIMEOUT_OCR);
++			mutex_lock(&instance->reset_mutex);
+ 			break;
+ 		case KILL_ADAPTER:
+ 			megaraid_sas_kill_hba(instance);
+@@ -7624,10 +7634,13 @@ megasas_mgmt_fw_ioctl(struct megasas_ins
+ 		opcode = le32_to_cpu(cmd->frame->dcmd.opcode);
+ 
+ 	if (opcode == MR_DCMD_CTRL_SHUTDOWN) {
++		mutex_lock(&instance->reset_mutex);
+ 		if (megasas_get_ctrl_info(instance) != DCMD_SUCCESS) {
+ 			megasas_return_cmd(instance, cmd);
++			mutex_unlock(&instance->reset_mutex);
+ 			return -1;
+ 		}
++		mutex_unlock(&instance->reset_mutex);
+ 	}
+ 
+ 	if (opcode == MR_DRIVER_SET_APP_CRASHDUMP_MODE) {

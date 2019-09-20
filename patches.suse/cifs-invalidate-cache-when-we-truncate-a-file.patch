@@ -1,0 +1,75 @@
+From 57c55cd7c77b81827757fdbe8dda8c3927c52b4e Mon Sep 17 00:00:00 2001
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Thu, 24 May 2018 06:54:27 +1000
+Subject: [PATCH] cifs: invalidate cache when we truncate a file
+Git-commit: 57c55cd7c77b81827757fdbe8dda8c3927c52b4e
+Patch-mainline: v4.18-rc1
+References: bsc#1051510, bsc#1144333
+
+RHBZ: 1566345
+
+When truncating a file we always do this synchronously to the server.
+Thus we need to make sure that the cached inode metadata is
+marked as stale so that on next getattr we will refresh the metadata.
+In this particular bug we want to ensure that both ctime and mtime
+are updated and become visible to the application after a truncate.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reported-by: Xiaoli Feng <xifeng@redhat.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/inode.c | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/fs/cifs/inode.c b/fs/cifs/inode.c
+index 3c371f7f5963..745fd7fe8d0e 100644
+--- a/fs/cifs/inode.c
++++ b/fs/cifs/inode.c
+@@ -746,7 +746,8 @@ cifs_get_inode_info(struct inode **inode, const char *full_path,
+ 	cifs_dbg(FYI, "Getting info on %s\n", full_path);
+ 
+ 	if ((data == NULL) && (*inode != NULL)) {
+-		if (CIFS_CACHE_READ(CIFS_I(*inode))) {
++		if (CIFS_CACHE_READ(CIFS_I(*inode)) &&
++		    CIFS_I(*inode)->time != 0) {
+ 			cifs_dbg(FYI, "No need to revalidate cached inode sizes\n");
+ 			goto cgii_exit;
+ 		}
+@@ -1857,15 +1858,15 @@ cifs_inode_needs_reval(struct inode *inode)
+ 	struct cifsInodeInfo *cifs_i = CIFS_I(inode);
+ 	struct cifs_sb_info *cifs_sb = CIFS_SB(inode->i_sb);
+ 
++	if (cifs_i->time == 0)
++		return true;
++
+ 	if (CIFS_CACHE_READ(cifs_i))
+ 		return false;
+ 
+ 	if (!lookupCacheEnabled)
+ 		return true;
+ 
+-	if (cifs_i->time == 0)
+-		return true;
+-
+ 	if (!cifs_sb->actimeo)
+ 		return true;
+ 
+@@ -2104,10 +2105,14 @@ static int cifs_truncate_page(struct address_space *mapping, loff_t from)
+ 
+ static void cifs_setsize(struct inode *inode, loff_t offset)
+ {
++	struct cifsInodeInfo *cifs_i = CIFS_I(inode);
++
+ 	spin_lock(&inode->i_lock);
+ 	i_size_write(inode, offset);
+ 	spin_unlock(&inode->i_lock);
+ 
++	/* Cached inode must be refreshed on truncate */
++	cifs_i->time = 0;
+ 	truncate_pagecache(inode, offset);
+ }
+ 
+-- 
+2.16.4
+

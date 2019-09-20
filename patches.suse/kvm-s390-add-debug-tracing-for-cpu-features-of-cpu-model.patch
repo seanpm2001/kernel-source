@@ -1,0 +1,79 @@
+From: Christian Borntraeger <borntraeger@de.ibm.com>
+Date: Thu, 16 Nov 2017 12:30:15 +0100
+Subject: KVM: s390: add debug tracing for cpu features of CPU model
+Git-commit: 2f8311c912ab67084ce3657096df601c87f49a58
+Patch-mainline: v4.16-rc1
+References: jsc#SLE-6412
+
+The cpu model already traces the cpu facilities, the ibc and
+guest CPU ids. We should do the same for the cpu features (on
+success only).
+
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Reviewed-by: Halil Pasic <pasic@linux.vnet.ibm.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Signed-off-by: Bruce Rogers <brogers@suse.com>
+---
+ arch/s390/kvm/kvm-s390.c | 24 ++++++++++++++++++------
+ 1 file changed, 18 insertions(+), 6 deletions(-)
+
+diff --git a/arch/s390/kvm/kvm-s390.c b/arch/s390/kvm/kvm-s390.c
+index c21aed7f3c42..9597bd0259f4 100644
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -1238,7 +1238,6 @@ static int kvm_s390_set_processor_feat(struct kvm *kvm,
+ 				       struct kvm_device_attr *attr)
+ {
+ 	struct kvm_s390_vm_cpu_feat data;
+-	int ret = -EBUSY;
+ 
+ 	if (copy_from_user(&data, (void __user *)attr->addr, sizeof(data)))
+ 		return -EFAULT;
+@@ -1248,13 +1247,18 @@ static int kvm_s390_set_processor_feat(struct kvm *kvm,
+ 		return -EINVAL;
+ 
+ 	mutex_lock(&kvm->lock);
+-	if (!kvm->created_vcpus) {
+-		bitmap_copy(kvm->arch.cpu_feat, (unsigned long *) data.feat,
+-			    KVM_S390_VM_CPU_FEAT_NR_BITS);
+-		ret = 0;
++	if (kvm->created_vcpus) {
++		mutex_unlock(&kvm->lock);
++		return -EBUSY;
+ 	}
++	bitmap_copy(kvm->arch.cpu_feat, (unsigned long *) data.feat,
++		    KVM_S390_VM_CPU_FEAT_NR_BITS);
+ 	mutex_unlock(&kvm->lock);
+-	return ret;
++	VM_EVENT(kvm, 3, "SET: guest feat: 0x%16.16llx.0x%16.16llx.0x%16.16llx",
++			 data.feat[0],
++			 data.feat[1],
++			 data.feat[2]);
++	return 0;
+ }
+ 
+ static int kvm_s390_set_processor_subfunc(struct kvm *kvm,
+@@ -1356,6 +1360,10 @@ static int kvm_s390_get_processor_feat(struct kvm *kvm,
+ 		    KVM_S390_VM_CPU_FEAT_NR_BITS);
+ 	if (copy_to_user((void __user *)attr->addr, &data, sizeof(data)))
+ 		return -EFAULT;
++	VM_EVENT(kvm, 3, "GET: guest feat: 0x%16.16llx.0x%16.16llx.0x%16.16llx",
++			 data.feat[0],
++			 data.feat[1],
++			 data.feat[2]);
+ 	return 0;
+ }
+ 
+@@ -1369,6 +1377,10 @@ static int kvm_s390_get_machine_feat(struct kvm *kvm,
+ 		    KVM_S390_VM_CPU_FEAT_NR_BITS);
+ 	if (copy_to_user((void __user *)attr->addr, &data, sizeof(data)))
+ 		return -EFAULT;
++	VM_EVENT(kvm, 3, "GET: host feat:  0x%16.16llx.0x%16.16llx.0x%16.16llx",
++			 data.feat[0],
++			 data.feat[1],
++			 data.feat[2]);
+ 	return 0;
+ }
+ 
+

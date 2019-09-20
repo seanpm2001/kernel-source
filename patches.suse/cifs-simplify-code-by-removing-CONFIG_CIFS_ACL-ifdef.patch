@@ -1,0 +1,344 @@
+From 73cf8085dc09442f17f32972d3cdec7232f1be55 Mon Sep 17 00:00:00 2001
+From: Steve French <stfrench@microsoft.com>
+Date: Mon, 24 Jun 2019 01:44:11 -0500
+Subject: [PATCH] cifs: simplify code by removing CONFIG_CIFS_ACL ifdef
+Git-commit: 73cf8085dc09442f17f32972d3cdec7232f1be55
+Patch-mainline: v5.3-rc1
+References: bsc#1144333
+
+SMB3 ACL support is needed for many use cases now and should not be
+ifdeffed out, even for SMB1 (CIFS).  Remove the CONFIG_CIFS_ACL
+ifdef so ACL support is always built into cifs.ko
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/Kconfig      |  8 --------
+ fs/cifs/Makefile     |  3 +--
+ fs/cifs/cifs_debug.c |  2 --
+ fs/cifs/cifsfs.c     |  6 ------
+ fs/cifs/cifsglob.h   |  2 --
+ fs/cifs/cifssmb.c    |  2 --
+ fs/cifs/inode.c      |  6 ------
+ fs/cifs/smb1ops.c    |  2 --
+ fs/cifs/smb2ops.c    | 12 ------------
+ fs/cifs/xattr.c      |  4 ----
+ 10 files changed, 1 insertion(+), 46 deletions(-)
+
+diff --git a/fs/cifs/Kconfig b/fs/cifs/Kconfig
+index 62ad5ed26de7..cb3096fabbbe 100644
+--- a/fs/cifs/Kconfig
++++ b/fs/cifs/Kconfig
+@@ -145,14 +145,6 @@ config CIFS_POSIX
+ 	  (such as Samba 3.10 and later) which can negotiate
+ 	  CIFS POSIX ACL support.  If unsure, say N.
+ 
+-config CIFS_ACL
+-	bool "Provide CIFS ACL support"
+-	depends on CIFS_XATTR && KEYS
+-	help
+-	  Allows fetching CIFS/NTFS ACL from the server.  The DACL blob
+-	  is handed over to the application/caller.  See the man
+-	  page for getcifsacl for more information.  If unsure, say Y.
+-
+ config CIFS_DEBUG
+ 	bool "Enable CIFS debugging routines"
+ 	default y
+diff --git a/fs/cifs/Makefile b/fs/cifs/Makefile
+index 51af69a1a328..41332f20055b 100644
+--- a/fs/cifs/Makefile
++++ b/fs/cifs/Makefile
+@@ -10,10 +10,9 @@ cifs-y := trace.o cifsfs.o cifssmb.o cifs_debug.o connect.o dir.o file.o \
+ 	  cifs_unicode.o nterr.o cifsencrypt.o \
+ 	  readdir.o ioctl.o sess.o export.o smb1ops.o winucase.o \
+ 	  smb2ops.o smb2maperror.o smb2transport.o \
+-	  smb2misc.o smb2pdu.o smb2inode.o smb2file.o
++	  smb2misc.o smb2pdu.o smb2inode.o smb2file.o cifsacl.o
+ 
+ cifs-$(CONFIG_CIFS_XATTR) += xattr.o
+-cifs-$(CONFIG_CIFS_ACL) += cifsacl.o
+ 
+ cifs-$(CONFIG_CIFS_UPCALL) += cifs_spnego.o
+ 
+diff --git a/fs/cifs/cifs_debug.c b/fs/cifs/cifs_debug.c
+index ec933fb0b36e..a38d796f5ffe 100644
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -240,9 +240,7 @@ static int cifs_debug_data_proc_show(struct seq_file *m, void *v)
+ #ifdef CONFIG_CIFS_XATTR
+ 	seq_printf(m, ",XATTR");
+ #endif
+-#ifdef CONFIG_CIFS_ACL
+ 	seq_printf(m, ",ACL");
+-#endif
+ 	seq_putc(m, '\n');
+ 	seq_printf(m, "CIFSMaxBufSize: %d\n", CIFSMaxBufSize);
+ 	seq_printf(m, "Active VFS Requests: %d\n", GlobalTotalActiveXid);
+diff --git a/fs/cifs/cifsfs.c b/fs/cifs/cifsfs.c
+index 786e07754107..dc5fd7a648f0 100644
+--- a/fs/cifs/cifsfs.c
++++ b/fs/cifs/cifsfs.c
+@@ -1518,11 +1518,9 @@ init_cifs(void)
+ 		goto out_destroy_dfs_cache;
+ #endif /* CONFIG_CIFS_UPCALL */
+ 
+-#ifdef CONFIG_CIFS_ACL
+ 	rc = init_cifs_idmap();
+ 	if (rc)
+ 		goto out_register_key_type;
+-#endif /* CONFIG_CIFS_ACL */
+ 
+ 	rc = register_filesystem(&cifs_fs_type);
+ 	if (rc)
+@@ -1537,10 +1535,8 @@ init_cifs(void)
+ 	return 0;
+ 
+ out_init_cifs_idmap:
+-#ifdef CONFIG_CIFS_ACL
+ 	exit_cifs_idmap();
+ out_register_key_type:
+-#endif
+ #ifdef CONFIG_CIFS_UPCALL
+ 	exit_cifs_spnego();
+ out_destroy_dfs_cache:
+@@ -1572,9 +1568,7 @@ exit_cifs(void)
+ 	unregister_filesystem(&cifs_fs_type);
+ 	unregister_filesystem(&smb3_fs_type);
+ 	cifs_dfs_release_automount_timer();
+-#ifdef CONFIG_CIFS_ACL
+ 	exit_cifs_idmap();
+-#endif
+ #ifdef CONFIG_CIFS_UPCALL
+ 	exit_cifs_spnego();
+ #endif
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 88c98fa15f39..16f240911192 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -1871,7 +1871,6 @@ extern unsigned int cifs_min_small;  /* min size of small buf pool */
+ extern unsigned int cifs_max_pending; /* MAX requests at once to server*/
+ extern bool disable_legacy_dialects;  /* forbid vers=1.0 and vers=2.0 mounts */
+ 
+-#ifdef CONFIG_CIFS_ACL
+ GLOBAL_EXTERN struct rb_root uidtree;
+ GLOBAL_EXTERN struct rb_root gidtree;
+ GLOBAL_EXTERN spinlock_t siduidlock;
+@@ -1880,7 +1879,6 @@ GLOBAL_EXTERN struct rb_root siduidtree;
+ GLOBAL_EXTERN struct rb_root sidgidtree;
+ GLOBAL_EXTERN spinlock_t uidsidlock;
+ GLOBAL_EXTERN spinlock_t gidsidlock;
+-#endif /* CONFIG_CIFS_ACL */
+ 
+ void cifs_oplock_break(struct work_struct *work);
+ void cifs_queue_oplock_break(struct cifsFileInfo *cfile);
+diff --git a/fs/cifs/cifssmb.c b/fs/cifs/cifssmb.c
+index 1fbd92843a73..2ea28552f3f2 100644
+--- a/fs/cifs/cifssmb.c
++++ b/fs/cifs/cifssmb.c
+@@ -3920,7 +3920,6 @@ CIFSGetExtAttr(const unsigned int xid, struct cifs_tcon *tcon,
+ 
+ #endif /* CONFIG_POSIX */
+ 
+-#ifdef CONFIG_CIFS_ACL
+ /*
+  * Initialize NT TRANSACT SMB into small smb request buffer.  This assumes that
+  * all NT TRANSACTS that we init here have total parm and data under about 400
+@@ -4164,7 +4163,6 @@ CIFSSMBSetCIFSACL(const unsigned int xid, struct cifs_tcon *tcon, __u16 fid,
+ 	return (rc);
+ }
+ 
+-#endif /* CONFIG_CIFS_ACL */
+ 
+ /* Legacy Query Path Information call for lookup to old servers such
+    as Win9x/WinME */
+diff --git a/fs/cifs/inode.c b/fs/cifs/inode.c
+index d7cc62252634..65f72fd3d582 100644
+--- a/fs/cifs/inode.c
++++ b/fs/cifs/inode.c
+@@ -892,7 +892,6 @@ cifs_get_inode_info(struct inode **inode, const char *full_path,
+ 			cifs_dbg(FYI, "cifs_sfu_type failed: %d\n", tmprc);
+ 	}
+ 
+-#ifdef CONFIG_CIFS_ACL
+ 	/* fill in 0777 bits from ACL */
+ 	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_CIFS_ACL) {
+ 		rc = cifs_acl_to_fattr(cifs_sb, &fattr, *inode, full_path, fid);
+@@ -902,7 +901,6 @@ cifs_get_inode_info(struct inode **inode, const char *full_path,
+ 			goto cgii_exit;
+ 		}
+ 	}
+-#endif /* CONFIG_CIFS_ACL */
+ 
+ 	/* fill in remaining high mode bits e.g. SUID, VTX */
+ 	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_UNX_EMUL)
+@@ -2466,7 +2464,6 @@ cifs_setattr_nounix(struct dentry *direntry, struct iattr *attrs)
+ 	if (attrs->ia_valid & ATTR_GID)
+ 		gid = attrs->ia_gid;
+ 
+-#ifdef CONFIG_CIFS_ACL
+ 	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_CIFS_ACL) {
+ 		if (uid_valid(uid) || gid_valid(gid)) {
+ 			rc = id_mode_to_cifs_acl(inode, full_path, NO_CHANGE_64,
+@@ -2478,7 +2475,6 @@ cifs_setattr_nounix(struct dentry *direntry, struct iattr *attrs)
+ 			}
+ 		}
+ 	} else
+-#endif /* CONFIG_CIFS_ACL */
+ 	if (!(cifs_sb->mnt_cifs_flags & CIFS_MOUNT_SET_UID))
+ 		attrs->ia_valid &= ~(ATTR_UID | ATTR_GID);
+ 
+@@ -2489,7 +2485,6 @@ cifs_setattr_nounix(struct dentry *direntry, struct iattr *attrs)
+ 	if (attrs->ia_valid & ATTR_MODE) {
+ 		mode = attrs->ia_mode;
+ 		rc = 0;
+-#ifdef CONFIG_CIFS_ACL
+ 		if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_CIFS_ACL) {
+ 			rc = id_mode_to_cifs_acl(inode, full_path, mode,
+ 						INVALID_UID, INVALID_GID);
+@@ -2499,7 +2494,6 @@ cifs_setattr_nounix(struct dentry *direntry, struct iattr *attrs)
+ 				goto cifs_setattr_exit;
+ 			}
+ 		} else
+-#endif /* CONFIG_CIFS_ACL */
+ 		if (((mode & S_IWUGO) == 0) &&
+ 		    (cifsInode->cifsAttrs & ATTR_READONLY) == 0) {
+ 
+diff --git a/fs/cifs/smb1ops.c b/fs/cifs/smb1ops.c
+index 88ab87df8b3b..b7421a096319 100644
+--- a/fs/cifs/smb1ops.c
++++ b/fs/cifs/smb1ops.c
+@@ -1223,11 +1223,9 @@ struct smb_version_operations smb1_operations = {
+ 	.query_all_EAs = CIFSSMBQAllEAs,
+ 	.set_EA = CIFSSMBSetEA,
+ #endif /* CIFS_XATTR */
+-#ifdef CONFIG_CIFS_ACL
+ 	.get_acl = get_cifs_acl,
+ 	.get_acl_by_fid = get_cifs_acl_by_fid,
+ 	.set_acl = set_cifs_acl,
+-#endif /* CIFS_ACL */
+ 	.make_node = cifs_make_node,
+ };
+ 
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index d5b09ec89cfd..75f3348a471e 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -2606,7 +2606,6 @@ smb2_query_symlink(const unsigned int xid, struct cifs_tcon *tcon,
+ 	return rc;
+ }
+ 
+-#ifdef CONFIG_CIFS_ACL
+ static struct cifs_ntsd *
+ get_smb2_acl_by_fid(struct cifs_sb_info *cifs_sb,
+ 		const struct cifs_fid *cifsfid, u32 *pacllen)
+@@ -2691,7 +2690,6 @@ get_smb2_acl_by_path(struct cifs_sb_info *cifs_sb,
+ 	return pntsd;
+ }
+ 
+-#ifdef CONFIG_CIFS_ACL
+ static int
+ set_smb2_acl(struct cifs_ntsd *pnntsd, __u32 acllen,
+ 		struct inode *inode, const char *path, int aclflag)
+@@ -2749,7 +2747,6 @@ set_smb2_acl(struct cifs_ntsd *pnntsd, __u32 acllen,
+ 	free_xid(xid);
+ 	return rc;
+ }
+-#endif /* CIFS_ACL */
+ 
+ /* Retrieve an ACL from the server */
+ static struct cifs_ntsd *
+@@ -2769,7 +2766,6 @@ get_smb2_acl(struct cifs_sb_info *cifs_sb,
+ 	cifsFileInfo_put(open_file);
+ 	return pntsd;
+ }
+-#endif
+ 
+ static long smb3_zero_range(struct file *file, struct cifs_tcon *tcon,
+ 			    loff_t offset, loff_t len, bool keep_size)
+@@ -4292,11 +4288,9 @@ struct smb_version_operations smb20_operations = {
+ 	.query_all_EAs = smb2_query_eas,
+ 	.set_EA = smb2_set_ea,
+ #endif /* CIFS_XATTR */
+-#ifdef CONFIG_CIFS_ACL
+ 	.get_acl = get_smb2_acl,
+ 	.get_acl_by_fid = get_smb2_acl_by_fid,
+ 	.set_acl = set_smb2_acl,
+-#endif /* CIFS_ACL */
+ 	.next_header = smb2_next_header,
+ 	.ioctl_query_info = smb2_ioctl_query_info,
+ 	.make_node = smb2_make_node,
+@@ -4393,11 +4387,9 @@ struct smb_version_operations smb21_operations = {
+ 	.query_all_EAs = smb2_query_eas,
+ 	.set_EA = smb2_set_ea,
+ #endif /* CIFS_XATTR */
+-#ifdef CONFIG_CIFS_ACL
+ 	.get_acl = get_smb2_acl,
+ 	.get_acl_by_fid = get_smb2_acl_by_fid,
+ 	.set_acl = set_smb2_acl,
+-#endif /* CIFS_ACL */
+ 	.next_header = smb2_next_header,
+ 	.ioctl_query_info = smb2_ioctl_query_info,
+ 	.make_node = smb2_make_node,
+@@ -4503,11 +4495,9 @@ struct smb_version_operations smb30_operations = {
+ 	.query_all_EAs = smb2_query_eas,
+ 	.set_EA = smb2_set_ea,
+ #endif /* CIFS_XATTR */
+-#ifdef CONFIG_CIFS_ACL
+ 	.get_acl = get_smb2_acl,
+ 	.get_acl_by_fid = get_smb2_acl_by_fid,
+ 	.set_acl = set_smb2_acl,
+-#endif /* CIFS_ACL */
+ 	.next_header = smb2_next_header,
+ 	.ioctl_query_info = smb2_ioctl_query_info,
+ 	.make_node = smb2_make_node,
+@@ -4614,11 +4604,9 @@ struct smb_version_operations smb311_operations = {
+ 	.query_all_EAs = smb2_query_eas,
+ 	.set_EA = smb2_set_ea,
+ #endif /* CIFS_XATTR */
+-#ifdef CONFIG_CIFS_ACL
+ 	.get_acl = get_smb2_acl,
+ 	.get_acl_by_fid = get_smb2_acl_by_fid,
+ 	.set_acl = set_smb2_acl,
+-#endif /* CIFS_ACL */
+ 	.next_header = smb2_next_header,
+ 	.ioctl_query_info = smb2_ioctl_query_info,
+ 	.make_node = smb2_make_node,
+diff --git a/fs/cifs/xattr.c b/fs/cifs/xattr.c
+index 50ddb795aaeb..9076150758d8 100644
+--- a/fs/cifs/xattr.c
++++ b/fs/cifs/xattr.c
+@@ -96,7 +96,6 @@ static int cifs_xattr_set(const struct xattr_handler *handler,
+ 		break;
+ 
+ 	case XATTR_CIFS_ACL: {
+-#ifdef CONFIG_CIFS_ACL
+ 		struct cifs_ntsd *pacl;
+ 
+ 		if (!value)
+@@ -117,7 +116,6 @@ static int cifs_xattr_set(const struct xattr_handler *handler,
+ 				CIFS_I(inode)->time = 0;
+ 			kfree(pacl);
+ 		}
+-#endif /* CONFIG_CIFS_ACL */
+ 		break;
+ 	}
+ 
+@@ -247,7 +245,6 @@ static int cifs_xattr_get(const struct xattr_handler *handler,
+ 		break;
+ 
+ 	case XATTR_CIFS_ACL: {
+-#ifdef CONFIG_CIFS_ACL
+ 		u32 acllen;
+ 		struct cifs_ntsd *pacl;
+ 
+@@ -270,7 +267,6 @@ static int cifs_xattr_get(const struct xattr_handler *handler,
+ 			rc = acllen;
+ 			kfree(pacl);
+ 		}
+-#endif  /* CONFIG_CIFS_ACL */
+ 		break;
+ 	}
+ 
+-- 
+2.22.0
+

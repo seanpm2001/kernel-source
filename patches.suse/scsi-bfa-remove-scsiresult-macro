@@ -1,0 +1,97 @@
+From: Johannes Thumshirn <jthumshirn@suse.de>
+Date: Thu, 5 Jul 2018 13:01:38 +0200
+Subject: scsi: bfa: remove ScsiResult macro
+Git-commit: 55c9d37165d28f081b7ba11fc2a7938d4bbb75c6
+Patch-mainline: v4.19-rc1
+References: bsc#1136496 jsc#SLE-4698
+
+Remove the ScsiResult macro and open code it on all call sites.
+
+This will make subsequent refactoring in this area easier.
+
+Signed-off-by: Johannes Thumshirn <jthumshirn@suse.de>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/bfa/bfad_im.c | 19 ++++++++-----------
+ drivers/scsi/bfa/bfad_im.h |  1 -
+ 2 files changed, 8 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/scsi/bfa/bfad_im.c b/drivers/scsi/bfa/bfad_im.c
+index c05d6e91e4bd..c4a33317d344 100644
+--- a/drivers/scsi/bfa/bfad_im.c
++++ b/drivers/scsi/bfa/bfad_im.c
+@@ -70,21 +70,18 @@ bfa_cb_ioim_done(void *drv, struct bfad_ioim_s *dio,
+ 				host_status = DID_ERROR;
+ 			}
+ 		}
+-		cmnd->result = ScsiResult(host_status, scsi_status);
++		cmnd->result = host_status << 16 | scsi_status;
+ 
+ 		break;
+ 
+ 	case BFI_IOIM_STS_TIMEDOUT:
+-		host_status = DID_TIME_OUT;
+-		cmnd->result = ScsiResult(host_status, 0);
++		cmnd->result = DID_TIME_OUT << 16;
+ 		break;
+ 	case BFI_IOIM_STS_PATHTOV:
+-		host_status = DID_TRANSPORT_DISRUPTED;
+-		cmnd->result = ScsiResult(host_status, 0);
++		cmnd->result = DID_TRANSPORT_DISRUPTED << 16;
+ 		break;
+ 	default:
+-		host_status = DID_ERROR;
+-		cmnd->result = ScsiResult(host_status, 0);
++		cmnd->result = DID_ERROR << 16;
+ 	}
+ 
+ 	/* Unmap DMA, if host is NULL, it means a scsi passthru cmd */
+@@ -117,7 +114,7 @@ bfa_cb_ioim_good_comp(void *drv, struct bfad_ioim_s *dio)
+ 	struct bfad_itnim_data_s *itnim_data;
+ 	struct bfad_itnim_s *itnim;
+ 
+-	cmnd->result = ScsiResult(DID_OK, SCSI_STATUS_GOOD);
++	cmnd->result = DID_OK << 16 | SCSI_STATUS_GOOD;
+ 
+ 	/* Unmap DMA, if host is NULL, it means a scsi passthru cmd */
+ 	if (cmnd->device->host != NULL)
+@@ -144,7 +141,7 @@ bfa_cb_ioim_abort(void *drv, struct bfad_ioim_s *dio)
+ 	struct scsi_cmnd *cmnd = (struct scsi_cmnd *)dio;
+ 	struct bfad_s         *bfad = drv;
+ 
+-	cmnd->result = ScsiResult(DID_ERROR, 0);
++	cmnd->result = DID_ERROR << 16;
+ 
+ 	/* Unmap DMA, if host is NULL, it means a scsi passthru cmd */
+ 	if (cmnd->device->host != NULL)
+@@ -1253,14 +1250,14 @@ bfad_im_queuecommand_lck(struct scsi_cmnd *cmnd, void (*done) (struct scsi_cmnd
+ 		printk(KERN_WARNING
+ 			"bfad%d, queuecommand %p %x failed, BFA stopped\n",
+ 		       bfad->inst_no, cmnd, cmnd->cmnd[0]);
+-		cmnd->result = ScsiResult(DID_NO_CONNECT, 0);
++		cmnd->result = DID_NO_CONNECT << 16;
+ 		goto out_fail_cmd;
+ 	}
+ 
+ 
+ 	itnim = itnim_data->itnim;
+ 	if (!itnim) {
+-		cmnd->result = ScsiResult(DID_IMM_RETRY, 0);
++		cmnd->result = DID_IMM_RETRY << 16;
+ 		goto out_fail_cmd;
+ 	}
+ 
+diff --git a/drivers/scsi/bfa/bfad_im.h b/drivers/scsi/bfa/bfad_im.h
+index af66275570c3..e61ed8dad0b4 100644
+--- a/drivers/scsi/bfa/bfad_im.h
++++ b/drivers/scsi/bfa/bfad_im.h
+@@ -44,7 +44,6 @@ u32 bfad_im_supported_speeds(struct bfa_s *bfa);
+ #define MAX_FCP_LUN 16384
+ #define BFAD_TARGET_RESET_TMO 60
+ #define BFAD_LUN_RESET_TMO 60
+-#define ScsiResult(host_code, scsi_code) (((host_code) << 16) | scsi_code)
+ #define BFA_QUEUE_FULL_RAMP_UP_TIME 120
+ 
+ /*
+

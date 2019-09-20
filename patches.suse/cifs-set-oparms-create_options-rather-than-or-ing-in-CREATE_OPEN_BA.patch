@@ -1,0 +1,39 @@
+From: Colin Ian King <colin.king@canonical.com>
+Date: Wed, 5 Jul 2017 13:47:34 +0100
+Subject: [PATCH] cifs: set oparms.create_options rather than or'ing in
+ CREATE_OPEN_BACKUP_INTENT
+Git-commit: 709340a00ad67aea081916582846248e3b18b463
+Patch-mainline: v4.13-rc1
+References: bsc#1144333
+
+Currently oparms.create_options is uninitialized and the code is logically
+or'ing in CREATE_OPEN_BACKUP_INTENT onto a garbage value of
+oparms.create_options from the stack.  Fix this by just setting the value
+rather than or'ing in the setting.
+
+Detected by CoverityScan, CID#1447220 ("Unitialized scale value")
+
+Signed-off-by: Colin Ian King <colin.king@canonical.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 323bafdd7909..ccbb397debbc 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1339,7 +1339,7 @@ get_smb2_acl_by_path(struct cifs_sb_info *cifs_sb,
+ 	xid = get_xid();
+ 
+ 	if (backup_cred(cifs_sb))
+-		oparms.create_options |= CREATE_OPEN_BACKUP_INTENT;
++		oparms.create_options = CREATE_OPEN_BACKUP_INTENT;
+ 	else
+ 		oparms.create_options = 0;
+ 
+-- 
+2.16.4
+

@@ -1,0 +1,44 @@
+From: Wei Yongjun <weiyongjun1@huawei.com>
+Date: Tue, 18 Dec 2018 06:37:02 +0000
+Subject: [PATCH] cifs: Fix to use kmem_cache_free() instead of kfree()
+Git-commit: 3e80be0158ac67d936e65935db5b07663822c66d
+Patch-mainline: v5.0-rc1
+References: bsc#1144333
+
+memory allocated by kmem_cache_alloc() in alloc_cache_entry()
+should be freed using kmem_cache_free(), not kfree().
+
+Fixes: 34a44fb160f9 ("cifs: Add DFS cache routines")
+Signed-off-by: Wei Yongjun <weiyongjun1@huawei.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/dfs_cache.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/dfs_cache.c b/fs/cifs/dfs_cache.c
+index d1e84bd3268f..f4e09073bb7d 100644
+--- a/fs/cifs/dfs_cache.c
++++ b/fs/cifs/dfs_cache.c
+@@ -413,7 +413,7 @@ alloc_cache_entry(const char *path, const struct dfs_info3_param *refs,
+ 
+ 	ce->ce_path = kstrdup_const(path, GFP_KERNEL);
+ 	if (!ce->ce_path) {
+-		kfree(ce);
++		kmem_cache_free(dfs_cache_slab, ce);
+ 		return ERR_PTR(-ENOMEM);
+ 	}
+ 	INIT_HLIST_NODE(&ce->ce_hlist);
+@@ -422,7 +422,7 @@ alloc_cache_entry(const char *path, const struct dfs_info3_param *refs,
+ 	rc = copy_ref_data(refs, numrefs, ce, NULL);
+ 	if (rc) {
+ 		kfree(ce->ce_path);
+-		kfree(ce);
++		kmem_cache_free(dfs_cache_slab, ce);
+ 		ce = ERR_PTR(rc);
+ 	}
+ 	return ce;
+-- 
+2.16.4
+

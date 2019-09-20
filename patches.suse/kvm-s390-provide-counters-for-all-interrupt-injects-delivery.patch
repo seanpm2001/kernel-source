@@ -1,0 +1,301 @@
+From: Christian Borntraeger <borntraeger@de.ibm.com>
+Date: Thu, 8 Mar 2018 12:48:05 +0000
+Subject: KVM: s390: provide counters for all interrupt injects/delivery
+Git-commit: ccc40c53c07ba22cfe711cd625f9f0c77f272ae6
+Patch-mainline: v4.17-rc1
+References: jsc#SLE-6412
+
+For testing the exitless interrupt support it turned out useful to
+have separate counters for inject and delivery of I/O interrupt.
+While at it do the same for all interrupt types. For timer
+related interrupts (clock comparator and cpu timer) we even had
+no delivery counters. Fix this as well. On this way some counters
+are being renamed to have a similar name.
+
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Bruce Rogers <brogers@suse.com>
+---
+ arch/s390/include/asm/kvm_host.h | 25 +++++++++++++++++++++----
+ arch/s390/kvm/interrupt.c        | 25 +++++++++++++++++++++----
+ arch/s390/kvm/kvm-s390.c         | 24 +++++++++++++++++++++---
+ 3 files changed, 63 insertions(+), 11 deletions(-)
+
+diff --git a/arch/s390/include/asm/kvm_host.h b/arch/s390/include/asm/kvm_host.h
+index 85f0013a47cd..40e9487b6896 100644
+--- a/arch/s390/include/asm/kvm_host.h
++++ b/arch/s390/include/asm/kvm_host.h
+@@ -320,17 +320,29 @@ struct kvm_vcpu_stat {
+ 	u64 exit_program_interruption;
+ 	u64 exit_instr_and_program;
+ 	u64 exit_operation_exception;
++	u64 deliver_ckc;
++	u64 deliver_cputm;
+ 	u64 deliver_external_call;
+ 	u64 deliver_emergency_signal;
+ 	u64 deliver_service_signal;
+-	u64 deliver_virtio_interrupt;
++	u64 deliver_virtio;
+ 	u64 deliver_stop_signal;
+ 	u64 deliver_prefix_signal;
+ 	u64 deliver_restart_signal;
+-	u64 deliver_program_int;
+-	u64 deliver_io_int;
++	u64 deliver_program;
++	u64 deliver_io;
+ 	u64 deliver_machine_check;
+ 	u64 exit_wait_state;
++	u64 inject_ckc;
++	u64 inject_cputm;
++	u64 inject_external_call;
++	u64 inject_emergency_signal;
++	u64 inject_mchk;
++	u64 inject_pfault_init;
++	u64 inject_program;
++	u64 inject_restart;
++	u64 inject_set_prefix;
++	u64 inject_stop_signal;
+ 	u64 instruction_epsw;
+ 	u64 instruction_gs;
+ 	u64 instruction_io_other;
+@@ -655,7 +667,12 @@ struct kvm_vcpu_arch {
+ };
+ 
+ struct kvm_vm_stat {
+-	ulong remote_tlb_flush;
++	u64 inject_io;
++	u64 inject_float_mchk;
++	u64 inject_pfault_done;
++	u64 inject_service_signal;
++	u64 inject_virtio;
++	u64 remote_tlb_flush;
+ };
+ 
+ struct kvm_arch_memory_slot {
+diff --git a/arch/s390/kvm/interrupt.c b/arch/s390/kvm/interrupt.c
+index aaf2a6839d0d..2a270958a1dd 100644
+--- a/arch/s390/kvm/interrupt.c
++++ b/arch/s390/kvm/interrupt.c
+@@ -396,6 +396,7 @@ static int __must_check __deliver_cpu_timer(struct kvm_vcpu *vcpu)
+ 	struct kvm_s390_local_interrupt *li = &vcpu->arch.local_int;
+ 	int rc;
+ 
++	vcpu->stat.deliver_cputm++;
+ 	trace_kvm_s390_deliver_interrupt(vcpu->vcpu_id, KVM_S390_INT_CPU_TIMER,
+ 					 0, 0);
+ 
+@@ -415,6 +416,7 @@ static int __must_check __deliver_ckc(struct kvm_vcpu *vcpu)
+ 	struct kvm_s390_local_interrupt *li = &vcpu->arch.local_int;
+ 	int rc;
+ 
++	vcpu->stat.deliver_ckc++;
+ 	trace_kvm_s390_deliver_interrupt(vcpu->vcpu_id, KVM_S390_INT_CLOCK_COMP,
+ 					 0, 0);
+ 
+@@ -716,7 +718,7 @@ static int __must_check __deliver_prog(struct kvm_vcpu *vcpu)
+ 	ilen = pgm_info.flags & KVM_S390_PGM_FLAGS_ILC_MASK;
+ 	VCPU_EVENT(vcpu, 3, "deliver: program irq code 0x%x, ilen:%d",
+ 		   pgm_info.code, ilen);
+-	vcpu->stat.deliver_program_int++;
++	vcpu->stat.deliver_program++;
+ 	trace_kvm_s390_deliver_interrupt(vcpu->vcpu_id, KVM_S390_PROGRAM_INT,
+ 					 pgm_info.code, 0);
+ 
+@@ -905,7 +907,7 @@ static int __must_check __deliver_virtio(struct kvm_vcpu *vcpu)
+ 		VCPU_EVENT(vcpu, 4,
+ 			   "deliver: virtio parm: 0x%x,parm64: 0x%llx",
+ 			   inti->ext.ext_params, inti->ext.ext_params2);
+-		vcpu->stat.deliver_virtio_interrupt++;
++		vcpu->stat.deliver_virtio++;
+ 		trace_kvm_s390_deliver_interrupt(vcpu->vcpu_id,
+ 				inti->type,
+ 				inti->ext.ext_params,
+@@ -981,7 +983,7 @@ static int __must_check __deliver_io(struct kvm_vcpu *vcpu,
+ 			inti->io.subchannel_id >> 1 & 0x3,
+ 			inti->io.subchannel_nr);
+ 
+-		vcpu->stat.deliver_io_int++;
++		vcpu->stat.deliver_io++;
+ 		trace_kvm_s390_deliver_interrupt(vcpu->vcpu_id,
+ 				inti->type,
+ 				((__u32)inti->io.subchannel_id << 16) |
+@@ -1010,7 +1012,7 @@ static int __must_check __deliver_io(struct kvm_vcpu *vcpu,
+ 		VCPU_EVENT(vcpu, 4, "%s isc %u", "deliver: I/O (AI/gisa)", isc);
+ 		memset(&io, 0, sizeof(io));
+ 		io.io_int_word = isc_to_int_word(isc);
+-		vcpu->stat.deliver_io_int++;
++		vcpu->stat.deliver_io++;
+ 		trace_kvm_s390_deliver_interrupt(vcpu->vcpu_id,
+ 			KVM_S390_INT_IO(1, 0, 0, 0),
+ 			((__u32)io.subchannel_id << 16) |
+@@ -1274,6 +1276,7 @@ static int __inject_prog(struct kvm_vcpu *vcpu, struct kvm_s390_irq *irq)
+ {
+ 	struct kvm_s390_local_interrupt *li = &vcpu->arch.local_int;
+ 
++	vcpu->stat.inject_program++;
+ 	VCPU_EVENT(vcpu, 3, "inject: program irq code 0x%x", irq->u.pgm.code);
+ 	trace_kvm_s390_inject_vcpu(vcpu->vcpu_id, KVM_S390_PROGRAM_INT,
+ 				   irq->u.pgm.code, 0);
+@@ -1315,6 +1318,7 @@ static int __inject_pfault_init(struct kvm_vcpu *vcpu, struct kvm_s390_irq *irq)
+ {
+ 	struct kvm_s390_local_interrupt *li = &vcpu->arch.local_int;
+ 
++	vcpu->stat.inject_pfault_init++;
+ 	VCPU_EVENT(vcpu, 4, "inject: pfault init parameter block at 0x%llx",
+ 		   irq->u.ext.ext_params2);
+ 	trace_kvm_s390_inject_vcpu(vcpu->vcpu_id, KVM_S390_INT_PFAULT_INIT,
+@@ -1333,6 +1337,7 @@ static int __inject_extcall(struct kvm_vcpu *vcpu, struct kvm_s390_irq *irq)
+ 	struct kvm_s390_extcall_info *extcall = &li->irq.extcall;
+ 	uint16_t src_id = irq->u.extcall.code;
+ 
++	vcpu->stat.inject_external_call++;
+ 	VCPU_EVENT(vcpu, 4, "inject: external call source-cpu:%u",
+ 		   src_id);
+ 	trace_kvm_s390_inject_vcpu(vcpu->vcpu_id, KVM_S390_INT_EXTERNAL_CALL,
+@@ -1357,6 +1362,7 @@ static int __inject_set_prefix(struct kvm_vcpu *vcpu, struct kvm_s390_irq *irq)
+ 	struct kvm_s390_local_interrupt *li = &vcpu->arch.local_int;
+ 	struct kvm_s390_prefix_info *prefix = &li->irq.prefix;
+ 
++	vcpu->stat.inject_set_prefix++;
+ 	VCPU_EVENT(vcpu, 3, "inject: set prefix to %x",
+ 		   irq->u.prefix.address);
+ 	trace_kvm_s390_inject_vcpu(vcpu->vcpu_id, KVM_S390_SIGP_SET_PREFIX,
+@@ -1377,6 +1383,7 @@ static int __inject_sigp_stop(struct kvm_vcpu *vcpu, struct kvm_s390_irq *irq)
+ 	struct kvm_s390_stop_info *stop = &li->irq.stop;
+ 	int rc = 0;
+ 
++	vcpu->stat.inject_stop_signal++;
+ 	trace_kvm_s390_inject_vcpu(vcpu->vcpu_id, KVM_S390_SIGP_STOP, 0, 0);
+ 
+ 	if (irq->u.stop.flags & ~KVM_S390_STOP_SUPP_FLAGS)
+@@ -1401,6 +1408,7 @@ static int __inject_sigp_restart(struct kvm_vcpu *vcpu,
+ {
+ 	struct kvm_s390_local_interrupt *li = &vcpu->arch.local_int;
+ 
++	vcpu->stat.inject_restart++;
+ 	VCPU_EVENT(vcpu, 3, "%s", "inject: restart int");
+ 	trace_kvm_s390_inject_vcpu(vcpu->vcpu_id, KVM_S390_RESTART, 0, 0);
+ 
+@@ -1413,6 +1421,7 @@ static int __inject_sigp_emergency(struct kvm_vcpu *vcpu,
+ {
+ 	struct kvm_s390_local_interrupt *li = &vcpu->arch.local_int;
+ 
++	vcpu->stat.inject_emergency_signal++;
+ 	VCPU_EVENT(vcpu, 4, "inject: emergency from cpu %u",
+ 		   irq->u.emerg.code);
+ 	trace_kvm_s390_inject_vcpu(vcpu->vcpu_id, KVM_S390_INT_EMERGENCY,
+@@ -1433,6 +1442,7 @@ static int __inject_mchk(struct kvm_vcpu *vcpu, struct kvm_s390_irq *irq)
+ 	struct kvm_s390_local_interrupt *li = &vcpu->arch.local_int;
+ 	struct kvm_s390_mchk_info *mchk = &li->irq.mchk;
+ 
++	vcpu->stat.inject_mchk++;
+ 	VCPU_EVENT(vcpu, 3, "inject: machine check mcic 0x%llx",
+ 		   irq->u.mchk.mcic);
+ 	trace_kvm_s390_inject_vcpu(vcpu->vcpu_id, KVM_S390_MCHK, 0,
+@@ -1463,6 +1473,7 @@ static int __inject_ckc(struct kvm_vcpu *vcpu)
+ {
+ 	struct kvm_s390_local_interrupt *li = &vcpu->arch.local_int;
+ 
++	vcpu->stat.inject_ckc++;
+ 	VCPU_EVENT(vcpu, 3, "%s", "inject: clock comparator external");
+ 	trace_kvm_s390_inject_vcpu(vcpu->vcpu_id, KVM_S390_INT_CLOCK_COMP,
+ 				   0, 0);
+@@ -1476,6 +1487,7 @@ static int __inject_cpu_timer(struct kvm_vcpu *vcpu)
+ {
+ 	struct kvm_s390_local_interrupt *li = &vcpu->arch.local_int;
+ 
++	vcpu->stat.inject_cputm++;
+ 	VCPU_EVENT(vcpu, 3, "%s", "inject: cpu timer external");
+ 	trace_kvm_s390_inject_vcpu(vcpu->vcpu_id, KVM_S390_INT_CPU_TIMER,
+ 				   0, 0);
+@@ -1602,6 +1614,7 @@ static int __inject_service(struct kvm *kvm,
+ {
+ 	struct kvm_s390_float_interrupt *fi = &kvm->arch.float_int;
+ 
++	kvm->stat.inject_service_signal++;
+ 	spin_lock(&fi->lock);
+ 	fi->srv_signal.ext_params |= inti->ext.ext_params & SCCB_EVENT_PENDING;
+ 	/*
+@@ -1627,6 +1640,7 @@ static int __inject_virtio(struct kvm *kvm,
+ {
+ 	struct kvm_s390_float_interrupt *fi = &kvm->arch.float_int;
+ 
++	kvm->stat.inject_virtio++;
+ 	spin_lock(&fi->lock);
+ 	if (fi->counters[FIRQ_CNTR_VIRTIO] >= KVM_S390_MAX_VIRTIO_IRQS) {
+ 		spin_unlock(&fi->lock);
+@@ -1644,6 +1658,7 @@ static int __inject_pfault_done(struct kvm *kvm,
+ {
+ 	struct kvm_s390_float_interrupt *fi = &kvm->arch.float_int;
+ 
++	kvm->stat.inject_pfault_done++;
+ 	spin_lock(&fi->lock);
+ 	if (fi->counters[FIRQ_CNTR_PFAULT] >=
+ 		(ASYNC_PF_PER_VCPU * KVM_MAX_VCPUS)) {
+@@ -1663,6 +1678,7 @@ static int __inject_float_mchk(struct kvm *kvm,
+ {
+ 	struct kvm_s390_float_interrupt *fi = &kvm->arch.float_int;
+ 
++	kvm->stat.inject_float_mchk++;
+ 	spin_lock(&fi->lock);
+ 	fi->mchk.cr14 |= inti->mchk.cr14 & (1UL << CR_PENDING_SUBCLASS);
+ 	fi->mchk.mcic |= inti->mchk.mcic;
+@@ -1678,6 +1694,7 @@ static int __inject_io(struct kvm *kvm, struct kvm_s390_interrupt_info *inti)
+ 	struct list_head *list;
+ 	int isc;
+ 
++	kvm->stat.inject_io++;
+ 	isc = int_word_to_isc(inti->io.io_int_word);
+ 
+ 	if (kvm->arch.gisa && inti->type & KVM_S390_INT_IO_AI_MASK) {
+diff --git a/arch/s390/kvm/kvm-s390.c b/arch/s390/kvm/kvm-s390.c
+index 242deaa6bb99..701bb8dcfd4a 100644
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -58,6 +58,7 @@
+ 			   (KVM_MAX_VCPUS + LOCAL_IRQS))
+ 
+ #define VCPU_STAT(x) offsetof(struct kvm_vcpu, stat.x), KVM_STAT_VCPU
++#define VM_STAT(x) offsetof(struct kvm, stat.x), KVM_STAT_VM
+ 
+ struct kvm_stats_debugfs_item debugfs_entries[] = {
+ 	{ "userspace_handled", VCPU_STAT(exit_userspace) },
+@@ -81,17 +82,34 @@ struct kvm_stats_debugfs_item debugfs_entries[] = {
+ 	{ "instruction_lctl", VCPU_STAT(instruction_lctl) },
+ 	{ "instruction_stctl", VCPU_STAT(instruction_stctl) },
+ 	{ "instruction_stctg", VCPU_STAT(instruction_stctg) },
++	{ "deliver_ckc", VCPU_STAT(deliver_ckc) },
++	{ "deliver_cputm", VCPU_STAT(deliver_cputm) },
+ 	{ "deliver_emergency_signal", VCPU_STAT(deliver_emergency_signal) },
+ 	{ "deliver_external_call", VCPU_STAT(deliver_external_call) },
+ 	{ "deliver_service_signal", VCPU_STAT(deliver_service_signal) },
+-	{ "deliver_virtio_interrupt", VCPU_STAT(deliver_virtio_interrupt) },
++	{ "deliver_virtio", VCPU_STAT(deliver_virtio) },
+ 	{ "deliver_stop_signal", VCPU_STAT(deliver_stop_signal) },
+ 	{ "deliver_prefix_signal", VCPU_STAT(deliver_prefix_signal) },
+ 	{ "deliver_restart_signal", VCPU_STAT(deliver_restart_signal) },
+-	{ "deliver_program_interruption", VCPU_STAT(deliver_program_int) },
+-	{ "deliver_io_interrupt", VCPU_STAT(deliver_io_int) },
++	{ "deliver_program", VCPU_STAT(deliver_program) },
++	{ "deliver_io", VCPU_STAT(deliver_io) },
+ 	{ "deliver_machine_check", VCPU_STAT(deliver_machine_check) },
+ 	{ "exit_wait_state", VCPU_STAT(exit_wait_state) },
++	{ "inject_ckc", VCPU_STAT(inject_ckc) },
++	{ "inject_cputm", VCPU_STAT(inject_cputm) },
++	{ "inject_external_call", VCPU_STAT(inject_external_call) },
++	{ "inject_float_mchk", VM_STAT(inject_float_mchk) },
++	{ "inject_emergency_signal", VCPU_STAT(inject_emergency_signal) },
++	{ "inject_io", VM_STAT(inject_io) },
++	{ "inject_mchk", VCPU_STAT(inject_mchk) },
++	{ "inject_pfault_done", VM_STAT(inject_pfault_done) },
++	{ "inject_program", VCPU_STAT(inject_program) },
++	{ "inject_restart", VCPU_STAT(inject_restart) },
++	{ "inject_service_signal", VM_STAT(inject_service_signal) },
++	{ "inject_set_prefix", VCPU_STAT(inject_set_prefix) },
++	{ "inject_stop_signal", VCPU_STAT(inject_stop_signal) },
++	{ "inject_pfault_init", VCPU_STAT(inject_pfault_init) },
++	{ "inject_virtio", VM_STAT(inject_virtio) },
+ 	{ "instruction_epsw", VCPU_STAT(instruction_epsw) },
+ 	{ "instruction_gs", VCPU_STAT(instruction_gs) },
+ 	{ "instruction_io_other", VCPU_STAT(instruction_io_other) },
+

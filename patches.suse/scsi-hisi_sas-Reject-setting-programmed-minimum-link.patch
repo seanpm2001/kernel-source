@@ -1,0 +1,70 @@
+From: Luo Jiaxing <luojiaxing@huawei.com>
+Date: Fri, 25 Jan 2019 22:22:34 +0800
+Subject: scsi: hisi_sas: Reject setting programmed minimum linkrate > 1.5G
+Patch-mainline: v5.1-rc1
+Git-commit: eb44e4d7b5a3090f0114927f42ae575c29664a09
+References: bsc#1137322 bsc#1137323 bsc#1138099 bsc#1138100
+
+The SAS controller cannot support a programmed minimum linkrate of > 1.5G
+(it will always negotiate to 1.5G at least), so just reject it.
+
+This solves a strange situation where the PHY negotiated linkrate may be
+less than the programmed minimum linkrate.
+
+Signed-off-by: Luo Jiaxing <luojiaxing@huawei.com>
+Signed-off-by: John Garry <john.garry@huawei.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/hisi_sas/hisi_sas_main.c |   12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+--- a/drivers/scsi/hisi_sas/hisi_sas_main.c
++++ b/drivers/scsi/hisi_sas/hisi_sas_main.c
+@@ -946,7 +946,7 @@ static int hisi_sas_queue_command(struct
+ 	return hisi_sas_task_exec(task, gfp_flags, 0, NULL);
+ }
+ 
+-static void hisi_sas_phy_set_linkrate(struct hisi_hba *hisi_hba, int phy_no,
++static int hisi_sas_phy_set_linkrate(struct hisi_hba *hisi_hba, int phy_no,
+ 			struct sas_phy_linkrates *r)
+ {
+ 	struct sas_phy_linkrates _r;
+@@ -955,6 +955,9 @@ static void hisi_sas_phy_set_linkrate(st
+ 	struct asd_sas_phy *sas_phy = &phy->sas_phy;
+ 	enum sas_linkrate min, max;
+ 
++	if (r->minimum_linkrate > SAS_LINK_RATE_1_5_GBPS)
++		return -EINVAL;
++
+ 	if (r->maximum_linkrate == SAS_LINK_RATE_UNKNOWN) {
+ 		max = sas_phy->phy->maximum_linkrate;
+ 		min = r->minimum_linkrate;
+@@ -962,7 +965,7 @@ static void hisi_sas_phy_set_linkrate(st
+ 		max = r->maximum_linkrate;
+ 		min = sas_phy->phy->minimum_linkrate;
+ 	} else
+-		return;
++		return -EINVAL;
+ 
+ 	_r.maximum_linkrate = max;
+ 	_r.minimum_linkrate = min;
+@@ -974,6 +977,8 @@ static void hisi_sas_phy_set_linkrate(st
+ 	msleep(100);
+ 	hisi_hba->hw->phy_set_linkrate(hisi_hba, phy_no, &_r);
+ 	hisi_hba->hw->phy_start(hisi_hba, phy_no);
++
++	return 0;
+ }
+ 
+ static int hisi_sas_control_phy(struct asd_sas_phy *sas_phy, enum phy_func func,
+@@ -999,8 +1004,7 @@ static int hisi_sas_control_phy(struct a
+ 		break;
+ 
+ 	case PHY_FUNC_SET_LINK_RATE:
+-		hisi_sas_phy_set_linkrate(hisi_hba, phy_no, funcdata);
+-		break;
++		return hisi_sas_phy_set_linkrate(hisi_hba, phy_no, funcdata);
+ 	case PHY_FUNC_GET_EVENTS:
+ 		if (hisi_hba->hw->get_events) {
+ 			hisi_hba->hw->get_events(hisi_hba, phy_no);

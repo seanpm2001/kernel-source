@@ -1,0 +1,89 @@
+From: Long Li <longli@microsoft.com>
+Date: Wed, 30 May 2018 12:47:54 -0700
+Subject: [PATCH] CIFS: Add support for direct pages in rdata
+Git-commit: f9f5aca115fd4a4b49cdc483084a0dc4ca316b25
+Patch-mainline: v4.17
+References: bsc#1144333
+
+Add a function to allocate rdata without allocating pages for data
+transfer. This gives the caller an option to pass a number of pages
+that point to the data buffer.
+
+rdata is still reponsible for free those pages after it's done.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsglob.h |  2 +-
+ fs/cifs/file.c     | 23 ++++++++++++++++++++---
+ 2 files changed, 21 insertions(+), 4 deletions(-)
+
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 5105ac5f90f5..781c2af609e5 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -1185,7 +1185,7 @@ struct cifs_readdata {
+ 	unsigned int			tailsz;
+ 	unsigned int			credits;
+ 	unsigned int			nr_pages;
+-	struct page			*pages[];
++	struct page			**pages;
+ };
+ 
+ struct cifs_writedata;
+diff --git a/fs/cifs/file.c b/fs/cifs/file.c
+index 23fd430fe74a..1c98293c1829 100644
+--- a/fs/cifs/file.c
++++ b/fs/cifs/file.c
+@@ -2880,13 +2880,13 @@ cifs_strict_writev(struct kiocb *iocb, struct iov_iter *from)
+ }
+ 
+ static struct cifs_readdata *
+-cifs_readdata_alloc(unsigned int nr_pages, work_func_t complete)
++cifs_readdata_direct_alloc(struct page **pages, work_func_t complete)
+ {
+ 	struct cifs_readdata *rdata;
+ 
+-	rdata = kzalloc(sizeof(*rdata) + (sizeof(struct page *) * nr_pages),
+-			GFP_KERNEL);
++	rdata = kzalloc(sizeof(*rdata), GFP_KERNEL);
+ 	if (rdata != NULL) {
++		rdata->pages = pages;
+ 		kref_init(&rdata->refcount);
+ 		INIT_LIST_HEAD(&rdata->list);
+ 		init_completion(&rdata->done);
+@@ -2896,6 +2896,22 @@ cifs_readdata_alloc(unsigned int nr_pages, work_func_t complete)
+ 	return rdata;
+ }
+ 
++static struct cifs_readdata *
++cifs_readdata_alloc(unsigned int nr_pages, work_func_t complete)
++{
++	struct page **pages =
++		kzalloc(sizeof(struct page *) * nr_pages, GFP_KERNEL);
++	struct cifs_readdata *ret = NULL;
++
++	if (pages) {
++		ret = cifs_readdata_direct_alloc(pages, complete);
++		if (!ret)
++			kfree(pages);
++	}
++
++	return ret;
++}
++
+ void
+ cifs_readdata_release(struct kref *refcount)
+ {
+@@ -2910,6 +2926,7 @@ cifs_readdata_release(struct kref *refcount)
+ 	if (rdata->cfile)
+ 		cifsFileInfo_put(rdata->cfile);
+ 
++	kvfree(rdata->pages);
+ 	kfree(rdata);
+ }
+ 
+-- 
+2.16.4
+

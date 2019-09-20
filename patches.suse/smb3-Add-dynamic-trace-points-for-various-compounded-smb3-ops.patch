@@ -1,0 +1,303 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Wed, 13 Mar 2019 00:02:47 -0500
+Subject: [PATCH] smb3: Add dynamic trace points for various compounded smb3
+ ops
+Git-commit: 8191576a1249763b246164b323003bec084cc8a2
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Adds trace points for enter and exit (done vs. error) for:
+
+	compounded query and setinfo, hardlink, rename,
+	mkdir, rmdir, set_eof, delete (unlink)
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2inode.c |  72 ++++++++++++++++++++++++++++++--
+ fs/cifs/trace.h     | 117 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 185 insertions(+), 4 deletions(-)
+
+diff --git a/fs/cifs/smb2inode.c b/fs/cifs/smb2inode.c
+index b6e07e2eed10..278405d26c47 100644
+--- a/fs/cifs/smb2inode.c
++++ b/fs/cifs/smb2inode.c
+@@ -37,6 +37,16 @@
+ #include "smb2pdu.h"
+ #include "smb2proto.h"
+ 
++static void
++free_set_inf_compound(struct smb_rqst *rqst)
++{
++	if (rqst[1].rq_iov)
++		SMB2_set_info_free(&rqst[1]);
++	if (rqst[2].rq_iov)
++		SMB2_close_free(&rqst[2]);
++}
++
++
+ static int
+ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 		 struct cifs_sb_info *cifs_sb, const char *full_path,
+@@ -112,14 +122,18 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 					  PATH_MAX * 2, 0, NULL);
+ 		smb2_set_next_command(tcon, &rqst[num_rqst]);
+ 		smb2_set_related(&rqst[num_rqst++]);
++		trace_smb3_query_info_compound_enter(xid, ses->Suid, tcon->tid,
++						     full_path);
+ 		break;
+ 	case SMB2_OP_DELETE:
++		trace_smb3_delete_enter(xid, ses->Suid, tcon->tid, full_path);
+ 		break;
+ 	case SMB2_OP_MKDIR:
+ 		/*
+ 		 * Directories are created through parameters in the
+ 		 * SMB2_open() call.
+ 		 */
++		trace_smb3_mkdir_enter(xid, ses->Suid, tcon->tid, full_path);
+ 		break;
+ 	case SMB2_OP_RMDIR:
+ 		memset(&si_iov, 0, sizeof(si_iov));
+@@ -135,6 +149,7 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 					SMB2_O_INFO_FILE, 0, data, size);
+ 		smb2_set_next_command(tcon, &rqst[num_rqst]);
+ 		smb2_set_related(&rqst[num_rqst++]);
++		trace_smb3_rmdir_enter(xid, ses->Suid, tcon->tid, full_path);
+ 		break;
+ 	case SMB2_OP_SET_EOF:
+ 		memset(&si_iov, 0, sizeof(si_iov));
+@@ -150,6 +165,7 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 					SMB2_O_INFO_FILE, 0, data, size);
+ 		smb2_set_next_command(tcon, &rqst[num_rqst]);
+ 		smb2_set_related(&rqst[num_rqst++]);
++		trace_smb3_set_eof_enter(xid, ses->Suid, tcon->tid, full_path);
+ 		break;
+ 	case SMB2_OP_SET_INFO:
+ 		memset(&si_iov, 0, sizeof(si_iov));
+@@ -166,6 +182,8 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 					SMB2_O_INFO_FILE, 0, data, size);
+ 		smb2_set_next_command(tcon, &rqst[num_rqst]);
+ 		smb2_set_related(&rqst[num_rqst++]);
++		trace_smb3_set_info_compound_enter(xid, ses->Suid, tcon->tid,
++						   full_path);
+ 		break;
+ 	case SMB2_OP_RENAME:
+ 		memset(&si_iov, 0, sizeof(si_iov));
+@@ -190,6 +208,7 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 					SMB2_O_INFO_FILE, 0, data, size);
+ 		smb2_set_next_command(tcon, &rqst[num_rqst]);
+ 		smb2_set_related(&rqst[num_rqst++]);
++		trace_smb3_rename_enter(xid, ses->Suid, tcon->tid, full_path);
+ 		break;
+ 	case SMB2_OP_HARDLINK:
+ 		memset(&si_iov, 0, sizeof(si_iov));
+@@ -214,6 +233,7 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 					SMB2_O_INFO_FILE, 0, data, size);
+ 		smb2_set_next_command(tcon, &rqst[num_rqst]);
+ 		smb2_set_related(&rqst[num_rqst++]);
++		trace_smb3_hardlink_enter(xid, ses->Suid, tcon->tid, full_path);
+ 		break;
+ 	default:
+ 		cifs_dbg(VFS, "Invalid command\n");
+@@ -252,21 +272,65 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 			SMB2_query_info_free(&rqst[1]);
+ 		if (rqst[2].rq_iov)
+ 			SMB2_close_free(&rqst[2]);
++		if (rc)
++			trace_smb3_query_info_compound_err(xid,  ses->Suid,
++						tcon->tid, rc);
++		else
++			trace_smb3_query_info_compound_done(xid, ses->Suid,
++						tcon->tid);
+ 		break;
+ 	case SMB2_OP_DELETE:
++		if (rc)
++			trace_smb3_delete_err(xid,  ses->Suid, tcon->tid, rc);
++		else
++			trace_smb3_delete_done(xid, ses->Suid, tcon->tid);
++		if (rqst[1].rq_iov)
++			SMB2_close_free(&rqst[1]);
++		break;
+ 	case SMB2_OP_MKDIR:
++		if (rc)
++			trace_smb3_mkdir_err(xid,  ses->Suid, tcon->tid, rc);
++		else
++			trace_smb3_mkdir_done(xid, ses->Suid, tcon->tid);
+ 		if (rqst[1].rq_iov)
+ 			SMB2_close_free(&rqst[1]);
+ 		break;
+ 	case SMB2_OP_HARDLINK:
++		if (rc)
++			trace_smb3_hardlink_err(xid,  ses->Suid, tcon->tid, rc);
++		else
++			trace_smb3_hardlink_done(xid, ses->Suid, tcon->tid);
++		free_set_inf_compound(rqst);
++		break;
+ 	case SMB2_OP_RENAME:
++		if (rc)
++			trace_smb3_rename_err(xid,  ses->Suid, tcon->tid, rc);
++		else
++			trace_smb3_rename_done(xid, ses->Suid, tcon->tid);
++		free_set_inf_compound(rqst);
++		break;
+ 	case SMB2_OP_RMDIR:
++		if (rc)
++			trace_smb3_rmdir_err(xid,  ses->Suid, tcon->tid, rc);
++		else
++			trace_smb3_rmdir_done(xid, ses->Suid, tcon->tid);
++		free_set_inf_compound(rqst);
++		break;
+ 	case SMB2_OP_SET_EOF:
++		if (rc)
++			trace_smb3_set_eof_err(xid,  ses->Suid, tcon->tid, rc);
++		else
++			trace_smb3_set_eof_done(xid, ses->Suid, tcon->tid);
++		free_set_inf_compound(rqst);
++		break;
+ 	case SMB2_OP_SET_INFO:
+-		if (rqst[1].rq_iov)
+-			SMB2_set_info_free(&rqst[1]);
+-		if (rqst[2].rq_iov)
+-			SMB2_close_free(&rqst[2]);
++		if (rc)
++			trace_smb3_set_info_compound_err(xid,  ses->Suid,
++						tcon->tid, rc);
++		else
++			trace_smb3_set_info_compound_done(xid, ses->Suid,
++						tcon->tid);
++		free_set_inf_compound(rqst);
+ 		break;
+ 	}
+ 	free_rsp_buf(resp_buftype[0], rsp_iov[0].iov_base);
+diff --git a/fs/cifs/trace.h b/fs/cifs/trace.h
+index c78e96c4cc53..30bf51c7e8fe 100644
+--- a/fs/cifs/trace.h
++++ b/fs/cifs/trace.h
+@@ -242,6 +242,123 @@ DEFINE_SMB3_INF_ERR_EVENT(query_info_err);
+ DEFINE_SMB3_INF_ERR_EVENT(set_info_err);
+ DEFINE_SMB3_INF_ERR_EVENT(fsctl_err);
+ 
++DECLARE_EVENT_CLASS(smb3_inf_compound_enter_class,
++	TP_PROTO(unsigned int xid,
++		__u32	tid,
++		__u64	sesid,
++		const char *full_path),
++	TP_ARGS(xid, tid, sesid, full_path),
++	TP_STRUCT__entry(
++		__field(unsigned int, xid)
++		__field(__u32, tid)
++		__field(__u64, sesid)
++		__string(path, full_path)
++	),
++	TP_fast_assign(
++		__entry->xid = xid;
++		__entry->tid = tid;
++		__entry->sesid = sesid;
++		__assign_str(path, full_path);
++	),
++	TP_printk("xid=%u sid=0x%llx tid=0x%x path=%s",
++		__entry->xid, __entry->sesid, __entry->tid,
++		__get_str(path))
++)
++
++#define DEFINE_SMB3_INF_COMPOUND_ENTER_EVENT(name)     \
++DEFINE_EVENT(smb3_inf_compound_enter_class, smb3_##name,    \
++	TP_PROTO(unsigned int xid,		\
++		__u32	tid,			\
++		__u64	sesid,			\
++		const char *full_path),		\
++	TP_ARGS(xid, tid, sesid, full_path))
++
++DEFINE_SMB3_INF_COMPOUND_ENTER_EVENT(query_info_compound_enter);
++DEFINE_SMB3_INF_COMPOUND_ENTER_EVENT(hardlink_enter);
++DEFINE_SMB3_INF_COMPOUND_ENTER_EVENT(rename_enter);
++DEFINE_SMB3_INF_COMPOUND_ENTER_EVENT(rmdir_enter);
++DEFINE_SMB3_INF_COMPOUND_ENTER_EVENT(set_eof_enter);
++DEFINE_SMB3_INF_COMPOUND_ENTER_EVENT(set_info_compound_enter);
++DEFINE_SMB3_INF_COMPOUND_ENTER_EVENT(delete_enter);
++DEFINE_SMB3_INF_COMPOUND_ENTER_EVENT(mkdir_enter);
++
++
++DECLARE_EVENT_CLASS(smb3_inf_compound_done_class,
++	TP_PROTO(unsigned int xid,
++		__u32	tid,
++		__u64	sesid),
++	TP_ARGS(xid, tid, sesid),
++	TP_STRUCT__entry(
++		__field(unsigned int, xid)
++		__field(__u32, tid)
++		__field(__u64, sesid)
++	),
++	TP_fast_assign(
++		__entry->xid = xid;
++		__entry->tid = tid;
++		__entry->sesid = sesid;
++	),
++	TP_printk("xid=%u sid=0x%llx tid=0x%x",
++		__entry->xid, __entry->sesid, __entry->tid)
++)
++
++#define DEFINE_SMB3_INF_COMPOUND_DONE_EVENT(name)     \
++DEFINE_EVENT(smb3_inf_compound_done_class, smb3_##name,    \
++	TP_PROTO(unsigned int xid,		\
++		__u32	tid,			\
++		__u64	sesid),			\
++	TP_ARGS(xid, tid, sesid))
++
++DEFINE_SMB3_INF_COMPOUND_DONE_EVENT(query_info_compound_done);
++DEFINE_SMB3_INF_COMPOUND_DONE_EVENT(hardlink_done);
++DEFINE_SMB3_INF_COMPOUND_DONE_EVENT(rename_done);
++DEFINE_SMB3_INF_COMPOUND_DONE_EVENT(rmdir_done);
++DEFINE_SMB3_INF_COMPOUND_DONE_EVENT(set_eof_done);
++DEFINE_SMB3_INF_COMPOUND_DONE_EVENT(set_info_compound_done);
++DEFINE_SMB3_INF_COMPOUND_DONE_EVENT(delete_done);
++DEFINE_SMB3_INF_COMPOUND_DONE_EVENT(mkdir_done);
++
++
++DECLARE_EVENT_CLASS(smb3_inf_compound_err_class,
++	TP_PROTO(unsigned int xid,
++		__u32	tid,
++		__u64	sesid,
++		int	rc),
++	TP_ARGS(xid, tid, sesid, rc),
++	TP_STRUCT__entry(
++		__field(unsigned int, xid)
++		__field(__u32, tid)
++		__field(__u64, sesid)
++		__field(int, rc)
++	),
++	TP_fast_assign(
++		__entry->xid = xid;
++		__entry->tid = tid;
++		__entry->sesid = sesid;
++		__entry->rc = rc;
++	),
++	TP_printk("xid=%u sid=0x%llx tid=0x%x rc=%d",
++		__entry->xid, __entry->sesid, __entry->tid,
++		__entry->rc)
++)
++
++#define DEFINE_SMB3_INF_COMPOUND_ERR_EVENT(name)     \
++DEFINE_EVENT(smb3_inf_compound_err_class, smb3_##name,    \
++	TP_PROTO(unsigned int xid,		\
++		__u32	tid,			\
++		__u64	sesid,			\
++		int rc),			\
++	TP_ARGS(xid, tid, sesid, rc))
++
++DEFINE_SMB3_INF_COMPOUND_ERR_EVENT(query_info_compound_err);
++DEFINE_SMB3_INF_COMPOUND_ERR_EVENT(hardlink_err);
++DEFINE_SMB3_INF_COMPOUND_ERR_EVENT(rename_err);
++DEFINE_SMB3_INF_COMPOUND_ERR_EVENT(rmdir_err);
++DEFINE_SMB3_INF_COMPOUND_ERR_EVENT(set_eof_err);
++DEFINE_SMB3_INF_COMPOUND_ERR_EVENT(set_info_compound_err);
++DEFINE_SMB3_INF_COMPOUND_ERR_EVENT(mkdir_err);
++DEFINE_SMB3_INF_COMPOUND_ERR_EVENT(delete_err);
++
+ /*
+  * For logging SMB3 Status code and Command for responses which return errors
+  */
+-- 
+2.16.4
+

@@ -1,0 +1,178 @@
+From dfe33f9abc08997e56f9bdf14fe9ac7ac0e14075 Mon Sep 17 00:00:00 2001
+From: Steve French <stfrench@microsoft.com>
+Date: Tue, 30 Oct 2018 19:50:31 -0500
+Subject: [PATCH] smb3: allow more detailed protocol info on open files for
+ debugging
+Git-commit: dfe33f9abc08997e56f9bdf14fe9ac7ac0e14075
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+In order to debug complex problems it is often helpful to
+have detailed information on the client and server view
+of the open file information.  Add the ability for root to
+view the list of smb3 open files and dump the persistent
+handle and other info so that it can be more easily
+correlated with server logs.
+
+Sample output from "cat /proc/fs/cifs/open_files"
+
+ # Version:1
+ # Format:
+ # <tree id> <persistent fid> <flags> <count> <pid> <uid> <filename> <mid>
+ 0x5 0x800000378 0x8000 1 7704 0 some-file 0x14
+ 0xcb903c0c 0x84412e67 0x8000 1 7754 1001 rofile 0x1a6d
+ 0xcb903c0c 0x9526b767 0x8000 1 7720 1000 file 0x1a5b
+ 0xcb903c0c 0x9ce41a21 0x8000 1 7715 0 smallfile 0xd67
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/cifs_debug.c |   69 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/cifs/cifsglob.h   |    3 ++
+ fs/cifs/smb2ops.c    |    3 ++
+ fs/cifs/smb2pdu.c    |    3 ++
+ 4 files changed, 78 insertions(+)
+
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -145,6 +145,58 @@ cifs_dump_iface(struct seq_file *m, stru
+ 		seq_printf(m, "\t\tIPv6: %pI6\n", &ipv6->sin6_addr);
+ }
+ 
++static int cifs_debug_files_proc_show(struct seq_file *m, void *v)
++{
++	struct list_head *stmp, *tmp, *tmp1, *tmp2;
++	struct TCP_Server_Info *server;
++	struct cifs_ses *ses;
++	struct cifs_tcon *tcon;
++	struct cifsFileInfo *cfile;
++
++	seq_puts(m, "# Version:1\n");
++	seq_puts(m, "# Format:\n");
++	seq_puts(m, "# <tree id> <persistent fid> <flags> <count> <pid> <uid>");
++#ifdef CONFIG_CIFS_DEBUG2
++	seq_printf(m, " <filename> <mid>\n");
++#else
++	seq_printf(m, " <filename>\n");
++#endif /* CIFS_DEBUG2 */
++	spin_lock(&cifs_tcp_ses_lock);
++	list_for_each(stmp, &cifs_tcp_ses_list) {
++		server = list_entry(stmp, struct TCP_Server_Info,
++				    tcp_ses_list);
++		list_for_each(tmp, &server->smb_ses_list) {
++			ses = list_entry(tmp, struct cifs_ses, smb_ses_list);
++			list_for_each(tmp1, &ses->tcon_list) {
++				tcon = list_entry(tmp1, struct cifs_tcon, tcon_list);
++				spin_lock(&tcon->open_file_lock);
++				list_for_each(tmp2, &tcon->openFileList) {
++					cfile = list_entry(tmp2, struct cifsFileInfo,
++						     tlist);
++					seq_printf(m,
++						"0x%x 0x%llx 0x%x %d %d %d %s",
++						tcon->tid,
++						cfile->fid.persistent_fid,
++						cfile->f_flags,
++						cfile->count,
++						cfile->pid,
++						from_kuid(&init_user_ns, cfile->uid),
++						cfile->dentry->d_name.name);
++#ifdef CONFIG_CIFS_DEBUG2
++					seq_printf(m, " 0x%llx\n", cfile->fid.mid);
++#else
++					seq_printf(m, "\n");
++#endif /* CIFS_DEBUG2 */
++				}
++				spin_unlock(&tcon->open_file_lock);
++			}
++		}
++	}
++	spin_unlock(&cifs_tcp_ses_lock);
++	seq_putc(m, '\n');
++	return 0;
++}
++
+ static int cifs_debug_data_proc_show(struct seq_file *m, void *v)
+ {
+ 	struct list_head *tmp1, *tmp2, *tmp3;
+@@ -566,6 +618,7 @@ static const struct file_operations cifs
+ static const struct file_operations traceSMB_proc_fops;
+ static const struct file_operations cifs_security_flags_proc_fops;
+ static const struct file_operations cifs_linux_ext_proc_fops;
++static const struct file_operations cifs_debug_files_proc_fops;
+ 
+ void
+ cifs_proc_init(void)
+@@ -576,6 +629,9 @@ cifs_proc_init(void)
+ 
+ 	proc_create("DebugData", 0, proc_fs_cifs, &cifs_debug_data_proc_fops);
+ 
++	proc_create("open_files", 0400, proc_fs_cifs,
++		    &cifs_debug_files_proc_fops);
++
+ 	proc_create("Stats", 0644, proc_fs_cifs, &cifs_stats_proc_fops);
+ 	proc_create("cifsFYI", 0644, proc_fs_cifs, &cifsFYI_proc_fops);
+ 	proc_create("traceSMB", 0644, proc_fs_cifs, &traceSMB_proc_fops);
+@@ -612,6 +668,7 @@ cifs_proc_clean(void)
+ 		return;
+ 
+ 	remove_proc_entry("DebugData", proc_fs_cifs);
++	remove_proc_entry("open_files", proc_fs_cifs);
+ 	remove_proc_entry("cifsFYI", proc_fs_cifs);
+ 	remove_proc_entry("traceSMB", proc_fs_cifs);
+ 	remove_proc_entry("Stats", proc_fs_cifs);
+@@ -873,6 +930,18 @@ static const struct file_operations cifs
+ 	.release	= single_release,
+ 	.write		= cifs_security_flags_proc_write,
+ };
++
++static int cifs_debug_files_proc_open(struct inode *inode, struct file *file)
++{
++       return single_open(file, cifs_debug_files_proc_show, NULL);
++}
++
++static const struct file_operations cifs_debug_files_proc_fops = {
++	.open		= cifs_debug_files_proc_open,
++	.read		= seq_read,
++	.llseek		= seq_lseek,
++	.release	= single_release,
++};
+ #else
+ inline void cifs_proc_init(void)
+ {
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -1125,6 +1125,9 @@ struct cifs_fid {
+ 	__u8 create_guid[16];
+ 	struct cifs_pending_open *pending_open;
+ 	unsigned int epoch;
++#ifdef CONFIG_CIFS_DEBUG2
++	__u64 mid;
++#endif /* CIFS_DEBUG2 */
+ 	bool purge_cache;
+ };
+ 
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1079,6 +1079,9 @@ smb2_set_fid(struct cifsFileInfo *cfile,
+ 
+ 	cfile->fid.persistent_fid = fid->persistent_fid;
+ 	cfile->fid.volatile_fid = fid->volatile_fid;
++#ifdef CONFIG_CIFS_DEBUG2
++	cfile->fid.mid = fid->mid;
++#endif /* CIFS_DEBUG2 */
+ 	server->ops->set_oplock_level(cinode, oplock, fid->epoch,
+ 				      &fid->purge_cache);
+ 	cinode->can_cache_brlcks = CIFS_CACHE_WRITE(cinode);
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -2309,6 +2309,9 @@ SMB2_open(const unsigned int xid, struct
+ 	atomic_inc(&tcon->num_remote_opens);
+ 	oparms->fid->persistent_fid = rsp->PersistentFileId;
+ 	oparms->fid->volatile_fid = rsp->VolatileFileId;
++#ifdef CONFIG_CIFS_DEBUG2
++	oparms->fid->mid = le64_to_cpu(rsp->sync_hdr.MessageId);
++#endif /* CIFS_DEBUG2 */
+ 
+ 	if (buf) {
+ 		memcpy(buf, &rsp->CreationTime, 32);

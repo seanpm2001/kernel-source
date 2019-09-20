@@ -1,0 +1,65 @@
+From: Pavel Shilovsky <pshilov@microsoft.com>
+Date: Mon, 28 Jan 2019 11:57:00 -0800
+Subject: [PATCH] CIFS: Move unlocking pages from wdata_send_pages()
+Git-commit: 258f0603beb869ba5f6a05713a1508d991baae43
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Currently wdata_send_pages() unlocks pages after sending.
+This complicates further refactoring and doesn't align
+with the function name. Move unlocking to writepages.
+
+Signed-off-by: Pavel Shilovsky <pshilov@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/file.c | 12 +++++-------
+ 1 file changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/fs/cifs/file.c b/fs/cifs/file.c
+index 4de7af04e732..1141514864fc 100644
+--- a/fs/cifs/file.c
++++ b/fs/cifs/file.c
+@@ -2080,8 +2080,7 @@ wdata_send_pages(struct TCP_Server_Info *server, struct cifs_writedata *wdata,
+ 		 unsigned int nr_pages, struct address_space *mapping,
+ 		 struct writeback_control *wbc)
+ {
+-	int rc = 0;
+-	unsigned int i;
++	int rc;
+ 
+ 	wdata->sync_mode = wbc->sync_mode;
+ 	wdata->nr_pages = nr_pages;
+@@ -2094,7 +2093,7 @@ wdata_send_pages(struct TCP_Server_Info *server, struct cifs_writedata *wdata,
+ 
+ 	rc = adjust_credits(server, &wdata->credits, wdata->bytes);
+ 	if (rc)
+-		goto send_pages_out;
++		return rc;
+ 
+ 	if (!wdata->cfile) {
+ 		cifs_dbg(VFS, "No writable handle in writepages\n");
+@@ -2108,10 +2107,6 @@ wdata_send_pages(struct TCP_Server_Info *server, struct cifs_writedata *wdata,
+ 						       cifs_writedata_release);
+ 	}
+ 
+-send_pages_out:
+-	for (i = 0; i < nr_pages; ++i)
+-		unlock_page(wdata->pages[i]);
+-
+ 	return rc;
+ }
+ 
+@@ -2200,6 +2195,9 @@ static int cifs_writepages(struct address_space *mapping,
+ 
+ 		rc = wdata_send_pages(server, wdata, nr_pages, mapping, wbc);
+ 
++		for (i = 0; i < nr_pages; ++i)
++			unlock_page(wdata->pages[i]);
++
+ 		/* send failure -- clean up the mess */
+ 		if (rc != 0) {
+ 			add_credits_and_wake_if(server, &wdata->credits, 0);
+-- 
+2.16.4
+

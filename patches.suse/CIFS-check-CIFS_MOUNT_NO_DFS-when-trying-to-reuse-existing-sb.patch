@@ -1,0 +1,50 @@
+From: Aurelien Aptel <aaptel@suse.com>
+Date: Tue, 2 Apr 2019 13:00:33 +0200
+Subject: [PATCH] CIFS: check CIFS_MOUNT_NO_DFS when trying to reuse existing
+ sb
+Git-commit: d070f9dd625a68d8ed4fc1de685af06a489e6f8b
+Patch-mainline: v5.2-rc1
+References: bsc#1144333
+
+if we mount A then mount A again with nodfs, we shouldn't reuse the
+superblock. document the purpose of the defines as well.
+
+there are most likely more flags that needs to be added to this mask,
+in fact the logic to find them should be which flag should
+be *ignored* when trying to reuse an existing sb.
+
+Signed-off-by: Aurelien Aptel <aaptel@suse.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/cifsglob.h |   11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -596,6 +596,10 @@ struct smb_vol {
+ 	unsigned int max_credits; /* smb3 max_credits 10 < credits < 60000 */
+ };
+ 
++/**
++ * CIFS superblock mount flags (mnt_cifs_flags) to consider when
++ * trying to reuse existing superblock for a new mount
++ */
+ #define CIFS_MOUNT_MASK (CIFS_MOUNT_NO_PERM | CIFS_MOUNT_SET_UID | \
+ 			 CIFS_MOUNT_SERVER_INUM | CIFS_MOUNT_DIRECT_IO | \
+ 			 CIFS_MOUNT_NO_XATTR | CIFS_MOUNT_MAP_SPECIAL_CHR | \
+@@ -606,8 +610,13 @@ struct smb_vol {
+ 			 CIFS_MOUNT_NOPOSIXBRL | CIFS_MOUNT_NOSSYNC | \
+ 			 CIFS_MOUNT_FSCACHE | CIFS_MOUNT_MF_SYMLINKS | \
+ 			 CIFS_MOUNT_MULTIUSER | CIFS_MOUNT_STRICT_IO | \
+-			 CIFS_MOUNT_CIFS_BACKUPUID | CIFS_MOUNT_CIFS_BACKUPGID)
++			 CIFS_MOUNT_CIFS_BACKUPUID | CIFS_MOUNT_CIFS_BACKUPGID | \
++			 CIFS_MOUNT_NO_DFS)
+ 
++/**
++ * Generic VFS superblock mount flags (s_flags) to consider when
++ * trying to reuse existing superblock for a new mount
++ */
+ #define CIFS_MS_MASK (MS_RDONLY | MS_MANDLOCK | MS_NOEXEC | MS_NOSUID | \
+ 		      MS_NODEV | MS_SYNCHRONOUS)
+ 

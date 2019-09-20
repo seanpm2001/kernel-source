@@ -1,0 +1,48 @@
+From 84908426f2097d5c6e254c73ffcb6923a355dbda Mon Sep 17 00:00:00 2001
+From: Arnd Bergmann <arnd@arndb.de>
+Date: Tue, 27 Jun 2017 17:06:13 +0200
+Subject: [PATCH] cifs: hide unused functions
+Git-commit: 84908426f2097d5c6e254c73ffcb6923a355dbda
+Patch-mainline: v4.13-rc1
+References: bsc#1051510, bsc#1144333
+
+Some functions are only referenced under an #ifdef, causing a harmless
+warning:
+
+fs/cifs/smb2ops.c:1374:1: error: 'get_smb2_acl' defined but not used [-Werror=unused-function]
+
+We could mark them __maybe_unused or add another #ifdef, I picked
+the second approach here.
+
+Fixes: b3fdda4d1e1b ("cifs: Use smb 2 - 3 and cifsacl mount options getacl functions")
+Signed-off-by: Arnd Bergmann <arnd@arndb.de>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smb2ops.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index f1d9c191c4e4..323bafdd7909 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1288,6 +1288,7 @@ smb2_query_symlink(const unsigned int xid, struct cifs_tcon *tcon,
+ 	return rc;
+ }
+ 
++#ifdef CONFIG_CIFS_ACL
+ static struct cifs_ntsd *
+ get_smb2_acl_by_fid(struct cifs_sb_info *cifs_sb,
+ 		const struct cifs_fid *cifsfid, u32 *pacllen)
+@@ -1387,7 +1388,7 @@ get_smb2_acl(struct cifs_sb_info *cifs_sb,
+ 	cifsFileInfo_put(open_file);
+ 	return pntsd;
+ }
+-
++#endif
+ 
+ static long smb3_zero_range(struct file *file, struct cifs_tcon *tcon,
+ 			    loff_t offset, loff_t len, bool keep_size)
+-- 
+2.16.4
+

@@ -1,0 +1,42 @@
+From 8dce6b2215eaa91dbf04463e11098a48748da5ab Mon Sep 17 00:00:00 2001
+From: Tyrel Datwyler <tyreld@linux.vnet.ibm.com>
+Date: Mon, 22 Oct 2018 20:32:12 -0500
+Subject: [PATCH] powerpc/pseries: add missing cpumask.h include file
+
+References: bsc#1065729
+Patch-mainline: v4.20-rc1
+Git-commit: 8dce6b2215eaa91dbf04463e11098a48748da5ab
+
+Build error is encountered when inlcuding <asm/rtas.h> if no explicit or
+implicit include of cpumask.h exists in the including file.
+
+In file included from arch/powerpc/platforms/pseries/hotplug-pci.c:3:0:
+./arch/powerpc/include/asm/rtas.h:360:34: error: unknown type name 'cpumask_var_t'
+ extern int rtas_online_cpus_mask(cpumask_var_t cpus);
+                                  ^
+./arch/powerpc/include/asm/rtas.h:361:35: error: unknown type name 'cpumask_var_t'
+ extern int rtas_offline_cpus_mask(cpumask_var_t cpus);
+
+Fixes: 120496ac2d2d ("powerpc: Bring all threads online prior to migration/hibernation")
+Signed-off-by: Tyrel Datwyler <tyreld@linux.vnet.ibm.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/include/asm/rtas.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/powerpc/include/asm/rtas.h b/arch/powerpc/include/asm/rtas.h
+index bb38dd67d47d..1b06add4f092 100644
+--- a/arch/powerpc/include/asm/rtas.h
++++ b/arch/powerpc/include/asm/rtas.h
+@@ -5,6 +5,7 @@
+ #include <linux/spinlock.h>
+ #include <asm/page.h>
+ #include <linux/time.h>
++#include <linux/cpumask.h>
+ 
+ /*
+  * Definitions for talking to the RTAS on CHRP machines.
+-- 
+2.22.0
+

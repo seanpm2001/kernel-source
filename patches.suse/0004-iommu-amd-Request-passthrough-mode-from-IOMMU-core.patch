@@ -1,0 +1,44 @@
+From: Joerg Roedel <jroedel@suse.de>
+Date: Wed, 14 Aug 2019 14:06:06 +0200
+Subject: [PATCH 04/11] iommu/amd: Request passthrough mode from IOMMU core
+Patch-mainline: v5.4-rc1
+Git-commit: cc7c8ad9736b5db994b84cbb1347972d28852d3b
+References: bsc#1136039
+
+Get rid of the iommu_pass_through variable and request
+passthrough mode via the new iommu core function.
+
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+---
+ drivers/iommu/amd_iommu.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+--- a/drivers/iommu/amd_iommu.c
++++ b/drivers/iommu/amd_iommu.c
+@@ -492,7 +492,7 @@ static int iommu_init_device(struct devi
+ 	 * invalid address), we ignore the capability for the device so
+ 	 * it'll be forced to go into translation mode.
+ 	 */
+-	if ((iommu_pass_through || !amd_iommu_force_isolation) &&
++	if ((iommu_default_passthrough() || !amd_iommu_force_isolation) &&
+ 	    dev_is_pci(dev) && pci_iommuv2_capable(to_pci_dev(dev))) {
+ 		struct amd_iommu *iommu;
+ 
+@@ -2426,7 +2426,7 @@ static int amd_iommu_add_device(struct d
+ 
+ 	BUG_ON(!dev_data);
+ 
+-	if (iommu_pass_through || dev_data->iommu_v2)
++	if (dev_data->iommu_v2)
+ 		iommu_request_dm_for_dev(dev);
+ 
+ 	/* Domains are initialized for this device - have a look what we ended up with */
+@@ -3002,7 +3002,7 @@ int __init amd_iommu_init_api(void)
+ 
+ int __init amd_iommu_init_dma_ops(void)
+ {
+-	swiotlb        = (iommu_pass_through || sme_me_mask) ? 1 : 0;
++	swiotlb        = (iommu_default_passthrough() || sme_me_mask) ? 1 : 0;
+ 	iommu_detected = 1;
+ 
+ 	/*

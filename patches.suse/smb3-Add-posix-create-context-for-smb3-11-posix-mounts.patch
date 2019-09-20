@@ -1,0 +1,216 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Thu, 31 May 2018 19:16:54 -0500
+Subject: [PATCH] smb3: Add posix create context for smb3.11 posix mounts
+Git-commit: ce558b0e17f8a6d4a57d264479d782c331266f0d
+Patch-mainline: v4.17
+References: bsc#1144333
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsglob.h |  1 +
+ fs/cifs/connect.c  | 11 +++++++
+ fs/cifs/dir.c      |  2 +-
+ fs/cifs/smb2misc.c |  6 ++++
+ fs/cifs/smb2pdu.c  | 84 ++++++++++++++++++++++++++++++++++++++++++++++++++++--
+ 5 files changed, 101 insertions(+), 3 deletions(-)
+
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 3e2ee7e1d85e..76a579a0dd43 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -1082,6 +1082,7 @@ struct cifs_open_parms {
+ 	int create_options;
+ 	const char *path;
+ 	struct cifs_fid *fid;
++	umode_t mode;
+ 	bool reconnect:1;
+ };
+ 
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 4c0e3f6ae356..560b335fa752 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -3963,6 +3963,12 @@ cifs_mount(struct cifs_sb_info *cifs_sb, struct smb_vol *volume_info)
+ 		goto remote_path_check;
+ 	}
+ 
++#ifdef CONFIG_CIFS_SMB311
++	/* if new SMB3.11 POSIX extensions are supported do not remap / and \ */
++	if (tcon->posix_extensions)
++		cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_POSIX_PATHS;
++#endif /* SMB3.11 */
++
+ 	/* tell server which Unix caps we support */
+ 	if (cap_unix(tcon->ses)) {
+ 		/* reset of caps checks mount to see if unix extensions
+@@ -4424,6 +4430,11 @@ cifs_construct_tcon(struct cifs_sb_info *cifs_sb, kuid_t fsuid)
+ 		goto out;
+ 	}
+ 
++#ifdef CONFIG_CIFS_SMB311
++	/* if new SMB3.11 POSIX extensions are supported do not remap / and \ */
++	if (tcon->posix_extensions)
++		cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_POSIX_PATHS;
++#endif /* SMB3.11 */
+ 	if (cap_unix(ses))
+ 		reset_cifs_unix_caps(0, tcon, NULL, vol_info);
+ 
+diff --git a/fs/cifs/dir.c b/fs/cifs/dir.c
+index 925844343038..ad345ac05901 100644
+--- a/fs/cifs/dir.c
++++ b/fs/cifs/dir.c
+@@ -369,7 +369,7 @@ cifs_do_create(struct inode *inode, struct dentry *direntry, unsigned int xid,
+ 	oparms.path = full_path;
+ 	oparms.fid = fid;
+ 	oparms.reconnect = false;
+-
++	oparms.mode = mode;
+ 	rc = server->ops->open(xid, &oparms, oplock, buf);
+ 	if (rc) {
+ 		cifs_dbg(FYI, "cifs_create returned 0x%x\n", rc);
+diff --git a/fs/cifs/smb2misc.c b/fs/cifs/smb2misc.c
+index 8cee72eebc39..8e45e28ce3ac 100644
+--- a/fs/cifs/smb2misc.c
++++ b/fs/cifs/smb2misc.c
+@@ -455,8 +455,14 @@ cifs_convert_path_to_utf16(const char *from, struct cifs_sb_info *cifs_sb)
+ 	/* Windows doesn't allow paths beginning with \ */
+ 	if (from[0] == '\\')
+ 		start_of_path = from + 1;
++#ifdef CONFIG_CIFS_SMB311
++	/* SMB311 POSIX extensions paths do not include leading slash */
++	else if (cifs_sb_master_tcon(cifs_sb)->posix_extensions)
++		start_of_path = from + 1;
++#endif /* 311 */
+ 	else
+ 		start_of_path = from;
++
+ 	to = cifs_strndup_to_utf16(start_of_path, PATH_MAX, &len,
+ 				   cifs_sb->local_nls, map_type);
+ 	return to;
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 6436e9187045..c92b4e6689bd 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -519,6 +519,64 @@ static int smb311_decode_neg_context(struct smb2_negotiate_rsp *rsp,
+ 	return rc;
+ }
+ 
++static struct create_posix *
++create_posix_buf(umode_t mode)
++{
++	struct create_posix *buf;
++
++	buf = kzalloc(sizeof(struct create_posix),
++			GFP_KERNEL);
++	if (!buf)
++		return NULL;
++
++	buf->ccontext.DataOffset =
++		cpu_to_le16(offsetof(struct create_posix, Mode));
++	buf->ccontext.DataLength = cpu_to_le32(4);
++	buf->ccontext.NameOffset =
++		cpu_to_le16(offsetof(struct create_posix, Name));
++	buf->ccontext.NameLength = cpu_to_le16(16);
++
++	/* SMB2_CREATE_TAG_POSIX is "0x93AD25509CB411E7B42383DE968BCD7C" */
++	buf->Name[0] = 0x93;
++	buf->Name[1] = 0xAD;
++	buf->Name[2] = 0x25;
++	buf->Name[3] = 0x50;
++	buf->Name[4] = 0x9C;
++	buf->Name[5] = 0xB4;
++	buf->Name[6] = 0x11;
++	buf->Name[7] = 0xE7;
++	buf->Name[8] = 0xB4;
++	buf->Name[9] = 0x23;
++	buf->Name[10] = 0x83;
++	buf->Name[11] = 0xDE;
++	buf->Name[12] = 0x96;
++	buf->Name[13] = 0x8B;
++	buf->Name[14] = 0xCD;
++	buf->Name[15] = 0x7C;
++	buf->Mode = cpu_to_le32(mode);
++	cifs_dbg(FYI, "mode on posix create 0%o", mode);
++	return buf;
++}
++
++static int
++add_posix_context(struct kvec *iov, unsigned int *num_iovec, umode_t mode)
++{
++	struct smb2_create_req *req = iov[0].iov_base;
++	unsigned int num = *num_iovec;
++
++	iov[num].iov_base = create_posix_buf(mode);
++	if (iov[num].iov_base == NULL)
++		return -ENOMEM;
++	iov[num].iov_len = sizeof(struct create_posix);
++	if (!req->CreateContextsOffset)
++		req->CreateContextsOffset = cpu_to_le32(
++				sizeof(struct smb2_create_req) +
++				iov[num - 1].iov_len);
++	le32_add_cpu(&req->CreateContextsLength, sizeof(struct create_posix));
++	*num_iovec = num + 1;
++	return 0;
++}
++
+ #else
+ static void assemble_neg_contexts(struct smb2_negotiate_req *req,
+ 				  unsigned int *total_len)
+@@ -1837,7 +1895,7 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
+ 	struct TCP_Server_Info *server;
+ 	struct cifs_tcon *tcon = oparms->tcon;
+ 	struct cifs_ses *ses = tcon->ses;
+-	struct kvec iov[4];
++	struct kvec iov[5]; /* make sure at least one for each open context */
+ 	struct kvec rsp_iov = {NULL, 0};
+ 	int resp_buftype;
+ 	int uni_path_len;
+@@ -1846,7 +1904,7 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
+ 	int rc = 0;
+ 	unsigned int n_iov = 2;
+ 	__u32 file_attributes = 0;
+-	char *dhc_buf = NULL, *lc_buf = NULL;
++	char *dhc_buf = NULL, *lc_buf = NULL, *pc_buf = NULL;
+ 	int flags = 0;
+ 	unsigned int total_len;
+ 
+@@ -1963,6 +2021,27 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
+ 		dhc_buf = iov[n_iov-1].iov_base;
+ 	}
+ 
++#ifdef CONFIG_CIFS_SMB311
++	if (tcon->posix_extensions) {
++		if (n_iov > 2) {
++			struct create_context *ccontext =
++			    (struct create_context *)iov[n_iov-1].iov_base;
++			ccontext->Next =
++				cpu_to_le32(iov[n_iov-1].iov_len);
++		}
++
++		rc = add_posix_context(iov, &n_iov, oparms->mode);
++		if (rc) {
++			cifs_small_buf_release(req);
++			kfree(copy_path);
++			kfree(lc_buf);
++			kfree(dhc_buf);
++			return rc;
++		}
++		pc_buf = iov[n_iov-1].iov_base;
++	}
++#endif /* SMB311 */
++
+ 	rc = smb2_send_recv(xid, ses, iov, n_iov, &resp_buftype, flags,
+ 			    &rsp_iov);
+ 	cifs_small_buf_release(req);
+@@ -2004,6 +2083,7 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
+ 	kfree(copy_path);
+ 	kfree(lc_buf);
+ 	kfree(dhc_buf);
++	kfree(pc_buf);
+ 	free_rsp_buf(resp_buftype, rsp);
+ 	return rc;
+ }
+-- 
+2.16.4
+

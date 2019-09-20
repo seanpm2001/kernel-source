@@ -1,0 +1,94 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Thu, 11 Apr 2019 12:20:17 +1000
+Subject: [PATCH] cifs: Add support for FSCTL passthrough that write data to
+ the server
+Git-commit: efac779b1c69670ed1e5ab84123ccc2c14e082f0
+Patch-mainline: v5.2-rc1
+References: bsc#1144333
+
+Add support to pass a blob to the server in FSCTL passthrough.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smb2ops.c  | 17 +++++++++++++++--
+ fs/cifs/smbfsctl.h | 27 +++++++++++++++++++++++++++
+ 2 files changed, 42 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index ab4737e3c31f..ed8c2ba9590b 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1382,6 +1382,18 @@ smb2_ioctl_query_info(const unsigned int xid,
+ 	oparms.fid = &fid;
+ 	oparms.reconnect = false;
+ 
++	/*
++	 * FSCTL codes encode the special access they need in the fsctl code.
++	 */
++	if (qi.flags & PASSTHRU_FSCTL) {
++		switch (qi.info_type & FSCTL_DEVICE_ACCESS_MASK) {
++		case FSCTL_DEVICE_ACCESS_FILE_READ_WRITE_ACCESS:
++			oparms.desired_access = FILE_READ_DATA | FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
++			;
++			break;
++		}
++	}
++
+ 	rc = SMB2_open_init(tcon, &rqst[0], &oplock, &oparms, path);
+ 	if (rc)
+ 		goto iqinf_exit;
+@@ -1399,8 +1411,9 @@ smb2_ioctl_query_info(const unsigned int xid,
+ 
+ 			rc = SMB2_ioctl_init(tcon, &rqst[1],
+ 					     COMPOUND_FID, COMPOUND_FID,
+-					     qi.info_type, true, NULL,
+-					     0, CIFSMaxBufSize);
++					     qi.info_type, true, buffer,
++					     qi.output_buffer_length,
++					     CIFSMaxBufSize);
+ 		}
+ 	} else if (qi.flags == PASSTHRU_QUERY_INFO) {
+ 		memset(&qi_iov, 0, sizeof(qi_iov));
+diff --git a/fs/cifs/smbfsctl.h b/fs/cifs/smbfsctl.h
+index f996daeea271..9b3459b9a5ce 100644
+--- a/fs/cifs/smbfsctl.h
++++ b/fs/cifs/smbfsctl.h
+@@ -35,6 +35,33 @@
+  * below). Additional detail on less common ones can be found in MS-FSCC
+  * section 2.3.
+  */
++
++/*
++ * FSCTL values are 32 bits and are constructed as
++ * <device 16bits> <access 2bits> <function 12bits> <method 2bits>
++ */
++/* Device */
++#define FSCTL_DEVICE_DFS                 (0x0006 << 16)
++#define FSCTL_DEVICE_FILE_SYSTEM         (0x0009 << 16)
++#define FSCTL_DEVICE_NAMED_PIPE          (0x0011 << 16)
++#define FSCTL_DEVICE_NETWORK_FILE_SYSTEM (0x0014 << 16)
++#define FSCTL_DEVICE_MASK                0xffff0000
++/* Access */
++#define FSCTL_DEVICE_ACCESS_FILE_ANY_ACCESS        (0x00 << 14)
++#define FSCTL_DEVICE_ACCESS_FILE_READ_ACCESS       (0x01 << 14)
++#define FSCTL_DEVICE_ACCESS_FILE_WRITE_ACCESS      (0x02 << 14)
++#define FSCTL_DEVICE_ACCESS_FILE_READ_WRITE_ACCESS (0x03 << 14)
++#define FSCTL_DEVICE_ACCESS_MASK                   0x0000c000
++/* Function */
++#define FSCTL_DEVICE_FUNCTION_MASK       0x00003ffc
++/* Method */
++#define FSCTL_DEVICE_METHOD_BUFFERED   0x00
++#define FSCTL_DEVICE_METHOD_IN_DIRECT  0x01
++#define FSCTL_DEVICE_METHOD_OUT_DIRECT 0x02
++#define FSCTL_DEVICE_METHOD_NEITHER    0x03
++#define FSCTL_DEVICE_METHOD_MASK       0x00000003
++
++
+ #define FSCTL_DFS_GET_REFERRALS      0x00060194
+ #define FSCTL_DFS_GET_REFERRALS_EX   0x000601B0
+ #define FSCTL_REQUEST_OPLOCK_LEVEL_1 0x00090000
+-- 
+2.22.0
+

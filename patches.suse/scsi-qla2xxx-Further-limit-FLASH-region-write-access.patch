@@ -1,0 +1,44 @@
+From: Andrew Vasquez <andrewv@marvell.com>
+Date: Tue, 2 Apr 2019 14:24:26 -0700
+Subject: scsi: qla2xxx: Further limit FLASH region write access from SysFS
+Patch-mainline: v5.2-rc1
+Git-commit: e81d1bcbde06ad2b6413b1d75630a1a8c19175d0
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+Recent ISPs have larger and more complex flash-write semantics
+(secure-access and signing). The BSG interfaces support these semantics for
+all ISPs and is exclusively used by QLogic user-space tools. Limit
+flash-write operations to ISPs <= 25xx.
+
+Signed-off-by: Andrew Vasquez <andrewv@marvell.com>
+Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_attr.c |    8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_attr.c
++++ b/drivers/scsi/qla2xxx/qla_attr.c
+@@ -430,6 +430,10 @@ qla2x00_sysfs_write_optrom_ctl(struct fi
+ 		 * 	0x000000 -> 0x07ffff -- Boot code.
+ 		 * 	0x080000 -> 0x0fffff -- Firmware.
+ 		 * 	0x120000 -> 0x12ffff -- VPD and HBA parameters.
++		 *
++		 * > ISP25xx type boards:
++		 *
++		 *      None -- should go through BSG.
+ 		 */
+ 		valid = 0;
+ 		if (ha->optrom_size == OPTROM_SIZE_2300 && start == 0)
+@@ -437,9 +441,7 @@ qla2x00_sysfs_write_optrom_ctl(struct fi
+ 		else if (start == (ha->flt_region_boot * 4) ||
+ 		    start == (ha->flt_region_fw * 4))
+ 			valid = 1;
+-		else if (IS_QLA24XX_TYPE(ha) || IS_QLA25XX(ha)
+-			|| IS_CNA_CAPABLE(ha) || IS_QLA2031(ha)
+-			|| IS_QLA27XX(ha) || IS_QLA28XX(ha))
++		else if (IS_QLA24XX_TYPE(ha) || IS_QLA25XX(ha))
+ 			valid = 1;
+ 		if (!valid) {
+ 			ql_log(ql_log_warn, vha, 0x7065,

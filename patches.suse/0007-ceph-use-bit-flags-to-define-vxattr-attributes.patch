@@ -3,19 +3,21 @@ Date: Wed, 25 Apr 2018 17:14:05 +0800
 Subject: ceph: use bit flags to define vxattr attributes
 Git-commit: 4e9906e7985b962ca3b9f8ab66c0353e6e3ab45e
 Patch-mainline: v4.18-rc1
-References: FATE#324714
+References: bsc#1146346
 
 Signed-off-by: "Yan, Zheng" <zyan@redhat.com>
 Acked-by: Jeff Layton <jlayton@redhat.com>
 Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
 Acked-by: Luis Henriques <lhenriques@suse.com>
 ---
- fs/ceph/xattr.c |   34 ++++++++++++++++------------------
+ fs/ceph/xattr.c | 34 ++++++++++++++++------------------
  1 file changed, 16 insertions(+), 18 deletions(-)
 
+diff --git a/fs/ceph/xattr.c b/fs/ceph/xattr.c
+index 315f7e63e7cc..f7dcafb7c5d4 100644
 --- a/fs/ceph/xattr.c
 +++ b/fs/ceph/xattr.c
-@@ -49,10 +49,13 @@ struct ceph_vxattr {
+@@ -50,10 +50,13 @@ struct ceph_vxattr {
  	size_t name_size;	/* strlen(name) + 1 (for '\0') */
  	size_t (*getxattr_cb)(struct ceph_inode_info *ci, char *val,
  			      size_t size);
@@ -30,7 +32,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  /* layouts */
  
  static bool ceph_vxattrcb_layout_exists(struct ceph_inode_info *ci)
-@@ -266,27 +269,24 @@ static size_t ceph_vxattrcb_quota_max_fi
+@@ -267,27 +270,24 @@ static size_t ceph_vxattrcb_quota_max_files(struct ceph_inode_info *ci,
  		.name = CEPH_XATTR_NAME(_type, _name),			\
  		.name_size = sizeof (CEPH_XATTR_NAME(_type, _name)), \
  		.getxattr_cb = ceph_vxattrcb_ ## _type ## _ ## _name, \
@@ -62,7 +64,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  	}
  
  static struct ceph_vxattr ceph_dir_vxattrs[] = {
-@@ -294,9 +294,8 @@ static struct ceph_vxattr ceph_dir_vxatt
+@@ -295,9 +295,8 @@ static struct ceph_vxattr ceph_dir_vxattrs[] = {
  		.name = "ceph.dir.layout",
  		.name_size = sizeof("ceph.dir.layout"),
  		.getxattr_cb = ceph_vxattrcb_layout,
@@ -73,7 +75,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  	},
  	XATTR_LAYOUT_FIELD(dir, layout, stripe_unit),
  	XATTR_LAYOUT_FIELD(dir, layout, stripe_count),
-@@ -315,9 +314,8 @@ static struct ceph_vxattr ceph_dir_vxatt
+@@ -316,9 +315,8 @@ static struct ceph_vxattr ceph_dir_vxattrs[] = {
  		.name = "ceph.quota",
  		.name_size = sizeof("ceph.quota"),
  		.getxattr_cb = ceph_vxattrcb_quota,
@@ -84,7 +86,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  	},
  	XATTR_QUOTA_FIELD(quota, max_bytes),
  	XATTR_QUOTA_FIELD(quota, max_files),
-@@ -332,9 +330,8 @@ static struct ceph_vxattr ceph_file_vxat
+@@ -333,9 +331,8 @@ static struct ceph_vxattr ceph_file_vxattrs[] = {
  		.name = "ceph.file.layout",
  		.name_size = sizeof("ceph.file.layout"),
  		.getxattr_cb = ceph_vxattrcb_layout,
@@ -95,7 +97,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  	},
  	XATTR_LAYOUT_FIELD(file, layout, stripe_unit),
  	XATTR_LAYOUT_FIELD(file, layout, stripe_count),
-@@ -373,9 +370,10 @@ static size_t __init vxattrs_name_size(s
+@@ -374,9 +371,10 @@ static size_t __init vxattrs_name_size(struct ceph_vxattr *vxattrs)
  	struct ceph_vxattr *vxattr;
  	size_t size = 0;
  
@@ -108,7 +110,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  
  	return size;
  }
-@@ -918,7 +916,7 @@ ssize_t ceph_listxattr(struct dentry *de
+@@ -919,7 +917,7 @@ ssize_t ceph_listxattr(struct dentry *dentry, char *names, size_t size)
  	err = namelen;
  	if (vxattrs) {
  		for (i = 0; vxattrs[i].name; i++) {
@@ -117,7 +119,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  			    !(vxattrs[i].exists_cb &&
  			      !vxattrs[i].exists_cb(ci))) {
  				len = sprintf(names, "%s", vxattrs[i].name);
-@@ -1023,7 +1021,7 @@ int __ceph_setxattr(struct inode *inode,
+@@ -1024,7 +1022,7 @@ int __ceph_setxattr(struct inode *inode, const char *name,
  
  	vxattr = ceph_match_vxattr(inode, name);
  	if (vxattr) {
@@ -126,3 +128,4 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  			return -EOPNOTSUPP;
  		if (value && !strncmp(vxattr->name, "ceph.quota", 10))
  			check_realm = true;
+

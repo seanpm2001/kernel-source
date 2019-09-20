@@ -1,0 +1,37 @@
+From: Pavel Shilovsky <pshilov@microsoft.com>
+Date: Fri, 18 Jan 2019 15:46:14 -0800
+Subject: [PATCH] CIFS: Always reset read error to -EIO if no response
+Git-commit: 6b15eb18c6a9ddfbb387456c0f1ed86d987cb741
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Currently we skip setting a read error to -EIO if a stored
+result is -ENODATA and a response hasn't been received. With
+the recent changes in read error processing there shouldn't be
+cases when -ENODATA is set without a response from the server,
+so reset the error to -EIO unconditionally.
+
+Signed-off-by: Pavel Shilovsky <pshilov@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index f2980f78149c..77f2c723befa 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -3236,8 +3236,7 @@ smb2_readv_callback(struct mid_q_entry *mid)
+ 		credits_received = le16_to_cpu(shdr->CreditRequest);
+ 		/* fall through */
+ 	default:
+-		if (rdata->result != -ENODATA)
+-			rdata->result = -EIO;
++		rdata->result = -EIO;
+ 	}
+ #ifdef CONFIG_CIFS_SMB_DIRECT
+ 	/*
+-- 
+2.16.4
+

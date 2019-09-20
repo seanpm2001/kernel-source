@@ -1,0 +1,39 @@
+From a67060201b746a308b1674f66bf289c9faef6d09 Mon Sep 17 00:00:00 2001
+From: Wenwen Wang <wenwen@cs.uga.edu>
+Date: Tue, 6 Aug 2019 03:00:27 -0400
+Subject: [PATCH] ALSA: usb-audio: fix a memory leak bug
+Git-commit: a67060201b746a308b1674f66bf289c9faef6d09
+Patch-mainline: v5.3-rc4
+References: bsc#1111666
+
+In snd_usb_get_audioformat_uac3(), a structure for channel maps 'chmap' is
+allocated through kzalloc() before the execution goto 'found_clock'.
+However, this structure is not deallocated if the memory allocation for
+'pd' fails, leading to a memory leak bug.
+
+To fix the above issue, free 'fp->chmap' before returning NULL.
+
+Fixes: 7edf3b5e6a45 ("ALSA: usb-audio: AudioStreaming Power Domain parsing")
+Signed-off-by: Wenwen Wang <wenwen@cs.uga.edu>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ sound/usb/stream.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/sound/usb/stream.c b/sound/usb/stream.c
+index 7ee9d17d0143..e852c7fd6109 100644
+--- a/sound/usb/stream.c
++++ b/sound/usb/stream.c
+@@ -1043,6 +1043,7 @@ snd_usb_get_audioformat_uac3(struct snd_usb_audio *chip,
+ 
+ 		pd = kzalloc(sizeof(*pd), GFP_KERNEL);
+ 		if (!pd) {
++			kfree(fp->chmap);
+ 			kfree(fp->rate_table);
+ 			kfree(fp);
+ 			return NULL;
+-- 
+2.16.4
+

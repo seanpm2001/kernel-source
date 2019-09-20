@@ -1,0 +1,63 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Wed, 17 Apr 2019 14:44:16 -0700
+Subject: scsi: qla2xxx: Move qla2x00_is_reserved_id() from qla_inline.h into
+ qla_init.c
+Patch-mainline: v5.2-rc1
+Git-commit: 0c6660b27feb9034fc7c9f85ec2fb6cc2395b49d
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+The previous patch moved all qla2x00_is_reserved_id() callers into
+qla_init.c. Hence also move the qla2x00_is_reserved_id() definition into
+qla_init.c.
+
+Cc: Himanshu Madhani <hmadhani@marvell.com>
+Cc: Giridhar Malavali <gmalavali@marvell.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Acked-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_init.c   |   11 +++++++++++
+ drivers/scsi/qla2xxx/qla_inline.h |   11 -----------
+ 2 files changed, 11 insertions(+), 11 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_init.c
++++ b/drivers/scsi/qla2xxx/qla_init.c
+@@ -514,6 +514,17 @@ done:
+ 	return rval;
+ }
+ 
++static bool qla2x00_is_reserved_id(scsi_qla_host_t *vha, uint16_t loop_id)
++{
++	struct qla_hw_data *ha = vha->hw;
++
++	if (IS_FWI2_CAPABLE(ha))
++		return loop_id > NPH_LAST_HANDLE;
++
++	return (loop_id > ha->max_loop_id && loop_id < SNS_FIRST_LOOP_ID) ||
++		loop_id == MANAGEMENT_SERVER || loop_id == BROADCAST;
++}
++
+ /**
+  * qla2x00_find_new_loop_id - scan through our port list and find a new usable loop ID
+  * @vha: adapter state pointer.
+--- a/drivers/scsi/qla2xxx/qla_inline.h
++++ b/drivers/scsi/qla2xxx/qla_inline.h
+@@ -90,17 +90,6 @@ host_to_adap(uint8_t *src, uint8_t *dst,
+ 		*odest++ = cpu_to_le32(*isrc);
+ }
+ 
+-static inline int
+-qla2x00_is_reserved_id(scsi_qla_host_t *vha, uint16_t loop_id)
+-{
+-	struct qla_hw_data *ha = vha->hw;
+-	if (IS_FWI2_CAPABLE(ha))
+-		return (loop_id > NPH_LAST_HANDLE);
+-
+-	return ((loop_id > ha->max_loop_id && loop_id < SNS_FIRST_LOOP_ID) ||
+-	    loop_id == MANAGEMENT_SERVER || loop_id == BROADCAST);
+-}
+-
+ static inline void
+ qla2x00_clean_dsd_pool(struct qla_hw_data *ha, struct crc_context *ctx)
+ {

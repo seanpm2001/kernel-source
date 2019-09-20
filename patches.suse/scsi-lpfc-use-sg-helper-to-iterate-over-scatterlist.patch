@@ -1,0 +1,48 @@
+From: Ming Lei <ming.lei@redhat.com>
+Date: Tue, 18 Jun 2019 09:37:44 +0800
+Subject: [PATCH] scsi: lpfc: use sg helper to iterate over scatterlist
+Git-commit: 46e8e475a160be5e31e99171b7c0c8a21eb4d6ad
+Patch-Mainline: v5.3-rc1
+References: bsc#1148308
+
+Unlike the legacy I/O path, scsi-mq preallocates a large array to hold
+the scatterlist for each request. This static allocation can consume
+substantial amounts of memory on modern controllers which support a
+large number of concurrently outstanding requests.
+
+To facilitate a switch to a smaller static allocation combined with a
+dynamic allocation for requests that need it, we need to make sure all
+SCSI drivers handle chained scatterlists correctly.
+
+Convert remaining drivers that directly dereference the scatterlist
+array to using the iterator functions.
+
+[mkp: clarified commit message]
+
+Reviewed by: Ewan D. Milne <emilne@redhat.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Bart Van Assche <bvanassche@acm.org>
+Signed-off-by: Ming Lei <ming.lei@redhat.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Hannes Reinecke <hare@suse.com>
+---
+ drivers/scsi/lpfc/lpfc_nvmet.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/scsi/lpfc/lpfc_nvmet.c b/drivers/scsi/lpfc/lpfc_nvmet.c
+index d74bfd264495..877d1fb92754 100644
+--- a/drivers/scsi/lpfc/lpfc_nvmet.c
++++ b/drivers/scsi/lpfc/lpfc_nvmet.c
+@@ -2662,8 +2662,7 @@ lpfc_nvmet_prep_fcp_wqe(struct lpfc_hba *phba,
+ 	nvmewqe->drvrTimeout = (phba->fc_ratov * 3) + LPFC_DRVR_TIMEOUT;
+ 	nvmewqe->context1 = ndlp;
+ 
+-	for (i = 0; i < rsp->sg_cnt; i++) {
+-		sgel = &rsp->sg[i];
++	for_each_sg(rsp->sg, sgel, rsp->sg_cnt, i) {
+ 		physaddr = sg_dma_address(sgel);
+ 		cnt = sg_dma_len(sgel);
+ 		sgl->addr_hi = putPaddrHigh(physaddr);
+-- 
+2.16.4
+

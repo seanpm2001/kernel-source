@@ -1,0 +1,139 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Sat, 4 Aug 2018 05:24:34 -0500
+Subject: [PATCH] smb3: display stats counters for number of slow commands
+Git-commit: 468d677954c0d94fec59275d91222257fe8b4416
+Patch-mainline: v4.18
+References: bsc#1144333
+
+When CONFIG_CIFS_STATS2 is enabled keep counters for slow
+commands (ie server took longer than 1 second to respond)
+by SMB2/SMB3 command code.  This can help in diagnosing
+whether performance problems are on server (instead of
+client) and which commands are causing the problem.
+
+Sample output (the new lines contain words "slow responses ...")
+
+$ cat /proc/fs/cifs/Stats
+Resources in use
+CIFS Session: 1
+Share (unique mount targets): 2
+SMB Request/Response Buffer: 1 Pool size: 5
+SMB Small Req/Resp Buffer: 1 Pool size: 30
+Total Large 10 Small 490 Allocations
+Operations (MIDs): 0
+
+0 session 0 share reconnects
+Total vfs operations: 67 maximum at one time: 2
+4 slow responses from localhost for command 5
+1 slow responses from localhost for command 6
+1 slow responses from localhost for command 14
+1 slow responses from localhost for command 16
+
+1) \\localhost\test
+SMBs: 243
+Bytes read: 1024000  Bytes written: 104857600
+TreeConnects: 1 total 0 failed
+TreeDisconnects: 0 total 0 failed
+Creates: 40 total 0 failed
+Closes: 39 total 0 failed
+...
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifs_debug.c | 19 +++++++++++++++++--
+ fs/cifs/cifsglob.h   |  3 ++-
+ fs/cifs/transport.c  |  5 +++++
+ 3 files changed, 24 insertions(+), 3 deletions(-)
+
+diff --git a/fs/cifs/cifs_debug.c b/fs/cifs/cifs_debug.c
+index 748cabd6d20b..f1fbea947fef 100644
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -378,6 +378,8 @@ static ssize_t cifs_stats_proc_write(struct file *file,
+ 	rc = kstrtobool_from_user(buffer, count, &bv);
+ 	if (rc == 0) {
+ #ifdef CONFIG_CIFS_STATS2
++		int i;
++
+ 		atomic_set(&totBufAllocCount, 0);
+ 		atomic_set(&totSmBufAllocCount, 0);
+ #endif /* CONFIG_CIFS_STATS2 */
+@@ -389,6 +391,10 @@ static ssize_t cifs_stats_proc_write(struct file *file,
+ 		list_for_each(tmp1, &cifs_tcp_ses_list) {
+ 			server = list_entry(tmp1, struct TCP_Server_Info,
+ 					    tcp_ses_list);
++#ifdef CONFIG_CIFS_STATS2
++			for (i = 0; i < NUMBER_OF_SMB2_COMMANDS; i++)
++				atomic_set(&server->smb2slowcmd[i], 0);
++#endif /* CONFIG_CIFS_STATS2 */
+ 			list_for_each(tmp2, &server->smb_ses_list) {
+ 				ses = list_entry(tmp2, struct cifs_ses,
+ 						 smb_ses_list);
+@@ -417,13 +423,15 @@ static ssize_t cifs_stats_proc_write(struct file *file,
+ static int cifs_stats_proc_show(struct seq_file *m, void *v)
+ {
+ 	int i;
++#ifdef CONFIG_CIFS_STATS2
++	int j;
++#endif /* STATS2 */
+ 	struct list_head *tmp1, *tmp2, *tmp3;
+ 	struct TCP_Server_Info *server;
+ 	struct cifs_ses *ses;
+ 	struct cifs_tcon *tcon;
+ 
+-	seq_printf(m,
+-			"Resources in use\nCIFS Session: %d\n",
++	seq_printf(m, "Resources in use\nCIFS Session: %d\n",
+ 			sesInfoAllocCount.counter);
+ 	seq_printf(m, "Share (unique mount targets): %d\n",
+ 			tconInfoAllocCount.counter);
+@@ -452,6 +460,13 @@ static int cifs_stats_proc_show(struct seq_file *m, void *v)
+ 	list_for_each(tmp1, &cifs_tcp_ses_list) {
+ 		server = list_entry(tmp1, struct TCP_Server_Info,
+ 				    tcp_ses_list);
++#ifdef CONFIG_CIFS_STATS2
++		for (j = 0; j < NUMBER_OF_SMB2_COMMANDS; j++)
++			if (atomic_read(&server->smb2slowcmd[j]))
++				seq_printf(m, "%d slow responses from %s for command %d\n",
++					atomic_read(&server->smb2slowcmd[j]),
++					server->hostname, j);
++#endif /* STATS2 */
+ 		list_for_each(tmp2, &server->smb_ses_list) {
+ 			ses = list_entry(tmp2, struct cifs_ses,
+ 					 smb_ses_list);
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 0553929e8339..41803d374da0 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -680,7 +680,8 @@ struct TCP_Server_Info {
+ #ifdef CONFIG_CIFS_STATS2
+ 	atomic_t in_send; /* requests trying to send */
+ 	atomic_t num_waiters;   /* blocked waiting to get in sendrecv */
+-#endif
++	atomic_t smb2slowcmd[NUMBER_OF_SMB2_COMMANDS]; /* count resps > 1 sec */
++#endif /* STATS2 */
+ 	unsigned int	max_read;
+ 	unsigned int	max_write;
+ 	__le16	cipher_type;
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 92de5c528161..c53c0908d4c6 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -117,6 +117,11 @@ DeleteMidQEntry(struct mid_q_entry *midEntry)
+ 	   something is wrong, unless it is quite a slow link or server */
+ 	if (time_after(now, midEntry->when_alloc + HZ) &&
+ 	    (midEntry->command != command)) {
++		/* smb2slowcmd[NUMBER_OF_SMB2_COMMANDS] counts by command */
++		if ((le16_to_cpu(midEntry->command) < NUMBER_OF_SMB2_COMMANDS) &&
++		    (le16_to_cpu(midEntry->command) >= 0))
++			cifs_stats_inc(&midEntry->server->smb2slowcmd[le16_to_cpu(midEntry->command)]);
++
+ 		trace_smb3_slow_rsp(le16_to_cpu(midEntry->command),
+ 			       midEntry->mid, midEntry->pid,
+ 			       midEntry->when_sent, midEntry->when_received);
+-- 
+2.16.4
+

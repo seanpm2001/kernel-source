@@ -1,0 +1,54 @@
+From: Long Li <longli@microsoft.com>
+Date: Wed, 31 Oct 2018 22:13:11 +0000
+Subject: [PATCH] CIFS: Add direct I/O functions to file_operations
+Git-commit: be4eb68846dc4450a9a4998d7c16d9f4955f9988
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+With direct read/write functions implemented, add them to file_operations.
+
+Dircet I/O is used under two conditions:
+1. When mounting with "cache=none", CIFS uses direct I/O for all user file
+data transfer.
+2. When opening a file with O_DIRECT, CIFS uses direct I/O for all data
+transfer on this file.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsfs.c | 10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/fs/cifs/cifsfs.c b/fs/cifs/cifsfs.c
+index b7ac09e38159..1b21262ec874 100644
+--- a/fs/cifs/cifsfs.c
++++ b/fs/cifs/cifsfs.c
+@@ -1180,9 +1180,8 @@ const struct file_operations cifs_file_strict_ops = {
+ };
+ 
+ const struct file_operations cifs_file_direct_ops = {
+-	/* BB reevaluate whether they can be done with directio, no cache */
+-	.read_iter = cifs_user_readv,
+-	.write_iter = cifs_user_writev,
++	.read_iter = cifs_direct_readv,
++	.write_iter = cifs_direct_writev,
+ 	.open = cifs_open,
+ 	.release = cifs_close,
+ 	.lock = cifs_lock,
+@@ -1236,9 +1235,8 @@ const struct file_operations cifs_file_strict_nobrl_ops = {
+ };
+ 
+ const struct file_operations cifs_file_direct_nobrl_ops = {
+-	/* BB reevaluate whether they can be done with directio, no cache */
+-	.read_iter = cifs_user_readv,
+-	.write_iter = cifs_user_writev,
++	.read_iter = cifs_direct_readv,
++	.write_iter = cifs_direct_writev,
+ 	.open = cifs_open,
+ 	.release = cifs_close,
+ 	.fsync = cifs_fsync,
+-- 
+2.16.4
+

@@ -1,0 +1,36 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Thu, 13 Sep 2018 15:12:34 -0500
+Subject: [PATCH] smb3: do not display confusing message on mount to Azure
+ servers
+Git-commit: d42c8a87d18b7f08325a695d00afa83cad876631
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+Some servers (e.g. Azure) return "STATUS_NOT_IMPLEMENTED" rather
+than "STATUS_INVALID_DEVICE_REQUEST" on query network interface
+info at mount.  This shouldn't cause us to log a warning message
+automatically.  Don't log this unless noisier cifsFYI is enabled.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2maperror.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2maperror.c b/fs/cifs/smb2maperror.c
+index 20a2d304c603..d47b7f5dfa6c 100644
+--- a/fs/cifs/smb2maperror.c
++++ b/fs/cifs/smb2maperror.c
+@@ -288,7 +288,7 @@ static const struct status_to_posix_error smb2_error_map_table[] = {
+ 	{STATUS_FLT_BUFFER_TOO_SMALL, -ENOBUFS, "STATUS_FLT_BUFFER_TOO_SMALL"},
+ 	{STATUS_FVE_PARTIAL_METADATA, -EIO, "STATUS_FVE_PARTIAL_METADATA"},
+ 	{STATUS_UNSUCCESSFUL, -EIO, "STATUS_UNSUCCESSFUL"},
+-	{STATUS_NOT_IMPLEMENTED, -ENOSYS, "STATUS_NOT_IMPLEMENTED"},
++	{STATUS_NOT_IMPLEMENTED, -EOPNOTSUPP, "STATUS_NOT_IMPLEMENTED"},
+ 	{STATUS_INVALID_INFO_CLASS, -EIO, "STATUS_INVALID_INFO_CLASS"},
+ 	{STATUS_INFO_LENGTH_MISMATCH, -EIO, "STATUS_INFO_LENGTH_MISMATCH"},
+ 	{STATUS_ACCESS_VIOLATION, -EACCES, "STATUS_ACCESS_VIOLATION"},
+-- 
+2.16.4
+

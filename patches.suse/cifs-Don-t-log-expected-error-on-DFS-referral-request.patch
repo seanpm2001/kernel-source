@@ -1,0 +1,50 @@
+From 2564f2ff83975e05dbd2f13301f7147b63e67c91 Mon Sep 17 00:00:00 2001
+From: Steve French <smfrench@gmail.com>
+Date: Wed, 21 Mar 2018 23:16:36 -0500
+Subject: [PATCH] Don't log expected error on DFS referral request
+Git-commit: 2564f2ff83975e05dbd2f13301f7147b63e67c91
+Patch-mainline: v4.17-rc1
+References: bsc#1051510, bsc#1144333
+
+STATUS_FS_DRIVER_REQUIRED is expected when DFS is not turned
+on on the server.  Do not log it on DFS referral response.
+It clutters the dmesg log unnecessarily at mount time.
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com
+Reviewed-by: Ronnie sahlberg <lsahlber@redhat.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smb2maperror.c | 2 +-
+ fs/cifs/smb2ops.c      | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/smb2maperror.c b/fs/cifs/smb2maperror.c
+index 62c88dfed57b..3bfc9c990724 100644
+--- a/fs/cifs/smb2maperror.c
++++ b/fs/cifs/smb2maperror.c
+@@ -745,7 +745,7 @@ static const struct status_to_posix_error smb2_error_map_table[] = {
+ 	"STATUS_NOLOGON_SERVER_TRUST_ACCOUNT"},
+ 	{STATUS_DOMAIN_TRUST_INCONSISTENT, -EIO,
+ 	"STATUS_DOMAIN_TRUST_INCONSISTENT"},
+-	{STATUS_FS_DRIVER_REQUIRED, -EIO, "STATUS_FS_DRIVER_REQUIRED"},
++	{STATUS_FS_DRIVER_REQUIRED, -EOPNOTSUPP, "STATUS_FS_DRIVER_REQUIRED"},
+ 	{STATUS_IMAGE_ALREADY_LOADED_AS_DLL, -EIO,
+ 	"STATUS_IMAGE_ALREADY_LOADED_AS_DLL"},
+ 	{STATUS_NETWORK_OPEN_RESTRICTION, -EIO,
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index dfd6fb02b7a3..c5777783f313 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1412,7 +1412,7 @@ smb2_get_dfs_refer(const unsigned int xid, struct cifs_ses *ses,
+ 	} while (rc == -EAGAIN);
+ 
+ 	if (rc) {
+-		if (rc != -ENOENT)
++		if ((rc != -ENOENT) && (rc != -EOPNOTSUPP))
+ 			cifs_dbg(VFS, "ioctl error in smb2_get_dfs_refer rc=%d\n", rc);
+ 		goto out;
+ 	}
+-- 
+2.16.4
+

@@ -1,0 +1,57 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Fri, 5 Apr 2019 09:14:10 -0700
+Subject: [PATCH] scsi: lpfc: Fix a recently introduced compiler warning
+References: bsc#1136217,jsc#SLE-4722
+Git-commit: d964b3e5343851fc6e7d8272d643007a29788139
+Patch-mainline: v5.2-rc1
+
+This patch avoids that the following compiler warning is reported with
+CONFIG_NVME_FC=n:
+
+drivers/scsi/lpfc/lpfc_nvme.c:2140:1: warning: 'lpfc_nvme_lport_unreg_wait' defined but not used [-Wunused-function]
+ lpfc_nvme_lport_unreg_wait(struct lpfc_vport *vport,
+ ^~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Fixes: 3999df75bccb ("scsi: lpfc: Declare local functions static")
+Cc: James Smart <james.smart@broadcom.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Acked-by: James Smart <james.smart@broadcom.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Signed-off-by: Hannes Reinecke <hare@suse.de>
+---
+ drivers/scsi/lpfc/lpfc_nvme.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/scsi/lpfc/lpfc_nvme.c b/drivers/scsi/lpfc/lpfc_nvme.c
+index 13533ea44ab8..9e57d6748b05 100644
+--- a/drivers/scsi/lpfc/lpfc_nvme.c
++++ b/drivers/scsi/lpfc/lpfc_nvme.c
+@@ -2125,6 +2125,7 @@ lpfc_nvme_create_localport(struct lpfc_vport *vport)
+ 	return ret;
+ }
+ 
++#if (IS_ENABLED(CONFIG_NVME_FC))
+ /* lpfc_nvme_lport_unreg_wait - Wait for the host to complete an lport unreg.
+  *
+  * The driver has to wait for the host nvme transport to callback
+@@ -2139,7 +2140,6 @@ static void
+ 			   struct lpfc_nvme_lport *lport,
+ 			   struct completion *lport_unreg_cmp)
+ {
+-#if (IS_ENABLED(CONFIG_NVME_FC))
+ 	u32 wait_tmo;
+ 	int ret;
+ 
+@@ -2163,8 +2163,8 @@ lpfc_nvme_lport_unreg_wait(struct lpfc_vport *vport,
+ 	lpfc_printf_vlog(vport, KERN_INFO, LOG_NVME_IOERR,
+ 			 "6177 Lport %p Localport %p Complete Success\n",
+ 			 lport, vport->localport);
+-#endif
+ }
++#endif
+ 
+ /**
+  * lpfc_nvme_destroy_localport - Destroy lpfc_nvme bound to nvme transport.
+-- 
+2.16.4
+

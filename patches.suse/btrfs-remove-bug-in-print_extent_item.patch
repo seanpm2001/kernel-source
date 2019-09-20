@@ -1,0 +1,36 @@
+From: Liu Bo <bo.li.liu@oracle.com>
+Date: Fri, 18 Aug 2017 15:15:21 -0600
+Subject: Btrfs: remove BUG() in print_extent_item
+Git-commit: 07638ea5987e51715b35eb5a9a9e908f18ffabf7
+Patch-mainline: v4.14-rc1
+References: bsc#1149325
+
+btrfs_print_leaf() is used in btrfs_get_extent_inline_ref_type, so
+here we really want to print the invalid value of ref type instead of
+causing a kernel panic.
+
+Signed-off-by: Liu Bo <bo.li.liu@oracle.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Johannes Thumshirn <jthumshirn@suse.de>
+---
+ fs/btrfs/print-tree.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/fs/btrfs/print-tree.c b/fs/btrfs/print-tree.c
+index 6e7a8c40dcd9..c1acbdcb476c 100644
+--- a/fs/btrfs/print-tree.c
++++ b/fs/btrfs/print-tree.c
+@@ -121,7 +121,10 @@ static void print_extent_item(struct extent_buffer *eb, int slot, int type)
+ 			       offset, btrfs_shared_data_ref_count(eb, sref));
+ 			break;
+ 		default:
+-			BUG();
++			btrfs_err(eb->fs_info,
++				  "extent %llu has invalid ref type %d",
++				  eb->start, type);
++			return;
+ 		}
+ 		ptr += btrfs_extent_inline_ref_size(type);
+ 	}
+

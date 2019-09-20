@@ -1,0 +1,93 @@
+From: Pavel Shilovsky <pshilov@microsoft.com>
+Date: Fri, 25 Jan 2019 15:23:36 -0800
+Subject: [PATCH] CIFS: Find and reopen a file before get MTU credits in
+ writepages
+Git-commit: c7d38dbe7d3851e52f6117d9bbbf6865066b81d9
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Reorder finding and reopening a writable handle file and getting
+MTU credits in writepages because we may be stuck on low credits
+otherwise.
+
+Signed-off-by: Pavel Shilovsky <pshilov@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/file.c | 24 ++++++++++++++++++------
+ 1 file changed, 18 insertions(+), 6 deletions(-)
+
+diff --git a/fs/cifs/file.c b/fs/cifs/file.c
+index eaf5acba7f6b..4de7af04e732 100644
+--- a/fs/cifs/file.c
++++ b/fs/cifs/file.c
+@@ -2096,15 +2096,16 @@ wdata_send_pages(struct TCP_Server_Info *server, struct cifs_writedata *wdata,
+ 	if (rc)
+ 		goto send_pages_out;
+ 
+-	if (wdata->cfile != NULL)
+-		cifsFileInfo_put(wdata->cfile);
+-	wdata->cfile = find_writable_file(CIFS_I(mapping->host), false);
+ 	if (!wdata->cfile) {
+-		cifs_dbg(VFS, "No writable handles for inode\n");
++		cifs_dbg(VFS, "No writable handle in writepages\n");
+ 		rc = -EBADF;
+ 	} else {
+ 		wdata->pid = wdata->cfile->pid;
+-		rc = server->ops->async_writev(wdata, cifs_writedata_release);
++		if (wdata->cfile->invalidHandle)
++			rc = -EAGAIN;
++		else
++			rc = server->ops->async_writev(wdata,
++						       cifs_writedata_release);
+ 	}
+ 
+ send_pages_out:
+@@ -2117,11 +2118,13 @@ wdata_send_pages(struct TCP_Server_Info *server, struct cifs_writedata *wdata,
+ static int cifs_writepages(struct address_space *mapping,
+ 			   struct writeback_control *wbc)
+ {
+-	struct cifs_sb_info *cifs_sb = CIFS_SB(mapping->host->i_sb);
++	struct inode *inode = mapping->host;
++	struct cifs_sb_info *cifs_sb = CIFS_SB(inode->i_sb);
+ 	struct TCP_Server_Info *server;
+ 	bool done = false, scanned = false, range_whole = false;
+ 	pgoff_t end, index;
+ 	struct cifs_writedata *wdata;
++	struct cifsFileInfo *cfile = NULL;
+ 	int rc = 0;
+ 	int saved_rc = 0;
+ 	unsigned int xid;
+@@ -2152,6 +2155,11 @@ static int cifs_writepages(struct address_space *mapping,
+ 		struct cifs_credits credits_on_stack;
+ 		struct cifs_credits *credits = &credits_on_stack;
+ 
++		if (cfile)
++			cifsFileInfo_put(cfile);
++
++		cfile = find_writable_file(CIFS_I(inode), false);
++
+ 		rc = server->ops->wait_mtu_credits(server, cifs_sb->wsize,
+ 						   &wsize, credits);
+ 		if (rc != 0) {
+@@ -2187,6 +2195,8 @@ static int cifs_writepages(struct address_space *mapping,
+ 		}
+ 
+ 		wdata->credits = credits_on_stack;
++		wdata->cfile = cfile;
++		cfile = NULL;
+ 
+ 		rc = wdata_send_pages(server, wdata, nr_pages, mapping, wbc);
+ 
+@@ -2244,6 +2254,8 @@ static int cifs_writepages(struct address_space *mapping,
+ 	if (wbc->range_cyclic || (range_whole && wbc->nr_to_write > 0))
+ 		mapping->writeback_index = index;
+ 
++	if (cfile)
++		cifsFileInfo_put(cfile);
+ 	free_xid(xid);
+ 	return rc;
+ }
+-- 
+2.16.4
+

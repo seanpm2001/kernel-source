@@ -1,0 +1,47 @@
+From: Pavel Shilovsky <piastryyy@gmail.com>
+Date: Tue, 5 Mar 2019 15:51:55 -0800
+Subject: [PATCH] CIFS: Only send SMB2_NEGOTIATE command on new TCP connections
+Git-commit: 2084ed57167c3e39f99ac2bb19f19e85321d2169
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Do not allow commands other than SMB2_NEGOTIATE to be sent over
+recently established TCP connections. Return -EAGAIN to let upper
+layers handle it properly.
+
+Signed-off-by: Pavel Shilovsky <pshilov@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2transport.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/fs/cifs/smb2transport.c b/fs/cifs/smb2transport.c
+index fa1fec2e3c8d..d1181572758b 100644
+--- a/fs/cifs/smb2transport.c
++++ b/fs/cifs/smb2transport.c
+@@ -619,6 +619,10 @@ smb2_get_mid_entry(struct cifs_ses *ses, struct smb2_sync_hdr *shdr,
+ 		return -EAGAIN;
+ 	}
+ 
++	if (ses->server->tcpStatus == CifsNeedNegotiate &&
++	   shdr->Command != SMB2_NEGOTIATE)
++		return -EAGAIN;
++
+ 	if (ses->status == CifsNew) {
+ 		if ((shdr->Command != SMB2_SESSION_SETUP) &&
+ 		    (shdr->Command != SMB2_NEGOTIATE))
+@@ -702,6 +706,10 @@ smb2_setup_async_request(struct TCP_Server_Info *server, struct smb_rqst *rqst)
+ 			(struct smb2_sync_hdr *)rqst->rq_iov[0].iov_base;
+ 	struct mid_q_entry *mid;
+ 
++	if (server->tcpStatus == CifsNeedNegotiate &&
++	   shdr->Command != SMB2_NEGOTIATE)
++		return ERR_PTR(-EAGAIN);
++
+ 	smb2_seq_num_into_buf(server, shdr);
+ 
+ 	mid = smb2_mid_entry_alloc(shdr, server);
+-- 
+2.16.4
+

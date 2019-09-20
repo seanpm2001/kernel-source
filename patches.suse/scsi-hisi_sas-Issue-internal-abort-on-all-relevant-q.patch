@@ -1,0 +1,275 @@
+From: John Garry <john.garry@huawei.com>
+Date: Wed, 6 Feb 2019 18:52:54 +0800
+Subject: scsi: hisi_sas: Issue internal abort on all relevant queues
+Patch-mainline: v5.1-rc1
+Git-commit: 795f25a31b542df93bff892ce46390f9befa2135
+References: bsc#1137322 bsc#1137323 bsc#1138099 bsc#1138100
+
+To support queue mapped to a CPU, it needs to be ensured that issuing an
+internal abort is safe, in that it is guaranteed that an internal abort is
+processed for a single IO or a device after all the relevant command(s)
+which it is attempting to abort have been processed by the controller.
+
+Currently we only deliver commands for any device on a single queue to
+solve this problem, as we know that commands issued on the same queue will
+be processed in order, and we will not have a scenario where the internal
+abort is racing against a command(s) which it is trying to abort.
+
+To enqueue commands on queue mapped to a CPU, choosing a queue for an
+command is based on the associated queue for the current CPU, so this is
+not safe for internal abort since it would definitely not be guaranteed
+that commands for the command devices are issued on the same queue.
+
+To solve this issue, we take a bludgeoning approach, and issue a separate
+internal abort on any queue(s) relevant to the command or device, in that
+we will be guaranteed that at least one of these internal aborts will be
+received last in the controller.
+
+So, for aborting a single command, we can just force the internal abort to
+be issued on the same queue as the command which we are trying to abort.
+
+For aborting all commands associated with a device, we issue a separate
+internal abort on all relevant queues. Issuing multiple internal aborts in
+this fashion would have not side affect.
+
+Signed-off-by: John Garry <john.garry@huawei.com>
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/hisi_sas/hisi_sas.h       |    2 +
+ drivers/scsi/hisi_sas/hisi_sas_main.c  |   64 +++++++++++++++++++++++++--------
+ drivers/scsi/hisi_sas/hisi_sas_v1_hw.c |    2 +
+ drivers/scsi/hisi_sas/hisi_sas_v2_hw.c |    2 +
+ drivers/scsi/hisi_sas/hisi_sas_v3_hw.c |    8 +++-
+ 5 files changed, 62 insertions(+), 16 deletions(-)
+
+--- a/drivers/scsi/hisi_sas/hisi_sas.h
++++ b/drivers/scsi/hisi_sas/hisi_sas.h
+@@ -365,6 +365,8 @@ struct hisi_hba {
+ 	u32 intr_coal_ticks;	/* Time of interrupt coalesce in us */
+ 	u32 intr_coal_count;	/* Interrupt count to coalesce */
+ 
++	int cq_nvecs;
++
+ 	/* debugfs memories */
+ 	void *debugfs_global_reg;
+ 	void *debugfs_port_reg[HISI_SAS_MAX_PHYS];
+--- a/drivers/scsi/hisi_sas/hisi_sas_main.c
++++ b/drivers/scsi/hisi_sas/hisi_sas_main.c
+@@ -1023,7 +1023,7 @@ static void hisi_sas_dev_gone(struct dom
+ 
+ 	if (!test_bit(HISI_SAS_RESET_BIT, &hisi_hba->flags)) {
+ 		hisi_sas_internal_task_abort(hisi_hba, device,
+-				     HISI_SAS_INT_ABT_DEV, 0);
++					     HISI_SAS_INT_ABT_DEV, 0);
+ 
+ 		hisi_sas_dereg_device(hisi_hba, device);
+ 
+@@ -1631,7 +1631,8 @@ static int hisi_sas_abort_task(struct sa
+ 		task->task_proto & SAS_PROTOCOL_STP) {
+ 		if (task->dev->dev_type == SAS_SATA_DEV) {
+ 			rc = hisi_sas_internal_task_abort(hisi_hba, device,
+-						HISI_SAS_INT_ABT_DEV, 0);
++							  HISI_SAS_INT_ABT_DEV,
++							  0);
+ 			if (rc < 0) {
+ 				dev_err(dev, "abort task: internal abort failed\n");
+ 				goto out;
+@@ -1646,7 +1647,7 @@ static int hisi_sas_abort_task(struct sa
+ 		struct hisi_sas_cq *cq = &hisi_hba->cq[slot->dlvry_queue];
+ 
+ 		rc = hisi_sas_internal_task_abort(hisi_hba, device,
+-			     HISI_SAS_INT_ABT_CMD, tag);
++						  HISI_SAS_INT_ABT_CMD, tag);
+ 		if (((rc < 0) || (rc == TMF_RESP_FUNC_FAILED)) &&
+ 					task->lldd_task) {
+ 			/*
+@@ -1672,7 +1673,7 @@ static int hisi_sas_abort_task_set(struc
+ 	int rc = TMF_RESP_FUNC_FAILED;
+ 
+ 	rc = hisi_sas_internal_task_abort(hisi_hba, device,
+-					HISI_SAS_INT_ABT_DEV, 0);
++					  HISI_SAS_INT_ABT_DEV, 0);
+ 	if (rc < 0) {
+ 		dev_err(dev, "abort task set: internal abort rc=%d\n", rc);
+ 		return TMF_RESP_FUNC_FAILED;
+@@ -1744,7 +1745,7 @@ static int hisi_sas_I_T_nexus_reset(stru
+ 	int rc = TMF_RESP_FUNC_FAILED;
+ 
+ 	rc = hisi_sas_internal_task_abort(hisi_hba, device,
+-					HISI_SAS_INT_ABT_DEV, 0);
++					  HISI_SAS_INT_ABT_DEV, 0);
+ 	if (rc < 0) {
+ 		dev_err(dev, "I_T nexus reset: internal abort (%d)\n", rc);
+ 		return TMF_RESP_FUNC_FAILED;
+@@ -1789,7 +1790,7 @@ static int hisi_sas_lu_reset(struct doma
+ 		struct hisi_sas_tmf_task tmf_task = { .tmf =  TMF_LU_RESET };
+ 
+ 		rc = hisi_sas_internal_task_abort(hisi_hba, device,
+-						HISI_SAS_INT_ABT_DEV, 0);
++						  HISI_SAS_INT_ABT_DEV, 0);
+ 		if (rc < 0) {
+ 			dev_err(dev, "lu_reset: internal abort failed\n");
+ 			goto out;
+@@ -1875,7 +1876,7 @@ static int hisi_sas_query_task(struct sa
+ static int
+ hisi_sas_internal_abort_task_exec(struct hisi_hba *hisi_hba, int device_id,
+ 				  struct sas_task *task, int abort_flag,
+-				  int task_tag)
++				  int task_tag, struct hisi_sas_dq *dq)
+ {
+ 	struct domain_device *device = task->dev;
+ 	struct hisi_sas_device *sas_dev = device->lldd_dev;
+@@ -1884,7 +1885,6 @@ hisi_sas_internal_abort_task_exec(struct
+ 	struct hisi_sas_slot *slot;
+ 	struct asd_sas_port *sas_port = device->port;
+ 	struct hisi_sas_cmd_hdr *cmd_hdr_base;
+-	struct hisi_sas_dq *dq = sas_dev->dq;
+ 	int dlvry_queue_slot, dlvry_queue, n_elem = 0, rc, slot_idx;
+ 	unsigned long flags, flags_dq = 0;
+ 	int wr_q_index;
+@@ -1956,18 +1956,19 @@ err_out:
+ }
+ 
+ /**
+- * hisi_sas_internal_task_abort -- execute an internal
++ * _hisi_sas_internal_task_abort -- execute an internal
+  * abort command for single IO command or a device
+  * @hisi_hba: host controller struct
+  * @device: domain device
+  * @abort_flag: mode of operation, device or single IO
+  * @tag: tag of IO to be aborted (only relevant to single
+  *       IO mode)
++ * @dq: delivery queue for this internal abort command
+  */
+ static int
+-hisi_sas_internal_task_abort(struct hisi_hba *hisi_hba,
+-			     struct domain_device *device,
+-			     int abort_flag, int tag)
++_hisi_sas_internal_task_abort(struct hisi_hba *hisi_hba,
++			      struct domain_device *device, int abort_flag,
++			      int tag, struct hisi_sas_dq *dq)
+ {
+ 	struct sas_task *task;
+ 	struct hisi_sas_device *sas_dev = device->lldd_dev;
+@@ -1995,7 +1996,7 @@ hisi_sas_internal_task_abort(struct hisi
+ 	add_timer(&task->slow_task->timer);
+ 
+ 	res = hisi_sas_internal_abort_task_exec(hisi_hba, sas_dev->device_id,
+-						task, abort_flag, tag);
++						task, abort_flag, tag, dq);
+ 	if (res) {
+ 		del_timer(&task->slow_task->timer);
+ 		dev_err(dev, "internal task abort: executing internal task failed: %d\n",
+@@ -2052,6 +2053,41 @@ exit:
+ 	return res;
+ }
+ 
++static int
++hisi_sas_internal_task_abort(struct hisi_hba *hisi_hba,
++			     struct domain_device *device,
++			     int abort_flag, int tag)
++{
++	struct hisi_sas_slot *slot;
++	struct device *dev = hisi_hba->dev;
++	struct hisi_sas_dq *dq;
++	int i, rc;
++
++	switch (abort_flag) {
++	case HISI_SAS_INT_ABT_CMD:
++		slot = &hisi_hba->slot_info[tag];
++		dq = &hisi_hba->dq[slot->dlvry_queue];
++		return _hisi_sas_internal_task_abort(hisi_hba, device,
++						     abort_flag, tag, dq);
++	case HISI_SAS_INT_ABT_DEV:
++		for (i = 0; i < hisi_hba->cq_nvecs; i++) {
++			dq = &hisi_hba->dq[i];
++			rc = _hisi_sas_internal_task_abort(hisi_hba, device,
++							   abort_flag, tag,
++							   dq);
++			if (rc)
++				return rc;
++		}
++		break;
++	default:
++		dev_err(dev, "Unrecognised internal abort flag (%d)\n",
++			abort_flag);
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
+ static void hisi_sas_port_formed(struct asd_sas_phy *sas_phy)
+ {
+ 	hisi_sas_port_notify_formed(sas_phy);
+@@ -2118,7 +2154,7 @@ void hisi_sas_kill_tasklets(struct hisi_
+ {
+ 	int i;
+ 
+-	for (i = 0; i < hisi_hba->queue_count; i++) {
++	for (i = 0; i < hisi_hba->cq_nvecs; i++) {
+ 		struct hisi_sas_cq *cq = &hisi_hba->cq[i];
+ 
+ 		tasklet_kill(&cq->tasklet);
+--- a/drivers/scsi/hisi_sas/hisi_sas_v1_hw.c
++++ b/drivers/scsi/hisi_sas/hisi_sas_v1_hw.c
+@@ -1749,6 +1749,8 @@ static int interrupt_init_v1_hw(struct h
+ 		}
+ 	}
+ 
++	hisi_hba->cq_nvecs = hisi_hba->queue_count;
++
+ 	return 0;
+ }
+ 
+--- a/drivers/scsi/hisi_sas/hisi_sas_v2_hw.c
++++ b/drivers/scsi/hisi_sas/hisi_sas_v2_hw.c
+@@ -3400,6 +3400,8 @@ static int interrupt_init_v2_hw(struct h
+ 		tasklet_init(t, cq_tasklet_v2_hw, (unsigned long)cq);
+ 	}
+ 
++	hisi_hba->cq_nvecs = hisi_hba->queue_count;
++
+ 	return 0;
+ 
+ free_cq_int_irqs:
+--- a/drivers/scsi/hisi_sas/hisi_sas_v3_hw.c
++++ b/drivers/scsi/hisi_sas/hisi_sas_v3_hw.c
+@@ -402,6 +402,8 @@ struct hisi_sas_err_record_v3 {
+ #define T10_CHK_REF_TAG_MSK (0xf0 << T10_CHK_MSK_OFF)
+ #define T10_CHK_APP_TAG_MSK (0xc << T10_CHK_MSK_OFF)
+ 
++#define BASE_VECTORS_V3_HW  16
++
+ static bool hisi_sas_intr_conv;
+ MODULE_PARM_DESC(intr_conv, "interrupt converge enable (0-1)");
+ 
+@@ -2050,6 +2052,8 @@ static int interrupt_init_v3_hw(struct h
+ 		return -ENOENT;
+ 	}
+ 
++	hisi_hba->cq_nvecs = vectors - BASE_VECTORS_V3_HW;
++
+ 	rc = devm_request_irq(dev, pci_irq_vector(pdev, 1),
+ 			      int_phy_up_down_bcast_v3_hw, 0,
+ 			      DRV_NAME " phy", hisi_hba);
+@@ -2078,7 +2082,7 @@ static int interrupt_init_v3_hw(struct h
+ 	}
+ 
+ 	/* Init tasklets for cq only */
+-	for (i = 0; i < hisi_hba->queue_count; i++) {
++	for (i = 0; i < hisi_hba->cq_nvecs; i++) {
+ 		struct hisi_sas_cq *cq = &hisi_hba->cq[i];
+ 		struct tasklet_struct *t = &cq->tasklet;
+ 		int nr = hisi_sas_intr_conv ? 16 : 16 + i;
+@@ -2796,7 +2800,7 @@ hisi_sas_v3_destroy_irqs(struct pci_dev
+ 	free_irq(pci_irq_vector(pdev, 1), hisi_hba);
+ 	free_irq(pci_irq_vector(pdev, 2), hisi_hba);
+ 	free_irq(pci_irq_vector(pdev, 11), hisi_hba);
+-	for (i = 0; i < hisi_hba->queue_count; i++) {
++	for (i = 0; i < hisi_hba->cq_nvecs; i++) {
+ 		struct hisi_sas_cq *cq = &hisi_hba->cq[i];
+ 		int nr = hisi_sas_intr_conv ? 16 : 16 + i;
+ 

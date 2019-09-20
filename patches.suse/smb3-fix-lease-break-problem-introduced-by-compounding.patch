@@ -1,0 +1,40 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Tue, 2 Oct 2018 18:54:09 -0500
+Subject: [PATCH] smb3: fix lease break problem introduced by compounding
+Git-commit: 7af929d6d05ba5564139718e30d5bc96bdbc716a
+Patch-mainline: v4.19-rc7
+References: bsc#1144333
+
+Fixes problem (discovered by Aurelien) introduced by recent commit:
+commit b24df3e30cbf48255db866720fb71f14bf9d2f39
+("cifs: update receive_encrypted_standard to handle compounded responses")
+
+which broke the ability to respond to some lease breaks
+(lease breaks being ignored is a problem since can block
+server response for duration of the lease break timeout).
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/connect.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index e9d64c92b8da..52d71b64c0c6 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -946,8 +946,7 @@ cifs_demultiplex_thread(void *p)
+ 		} else {
+ 			mids[0] = server->ops->find_mid(server, buf);
+ 			bufs[0] = buf;
+-			if (mids[0])
+-				num_mids = 1;
++			num_mids = 1;
+ 
+ 			if (!mids[0] || !mids[0]->receive)
+ 				length = standard_receive3(server, mids[0]);
+-- 
+2.16.4
+

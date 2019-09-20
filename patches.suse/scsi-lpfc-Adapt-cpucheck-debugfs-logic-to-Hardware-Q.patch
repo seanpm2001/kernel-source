@@ -1,0 +1,431 @@
+From: James Smart <jsmart2021@gmail.com>
+Date: Mon, 28 Jan 2019 11:14:24 -0800
+Subject: [PATCH] scsi: lpfc: Adapt cpucheck debugfs logic to Hardware Queues
+Git-commit: 63df6d637e3358e64b43e7a774939f8f963926cb
+Patch-mainline: v5.1-rc1
+References: bsc#1123236
+
+Similar to the io execution path that reports cpu context information, the
+debugfs routines for cpu information needs to be aligned with new hardware
+queue implementation.
+
+Convert debugfs cnd nvme cpucheck statistics to report information per
+Hardware Queue.
+
+Signed-off-by: Dick Kennedy <dick.kennedy@broadcom.com>
+Signed-off-by: James Smart <jsmart2021@gmail.com>
+Reviewed-by: Hannes Reinecke <hare@suse.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Hannes Reinecke <hare@suse.com>
+---
+ drivers/scsi/lpfc/lpfc.h         |   5 --
+ drivers/scsi/lpfc/lpfc_debugfs.c | 129 +++++++++++++++++++++------------------
+ drivers/scsi/lpfc/lpfc_nvme.c    |  37 +++++------
+ drivers/scsi/lpfc/lpfc_nvmet.c   |  58 ++++++++----------
+ drivers/scsi/lpfc/lpfc_sli4.h    |  11 ++++
+ 5 files changed, 124 insertions(+), 116 deletions(-)
+
+diff --git a/drivers/scsi/lpfc/lpfc.h b/drivers/scsi/lpfc/lpfc.h
+index feae8fb57623..310437b6b51a 100644
+--- a/drivers/scsi/lpfc/lpfc.h
++++ b/drivers/scsi/lpfc/lpfc.h
+@@ -1152,11 +1152,6 @@ struct lpfc_hba {
+ 	uint16_t sfp_warning;
+ 
+ #ifdef CONFIG_SCSI_LPFC_DEBUG_FS
+-#define LPFC_CHECK_CPU_CNT    32
+-	uint32_t cpucheck_rcv_io[LPFC_CHECK_CPU_CNT];
+-	uint32_t cpucheck_xmt_io[LPFC_CHECK_CPU_CNT];
+-	uint32_t cpucheck_cmpl_io[LPFC_CHECK_CPU_CNT];
+-	uint32_t cpucheck_ccmpl_io[LPFC_CHECK_CPU_CNT];
+ 	uint16_t cpucheck_on;
+ #define LPFC_CHECK_OFF		0
+ #define LPFC_CHECK_NVME_IO	1
+diff --git a/drivers/scsi/lpfc/lpfc_debugfs.c b/drivers/scsi/lpfc/lpfc_debugfs.c
+index a1b7263bfe2a..d84fb8c088b1 100644
+--- a/drivers/scsi/lpfc/lpfc_debugfs.c
++++ b/drivers/scsi/lpfc/lpfc_debugfs.c
+@@ -1366,62 +1366,67 @@ static int
+ lpfc_debugfs_cpucheck_data(struct lpfc_vport *vport, char *buf, int size)
+ {
+ 	struct lpfc_hba   *phba = vport->phba;
+-	int i;
++	struct lpfc_sli4_hdw_queue *qp;
++	int i, j;
+ 	int len = 0;
+-	uint32_t tot_xmt = 0;
+-	uint32_t tot_rcv = 0;
+-	uint32_t tot_cmpl = 0;
+-	uint32_t tot_ccmpl = 0;
++	uint32_t tot_xmt;
++	uint32_t tot_rcv;
++	uint32_t tot_cmpl;
+ 
+-	if (phba->nvmet_support == 0) {
+-		/* NVME Initiator */
+-		len += snprintf(buf + len, PAGE_SIZE - len,
+-				"CPUcheck %s\n",
+-				(phba->cpucheck_on & LPFC_CHECK_NVME_IO ?
+-					"Enabled" : "Disabled"));
+-		for (i = 0; i < phba->sli4_hba.num_present_cpu; i++) {
+-			if (i >= LPFC_CHECK_CPU_CNT)
+-				break;
+-			len += snprintf(buf + len, PAGE_SIZE - len,
+-					"%02d: xmit x%08x cmpl x%08x\n",
+-					i, phba->cpucheck_xmt_io[i],
+-					phba->cpucheck_cmpl_io[i]);
+-			tot_xmt += phba->cpucheck_xmt_io[i];
+-			tot_cmpl += phba->cpucheck_cmpl_io[i];
+-		}
++	len += snprintf(buf + len, PAGE_SIZE - len,
++			"CPUcheck %s ",
++			(phba->cpucheck_on & LPFC_CHECK_NVME_IO ?
++				"Enabled" : "Disabled"));
++	if (phba->nvmet_support) {
+ 		len += snprintf(buf + len, PAGE_SIZE - len,
+-				"tot:xmit x%08x cmpl x%08x\n",
+-				tot_xmt, tot_cmpl);
+-		return len;
++				"%s\n",
++				(phba->cpucheck_on & LPFC_CHECK_NVMET_RCV ?
++					"Rcv Enabled\n" : "Rcv Disabled\n"));
++	} else {
++		len += snprintf(buf + len, PAGE_SIZE - len, "\n");
+ 	}
+ 
+-	/* NVME Target */
+-	len += snprintf(buf + len, PAGE_SIZE - len,
+-			"CPUcheck %s ",
+-			(phba->cpucheck_on & LPFC_CHECK_NVMET_IO ?
+-				"IO Enabled - " : "IO Disabled - "));
+-	len += snprintf(buf + len, PAGE_SIZE - len,
+-			"%s\n",
+-			(phba->cpucheck_on & LPFC_CHECK_NVMET_RCV ?
+-				"Rcv Enabled\n" : "Rcv Disabled\n"));
+-	for (i = 0; i < phba->sli4_hba.num_present_cpu; i++) {
+-		if (i >= LPFC_CHECK_CPU_CNT)
+-			break;
++	for (i = 0; i < phba->cfg_hdw_queue; i++) {
++		qp = &phba->sli4_hba.hdwq[i];
++
++		tot_rcv = 0;
++		tot_xmt = 0;
++		tot_cmpl = 0;
++		for (j = 0; j < LPFC_CHECK_CPU_CNT; j++) {
++			tot_xmt += qp->cpucheck_xmt_io[j];
++			tot_cmpl += qp->cpucheck_cmpl_io[j];
++			if (phba->nvmet_support)
++				tot_rcv += qp->cpucheck_rcv_io[j];
++		}
++
++		/* Only display Hardware Qs with something */
++		if (!tot_xmt && !tot_cmpl && !tot_rcv)
++			continue;
++
++		len += snprintf(buf + len, PAGE_SIZE - len,
++				"HDWQ %03d: ", i);
++		for (j = 0; j < LPFC_CHECK_CPU_CNT; j++) {
++			/* Only display non-zero counters */
++			if (!qp->cpucheck_xmt_io[j] &&
++			    !qp->cpucheck_cmpl_io[j] &&
++			    !qp->cpucheck_rcv_io[j])
++				continue;
++			if (phba->nvmet_support) {
++				len += snprintf(buf + len, PAGE_SIZE - len,
++						"CPU %03d: %x/%x/%x ", j,
++						qp->cpucheck_rcv_io[j],
++						qp->cpucheck_xmt_io[j],
++						qp->cpucheck_cmpl_io[j]);
++			} else {
++				len += snprintf(buf + len, PAGE_SIZE - len,
++						"CPU %03d: %x/%x ", j,
++						qp->cpucheck_xmt_io[j],
++						qp->cpucheck_cmpl_io[j]);
++			}
++		}
+ 		len += snprintf(buf + len, PAGE_SIZE - len,
+-				"%02d: xmit x%08x ccmpl x%08x "
+-				"cmpl x%08x rcv x%08x\n",
+-				i, phba->cpucheck_xmt_io[i],
+-				phba->cpucheck_ccmpl_io[i],
+-				phba->cpucheck_cmpl_io[i],
+-				phba->cpucheck_rcv_io[i]);
+-		tot_xmt += phba->cpucheck_xmt_io[i];
+-		tot_rcv += phba->cpucheck_rcv_io[i];
+-		tot_cmpl += phba->cpucheck_cmpl_io[i];
+-		tot_ccmpl += phba->cpucheck_ccmpl_io[i];
++				"Total: %x\n", tot_xmt);
+ 	}
+-	len += snprintf(buf + len, PAGE_SIZE - len,
+-			"tot:xmit x%08x ccmpl x%08x cmpl x%08x rcv x%08x\n",
+-			tot_xmt, tot_ccmpl, tot_cmpl, tot_rcv);
+ 	return len;
+ }
+ 
+@@ -2474,9 +2479,10 @@ lpfc_debugfs_cpucheck_write(struct file *file, const char __user *buf,
+ 	struct lpfc_debug *debug = file->private_data;
+ 	struct lpfc_vport *vport = (struct lpfc_vport *)debug->i_private;
+ 	struct lpfc_hba   *phba = vport->phba;
++	struct lpfc_sli4_hdw_queue *qp;
+ 	char mybuf[64];
+ 	char *pbuf;
+-	int i;
++	int i, j;
+ 
+ 	if (nbytes > 64)
+ 		nbytes = 64;
+@@ -2506,13 +2512,14 @@ lpfc_debugfs_cpucheck_write(struct file *file, const char __user *buf,
+ 		return strlen(pbuf);
+ 	} else if ((strncmp(pbuf, "zero",
+ 		   sizeof("zero") - 1) == 0)) {
+-		for (i = 0; i < phba->sli4_hba.num_present_cpu; i++) {
+-			if (i >= LPFC_CHECK_CPU_CNT)
+-				break;
+-			phba->cpucheck_rcv_io[i] = 0;
+-			phba->cpucheck_xmt_io[i] = 0;
+-			phba->cpucheck_cmpl_io[i] = 0;
+-			phba->cpucheck_ccmpl_io[i] = 0;
++		for (i = 0; i < phba->cfg_hdw_queue; i++) {
++			qp = &phba->sli4_hba.hdwq[i];
++
++			for (j = 0; j < LPFC_CHECK_CPU_CNT; j++) {
++				qp->cpucheck_rcv_io[j] = 0;
++				qp->cpucheck_xmt_io[j] = 0;
++				qp->cpucheck_cmpl_io[j] = 0;
++			}
+ 		}
+ 		return strlen(pbuf);
+ 	}
+@@ -5358,9 +5365,9 @@ lpfc_debugfs_initialize(struct lpfc_vport *vport)
+ 		/* Setup hbqinfo */
+ 		snprintf(name, sizeof(name), "hbqinfo");
+ 		phba->debug_hbqinfo =
+-			debugfs_create_file(name, S_IFREG|S_IRUGO|S_IWUSR,
+-				 phba->hba_debugfs_root,
+-				 phba, &lpfc_debugfs_op_hbqinfo);
++			debugfs_create_file(name, S_IFREG | 0644,
++					    phba->hba_debugfs_root,
++					    phba, &lpfc_debugfs_op_hbqinfo);
+ 
+ 		/* Setup hdwqinfo */
+ 		snprintf(name, sizeof(name), "hdwqinfo");
+@@ -5370,7 +5377,7 @@ lpfc_debugfs_initialize(struct lpfc_vport *vport)
+ 					    phba, &lpfc_debugfs_op_hdwqinfo);
+ 		if (!phba->debug_hdwqinfo) {
+ 			lpfc_printf_vlog(vport, KERN_ERR, LOG_INIT,
+-					 "0411 Cant create debugfs hdwqinfo\n");
++					 "0511 Cant create debugfs hdwqinfo\n");
+ 			goto debug_failed;
+ 		}
+ 
+diff --git a/drivers/scsi/lpfc/lpfc_nvme.c b/drivers/scsi/lpfc/lpfc_nvme.c
+index 0ecc73a6634f..fe0190b48abd 100644
+--- a/drivers/scsi/lpfc/lpfc_nvme.c
++++ b/drivers/scsi/lpfc/lpfc_nvme.c
+@@ -965,7 +965,7 @@ lpfc_nvme_io_cmd_wqe_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pwqeIn,
+ 	struct lpfc_nvme_fcpreq_priv *freqpriv;
+ 	struct lpfc_nvme_lport *lport;
+ 	struct lpfc_nvme_ctrl_stat *cstat;
+-	uint32_t code, status, idx;
++	uint32_t code, status, idx, cpu;
+ 	uint16_t cid, sqhd, data;
+ 	uint32_t *ptr;
+ 
+@@ -1136,13 +1136,17 @@ lpfc_nvme_io_cmd_wqe_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pwqeIn,
+ 		lpfc_nvme_ktime(phba, lpfc_ncmd);
+ 	}
+ 	if (phba->cpucheck_on & LPFC_CHECK_NVME_IO) {
+-		if (lpfc_ncmd->cpu != smp_processor_id())
+-			lpfc_printf_vlog(vport, KERN_ERR, LOG_NVME_IOERR,
+-					 "6701 CPU Check cmpl: "
+-					 "cpu %d expect %d\n",
+-					 smp_processor_id(), lpfc_ncmd->cpu);
+-		if (lpfc_ncmd->cpu < LPFC_CHECK_CPU_CNT)
+-			phba->cpucheck_cmpl_io[lpfc_ncmd->cpu]++;
++		idx = lpfc_ncmd->cur_iocbq.hba_wqidx;
++		cpu = smp_processor_id();
++		if (cpu < LPFC_CHECK_CPU_CNT) {
++			if (lpfc_ncmd->cpu != cpu)
++				lpfc_printf_vlog(vport,
++						 KERN_INFO, LOG_NVME_IOERR,
++						 "6701 CPU Check cmpl: "
++						 "cpu %d expect %d\n",
++						 cpu, lpfc_ncmd->cpu);
++			phba->sli4_hba.hdwq[idx].cpucheck_cmpl_io[cpu]++;
++		}
+ 	}
+ #endif
+ 
+@@ -1421,7 +1425,7 @@ lpfc_nvme_fcp_io_submit(struct nvme_fc_local_port *pnvme_lport,
+ {
+ 	int ret = 0;
+ 	int expedite = 0;
+-	int idx;
++	int idx, cpu;
+ 	struct lpfc_nvme_lport *lport;
+ 	struct lpfc_nvme_ctrl_stat *cstat;
+ 	struct lpfc_vport *vport;
+@@ -1620,21 +1624,18 @@ lpfc_nvme_fcp_io_submit(struct nvme_fc_local_port *pnvme_lport,
+ 		lpfc_ncmd->ts_cmd_wqput = ktime_get_ns();
+ 
+ 	if (phba->cpucheck_on & LPFC_CHECK_NVME_IO) {
+-		lpfc_ncmd->cpu = smp_processor_id();
+-		if (lpfc_ncmd->cpu != lpfc_queue_info->index) {
+-			/* Check for admin queue */
+-			if (lpfc_queue_info->qidx) {
++		cpu = smp_processor_id();
++		if (cpu < LPFC_CHECK_CPU_CNT) {
++			lpfc_ncmd->cpu = cpu;
++			if (idx != cpu)
+ 				lpfc_printf_vlog(vport,
+-						 KERN_ERR, LOG_NVME_IOERR,
++						 KERN_INFO, LOG_NVME_IOERR,
+ 						"6702 CPU Check cmd: "
+ 						"cpu %d wq %d\n",
+ 						lpfc_ncmd->cpu,
+ 						lpfc_queue_info->index);
+-			}
+-			lpfc_ncmd->cpu = lpfc_queue_info->index;
++			phba->sli4_hba.hdwq[idx].cpucheck_xmt_io[cpu]++;
+ 		}
+-		if (lpfc_ncmd->cpu < LPFC_CHECK_CPU_CNT)
+-			phba->cpucheck_xmt_io[lpfc_ncmd->cpu]++;
+ 	}
+ #endif
+ 	return 0;
+diff --git a/drivers/scsi/lpfc/lpfc_nvmet.c b/drivers/scsi/lpfc/lpfc_nvmet.c
+index f2a30ee9702b..b5e287cacc2a 100644
+--- a/drivers/scsi/lpfc/lpfc_nvmet.c
++++ b/drivers/scsi/lpfc/lpfc_nvmet.c
+@@ -744,16 +744,6 @@ lpfc_nvmet_xmt_fcp_op_cmp(struct lpfc_hba *phba, struct lpfc_iocbq *cmdwqe,
+ 					ktime_get_ns();
+ 			}
+ 		}
+-		if (phba->cpucheck_on & LPFC_CHECK_NVMET_IO) {
+-			id = smp_processor_id();
+-			if (ctxp->cpu != id)
+-				lpfc_printf_log(phba, KERN_ERR, LOG_NVME_IOERR,
+-						"6703 CPU Check cmpl: "
+-						"cpu %d expect %d\n",
+-						id, ctxp->cpu);
+-			if (ctxp->cpu < LPFC_CHECK_CPU_CNT)
+-				phba->cpucheck_cmpl_io[id]++;
+-		}
+ #endif
+ 		rsp->done(rsp);
+ #ifdef CONFIG_SCSI_LPFC_DEBUG_FS
+@@ -771,19 +761,22 @@ lpfc_nvmet_xmt_fcp_op_cmp(struct lpfc_hba *phba, struct lpfc_iocbq *cmdwqe,
+ 			ctxp->ts_isr_data = cmdwqe->isr_timestamp;
+ 			ctxp->ts_data_nvme = ktime_get_ns();
+ 		}
+-		if (phba->cpucheck_on & LPFC_CHECK_NVMET_IO) {
+-			id = smp_processor_id();
++#endif
++		rsp->done(rsp);
++	}
++#ifdef CONFIG_SCSI_LPFC_DEBUG_FS
++	if (phba->cpucheck_on & LPFC_CHECK_NVMET_IO) {
++		id = smp_processor_id();
++		if (id < LPFC_CHECK_CPU_CNT) {
+ 			if (ctxp->cpu != id)
+-				lpfc_printf_log(phba, KERN_ERR, LOG_NVME_IOERR,
++				lpfc_printf_log(phba, KERN_INFO, LOG_NVME_IOERR,
+ 						"6704 CPU Check cmdcmpl: "
+ 						"cpu %d expect %d\n",
+ 						id, ctxp->cpu);
+-			if (ctxp->cpu < LPFC_CHECK_CPU_CNT)
+-				phba->cpucheck_ccmpl_io[id]++;
++			phba->sli4_hba.hdwq[rsp->hwqid].cpucheck_cmpl_io[id]++;
+ 		}
+-#endif
+-		rsp->done(rsp);
+ 	}
++#endif
+ }
+ 
+ static int
+@@ -910,16 +903,15 @@ lpfc_nvmet_xmt_fcp_op(struct nvmet_fc_target_port *tgtport,
+ 	}
+ 	if (phba->cpucheck_on & LPFC_CHECK_NVMET_IO) {
+ 		int id = smp_processor_id();
+-		ctxp->cpu = id;
+-		if (id < LPFC_CHECK_CPU_CNT)
+-			phba->cpucheck_xmt_io[id]++;
+-		if (rsp->hwqid != id) {
+-			lpfc_printf_log(phba, KERN_ERR, LOG_NVME_IOERR,
+-					"6705 CPU Check OP: "
+-					"cpu %d expect %d\n",
+-					id, rsp->hwqid);
+-			ctxp->cpu = rsp->hwqid;
++		if (id < LPFC_CHECK_CPU_CNT) {
++			if (rsp->hwqid != id)
++				lpfc_printf_log(phba, KERN_INFO, LOG_NVME_IOERR,
++						"6705 CPU Check OP: "
++						"cpu %d expect %d\n",
++						id, rsp->hwqid);
++			phba->sli4_hba.hdwq[rsp->hwqid].cpucheck_xmt_io[id]++;
+ 		}
++		ctxp->cpu = id; /* Setup cpu for cmpl check */
+ 	}
+ #endif
+ 
+@@ -1897,9 +1889,6 @@ lpfc_nvmet_unsol_fcp_buffer(struct lpfc_hba *phba,
+ 	uint32_t size, oxid, sid, rc, qno;
+ 	unsigned long iflag;
+ 	int current_cpu;
+-#ifdef CONFIG_SCSI_LPFC_DEBUG_FS
+-	uint32_t id;
+-#endif
+ 
+ 	if (!IS_ENABLED(CONFIG_NVME_TARGET_FC))
+ 		return;
+@@ -1940,9 +1929,14 @@ lpfc_nvmet_unsol_fcp_buffer(struct lpfc_hba *phba,
+ 
+ #ifdef CONFIG_SCSI_LPFC_DEBUG_FS
+ 	if (phba->cpucheck_on & LPFC_CHECK_NVMET_RCV) {
+-		id = smp_processor_id();
+-		if (id < LPFC_CHECK_CPU_CNT)
+-			phba->cpucheck_rcv_io[id]++;
++		if (current_cpu < LPFC_CHECK_CPU_CNT) {
++			if (idx != current_cpu)
++				lpfc_printf_log(phba, KERN_INFO, LOG_NVME_IOERR,
++						"6703 CPU Check rcv: "
++						"cpu %d expect %d\n",
++						current_cpu, idx);
++			phba->sli4_hba.hdwq[idx].cpucheck_rcv_io[current_cpu]++;
++		}
+ 	}
+ #endif
+ 
+diff --git a/drivers/scsi/lpfc/lpfc_sli4.h b/drivers/scsi/lpfc/lpfc_sli4.h
+index 4862249732dd..8e3e99d52f75 100644
+--- a/drivers/scsi/lpfc/lpfc_sli4.h
++++ b/drivers/scsi/lpfc/lpfc_sli4.h
+@@ -20,6 +20,10 @@
+  * included with this package.                                     *
+  *******************************************************************/
+ 
++#if defined(CONFIG_DEBUG_FS) && !defined(CONFIG_SCSI_LPFC_DEBUG_FS)
++#define CONFIG_SCSI_LPFC_DEBUG_FS
++#endif
++
+ #define LPFC_ACTIVE_MBOX_WAIT_CNT               100
+ #define LPFC_XRI_EXCH_BUSY_WAIT_TMO		10000
+ #define LPFC_XRI_EXCH_BUSY_WAIT_T1   		10
+@@ -555,6 +559,13 @@ struct lpfc_sli4_hdw_queue {
+ 	uint32_t empty_io_bufs;
+ 	uint32_t abts_scsi_io_bufs;
+ 	uint32_t abts_nvme_io_bufs;
++
++#ifdef CONFIG_SCSI_LPFC_DEBUG_FS
++#define LPFC_CHECK_CPU_CNT    128
++	uint32_t cpucheck_rcv_io[LPFC_CHECK_CPU_CNT];
++	uint32_t cpucheck_xmt_io[LPFC_CHECK_CPU_CNT];
++	uint32_t cpucheck_cmpl_io[LPFC_CHECK_CPU_CNT];
++#endif
+ };
+ 
+ struct lpfc_sli4_hba {
+-- 
+2.16.4
+

@@ -1,0 +1,73 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Thu, 26 Apr 2018 08:50:49 -0600
+Subject: [PATCH] cifs: add a new SMB2_close_flags function
+Git-commit: 97ca1762246d6eeb1b48dff8a179d1a92ce24227
+Patch-mainline: v4.17
+References: bsc#1144333
+
+And make SMB2_close just a wrapper for SMB2_close_flags.
+We need this as we will start to send SMB2_CLOSE pdus using special
+flags.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c   | 12 +++++++++---
+ fs/cifs/smb2proto.h |  2 ++
+ 2 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index ef77df4ebdf3..8cd164eba572 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -2164,8 +2164,8 @@ SMB2_set_compression(const unsigned int xid, struct cifs_tcon *tcon,
+ }
+ 
+ int
+-SMB2_close(const unsigned int xid, struct cifs_tcon *tcon,
+-	   u64 persistent_fid, u64 volatile_fid)
++SMB2_close_flags(const unsigned int xid, struct cifs_tcon *tcon,
++		 u64 persistent_fid, u64 volatile_fid, int flags)
+ {
+ 	struct smb2_close_req *req;
+ 	struct smb2_close_rsp *rsp;
+@@ -2174,7 +2174,6 @@ SMB2_close(const unsigned int xid, struct cifs_tcon *tcon,
+ 	struct kvec rsp_iov;
+ 	int resp_buftype;
+ 	int rc = 0;
+-	int flags = 0;
+ 	unsigned int total_len;
+ 
+ 	cifs_dbg(FYI, "Close\n");
+@@ -2211,6 +2210,13 @@ SMB2_close(const unsigned int xid, struct cifs_tcon *tcon,
+ 	return rc;
+ }
+ 
++int
++SMB2_close(const unsigned int xid, struct cifs_tcon *tcon,
++	   u64 persistent_fid, u64 volatile_fid)
++{
++	return SMB2_close_flags(xid, tcon, persistent_fid, volatile_fid, 0);
++}
++
+ static int
+ validate_iov(struct TCP_Server_Info *server,
+ 	     unsigned int offset, unsigned int buffer_length,
+diff --git a/fs/cifs/smb2proto.h b/fs/cifs/smb2proto.h
+index 8d7bb9a1dcb4..4b0db6af7fe7 100644
+--- a/fs/cifs/smb2proto.h
++++ b/fs/cifs/smb2proto.h
+@@ -131,6 +131,8 @@ extern int SMB2_ioctl(const unsigned int xid, struct cifs_tcon *tcon,
+ 		     char **out_data, u32 *plen /* returned data len */);
+ extern int SMB2_close(const unsigned int xid, struct cifs_tcon *tcon,
+ 		      u64 persistent_file_id, u64 volatile_file_id);
++extern int SMB2_close_flags(const unsigned int xid, struct cifs_tcon *tcon,
++			    u64 persistent_fid, u64 volatile_fid, int flags);
+ extern int SMB2_flush(const unsigned int xid, struct cifs_tcon *tcon,
+ 		      u64 persistent_file_id, u64 volatile_file_id);
+ extern int SMB2_query_eas(const unsigned int xid, struct cifs_tcon *tcon,
+-- 
+2.16.4
+

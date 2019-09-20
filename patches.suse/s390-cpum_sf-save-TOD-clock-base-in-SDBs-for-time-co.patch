@@ -1,0 +1,89 @@
+From 5223c671674c507cc9bcabdfc5a9b449c178330a Mon Sep 17 00:00:00 2001
+From: Hendrik Brueckner <brueckner@linux.ibm.com>
+Date: Mon, 16 Jul 2018 11:08:06 +0200
+Subject: [PATCH] s390/cpum_sf: save TOD clock base in SDBs for time conversion
+
+References: FATE#327411, jsc#SLE-5870, bsc#1145044, ltc#179926
+Patch-mainline: v4.19-rc1
+Git-commit: 5223c671674c507cc9bcabdfc5a9b449c178330a
+
+Processing the samples in the AUX-area by perf requires the computation
+of respective time stamps.  The time stamps used by perf are based on
+the monotonic clock.  To convert the TOD clock value contained in an
+SDB to a monotonic clock value, the TOD clock base is required.  Hence,
+also save the TOD clock base in the SDB.
+
+Suggested-by: Thomas Richter <tmricht@linux.ibm.com>
+Signed-off-by: Hendrik Brueckner <brueckner@linux.ibm.com>
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/s390/include/asm/cpu_mf.h  | 12 +++++++++---
+ arch/s390/kernel/perf_cpum_sf.c | 14 +++++++++++++-
+ 2 files changed, 22 insertions(+), 4 deletions(-)
+
+--- a/arch/s390/include/asm/cpu_mf.h
++++ b/arch/s390/include/asm/cpu_mf.h
+@@ -1,7 +1,7 @@
+ /*
+  * CPU-measurement facilities
+  *
+- *  Copyright IBM Corp. 2012
++ *  Copyright IBM Corp. 2012, 2018
+  *  Author(s): Hendrik Brueckner <brueckner@linux.vnet.ibm.com>
+  *	       Jan Glauber <jang@linux.vnet.ibm.com>
+  *
+@@ -142,8 +142,14 @@ struct hws_trailer_entry {
+ 	unsigned char timestamp[16];	 /* 16 - 31 timestamp		      */
+ 	unsigned long long reserved1;	 /* 32 -Reserved		      */
+ 	unsigned long long reserved2;	 /*				      */
+-	unsigned long long progusage1;	 /* 48 - reserved for programming use */
+-	unsigned long long progusage2;	 /*				      */
++	union {				 /* 48 - reserved for programming use */
++		struct {
++			unsigned int clock_base:1; /* in progusage2 */
++			unsigned long long progusage1:63;
++			unsigned long long progusage2;
++		};
++		unsigned long long progusage[2];
++	};
+ } __packed;
+ 
+ /* Query counter information */
+--- a/arch/s390/kernel/perf_cpum_sf.c
++++ b/arch/s390/kernel/perf_cpum_sf.c
+@@ -1,7 +1,7 @@
+ /*
+  * Performance event support for the System z CPU-measurement Sampling Facility
+  *
+- * Copyright IBM Corp. 2013
++ * Copyright IBM Corp. 2013, 2018
+  * Author(s): Hendrik Brueckner <brueckner@linux.vnet.ibm.com>
+  *
+  * This program is free software; you can redistribute it and/or modify
+@@ -1515,6 +1515,17 @@ static void aux_buffer_free(void *data)
+ 			    "%lu SDBTs\n", num_sdbt);
+ }
+ 
++static void aux_sdb_init(unsigned long sdb)
++{
++	struct hws_trailer_entry *te;
++
++	te = (struct hws_trailer_entry *)trailer_entry_ptr(sdb);
++
++	/* Save clock base */
++	te->clock_base = 1;
++	memcpy(&te->progusage2, &tod_clock_base[1], 8);
++}
++
+ /*
+  * aux_buffer_setup() - Setup AUX buffer for diagnostic mode sampling
+  * @cpu:	On which to allocate, -1 means current
+@@ -1594,6 +1605,7 @@ static void *aux_buffer_setup(int cpu, v
+ 		/* Tail is the entry in a SDBT */
+ 		*tail = (unsigned long)pages[i];
+ 		aux->sdb_index[i] = (unsigned long)pages[i];
++		aux_sdb_init((unsigned long)pages[i]);
+ 	}
+ 	sfb->num_sdb = nr_pages;
+ 

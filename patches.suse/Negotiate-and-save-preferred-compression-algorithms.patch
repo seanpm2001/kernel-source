@@ -1,0 +1,173 @@
+From: Steve French <smfrench@gmail.com>
+Date: Fri, 26 Apr 2019 20:36:08 -0700
+Subject: [PATCH] Negotiate and save preferred compression algorithms
+Git-commit: 26ea888f6282b0f5c1977d8ddb2fff1ea0238bd7
+Patch-mainline: v5.2-rc1
+References: bsc#1144333
+
+New negotiate context (3) allows the server and client to
+negotiate which compression algorithms to use. Add support
+for this and save it off in the server structure.
+
+Also now displayed in /proc/fs/cifs/DebugData (see below example
+to Windows 10) where compression algoirthm "LZ77" was negotiated:
+
+Servers:
+Number of credits: 326 Dialect 0x311 COMPRESS_LZ77 signed
+1) Name: 192.168.92.17 Uses: 1 Capability: 0x300067	Session Status: 1 TCP status: 1 Instance: 1
+
+See MS-XCA and MS-SMB2 2.2.3.1 for more details.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/cifs_debug.c |  6 ++++++
+ fs/cifs/cifsglob.h   |  1 +
+ fs/cifs/smb2pdu.c    | 46 +++++++++++++++++++++++++++++++++++++++++++-
+ fs/cifs/smb2pdu.h    | 15 +++++++++------
+ 4 files changed, 61 insertions(+), 7 deletions(-)
+
+diff --git a/fs/cifs/cifs_debug.c b/fs/cifs/cifs_debug.c
+index 5ff0b3d4c484..6a69f11aacf7 100644
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -332,6 +332,12 @@ static int cifs_debug_data_proc_show(struct seq_file *m, void *v)
+ #endif
+ 		seq_printf(m, "\nNumber of credits: %d Dialect 0x%x",
+ 			server->credits,  server->dialect);
++		if (server->compress_algorithm == SMB3_COMPRESS_LZNT1)
++			seq_printf(m, " COMPRESS_LZNT1");
++		else if (server->compress_algorithm == SMB3_COMPRESS_LZ77)
++			seq_printf(m, " COMPRESS_LZ77");
++		else if (server->compress_algorithm == SMB3_COMPRESS_LZ77_HUFF)
++			seq_printf(m, " COMPRESS_LZ77_HUFF");
+ 		if (server->sign)
+ 			seq_printf(m, " signed");
+ 		if (server->posix_ext_supported)
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index c22ab330238c..561f1395eddd 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -734,6 +734,7 @@ struct TCP_Server_Info {
+ #endif /* STATS2 */
+ 	unsigned int	max_read;
+ 	unsigned int	max_write;
++	__le16	compress_algorithm;
+ 	__le16	cipher_type;
+ 	 /* save initital negprot hash */
+ 	__u8	preauth_sha_hash[SMB2_PREAUTH_HASH_SIZE];
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 035a568b3dbd..29f011d8d8e2 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -472,6 +472,19 @@ build_preauth_ctxt(struct smb2_preauth_neg_context *pneg_ctxt)
+ 	pneg_ctxt->HashAlgorithms = SMB2_PREAUTH_INTEGRITY_SHA512;
+ }
+ 
++static void
++build_compression_ctxt(struct smb2_compression_capabilities_context *pneg_ctxt)
++{
++	pneg_ctxt->ContextType = SMB2_COMPRESSION_CAPABILITIES;
++	pneg_ctxt->DataLength =
++		cpu_to_le16(sizeof(struct smb2_compression_capabilities_context)
++			  - sizeof(struct smb2_neg_context));
++	pneg_ctxt->CompressionAlgorithmCount = cpu_to_le16(3);
++	pneg_ctxt->CompressionAlgorithms[0] = SMB3_COMPRESS_LZ77;
++	pneg_ctxt->CompressionAlgorithms[1] = SMB3_COMPRESS_LZ77_HUFF;
++	pneg_ctxt->CompressionAlgorithms[2] = SMB3_COMPRESS_LZNT1;
++}
++
+ static void
+ build_encrypt_ctxt(struct smb2_encryption_neg_context *pneg_ctxt)
+ {
+@@ -538,10 +551,17 @@ assemble_neg_contexts(struct smb2_negotiate_req *req,
+ 	*total_len += ctxt_len;
+ 	pneg_ctxt += ctxt_len;
+ 
++	build_compression_ctxt((struct smb2_compression_capabilities_context *)
++				pneg_ctxt);
++	ctxt_len = DIV_ROUND_UP(
++		sizeof(struct smb2_compression_capabilities_context), 8) * 8;
++	*total_len += ctxt_len;
++	pneg_ctxt += ctxt_len;
++
+ 	build_posix_ctxt((struct smb2_posix_neg_context *)pneg_ctxt);
+ 	*total_len += sizeof(struct smb2_posix_neg_context);
+ 
+-	req->NegotiateContextCount = cpu_to_le16(3);
++	req->NegotiateContextCount = cpu_to_le16(4);
+ }
+ 
+ static void decode_preauth_context(struct smb2_preauth_neg_context *ctxt)
+@@ -559,6 +579,27 @@ static void decode_preauth_context(struct smb2_preauth_neg_context *ctxt)
+ 		printk_once(KERN_WARNING "unknown SMB3 hash algorithm\n");
+ }
+ 
++static void decode_compress_ctx(struct TCP_Server_Info *server,
++			 struct smb2_compression_capabilities_context *ctxt)
++{
++	unsigned int len = le16_to_cpu(ctxt->DataLength);
++
++	/* sizeof compress context is a one element compression capbility struct */
++	if (len < 10) {
++		printk_once(KERN_WARNING "server sent bad compression cntxt\n");
++		return;
++	}
++	if (le16_to_cpu(ctxt->CompressionAlgorithmCount) != 1) {
++		printk_once(KERN_WARNING "illegal SMB3 compress algorithm count\n");
++		return;
++	}
++	if (le16_to_cpu(ctxt->CompressionAlgorithms[0]) > 3) {
++		printk_once(KERN_WARNING "unknown compression algorithm\n");
++		return;
++	}
++	server->compress_algorithm = ctxt->CompressionAlgorithms[0];
++}
++
+ static int decode_encrypt_ctx(struct TCP_Server_Info *server,
+ 			      struct smb2_encryption_neg_context *ctxt)
+ {
+@@ -623,6 +664,9 @@ static int smb311_decode_neg_context(struct smb2_negotiate_rsp *rsp,
+ 		else if (pctx->ContextType == SMB2_ENCRYPTION_CAPABILITIES)
+ 			rc = decode_encrypt_ctx(server,
+ 				(struct smb2_encryption_neg_context *)pctx);
++		else if (pctx->ContextType == SMB2_COMPRESSION_CAPABILITIES)
++			decode_compress_ctx(server,
++				(struct smb2_compression_capabilities_context *)pctx);
+ 		else if (pctx->ContextType == SMB2_POSIX_EXTENSIONS_AVAILABLE)
+ 			server->posix_ext_supported = true;
+ 		else
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index 93dd3b431585..c7d5813bebd8 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -297,16 +297,19 @@ struct smb2_encryption_neg_context {
+ } __packed;
+ 
+ /* See MS-SMB2 2.2.3.1.3 */
+-#define SMB3_COMPRESS_NONE	0x0000
+-#define SMB3_COMPRESS_LZNT1	0x0001
+-#define SMB3_COMPRESS_LZ77	0x0002
+-#define SMB3_COMPRESS_LZ77_HUFF	0x0003
++#define SMB3_COMPRESS_NONE	cpu_to_le16(0x0000)
++#define SMB3_COMPRESS_LZNT1	cpu_to_le16(0x0001)
++#define SMB3_COMPRESS_LZ77	cpu_to_le16(0x0002)
++#define SMB3_COMPRESS_LZ77_HUFF	cpu_to_le16(0x0003)
+ 
+ struct smb2_compression_capabilities_context {
++	__le16	ContextType; /* 3 */
++	__le16  DataLength;
++	__u32	Reserved;
+ 	__le16	CompressionAlgorithmCount;
+ 	__u16	Padding;
+-	__u32	Reserved;
+-	__u16	CompressionAlgorithms[1];
++	__u32	Reserved1;
++	__le16	CompressionAlgorithms[3];
+ } __packed;
+ 
+ /*
+-- 
+2.22.0
+

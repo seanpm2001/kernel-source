@@ -1,0 +1,53 @@
+From: Long Li <longli@microsoft.com>
+Date: Wed, 30 May 2018 12:47:57 -0700
+Subject: [PATCH] CIFS: Calculate the correct request length based on page
+ offset and tail size
+Git-commit: c06a0f2dff704d9f734ff0d3d4812ccfc46ed8d0
+Patch-mainline: v4.18-rc1
+References: bsc#1144333
+
+It's possible that the page offset is non-zero in the pages in a request,
+change the function to calculate the correct data buffer length.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/transport.c | 20 +++++++++++++++++---
+ 1 file changed, 17 insertions(+), 3 deletions(-)
+
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index e7254e386b79..d6cff1e5afc6 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -212,10 +212,24 @@ rqst_len(struct smb_rqst *rqst)
+ 	for (i = 0; i < rqst->rq_nvec; i++)
+ 		buflen += iov[i].iov_len;
+ 
+-	/* add in the page array if there is one */
++	/*
++	 * Add in the page array if there is one. The caller needs to make
++	 * sure rq_offset and rq_tailsz are set correctly. If a buffer of
++	 * multiple pages ends at page boundary, rq_tailsz needs to be set to
++	 * PAGE_SIZE.
++	 */
+ 	if (rqst->rq_npages) {
+-		buflen += rqst->rq_pagesz * (rqst->rq_npages - 1);
+-		buflen += rqst->rq_tailsz;
++		if (rqst->rq_npages == 1)
++			buflen += rqst->rq_tailsz;
++		else {
++			/*
++			 * If there is more than one page, calculate the
++			 * buffer length based on rq_offset and rq_tailsz
++			 */
++			buflen += rqst->rq_pagesz * (rqst->rq_npages - 1) -
++					rqst->rq_offset;
++			buflen += rqst->rq_tailsz;
++		}
+ 	}
+ 
+ 	return buflen;
+-- 
+2.16.4
+

@@ -1,0 +1,79 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Fri, 8 Mar 2019 12:58:19 +1000
+Subject: [PATCH] cifs: pass flags down into wait_for_free_credits()
+Git-commit: 4230cff8c0b7aaee7203e434b05a9acc1635fc04
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/transport.c | 30 ++++++++++++++----------------
+ 1 file changed, 14 insertions(+), 16 deletions(-)
+
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index ed104c0550e8..9fcc4a82943d 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -486,15 +486,24 @@ smb_send(struct TCP_Server_Info *server, struct smb_hdr *smb_buffer,
+ }
+ 
+ static int
+-wait_for_free_credits(struct TCP_Server_Info *server, const int timeout,
+-		      int *credits, unsigned int *instance)
++wait_for_free_credits(struct TCP_Server_Info *server, const int flags,
++		      unsigned int *instance)
+ {
+ 	int rc;
++	int *credits;
++	int optype;
++
++	optype = flags & CIFS_OP_MASK;
+ 
+ 	*instance = 0;
+ 
++	credits = server->ops->get_credits_field(server, optype);
++	/* Since an echo is already inflight, no need to wait to send another */
++	if (*credits <= 0 && optype == CIFS_ECHO_OP)
++		return -EAGAIN;
++
+ 	spin_lock(&server->req_lock);
+-	if (timeout == CIFS_ASYNC_OP) {
++	if ((flags & CIFS_TIMEOUT_MASK) == CIFS_ASYNC_OP) {
+ 		/* oplock breaks must not be held up */
+ 		server->in_flight++;
+ 		*credits -= 1;
+@@ -525,7 +534,7 @@ wait_for_free_credits(struct TCP_Server_Info *server, const int timeout,
+ 			 */
+ 
+ 			/* update # of requests on the wire to server */
+-			if (timeout != CIFS_BLOCKING_OP) {
++			if ((flags & CIFS_TIMEOUT_MASK) != CIFS_BLOCKING_OP) {
+ 				*credits -= 1;
+ 				server->in_flight++;
+ 				*instance = server->reconnect_instance;
+@@ -541,18 +550,7 @@ static int
+ wait_for_free_request(struct TCP_Server_Info *server, const int flags,
+ 		      unsigned int *instance)
+ {
+-	int *val;
+-	int timeout, optype;
+-
+-	timeout = flags & CIFS_TIMEOUT_MASK;
+-	optype = flags & CIFS_OP_MASK;
+-
+-	val = server->ops->get_credits_field(server, optype);
+-	/* Since an echo is already inflight, no need to wait to send another */
+-	if (*val <= 0 && optype == CIFS_ECHO_OP)
+-		return -EAGAIN;
+-
+-	return wait_for_free_credits(server, timeout, val, instance);
++	return wait_for_free_credits(server, flags, instance);
+ }
+ 
+ int
+-- 
+2.16.4
+

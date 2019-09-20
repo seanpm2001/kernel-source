@@ -1,0 +1,108 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Tue, 21 Nov 2017 15:08:07 +1100
+Subject: [PATCH] cifs: avoid a kmalloc in smb2_send_recv/SendReceive2 for the
+ common case
+Git-commit: 3cecf4865cd3ea31272750edf38e73c59ff7540c
+Patch-mainline: v4.15
+References: bsc#1144333
+
+In both functions, use an array of 8 (arbitrary but should be big enough
+for all current uses) iov and avoid having to kmalloc the array
+for the common case.
+
+If 8 is too small, then fall back to the original behaviour and use
+kmalloc/kfree.
+
+This should not change any behaviour but should save us a tiny amount of
+cpu cycles.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/transport.c | 33 +++++++++++++++++++++++----------
+ 1 file changed, 23 insertions(+), 10 deletions(-)
+
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index e678307bb7a0..510f41a435c8 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -38,6 +38,9 @@
+ #include "cifsproto.h"
+ #include "cifs_debug.h"
+ 
++/* Max number of iovectors we can use off the stack when sending requests. */
++#define CIFS_MAX_IOV_SIZE 8
++
+ void
+ cifs_wake_up_task(struct mid_q_entry *mid)
+ {
+@@ -803,12 +806,16 @@ SendReceive2(const unsigned int xid, struct cifs_ses *ses,
+ 	     const int flags, struct kvec *resp_iov)
+ {
+ 	struct smb_rqst rqst;
+-	struct kvec *new_iov;
++	struct kvec s_iov[CIFS_MAX_IOV_SIZE], *new_iov;
+ 	int rc;
+ 
+-	new_iov = kmalloc(sizeof(struct kvec) * (n_vec + 1), GFP_KERNEL);
+-	if (!new_iov)
+-		return -ENOMEM;
++	if (n_vec + 1 > CIFS_MAX_IOV_SIZE) {
++		new_iov = kmalloc(sizeof(struct kvec) * (n_vec + 1),
++				  GFP_KERNEL);
++		if (!new_iov)
++			return -ENOMEM;
++	} else
++		new_iov = s_iov;
+ 
+ 	/* 1st iov is a RFC1001 length followed by the rest of the packet */
+ 	memcpy(new_iov + 1, iov, (sizeof(struct kvec) * n_vec));
+@@ -823,7 +830,8 @@ SendReceive2(const unsigned int xid, struct cifs_ses *ses,
+ 	rqst.rq_nvec = n_vec + 1;
+ 
+ 	rc = cifs_send_recv(xid, ses, &rqst, resp_buf_type, flags, resp_iov);
+-	kfree(new_iov);
++	if (n_vec + 1 > CIFS_MAX_IOV_SIZE)
++		kfree(new_iov);
+ 	return rc;
+ }
+ 
+@@ -834,15 +842,19 @@ smb2_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 	       const int flags, struct kvec *resp_iov)
+ {
+ 	struct smb_rqst rqst;
+-	struct kvec *new_iov;
++	struct kvec s_iov[CIFS_MAX_IOV_SIZE], *new_iov;
+ 	int rc;
+ 	int i;
+ 	__u32 count;
+ 	__be32 rfc1002_marker;
+ 
+-	new_iov = kmalloc(sizeof(struct kvec) * (n_vec + 1), GFP_KERNEL);
+-	if (!new_iov)
+-		return -ENOMEM;
++	if (n_vec + 1 > CIFS_MAX_IOV_SIZE) {
++		new_iov = kmalloc(sizeof(struct kvec) * (n_vec + 1),
++				  GFP_KERNEL);
++		if (!new_iov)
++			return -ENOMEM;
++	} else
++		new_iov = s_iov;
+ 
+ 	/* 1st iov is an RFC1002 Session Message length */
+ 	memcpy(new_iov + 1, iov, (sizeof(struct kvec) * n_vec));
+@@ -861,7 +873,8 @@ smb2_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 	rqst.rq_nvec = n_vec + 1;
+ 
+ 	rc = cifs_send_recv(xid, ses, &rqst, resp_buf_type, flags, resp_iov);
+-	kfree(new_iov);
++	if (n_vec + 1 > CIFS_MAX_IOV_SIZE)
++		kfree(new_iov);
+ 	return rc;
+ }
+ 
+-- 
+2.16.4
+

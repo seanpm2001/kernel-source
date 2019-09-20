@@ -1,0 +1,51 @@
+From 1368f155a972eab037f81b5dea82afd544227552 Mon Sep 17 00:00:00 2001
+From: Arnd Bergmann <arnd@arndb.de>
+Date: Tue, 5 Sep 2017 11:24:15 +0200
+Subject: [PATCH] cifs: hide unused functions
+Git-commit: 1368f155a972eab037f81b5dea82afd544227552
+Patch-mainline: v4.14-rc2
+References: bsc#1051510, bsc#1144333
+
+The newly added SMB2+ attribute support causes unused function
+warnings when CONFIG_CIFS_XATTR is disabled:
+
+fs/cifs/smb2ops.c:563:1: error: 'smb2_set_ea' defined but not used [-Werror=unused-function]
+ smb2_set_ea(const unsigned int xid, struct cifs_tcon *tcon,
+fs/cifs/smb2ops.c:513:1: error: 'smb2_query_eas' defined but not used [-Werror=unused-function]
+ smb2_query_eas(const unsigned int xid, struct cifs_tcon *tcon,
+
+This adds another #ifdef around the affected functions.
+
+Fixes: 5517554e4313 ("cifs: Add support for writing attributes on SMB2+")
+Fixes: 95907fea4fd8 ("cifs: Add support for reading attributes on SMB2+")
+Signed-off-by: Arnd Bergmann <arnd@arndb.de>
+Acked-by: Geert Uytterhoeven <geert@linux-m68k.org>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smb2ops.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 405a9bf13aac..0dafdbae1f8c 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -426,6 +426,7 @@ smb2_query_file_info(const unsigned int xid, struct cifs_tcon *tcon,
+ 	return rc;
+ }
+ 
++#ifdef CONFIG_CIFS_XATTR
+ static ssize_t
+ move_smb2_ea_to_cifs(char *dst, size_t dst_size,
+ 		     struct smb2_file_full_ea_info *src, size_t src_size,
+@@ -613,6 +614,7 @@ smb2_set_ea(const unsigned int xid, struct cifs_tcon *tcon,
+ 
+ 	return rc;
+ }
++#endif
+ 
+ static bool
+ smb2_can_echo(struct TCP_Server_Info *server)
+-- 
+2.16.4
+

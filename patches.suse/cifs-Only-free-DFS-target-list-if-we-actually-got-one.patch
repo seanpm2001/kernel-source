@@ -1,0 +1,45 @@
+From: Paulo Alcantara <palcantara@suse.de>
+Date: Tue, 20 Nov 2018 14:37:18 -0200
+Subject: [PATCH] cifs: Only free DFS target list if we actually got one
+Git-commit: 23324407143dd923660378fd9b40b9a711972269
+Patch-mainline: v5.0-rc1
+References: bsc#1144333
+
+Fix potential NULL ptr deref when DFS target list is empty.
+
+Signed-off-by: Paulo Alcantara <palcantara@suse.de>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/connect.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index ec2498f6773e..80ef165d5f33 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -452,8 +452,8 @@ cifs_reconnect(struct TCP_Server_Info *server)
+ 	struct mid_q_entry *mid_entry;
+ 	struct list_head retry_list;
+ #ifdef CONFIG_CIFS_DFS_UPCALL
+-	struct cifs_sb_info *cifs_sb;
+-	struct dfs_cache_tgt_list tgt_list;
++	struct cifs_sb_info *cifs_sb = NULL;
++	struct dfs_cache_tgt_list tgt_list = {0};
+ 	struct dfs_cache_tgt_iterator *tgt_it = NULL;
+ #endif
+ 
+@@ -592,8 +592,8 @@ cifs_reconnect(struct TCP_Server_Info *server)
+ 			cifs_dbg(VFS, "%s: failed to update vol info in DFS cache: rc = %d\n",
+ 				 __func__, rc);
+ 		}
++		dfs_cache_free_tgts(&tgt_list);
+ 	}
+-	dfs_cache_free_tgts(&tgt_list);
+ #endif
+ 	if (server->tcpStatus == CifsNeedNegotiate)
+ 		mod_delayed_work(cifsiod_wq, &server->echo, 0);
+-- 
+2.16.4
+

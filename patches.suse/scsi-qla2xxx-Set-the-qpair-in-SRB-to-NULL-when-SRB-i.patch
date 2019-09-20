@@ -1,0 +1,28 @@
+From: Giridhar Malavali <gmalavali@marvell.com>
+Date: Tue, 2 Apr 2019 14:24:21 -0700
+Subject: scsi: qla2xxx: Set the qpair in SRB to NULL when SRB is released
+Patch-mainline: v5.2-rc1
+Git-commit: ae6ccb0f8153fe9e3b9287a74aa9742ea212e89c
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+This patch sets QPair pointer to NULL to prevent abort command racing ahead
+of normal command completion handling during scsi_done call.
+
+Signed-off-by: Giridhar Malavali <gmalavali@marvell.com>
+Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_inline.h |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/drivers/scsi/qla2xxx/qla_inline.h
++++ b/drivers/scsi/qla2xxx/qla_inline.h
+@@ -240,6 +240,7 @@ done:
+ static inline void
+ qla2xxx_rel_qpair_sp(struct qla_qpair *qpair, srb_t *sp)
+ {
++	sp->qpair = NULL;
+ 	mempool_free(sp, qpair->srb_mempool);
+ 	QLA_QPAIR_MARK_NOT_BUSY(qpair);
+ }

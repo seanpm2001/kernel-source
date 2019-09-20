@@ -1,0 +1,104 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Mon, 25 Feb 2019 13:51:11 -0600
+Subject: [PATCH] smb3: add tracepoints for query dir
+Git-commit: adb3b4e90e103f8300cf2b7187016dad13e848c6
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Adds two tracepoints - one for query_dir done (no err) and one for query_dir_err
+
+Sanple output:
+
+To start the trace in one window:
+       trace-cmd record -e smb3_query_dir*
+
+Then in another window after doing an
+       ls /mnt
+
+View the trace output by:
+
+        trace-cmd show
+
+Sample output:
+
+           TASK-PID   CPU#  ||||    TIMESTAMP  FUNCTION
+              | |       |   ||||       |         |
+             ls-24869 [007] .... 90695.452009: smb3_query_dir_done: xid=7 sid=0x5027d24d tid=0xb95cf25a fid=0xc41a8c3e offset=0x0 len=0x16
+             ls-24869 [000] .... 90695.452764: smb3_query_dir_done: xid=8 sid=0x5027d24d tid=0xb95cf25a fid=0xc41a8c3e offset=0x0 len=0x0
+             ls-24874 [003] .... 90701.506342: smb3_query_dir_done: xid=11 sid=0x5027d24d tid=0xb95cf25a fid=0x33ad3601 offset=0x0 len=0x8
+             ls-24874 [003] .... 90701.506917: smb3_query_dir_done: xid=12 sid=0x5027d24d tid=0xb95cf25a fid=0x33ad3601 offset=0x0 len=0x0
+
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c | 14 ++++++++++++--
+ fs/cifs/trace.h   |  2 ++
+ 2 files changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 64e172633bc4..965c4c7e87f9 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -3857,18 +3857,26 @@ SMB2_query_directory(const unsigned int xid, struct cifs_tcon *tcon,
+ 	if (rc) {
+ 		if (rc == -ENODATA &&
+ 		    rsp->sync_hdr.Status == STATUS_NO_MORE_FILES) {
++			trace_smb3_query_dir_done(xid, persistent_fid,
++				tcon->tid, tcon->ses->Suid, index, 0);
+ 			srch_inf->endOfSearch = true;
+ 			rc = 0;
+-		} else
++		} else {
++			trace_smb3_query_dir_err(xid, persistent_fid, tcon->tid,
++				tcon->ses->Suid, index, 0, rc);
+ 			cifs_stats_fail_inc(tcon, SMB2_QUERY_DIRECTORY_HE);
++		}
+ 		goto qdir_exit;
+ 	}
+ 
+ 	rc = smb2_validate_iov(le16_to_cpu(rsp->OutputBufferOffset),
+ 			       le32_to_cpu(rsp->OutputBufferLength), &rsp_iov,
+ 			       info_buf_size);
+-	if (rc)
++	if (rc) {
++		trace_smb3_query_dir_err(xid, persistent_fid, tcon->tid,
++			tcon->ses->Suid, index, 0, rc);
+ 		goto qdir_exit;
++	}
+ 
+ 	srch_inf->unicode = true;
+ 
+@@ -3896,6 +3904,8 @@ SMB2_query_directory(const unsigned int xid, struct cifs_tcon *tcon,
+ 	else
+ 		cifs_dbg(VFS, "illegal search buffer type\n");
+ 
++	trace_smb3_query_dir_done(xid, persistent_fid, tcon->tid,
++			tcon->ses->Suid, index, srch_inf->entries_in_buffer);
+ 	return rc;
+ 
+ qdir_exit:
+diff --git a/fs/cifs/trace.h b/fs/cifs/trace.h
+index 59be48206932..bf4f43f6893b 100644
+--- a/fs/cifs/trace.h
++++ b/fs/cifs/trace.h
+@@ -58,6 +58,7 @@ DEFINE_EVENT(smb3_rw_err_class, smb3_##name,    \
+ 
+ DEFINE_SMB3_RW_ERR_EVENT(write_err);
+ DEFINE_SMB3_RW_ERR_EVENT(read_err);
++DEFINE_SMB3_RW_ERR_EVENT(query_dir_err);
+ 
+ 
+ /* For logging successful read or write */
+@@ -102,6 +103,7 @@ DEFINE_EVENT(smb3_rw_done_class, smb3_##name,   \
+ 
+ DEFINE_SMB3_RW_DONE_EVENT(write_done);
+ DEFINE_SMB3_RW_DONE_EVENT(read_done);
++DEFINE_SMB3_RW_DONE_EVENT(query_dir_done);
+ 
+ /*
+  * For handle based calls other than read and write, and get/set info
+-- 
+2.16.4
+

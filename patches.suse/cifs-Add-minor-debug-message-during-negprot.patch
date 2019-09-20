@@ -1,0 +1,50 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Sun, 1 Apr 2018 20:15:55 -0500
+Subject: [PATCH] cifs: Add minor debug message during negprot
+Git-commit: 07108d0e7c7fbbf9c6d76c0af2f1813e4f3f0800
+Patch-mainline: v4.17-rc1
+References: bsc#1144333
+
+Check for unknown security mode flags during negotiate protocol
+if debugging enabled.
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c | 4 +++-
+ fs/cifs/smb2pdu.h | 2 ++
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 0e04b577758d..f7741cee2a4c 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -584,8 +584,10 @@ SMB2_negotiate(const unsigned int xid, struct cifs_ses *ses)
+ 			       SMB2_MAX_BUFFER_SIZE);
+ 	server->max_read = le32_to_cpu(rsp->MaxReadSize);
+ 	server->max_write = le32_to_cpu(rsp->MaxWriteSize);
+-	/* BB Do we need to validate the SecurityMode? */
+ 	server->sec_mode = le16_to_cpu(rsp->SecurityMode);
++	if ((server->sec_mode & SMB2_SEC_MODE_FLAGS_ALL) != server->sec_mode)
++		cifs_dbg(FYI, "Server returned unexpected security mode 0x%x\n",
++				server->sec_mode);
+ 	server->capabilities = le32_to_cpu(rsp->Capabilities);
+ 	/* Internal types */
+ 	server->capabilities |= SMB2_NT_FIND | SMB2_LARGE_FILES;
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index 8b901c69a65a..253e2c7c952f 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -249,6 +249,8 @@ struct smb2_negotiate_req {
+ /* SecurityMode flags */
+ #define	SMB2_NEGOTIATE_SIGNING_ENABLED	0x0001
+ #define SMB2_NEGOTIATE_SIGNING_REQUIRED	0x0002
++#define SMB2_SEC_MODE_FLAGS_ALL		0x0003
++
+ /* Capabilities flags */
+ #define SMB2_GLOBAL_CAP_DFS		0x00000001
+ #define SMB2_GLOBAL_CAP_LEASING		0x00000002 /* Resp only New to SMB2.1 */
+-- 
+2.16.4
+

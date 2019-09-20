@@ -1,0 +1,39 @@
+From: YueHaibing <yuehaibing@huawei.com>
+Date: Sat, 1 Jun 2019 03:31:10 +0000
+Subject: [PATCH] cifs: Use kmemdup in SMB2_ioctl_init()
+Git-commit: d81f09748dd705c4480c804146e5ee48a13f0c74
+Patch-mainline: v5.3-rc1
+References: bsc#1144333
+
+Use kmemdup rather than duplicating its implementation
+
+This was reported by coccinelle.
+
+Signed-off-by: YueHaibing <yuehaibing@huawei.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smb2pdu.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 75311a8a68bf..ab8dc73d2282 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -2550,12 +2550,11 @@ SMB2_ioctl_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
+ 		 * indatalen is usually small at a couple of bytes max, so
+ 		 * just allocate through generic pool
+ 		 */
+-		in_data_buf = kmalloc(indatalen, GFP_NOFS);
++		in_data_buf = kmemdup(in_data, indatalen, GFP_NOFS);
+ 		if (!in_data_buf) {
+ 			cifs_small_buf_release(req);
+ 			return -ENOMEM;
+ 		}
+-		memcpy(in_data_buf, in_data, indatalen);
+ 	}
+ 
+ 	req->CtlCode = cpu_to_le32(opcode);
+-- 
+2.22.0
+

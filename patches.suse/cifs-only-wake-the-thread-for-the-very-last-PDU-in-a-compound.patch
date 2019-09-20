@@ -1,0 +1,78 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Thu, 30 Aug 2018 10:13:00 +1000
+Subject: [PATCH] cifs: only wake the thread for the very last PDU in a
+ compound
+Git-commit: 4e34feb5e96328df6a362c88098502b07c1b1e69
+Patch-mainline: v4.19-rc7
+References: bsc#1144333
+
+For compounded PDUs we whould only wake the waiting thread for the
+very last PDU of the compound.
+We do this so that we are guaranteed that the demultiplex_thread will
+not process or access any of those MIDs any more once the send/recv
+thread starts processing.
+
+Else there is a race where at the end of the send/recv processing we
+will try to delete all the mids of the compound. If the multiplex
+thread still has other mids to process at this point for this compound
+this can lead to an oops.
+
+Needed to fix recent commit:
+commit 730928c8f4be88e9d6a027a16b1e8fa9c59fc077
+("cifs: update smb2_queryfs() to use compounding")
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/transport.c | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 9cc9a127749e..b48f43963da6 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -773,6 +773,11 @@ cifs_setup_request(struct cifs_ses *ses, struct smb_rqst *rqst)
+ 	return mid;
+ }
+ 
++static void
++cifs_noop_callback(struct mid_q_entry *mid)
++{
++}
++
+ int
+ compound_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 		   const int flags, const int num_rqst, struct smb_rqst *rqst,
+@@ -827,8 +832,13 @@ compound_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 		}
+ 
+ 		midQ[i]->mid_state = MID_REQUEST_SUBMITTED;
++		/*
++		 * We don't invoke the callback compounds unless it is the last
++		 * request.
++		 */
++		if (i < num_rqst - 1)
++			midQ[i]->callback = cifs_noop_callback;
+ 	}
+-
+ 	cifs_in_send_inc(ses->server);
+ 	rc = smb_send_rqst(ses->server, num_rqst, rqst, flags);
+ 	cifs_in_send_dec(ses->server);
+@@ -909,6 +919,12 @@ compound_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 			midQ[i]->resp_buf = NULL;
+ 	}
+ out:
++	/*
++	 * This will dequeue all mids. After this it is important that the
++	 * demultiplex_thread will not process any of these mids any futher.
++	 * This is prevented above by using a noop callback that will not
++	 * wake this thread except for the very last PDU.
++	 */
+ 	for (i = 0; i < num_rqst; i++)
+ 		cifs_delete_mid(midQ[i]);
+ 	add_credits(ses->server, credits, optype);
+-- 
+2.16.4
+

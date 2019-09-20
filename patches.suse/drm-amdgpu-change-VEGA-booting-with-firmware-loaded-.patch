@@ -1,0 +1,58 @@
+From bfcea5204287b0a09dac71fa56a5d066d94d9bb1 Mon Sep 17 00:00:00 2001
+From: Feifei Xu <Feifei.Xu@amd.com>
+Date: Tue, 14 Aug 2018 14:53:53 -0400
+Subject: [PATCH] drm/amdgpu:change VEGA booting with firmware loaded by PSP
+Git-commit: bfcea5204287b0a09dac71fa56a5d066d94d9bb1
+Patch-mainline: v4.20-rc1
+References: bsc#1143331
+
+With PSP firmware loading, TMR mc address is supposed to be used.
+
+Signed-off-by: James Zhu <James.Zhu@amd.com>
+Acked-by: Huang Rui <ray.huang@amd.com>
+Reviewed-by: Alex Deucher <alexander.deucher@amd.com>
+Signed-off-by: Feifei Xu <Feifei.Xu@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/gpu/drm/amd/amdgpu/uvd_v7_0.c | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/gpu/drm/amd/amdgpu/uvd_v7_0.c b/drivers/gpu/drm/amd/amdgpu/uvd_v7_0.c
+index 79cb3787a282..a289f6a20b6b 100644
+--- a/drivers/gpu/drm/amd/amdgpu/uvd_v7_0.c
++++ b/drivers/gpu/drm/amd/amdgpu/uvd_v7_0.c
+@@ -671,9 +671,14 @@ static void uvd_v7_0_mc_resume(struct amdgpu_device *adev)
+ 			continue;
+ 		if (adev->firmware.load_type == AMDGPU_FW_LOAD_PSP) {
+ 			WREG32_SOC15(UVD, i, mmUVD_LMI_VCPU_CACHE_64BIT_BAR_LOW,
+-				lower_32_bits(adev->firmware.ucode[AMDGPU_UCODE_ID_UVD].mc_addr));
++				i == 0 ?
++				adev->firmware.ucode[AMDGPU_UCODE_ID_UVD].tmr_mc_addr_lo:
++				adev->firmware.ucode[AMDGPU_UCODE_ID_UVD1].tmr_mc_addr_lo);
+ 			WREG32_SOC15(UVD, i, mmUVD_LMI_VCPU_CACHE_64BIT_BAR_HIGH,
+-				upper_32_bits(adev->firmware.ucode[AMDGPU_UCODE_ID_UVD].mc_addr));
++				i == 0 ?
++				adev->firmware.ucode[AMDGPU_UCODE_ID_UVD].tmr_mc_addr_hi:
++				adev->firmware.ucode[AMDGPU_UCODE_ID_UVD1].tmr_mc_addr_hi);
++			WREG32_SOC15(UVD, i, mmUVD_VCPU_CACHE_OFFSET0, 0);
+ 			offset = 0;
+ 		} else {
+ 			WREG32_SOC15(UVD, i, mmUVD_LMI_VCPU_CACHE_64BIT_BAR_LOW,
+@@ -681,10 +686,10 @@ static void uvd_v7_0_mc_resume(struct amdgpu_device *adev)
+ 			WREG32_SOC15(UVD, i, mmUVD_LMI_VCPU_CACHE_64BIT_BAR_HIGH,
+ 				upper_32_bits(adev->uvd.inst[i].gpu_addr));
+ 			offset = size;
++			WREG32_SOC15(UVD, i, mmUVD_VCPU_CACHE_OFFSET0,
++					AMDGPU_UVD_FIRMWARE_OFFSET >> 3);
+ 		}
+ 
+-		WREG32_SOC15(UVD, i, mmUVD_VCPU_CACHE_OFFSET0,
+-					AMDGPU_UVD_FIRMWARE_OFFSET >> 3);
+ 		WREG32_SOC15(UVD, i, mmUVD_VCPU_CACHE_SIZE0, size);
+ 
+ 		WREG32_SOC15(UVD, i, mmUVD_LMI_VCPU_CACHE1_64BIT_BAR_LOW,
+-- 
+2.16.4
+

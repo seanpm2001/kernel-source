@@ -1,0 +1,86 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Tue, 29 Jan 2019 12:46:17 +1000
+Subject: [PATCH] cifs: limit amount of data we request for xattrs to
+ CIFSMaxBufSize
+Git-commit: c4627e66f73a28c5515b908c90c2bf7120086497
+Patch-mainline: v5.0-rc5
+References: bsc#1144333
+
+minus the various headers and blobs that will be part of the reply.
+
+or else we might trigger a session reconnect.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c |  4 +++-
+ fs/cifs/smb2pdu.h | 15 +++++++++++++--
+ 2 files changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 153238fc4fa9..6f96e2292856 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -866,7 +866,9 @@ smb2_query_eas(const unsigned int xid, struct cifs_tcon *tcon,
+ 				      FILE_READ_EA,
+ 				      FILE_FULL_EA_INFORMATION,
+ 				      SMB2_O_INFO_FILE,
+-				      SMB2_MAX_EA_BUF,
++				      CIFSMaxBufSize -
++				      MAX_SMB2_CREATE_RESPONSE_SIZE -
++				      MAX_SMB2_CLOSE_RESPONSE_SIZE,
+ 				      &rsp_iov, &buftype, cifs_sb);
+ 	if (rc) {
+ 		/*
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index e9cc6775df21..538e2299805f 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -85,6 +85,7 @@
+ #define NUMBER_OF_SMB2_COMMANDS	0x0013
+ 
+ /* 52 transform hdr + 64 hdr + 88 create rsp */
++#define SMB2_TRANSFORM_HEADER_SIZE 52
+ #define MAX_SMB2_HDR_SIZE 204
+ 
+ #define SMB2_PROTO_NUMBER cpu_to_le32(0x424d53fe)
+@@ -648,6 +649,13 @@ struct smb2_create_req {
+ 	__u8   Buffer[0];
+ } __packed;
+ 
++/*
++ * Maximum size of a SMB2_CREATE response is 64 (smb2 header) +
++ * 88 (fixed part of create response) + 520 (path) + 150 (contexts) +
++ * 2 bytes of padding.
++ */
++#define MAX_SMB2_CREATE_RESPONSE_SIZE 824
++
+ struct smb2_create_rsp {
+ 	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize;	/* Must be 89 */
+@@ -996,6 +1004,11 @@ struct smb2_close_req {
+ 	__u64  VolatileFileId; /* opaque endianness */
+ } __packed;
+ 
++/*
++ * Maximum size of a SMB2_CLOSE response is 64 (smb2 header) + 60 (data)
++ */
++#define MAX_SMB2_CLOSE_RESPONSE_SIZE 124
++
+ struct smb2_close_rsp {
+ 	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize; /* 60 */
+@@ -1398,8 +1411,6 @@ struct smb2_file_link_info { /* encoding of request for level 11 */
+ 	char   FileName[0];     /* Name to be assigned to new link */
+ } __packed; /* level 11 Set */
+ 
+-#define SMB2_MAX_EA_BUF 65536
+-
+ struct smb2_file_full_ea_info { /* encoding of response for level 15 */
+ 	__le32 next_entry_offset;
+ 	__u8   flags;
+-- 
+2.16.4
+

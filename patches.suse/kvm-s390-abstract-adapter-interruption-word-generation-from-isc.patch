@@ -1,0 +1,55 @@
+From: Michael Mueller <mimu@linux.vnet.ibm.com>
+Date: Thu, 31 Aug 2017 11:10:28 +0200
+Subject: KVM: s390: abstract adapter interruption word generation from ISC
+Git-commit: 2496c8e7fe9270bde5e125729c193120e7fa8c67
+Patch-mainline: v4.16-rc1
+References: jsc#SLE-6412
+
+The function isc_to_int_word() allows the generation of interruption
+words for adapter interrupts.
+
+Signed-off-by: Michael Mueller <mimu@linux.vnet.ibm.com>
+Reviewed-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Signed-off-by: Bruce Rogers <brogers@suse.com>
+---
+ arch/s390/kvm/interrupt.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/arch/s390/kvm/interrupt.c b/arch/s390/kvm/interrupt.c
+index bad5a45c69f2..618b4465ca35 100644
+--- a/arch/s390/kvm/interrupt.c
++++ b/arch/s390/kvm/interrupt.c
+@@ -205,6 +205,11 @@ static uint64_t isc_to_isc_bits(int isc)
+ 	return (0x80 >> isc) << 24;
+ }
+ 
++static inline u32 isc_to_int_word(u8 isc)
++{
++	return ((u32)isc << 27) | 0x80000000;
++}
++
+ static inline u8 int_word_to_isc(u32 int_word)
+ {
+ 	return (int_word & 0x38000000) >> 27;
+@@ -1004,7 +1009,7 @@ static int __must_check __deliver_io(struct kvm_vcpu *vcpu,
+ 		 */
+ 		VCPU_EVENT(vcpu, 4, "%s isc %u", "deliver: I/O (AI/gisa)", isc);
+ 		memset(&io, 0, sizeof(io));
+-		io.io_int_word = (isc << 27) | 0x80000000;
++		io.io_int_word = isc_to_int_word(isc);
+ 		vcpu->stat.deliver_io_int++;
+ 		trace_kvm_s390_deliver_interrupt(vcpu->vcpu_id,
+ 			KVM_S390_INT_IO(1, 0, 0, 0),
+@@ -2317,7 +2322,7 @@ static int kvm_s390_inject_airq(struct kvm *kvm,
+ 	struct kvm_s390_interrupt s390int = {
+ 		.type = KVM_S390_INT_IO(1, 0, 0, 0),
+ 		.parm = 0,
+-		.parm64 = (adapter->isc << 27) | 0x80000000,
++		.parm64 = isc_to_int_word(adapter->isc),
+ 	};
+ 	int ret = 0;
+ 
+

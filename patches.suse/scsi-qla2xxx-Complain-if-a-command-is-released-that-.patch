@@ -1,0 +1,51 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Wed, 17 Apr 2019 14:44:30 -0700
+Subject: scsi: qla2xxx: Complain if a command is released that is owned by the
+ firmware
+Patch-mainline: v5.2-rc1
+Git-commit: b1e261d4a4b71d67b62f6649c5496810c28e7ac1
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+The previous patch guarantees that a command is only released after the
+firmware has finished processing it. Hence complain if a command is
+released that is owned by the firmware.
+
+Cc: Himanshu Madhani <hmadhani@marvell.com>
+Cc: Giridhar Malavali <gmalavali@marvell.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Acked-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/tcm_qla2xxx.c |   13 ++++---------
+ 1 file changed, 4 insertions(+), 9 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/tcm_qla2xxx.c
++++ b/drivers/scsi/qla2xxx/tcm_qla2xxx.c
+@@ -330,7 +330,6 @@ static int tcm_qla2xxx_check_stop_free(s
+ static void tcm_qla2xxx_release_cmd(struct se_cmd *se_cmd)
+ {
+ 	struct qla_tgt_cmd *cmd;
+-	unsigned long flags;
+ 
+ 	if (se_cmd->se_cmd_flags & SCF_SCSI_TMR_CDB) {
+ 		struct qla_tgt_mgmt_cmd *mcmd = container_of(se_cmd,
+@@ -340,14 +339,10 @@ static void tcm_qla2xxx_release_cmd(stru
+ 	}
+ 	cmd = container_of(se_cmd, struct qla_tgt_cmd, se_cmd);
+ 
+-	spin_lock_irqsave(&cmd->cmd_lock, flags);
+-	if (cmd->cmd_sent_to_fw) {
+-		cmd->released = 1;
+-		spin_unlock_irqrestore(&cmd->cmd_lock, flags);
+-	} else {
+-		spin_unlock_irqrestore(&cmd->cmd_lock, flags);
+-		qlt_free_cmd(cmd);
+-	}
++	if (WARN_ON(cmd->cmd_sent_to_fw))
++		return;
++
++	qlt_free_cmd(cmd);
+ }
+ 
+ static void tcm_qla2xxx_release_session(struct kref *kref)

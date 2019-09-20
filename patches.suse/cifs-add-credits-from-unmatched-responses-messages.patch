@@ -1,0 +1,86 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Tue, 5 Feb 2019 12:56:44 +1000
+Subject: [PATCH] cifs: add credits from unmatched responses/messages
+Git-commit: eca004523811f816bcfca3046ab54e1278e0973b
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+We should add any credits granted to us from unmatched server responses.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/connect.c  | 22 ++++++++++++++++++++++
+ fs/cifs/smb2misc.c |  7 -------
+ 2 files changed, 22 insertions(+), 7 deletions(-)
+
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 7c9108ce3de0..a825ac219bbd 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -1063,6 +1063,26 @@ cifs_handle_standard(struct TCP_Server_Info *server, struct mid_q_entry *mid)
+ 	return 0;
+ }
+ 
++static void
++smb2_add_credits_from_hdr(char *buffer, struct TCP_Server_Info *server)
++{
++	struct smb2_sync_hdr *shdr = (struct smb2_sync_hdr *)buffer;
++
++	/*
++	 * SMB1 does not use credits.
++	 */
++	if (server->vals->header_preamble_size)
++		return;
++
++	if (shdr->CreditRequest) {
++		spin_lock(&server->req_lock);
++		server->credits += le16_to_cpu(shdr->CreditRequest);
++		spin_unlock(&server->req_lock);
++		wake_up(&server->request_q);
++	}
++}
++
++
+ static int
+ cifs_demultiplex_thread(void *p)
+ {
+@@ -1192,6 +1212,7 @@ cifs_demultiplex_thread(void *p)
+ 			} else if (server->ops->is_oplock_break &&
+ 				   server->ops->is_oplock_break(bufs[i],
+ 								server)) {
++				smb2_add_credits_from_hdr(bufs[i], server);
+ 				cifs_dbg(FYI, "Received oplock break\n");
+ 			} else {
+ 				cifs_dbg(VFS, "No task to wake, unknown frame "
+@@ -1203,6 +1224,7 @@ cifs_demultiplex_thread(void *p)
+ 				if (server->ops->dump_detail)
+ 					server->ops->dump_detail(bufs[i],
+ 								 server);
++				smb2_add_credits_from_hdr(bufs[i], server);
+ 				cifs_dump_mids(server);
+ #endif /* CIFS_DEBUG2 */
+ 			}
+diff --git a/fs/cifs/smb2misc.c b/fs/cifs/smb2misc.c
+index 7b8b58fb4d3f..6a9c47541c53 100644
+--- a/fs/cifs/smb2misc.c
++++ b/fs/cifs/smb2misc.c
+@@ -648,13 +648,6 @@ smb2_is_valid_oplock_break(char *buffer, struct TCP_Server_Info *server)
+ 	if (rsp->sync_hdr.Command != SMB2_OPLOCK_BREAK)
+ 		return false;
+ 
+-	if (rsp->sync_hdr.CreditRequest) {
+-		spin_lock(&server->req_lock);
+-		server->credits += le16_to_cpu(rsp->sync_hdr.CreditRequest);
+-		spin_unlock(&server->req_lock);
+-		wake_up(&server->request_q);
+-	}
+-
+ 	if (rsp->StructureSize !=
+ 				smb2_rsp_struct_sizes[SMB2_OPLOCK_BREAK_HE]) {
+ 		if (le16_to_cpu(rsp->StructureSize) == 44)
+-- 
+2.16.4
+

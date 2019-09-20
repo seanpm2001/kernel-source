@@ -1,0 +1,81 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Wed, 17 Apr 2019 14:44:34 -0700
+Subject: scsi: qla2xxx: Use an on-stack completion in qla24xx_control_vp()
+Patch-mainline: v5.2-rc1
+Git-commit: 982cc4be05d6d0d8b15b1340416737ad60bddcae
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+This patch reduces the size of struct srb.
+
+Cc: Himanshu Madhani <hmadhani@marvell.com>
+Cc: Giridhar Malavali <gmalavali@marvell.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Acked-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_def.h  |    2 +-
+ drivers/scsi/qla2xxx/qla_iocb.c |    1 -
+ drivers/scsi/qla2xxx/qla_mid.c  |    9 +++++++--
+ 3 files changed, 8 insertions(+), 4 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_def.h
++++ b/drivers/scsi/qla2xxx/qla_def.h
+@@ -545,7 +545,7 @@ typedef struct srb {
+ 	u32 gen2;	/* scratch */
+ 	int rc;
+ 	int retry_count;
+-	struct completion comp;
++	struct completion *comp;
+ 	wait_queue_head_t *cwaitq;
+ 	union {
+ 		struct srb_iocb iocb_cmd;
+--- a/drivers/scsi/qla2xxx/qla_iocb.c
++++ b/drivers/scsi/qla2xxx/qla_iocb.c
+@@ -2578,7 +2578,6 @@ qla2x00_init_timer(srb_t *sp, unsigned l
+ 	sp->u.iocb_cmd.timer.data = (unsigned long)sp;
+ 	sp->u.iocb_cmd.timer.function = qla2x00_sp_timeout;
+ 	sp->free = qla2x00_sp_free;
+-	init_completion(&sp->comp);
+ 	if (IS_QLAFX00(sp->vha->hw) && (sp->type == SRB_FXIOCB_DCMD))
+ 		init_completion(&sp->u.iocb_cmd.u.fxiocb.fxiocb_comp);
+ 	add_timer(&sp->u.iocb_cmd.timer);
+--- a/drivers/scsi/qla2xxx/qla_mid.c
++++ b/drivers/scsi/qla2xxx/qla_mid.c
+@@ -905,7 +905,8 @@ static void qla_ctrlvp_sp_done(void *s,
+ {
+ 	struct srb *sp = s;
+ 
+-	complete(&sp->comp);
++	if (sp->comp)
++		complete(sp->comp);
+ 	/* don't free sp here. Let the caller do the free */
+ }
+ 
+@@ -922,6 +923,7 @@ int qla24xx_control_vp(scsi_qla_host_t *
+ 	struct qla_hw_data *ha = vha->hw;
+ 	int	vp_index = vha->vp_idx;
+ 	struct scsi_qla_host *base_vha = pci_get_drvdata(ha->pdev);
++	DECLARE_COMPLETION_ONSTACK(comp);
+ 	srb_t *sp;
+ 
+ 	ql_dbg(ql_dbg_vport, vha, 0x10c1,
+@@ -936,6 +938,7 @@ int qla24xx_control_vp(scsi_qla_host_t *
+ 
+ 	sp->type = SRB_CTRL_VP;
+ 	sp->name = "ctrl_vp";
++	sp->comp = &comp;
+ 	sp->done = qla_ctrlvp_sp_done;
+ 	sp->u.iocb_cmd.timeout = qla2x00_async_iocb_timeout;
+ 	qla2x00_init_timer(sp, qla2x00_get_async_timeout(vha) + 2);
+@@ -953,7 +956,9 @@ int qla24xx_control_vp(scsi_qla_host_t *
+ 	ql_dbg(ql_dbg_vport, vha, 0x113f, "%s hndl %x submitted\n",
+ 	    sp->name, sp->handle);
+ 
+-	wait_for_completion(&sp->comp);
++	wait_for_completion(&comp);
++	sp->comp = NULL;
++
+ 	rval = sp->rc;
+ 	switch (rval) {
+ 	case QLA_FUNCTION_TIMEOUT:

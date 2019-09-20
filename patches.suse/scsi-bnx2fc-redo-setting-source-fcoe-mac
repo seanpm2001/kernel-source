@@ -1,0 +1,109 @@
+From: Chad Dupuis <cdupuis@marvell.com>
+Date: Mon, 24 Jun 2019 01:29:55 -0700
+Subject: scsi: bnx2fc: Redo setting source FCoE MAC
+Git-commit: 4adb451c8d1656e28a9ec472ccbdc4463205424a
+Patch-mainline: v5.3-rc1
+References: bsc#1144582
+
+For bnx2fc, the source FCoE MAC is stored in the fcoe_port struct in the
+data_src_mac field.  Currently this is set in fcoe_ctlr_recv_flogi which
+ends up setting it by simply using fc_fcoe_set_mac() which only uses the
+default FCF-MAC.  We still want to store the source FCoE MAC in
+port->data_src_mac but we want to snoop the FLOGI response payload so as to
+set it in the following method:
+
+1. If a granted_mac is found, use that.
+
+2. If not granted_mac is there but there is a FCF-MAP from the FCF then
+   create the MAC from the FCF-MAP and the destination ID from the frame.
+
+3. If there is no FCF-MAP the use the spec. default FCF-MAP and the
+   destination ID from the frame.
+
+Signed-off-by: Chad Dupuis <cdupuis@marvell.com>
+Signed-off-by: Saurav Kashyap <skashyap@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/bnx2fc/bnx2fc_els.c | 56 ++++++++++++++++++++++++++++------------
+ 1 file changed, 40 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/scsi/bnx2fc/bnx2fc_els.c b/drivers/scsi/bnx2fc/bnx2fc_els.c
+index 76e65a32f38c..8de5b70f6727 100644
+--- a/drivers/scsi/bnx2fc/bnx2fc_els.c
++++ b/drivers/scsi/bnx2fc/bnx2fc_els.c
+@@ -854,33 +854,57 @@ void bnx2fc_process_els_compl(struct bnx2fc_cmd *els_req,
+ 	kref_put(&els_req->refcount, bnx2fc_cmd_release);
+ }
+ 
++#define		BNX2FC_FCOE_MAC_METHOD_GRANGED_MAC	1
++#define		BNX2FC_FCOE_MAC_METHOD_FCF_MAP		2
++#define		BNX2FC_FCOE_MAC_METHOD_FCOE_SET_MAC	3
+ static void bnx2fc_flogi_resp(struct fc_seq *seq, struct fc_frame *fp,
+ 			      void *arg)
+ {
+ 	struct fcoe_ctlr *fip = arg;
+ 	struct fc_exch *exch = fc_seq_exch(seq);
+ 	struct fc_lport *lport = exch->lp;
+-	u8 *mac;
+-	u8 op;
++
++	struct fc_frame_header *fh;
++	u8 *granted_mac;
++	u8 fcoe_mac[6];
++	u8 fc_map[3];
++	int method;
+ 
+ 	if (IS_ERR(fp))
+ 		goto done;
+ 
+-	mac = fr_cb(fp)->granted_mac;
+-	if (is_zero_ether_addr(mac)) {
+-		op = fc_frame_payload_op(fp);
+-		if (lport->vport) {
+-			if (op == ELS_LS_RJT) {
+-				printk(KERN_ERR PFX "bnx2fc_flogi_resp is LS_RJT\n");
+-				fc_vport_terminate(lport->vport);
+-				fc_frame_free(fp);
+-				return;
+-			}
+-		}
+-		fcoe_ctlr_recv_flogi(fip, lport, fp);
++	fh = fc_frame_header_get(fp);
++	granted_mac = fr_cb(fp)->granted_mac;
++
++	/*
++	 * We set the source MAC for FCoE traffic based on the Granted MAC
++	 * address from the switch.
++	 *
++	 * If granted_mac is non-zero, we use that.
++	 * If the granted_mac is zeroed out, create the FCoE MAC based on
++	 * the sel_fcf->fc_map and the d_id fo the FLOGI frame.
++	 * If sel_fcf->fc_map is 0, then we use the default FCF-MAC plus the
++	 * d_id of the FLOGI frame.
++	 */
++	if (!is_zero_ether_addr(granted_mac)) {
++		ether_addr_copy(fcoe_mac, granted_mac);
++		method = BNX2FC_FCOE_MAC_METHOD_GRANGED_MAC;
++	} else if (fip->sel_fcf && fip->sel_fcf->fc_map != 0) {
++		hton24(fc_map, fip->sel_fcf->fc_map);
++		fcoe_mac[0] = fc_map[0];
++		fcoe_mac[1] = fc_map[1];
++		fcoe_mac[2] = fc_map[2];
++		fcoe_mac[3] = fh->fh_d_id[0];
++		fcoe_mac[4] = fh->fh_d_id[1];
++		fcoe_mac[5] = fh->fh_d_id[2];
++		method = BNX2FC_FCOE_MAC_METHOD_FCF_MAP;
++	} else {
++		fc_fcoe_set_mac(fcoe_mac, fh->fh_d_id);
++		method = BNX2FC_FCOE_MAC_METHOD_FCOE_SET_MAC;
+ 	}
+-	if (!is_zero_ether_addr(mac))
+-		fip->update_mac(lport, mac);
++
++	BNX2FC_HBA_DBG(lport, "fcoe_mac=%pM method=%d\n", fcoe_mac, method);
++	fip->update_mac(lport, fcoe_mac);
+ done:
+ 	fc_lport_flogi_resp(seq, fp, lport);
+ }
+

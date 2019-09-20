@@ -1,0 +1,33 @@
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Tue, 2 Jul 2019 14:40:40 +0200
+Subject: KVM: nVMX: allow setting the VMFUNC controls MSR
+Git-commit: e8a70bd4e92525de459acfa5668c8e1f24664331
+Patch-mainline: v5.3-rc1
+References: bsc#1145389
+
+Allow userspace to set a custom value for the VMFUNC controls MSR, as long
+as the capabilities it advertises do not exceed those of the host.
+
+Fixes: 27c42a1bb ("KVM: nVMX: Enable VMFUNC for the L1 hypervisor", 2017-08-03)
+Reviewed-by: Liran Alon <liran.alon@oracle.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Joerg Roedel <jroedel@suse.de>
+---
+ arch/x86/kvm/vmx/nested.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+--- a/arch/x86/kvm/vmx.c
++++ b/arch/x86/kvm/vmx.c
+@@ -3341,6 +3341,11 @@ static int vmx_set_vmx_msr(struct kvm_vc
+ 	case MSR_IA32_VMX_VMCS_ENUM:
+ 		vmx->nested.nested_vmx_vmcs_enum = data;
+ 		return 0;
++	case MSR_IA32_VMX_VMFUNC:
++		if (data & ~vmx->nested.nested_vmx_vmfunc_controls)
++			return -EINVAL;
++		vmx->nested.nested_vmx_vmfunc_controls = data;
++		return 0;
+ 	default:
+ 		/*
+ 		 * The rest of the VMX capability MSRs do not support restore.
+

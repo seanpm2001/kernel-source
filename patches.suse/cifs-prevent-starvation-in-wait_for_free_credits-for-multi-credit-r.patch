@@ -1,0 +1,67 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Fri, 8 Mar 2019 12:58:21 +1000
+Subject: [PATCH] cifs: prevent starvation in wait_for_free_credits for
+ multi-credit requests
+Git-commit: 16b34aa44b257155d9392a19e08e4ce139bc2789
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Reserve the last MAX_COMPOUND credits for any request asking for >1 credit.
+This is to prevent future compound requests from becoming starved while waiting
+for potentially many requests is there is a large number of concurrent
+singe-credit requests.
+
+However, we need to protect from servers that are very slow to hand out
+new credits on new sessions so we only do this IFF there are 2*MAX_COMPOUND
+(arbitrary) credits already in flight.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/transport.c | 28 ++++++++++++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 1951f9f74bb2..9e08ce722dbb 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -528,6 +528,34 @@ wait_for_free_credits(struct TCP_Server_Info *server, const int num_credits,
+ 				return -ENOENT;
+ 			}
+ 
++			/*
++			 * For normal commands, reserve the last MAX_COMPOUND
++			 * credits to compound requests.
++			 * Otherwise these compounds could be permanently
++			 * starved for credits by single-credit requests.
++			 *
++			 * To prevent spinning CPU, block this thread until
++			 * there are >MAX_COMPOUND credits available.
++			 * But only do this is we already have a lot of
++			 * credits in flight to avoid triggering this check
++			 * for servers that are slow to hand out credits on
++			 * new sessions.
++			 */
++			if (!optype && num_credits == 1 &&
++			    server->in_flight > 2 * MAX_COMPOUND &&
++			    *credits <= MAX_COMPOUND) {
++				spin_unlock(&server->req_lock);
++				cifs_num_waiters_inc(server);
++				rc = wait_event_killable(server->request_q,
++					has_credits(server, credits,
++						    MAX_COMPOUND + 1));
++				cifs_num_waiters_dec(server);
++				if (rc)
++					return rc;
++				spin_lock(&server->req_lock);
++				continue;
++			}
++
+ 			/*
+ 			 * Can not count locking commands against total
+ 			 * as they are allowed to block on server.
+-- 
+2.16.4
+

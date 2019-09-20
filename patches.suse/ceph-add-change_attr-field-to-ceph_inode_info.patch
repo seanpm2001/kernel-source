@@ -1,0 +1,83 @@
+From: Jeff Layton <jlayton@kernel.org>
+Date: Thu, 6 Jun 2019 07:29:23 -0400
+Subject: ceph: add change_attr field to ceph_inode_info
+Git-commit: a35ead314e0b9252a92a5e179a00b242d1af7bff
+Patch-mainline: v5.3-rc1
+References: bsc#1148133 bsc#1136682
+
+Signed-off-by: Jeff Layton <jlayton@kernel.org>
+Reviewed-by: "Yan, Zheng" <zyan@redhat.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+
+---
+ fs/ceph/inode.c      | 5 +++++
+ fs/ceph/mds_client.c | 4 ++--
+ fs/ceph/mds_client.h | 1 +
+ 3 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ceph/inode.c b/fs/ceph/inode.c
+index a13b627270f3..2c49eb831c6f 100644
+--- a/fs/ceph/inode.c
++++ b/fs/ceph/inode.c
+@@ -13,6 +13,7 @@
+ #include <linux/posix_acl.h>
+ #include <linux/random.h>
+ #include <linux/sort.h>
++#include <linux/iversion.h>
+ 
+ #include "super.h"
+ #include "mds_client.h"
+@@ -42,6 +43,7 @@ static int ceph_set_ino_cb(struct inode *inode, void *data)
+ {
+ 	ceph_inode(inode)->i_vino = *(struct ceph_vino *)data;
+ 	inode->i_ino = ceph_vino_to_ino(*(struct ceph_vino *)data);
++	inode_set_iversion_raw(inode, 0);
+ 	return 0;
+ }
+ 
+@@ -796,6 +798,9 @@ static int fill_inode(struct inode *inode, struct page *locked_page,
+ 	     le64_to_cpu(info->version) > (ci->i_version & ~1)))
+ 		new_version = true;
+ 
++	/* Update change_attribute */
++	inode_set_max_iversion_raw(inode, iinfo->change_attr);
++
+ 	__ceph_caps_issued(ci, &issued);
+ 	issued |= __ceph_caps_dirty(ci);
+ 	new_issued = ~issued & info_caps;
+diff --git a/fs/ceph/mds_client.c b/fs/ceph/mds_client.c
+index 636d3df47df6..920e9f048bd8 100644
+--- a/fs/ceph/mds_client.c
++++ b/fs/ceph/mds_client.c
+@@ -156,7 +156,7 @@ static int parse_reply_info_in(void **p, void *end,
+ 		ceph_decode_copy(p, &info->btime, sizeof(info->btime));
+ 
+ 		/* change attribute */
+-		ceph_decode_skip_64(p, end, bad);
++		ceph_decode_64_safe(p, end, info->change_attr, bad);
+ 
+ 		/* dir pin */
+ 		if (struct_v >= 2) {
+@@ -208,7 +208,7 @@ static int parse_reply_info_in(void **p, void *end,
+ 		if (features & CEPH_FEATURE_FS_BTIME) {
+ 			ceph_decode_need(p, end, sizeof(info->btime), bad);
+ 			ceph_decode_copy(p, &info->btime, sizeof(info->btime));
+-			ceph_decode_skip_64(p, end, bad);
++			ceph_decode_64_safe(p, end, info->change_attr, bad);
+ 		}
+ 
+ 		info->dir_pin = -ENODATA;
+diff --git a/fs/ceph/mds_client.h b/fs/ceph/mds_client.h
+index da2f53646217..f7c8603484fe 100644
+--- a/fs/ceph/mds_client.h
++++ b/fs/ceph/mds_client.h
+@@ -71,6 +71,7 @@ struct ceph_mds_reply_info_in {
+ 	s32 dir_pin;
+ 	struct ceph_timespec btime;
+ 	struct ceph_timespec snap_btime;
++	u64 change_attr;
+ };
+ 
+ struct ceph_mds_reply_dir_entry {
+

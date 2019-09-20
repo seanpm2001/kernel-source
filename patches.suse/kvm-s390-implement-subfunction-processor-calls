@@ -1,0 +1,107 @@
+From: Christian Borntraeger <borntraeger@de.ibm.com>
+Date: Mon, 18 Feb 2019 07:48:25 -0500
+Subject: KVM: s390: implement subfunction processor calls
+Git-commit: 346fa2f891c71a9b98014f8f62c15f4c7dd95ec1
+Patch-mainline: v5.1-rc1
+References: jsc#SLE-6240 FATE#327380
+
+While we will not implement interception for query functions yet, we can
+and should disable functions that have a control bit based on the given
+CPU model.
+
+Let us start with enabling the subfunction interface.
+
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Reviewed-by: Janosch Frank <frankja@linux.vnet.ibm.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Acked-by: Petr Tesarik <ptesarik@suse.com>
+---
+ arch/s390/include/asm/kvm_host.h |    1 +
+ arch/s390/kvm/kvm-s390.c         |   35 ++++++++++++++++++++++-------------
+ 2 files changed, 23 insertions(+), 13 deletions(-)
+
+--- a/arch/s390/include/asm/kvm_host.h
++++ b/arch/s390/include/asm/kvm_host.h
+@@ -691,6 +691,7 @@ struct s390_io_adapter {
+ struct kvm_s390_cpu_model {
+ 	/* facility mask supported by kvm & hosting machine */
+ 	__u64 fac_mask[S390_ARCH_FAC_LIST_SIZE_U64];
++	struct kvm_s390_vm_cpu_subfunc subfuncs;
+ 	/* facility list requested by guest (in dma page) */
+ 	__u64 *fac_list;
+ 	u64 cpuid;
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -1254,11 +1254,20 @@ static int kvm_s390_set_processor_feat(s
+ static int kvm_s390_set_processor_subfunc(struct kvm *kvm,
+ 					  struct kvm_device_attr *attr)
+ {
+-	/*
+-	 * Once supported by kernel + hw, we have to store the subfunctions
+-	 * in kvm->arch and remember that user space configured them.
+-	 */
+-	return -ENXIO;
++	mutex_lock(&kvm->lock);
++	if (kvm->created_vcpus) {
++		mutex_unlock(&kvm->lock);
++		return -EBUSY;
++	}
++
++	if (copy_from_user(&kvm->arch.model.subfuncs, (void __user *)attr->addr,
++			   sizeof(struct kvm_s390_vm_cpu_subfunc))) {
++		mutex_unlock(&kvm->lock);
++		return -EFAULT;
++	}
++	mutex_unlock(&kvm->lock);
++
++	return 0;
+ }
+ 
+ static int kvm_s390_set_cpu_model(struct kvm *kvm, struct kvm_device_attr *attr)
+@@ -1369,12 +1378,11 @@ static int kvm_s390_get_machine_feat(str
+ static int kvm_s390_get_processor_subfunc(struct kvm *kvm,
+ 					  struct kvm_device_attr *attr)
+ {
+-	/*
+-	 * Once we can actually configure subfunctions (kernel + hw support),
+-	 * we have to check if they were already set by user space, if so copy
+-	 * them from kvm->arch.
+-	 */
+-	return -ENXIO;
++	if (copy_to_user((void __user *)attr->addr, &kvm->arch.model.subfuncs,
++	    sizeof(struct kvm_s390_vm_cpu_subfunc)))
++		return -EFAULT;
++
++	return 0;
+ }
+ 
+ static int kvm_s390_get_machine_subfunc(struct kvm *kvm,
+@@ -1385,6 +1393,7 @@ static int kvm_s390_get_machine_subfunc(
+ 		return -EFAULT;
+ 	return 0;
+ }
++
+ static int kvm_s390_get_cpu_model(struct kvm *kvm, struct kvm_device_attr *attr)
+ {
+ 	int ret = -ENXIO;
+@@ -1502,10 +1511,9 @@ static int kvm_s390_vm_has_attr(struct k
+ 		case KVM_S390_VM_CPU_PROCESSOR_FEAT:
+ 		case KVM_S390_VM_CPU_MACHINE_FEAT:
+ 		case KVM_S390_VM_CPU_MACHINE_SUBFUNC:
++		case KVM_S390_VM_CPU_PROCESSOR_SUBFUNC:
+ 			ret = 0;
+ 			break;
+-		/* configuring subfunctions is not supported yet */
+-		case KVM_S390_VM_CPU_PROCESSOR_SUBFUNC:
+ 		default:
+ 			ret = -ENXIO;
+ 			break;
+@@ -2087,6 +2095,7 @@ int kvm_arch_init_vm(struct kvm *kvm, un
+ 		kvm->arch.model.fac_list[i] = S390_lowcore.stfle_fac_list[i] &
+ 					      kvm_s390_fac_base[i];
+ 	}
++	kvm->arch.model.subfuncs = kvm_s390_available_subfunc;
+ 
+ 	/* we are always in czam mode - even on pre z14 machines */
+ 	set_kvm_facility(kvm->arch.model.fac_mask, 138);

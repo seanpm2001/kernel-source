@@ -1,0 +1,276 @@
+From: Xiang Chen <chenxiang66@hisilicon.com>
+Date: Wed, 6 Feb 2019 18:52:55 +0800
+Subject: scsi: hisi_sas: Use pci_irq_get_affinity() for v3 hw as experimental
+Patch-mainline: v5.1-rc1
+Git-commit: 4fefe5bbf599d6c6bee6b2ee376be789b33ca571
+References: bsc#1137322 bsc#1137323 bsc#1138099 bsc#1138100
+
+For auto-control irq affinity mode, choose the dq to deliver IO according
+to the current CPU.
+
+Then it decreases the performance regression that fio and CQ interrupts are
+processed on different node.
+
+For user control irq affinity mode, keep it as before.
+
+To realize it, also need to distinguish the usage of dq lock and sas_dev
+lock.
+
+We mark as experimental due to ongoing discussion on managed MSI IRQ
+during hotplug:
+https://marc.info/?l=linux-scsi&m=154876335707751&w=2
+
+We're almost at the point where we can expose multiple queues to the upper
+layer for SCSI MQ, but we need to sort out the per-HBA tags performance
+issue.
+
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: John Garry <john.garry@huawei.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/hisi_sas/hisi_sas.h       |    4 ++
+ drivers/scsi/hisi_sas/hisi_sas_main.c  |   33 +++++++++++++----
+ drivers/scsi/hisi_sas/hisi_sas_v2_hw.c |    1 
+ drivers/scsi/hisi_sas/hisi_sas_v3_hw.c |   63 +++++++++++++++++++++++++++++----
+ 4 files changed, 88 insertions(+), 13 deletions(-)
+
+--- a/drivers/scsi/hisi_sas/hisi_sas.h
++++ b/drivers/scsi/hisi_sas/hisi_sas.h
+@@ -173,6 +173,7 @@ struct hisi_sas_port {
+ 
+ struct hisi_sas_cq {
+ 	struct hisi_hba *hisi_hba;
++	const struct cpumask *pci_irq_mask;
+ 	struct tasklet_struct tasklet;
+ 	int	rd_point;
+ 	int	id;
+@@ -195,6 +196,7 @@ struct hisi_sas_device {
+ 	enum sas_device_type	dev_type;
+ 	int device_id;
+ 	int sata_idx;
++	spinlock_t lock; /* For protecting slots */
+ };
+ 
+ struct hisi_sas_tmf_task {
+@@ -217,6 +219,7 @@ struct hisi_sas_slot {
+ 	int	cmplt_queue_slot;
+ 	int	abort;
+ 	int	ready;
++	int	device_id;
+ 	void	*cmd_hdr;
+ 	dma_addr_t cmd_hdr_dma;
+ 	struct timer_list internal_abort_timer;
+@@ -366,6 +369,7 @@ struct hisi_hba {
+ 	u32 intr_coal_count;	/* Interrupt count to coalesce */
+ 
+ 	int cq_nvecs;
++	unsigned int *reply_map;
+ 
+ 	/* debugfs memories */
+ 	void *debugfs_global_reg;
+--- a/drivers/scsi/hisi_sas/hisi_sas_main.c
++++ b/drivers/scsi/hisi_sas/hisi_sas_main.c
+@@ -241,8 +241,9 @@ static void hisi_sas_slot_index_init(str
+ void hisi_sas_slot_task_free(struct hisi_hba *hisi_hba, struct sas_task *task,
+ 			     struct hisi_sas_slot *slot)
+ {
+-	struct hisi_sas_dq *dq = &hisi_hba->dq[slot->dlvry_queue];
+ 	unsigned long flags;
++	int device_id = slot->device_id;
++	struct hisi_sas_device *sas_dev = &hisi_hba->devices[device_id];
+ 
+ 	if (task) {
+ 		struct device *dev = hisi_hba->dev;
+@@ -267,10 +268,9 @@ void hisi_sas_slot_task_free(struct hisi
+ 		}
+ 	}
+ 
+-
+-	spin_lock_irqsave(&dq->lock, flags);
++	spin_lock_irqsave(&sas_dev->lock, flags);
+ 	list_del_init(&slot->entry);
+-	spin_unlock_irqrestore(&dq->lock, flags);
++	spin_unlock_irqrestore(&sas_dev->lock, flags);
+ 
+ 	memset(slot, 0, offsetof(struct hisi_sas_slot, buf));
+ 
+@@ -471,7 +471,14 @@ static int hisi_sas_task_prep(struct sas
+ 		return -ECOMM;
+ 	}
+ 
+-	*dq_pointer = dq = sas_dev->dq;
++	if (hisi_hba->reply_map) {
++		int cpu = raw_smp_processor_id();
++		unsigned int dq_index = hisi_hba->reply_map[cpu];
++
++		*dq_pointer = dq = &hisi_hba->dq[dq_index];
++	} else {
++		*dq_pointer = dq = sas_dev->dq;
++	}
+ 
+ 	port = to_hisi_sas_port(sas_port);
+ 	if (port && !port->port_attached) {
+@@ -526,12 +533,15 @@ static int hisi_sas_task_prep(struct sas
+ 	}
+ 
+ 	list_add_tail(&slot->delivery, &dq->list);
+-	list_add_tail(&slot->entry, &sas_dev->list);
+ 	spin_unlock_irqrestore(&dq->lock, flags);
++	spin_lock_irqsave(&sas_dev->lock, flags);
++	list_add_tail(&slot->entry, &sas_dev->list);
++	spin_unlock_irqrestore(&sas_dev->lock, flags);
+ 
+ 	dlvry_queue = dq->id;
+ 	dlvry_queue_slot = wr_q_index;
+ 
++	slot->device_id = sas_dev->device_id;
+ 	slot->n_elem = n_elem;
+ 	slot->n_elem_dif = n_elem_dif;
+ 	slot->dlvry_queue = dlvry_queue;
+@@ -701,6 +711,7 @@ static struct hisi_sas_device *hisi_sas_
+ 			sas_dev->hisi_hba = hisi_hba;
+ 			sas_dev->sas_device = device;
+ 			sas_dev->dq = dq;
++			spin_lock_init(&sas_dev->lock);
+ 			INIT_LIST_HEAD(&hisi_hba->devices[i].list);
+ 			break;
+ 		}
+@@ -1914,10 +1925,14 @@ hisi_sas_internal_abort_task_exec(struct
+ 	}
+ 	list_add_tail(&slot->delivery, &dq->list);
+ 	spin_unlock_irqrestore(&dq->lock, flags_dq);
++	spin_lock_irqsave(&sas_dev->lock, flags);
++	list_add_tail(&slot->entry, &sas_dev->list);
++	spin_unlock_irqrestore(&sas_dev->lock, flags);
+ 
+ 	dlvry_queue = dq->id;
+ 	dlvry_queue_slot = wr_q_index;
+ 
++	slot->device_id = sas_dev->device_id;
+ 	slot->n_elem = n_elem;
+ 	slot->dlvry_queue = dlvry_queue;
+ 	slot->dlvry_queue_slot = dlvry_queue_slot;
+@@ -1941,7 +1956,6 @@ hisi_sas_internal_abort_task_exec(struct
+ 	WRITE_ONCE(slot->ready, 1);
+ 	/* send abort command to the chip */
+ 	spin_lock_irqsave(&dq->lock, flags);
+-	list_add_tail(&slot->entry, &sas_dev->list);
+ 	hisi_hba->hw->start_delivery(dq);
+ 	spin_unlock_irqrestore(&dq->lock, flags);
+ 
+@@ -2071,6 +2085,11 @@ hisi_sas_internal_task_abort(struct hisi
+ 						     abort_flag, tag, dq);
+ 	case HISI_SAS_INT_ABT_DEV:
+ 		for (i = 0; i < hisi_hba->cq_nvecs; i++) {
++			struct hisi_sas_cq *cq = &hisi_hba->cq[i];
++			const struct cpumask *mask = cq->pci_irq_mask;
++
++			if (mask && !cpumask_intersects(cpu_online_mask, mask))
++				continue;
+ 			dq = &hisi_hba->dq[i];
+ 			rc = _hisi_sas_internal_task_abort(hisi_hba, device,
+ 							   abort_flag, tag,
+--- a/drivers/scsi/hisi_sas/hisi_sas_v2_hw.c
++++ b/drivers/scsi/hisi_sas/hisi_sas_v2_hw.c
+@@ -873,6 +873,7 @@ hisi_sas_device *alloc_dev_quirk_v2_hw(s
+ 			sas_dev->sas_device = device;
+ 			sas_dev->sata_idx = sata_idx;
+ 			sas_dev->dq = dq;
++			spin_lock_init(&sas_dev->lock);
+ 			INIT_LIST_HEAD(&hisi_hba->devices[i].list);
+ 			break;
+ 		}
+--- a/drivers/scsi/hisi_sas/hisi_sas_v3_hw.c
++++ b/drivers/scsi/hisi_sas/hisi_sas_v3_hw.c
+@@ -403,6 +403,7 @@ struct hisi_sas_err_record_v3 {
+ #define T10_CHK_APP_TAG_MSK (0xc << T10_CHK_MSK_OFF)
+ 
+ #define BASE_VECTORS_V3_HW  16
++#define MIN_AFFINE_VECTORS_V3_HW  (BASE_VECTORS_V3_HW + 1)
+ 
+ static bool hisi_sas_intr_conv;
+ MODULE_PARM_DESC(intr_conv, "interrupt converge enable (0-1)");
+@@ -412,6 +413,11 @@ static int prot_mask;
+ module_param(prot_mask, int, 0);
+ MODULE_PARM_DESC(prot_mask, " host protection capabilities mask, def=0x0 ");
+ 
++static bool auto_affine_msi_experimental;
++module_param(auto_affine_msi_experimental, bool, 0444);
++MODULE_PARM_DESC(auto_affine_msi_experimental, "Enable auto-affinity of MSI IRQs as experimental:\n"
++		 "default is off");
++
+ static u32 hisi_sas_read32(struct hisi_hba *hisi_hba, u32 off)
+ {
+ 	void __iomem *regs = hisi_hba->regs + off;
+@@ -2037,19 +2043,64 @@ static irqreturn_t cq_interrupt_v3_hw(in
+ 	return IRQ_HANDLED;
+ }
+ 
++static void setup_reply_map_v3_hw(struct hisi_hba *hisi_hba, int nvecs)
++{
++	const struct cpumask *mask;
++	int queue, cpu;
++
++	for (queue = 0; queue < nvecs; queue++) {
++		struct hisi_sas_cq *cq = &hisi_hba->cq[queue];
++
++		mask = pci_irq_get_affinity(hisi_hba->pci_dev, queue +
++					    BASE_VECTORS_V3_HW);
++		if (!mask)
++			goto fallback;
++		cq->pci_irq_mask = mask;
++		for_each_cpu(cpu, mask)
++			hisi_hba->reply_map[cpu] = queue;
++	}
++	return;
++
++fallback:
++	for_each_possible_cpu(cpu)
++		hisi_hba->reply_map[cpu] = cpu % hisi_hba->queue_count;
++	/* Don't clean all CQ masks */
++}
++
+ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
+ {
+ 	struct device *dev = hisi_hba->dev;
+ 	struct pci_dev *pdev = hisi_hba->pci_dev;
+ 	int vectors, rc;
+ 	int i, k;
+-	int max_msi = HISI_SAS_MSI_COUNT_V3_HW;
++	int max_msi = HISI_SAS_MSI_COUNT_V3_HW, min_msi;
+ 
+-	vectors = pci_alloc_irq_vectors(hisi_hba->pci_dev, 1,
+-					max_msi, PCI_IRQ_MSI);
+-	if (vectors < max_msi) {
+-		dev_err(dev, "could not allocate all msi (%d)\n", vectors);
+-		return -ENOENT;
++	if (auto_affine_msi_experimental) {
++		struct irq_affinity desc = {
++			.pre_vectors = BASE_VECTORS_V3_HW,
++		};
++
++		min_msi = MIN_AFFINE_VECTORS_V3_HW;
++
++		hisi_hba->reply_map = devm_kcalloc(dev, nr_cpu_ids,
++						   sizeof(unsigned int),
++						   GFP_KERNEL);
++		if (!hisi_hba->reply_map)
++			return -ENOMEM;
++		vectors = pci_alloc_irq_vectors_affinity(hisi_hba->pci_dev,
++							 min_msi, max_msi,
++							 PCI_IRQ_MSI |
++							 PCI_IRQ_AFFINITY,
++							 &desc);
++		if (vectors < 0)
++			return -ENOENT;
++		setup_reply_map_v3_hw(hisi_hba, vectors - BASE_VECTORS_V3_HW);
++	} else {
++		min_msi = max_msi;
++		vectors = pci_alloc_irq_vectors(hisi_hba->pci_dev, min_msi,
++						max_msi, PCI_IRQ_MSI);
++		if (vectors < 0)
++			return vectors;
+ 	}
+ 
+ 	hisi_hba->cq_nvecs = vectors - BASE_VECTORS_V3_HW;

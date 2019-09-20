@@ -1,0 +1,58 @@
+From: Rodrigo Freire <rfreire@redhat.com>
+Date: Sun, 7 Oct 2018 12:21:25 -0300
+Subject: [PATCH] CIFS: Adds information-level logging function
+Git-commit: 9a0efeccfa7ea6a82585bb2def161de006396b7d
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+Currently, CIFS lacks a internal logging function that prints out data
+when CIFS_DEBUG=n. When CIFS_DEBUG=y, the only message level for CIFS
+events are KERN_ERR or KERN_DEBUG.
+
+This patch creates cifs_info(), which is useful for printing
+non-critical event messges, at either CIFS_DEBUG state.
+
+Signed-off-by: Rodrigo Freire <rfreire@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifs_debug.h | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/fs/cifs/cifs_debug.h b/fs/cifs/cifs_debug.h
+index f4f3f0853c6e..72db2987e066 100644
+--- a/fs/cifs/cifs_debug.h
++++ b/fs/cifs/cifs_debug.h
+@@ -47,6 +47,17 @@ extern int cifsFYI;
+  */
+ #ifdef CONFIG_CIFS_DEBUG
+ 
++/* Information level messages, minor events */
++#define cifs_info_func(ratefunc, fmt, ...)			\
++do {								\
++	pr_info_ ## ratefunc("CIFS: " fmt, ##__VA_ARGS__); 	\
++} while (0)
++
++#define cifs_info(fmt, ...)					\
++do { 								\
++	cifs_info_func(ratelimited, fmt, ##__VA_ARGS__); 	\
++} while (0)
++
+ /* information message: e.g., configuration, major event */
+ #define cifs_dbg_func(ratefunc, type, fmt, ...)			\
+ do {								\
+@@ -81,6 +92,11 @@ do {									\
+ 	if (0)								\
+ 		pr_debug(fmt, ##__VA_ARGS__);				\
+ } while (0)
++
++#define cifs_info(fmt, ...)						\
++do {									\
++	pr_info("CIFS: "fmt, ##__VA_ARGS__);				\
++} while (0)
+ #endif
+ 
+ #endif				/* _H_CIFS_DEBUG */
+-- 
+2.16.4
+

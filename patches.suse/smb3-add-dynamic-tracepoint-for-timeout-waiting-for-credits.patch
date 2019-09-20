@@ -1,0 +1,57 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Sat, 9 Mar 2019 20:29:55 -0600
+Subject: [PATCH] smb3: add dynamic tracepoint for timeout waiting for credits
+Git-commit: 7937ca961c847bda8a75da5d9c34efee9602f6b5
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+To help debug credit starvation problems where we timeout
+waiting for server to grant the client credits.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/trace.h     | 1 +
+ fs/cifs/transport.c | 5 +++++
+ 2 files changed, 6 insertions(+)
+
+diff --git a/fs/cifs/trace.h b/fs/cifs/trace.h
+index d8b049afa606..c78e96c4cc53 100644
+--- a/fs/cifs/trace.h
++++ b/fs/cifs/trace.h
+@@ -713,6 +713,7 @@ DEFINE_EVENT(smb3_credit_class, smb3_##name,  \
+ 	TP_ARGS(currmid, hostname, credits))
+ 
+ DEFINE_SMB3_CREDIT_EVENT(reconnect_with_invalid_credits);
++DEFINE_SMB3_CREDIT_EVENT(credit_timeout);
+ 
+ #endif /* _CIFS_TRACE_H */
+ 
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index b3d04018195c..8731cfa66026 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -527,6 +527,8 @@ wait_for_free_credits(struct TCP_Server_Info *server, const int num_credits,
+ 				has_credits(server, credits, num_credits), t);
+ 			cifs_num_waiters_dec(server);
+ 			if (!rc) {
++				trace_smb3_credit_timeout(server->CurrentMid,
++					server->hostname, num_credits);
+ 				cifs_dbg(VFS, "wait timed out after %d ms\n",
+ 					 timeout);
+ 				return -ENOTSUPP;
+@@ -565,6 +567,9 @@ wait_for_free_credits(struct TCP_Server_Info *server, const int num_credits,
+ 					t);
+ 				cifs_num_waiters_dec(server);
+ 				if (!rc) {
++					trace_smb3_credit_timeout(
++						server->CurrentMid,
++						server->hostname, num_credits);
+ 					cifs_dbg(VFS, "wait timed out after %d ms\n",
+ 						 timeout);
+ 					return -ENOTSUPP;
+-- 
+2.16.4
+

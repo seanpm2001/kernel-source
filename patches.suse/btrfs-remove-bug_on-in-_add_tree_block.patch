@@ -1,0 +1,54 @@
+From: Liu Bo <bo.li.liu@oracle.com>
+Date: Fri, 18 Aug 2017 15:15:23 -0600
+Subject: Btrfs: remove BUG_ON in __add_tree_block
+Git-commit: cdccee993f2f3466f69a358daec19de744a02f92
+Patch-mainline: v4.14-rc1
+References: bsc#1149325
+
+The BUG_ON() can be triggered when the caller is processing an invalid
+extent inline ref, e.g.
+
+a shared data ref is offered instead of an extent data ref, such that
+it tries to find a non-existent tree block and then btrfs_search_slot
+returns 1 for no such item.
+
+This replaces the BUG_ON() with a WARN() followed by calling
+btrfs_print_leaf() to show more details about what's going on and
+returning -EINVAL to upper callers.
+
+Signed-off-by: Liu Bo <bo.li.liu@oracle.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Johannes Thumshirn <jthumshirn@suse.de>
+---
+ fs/btrfs/relocation.c |   12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -32,6 +32,7 @@
+ #include "free-space-cache.h"
+ #include "inode-map.h"
+ #include "qgroup.h"
++#include "print-tree.h"
+ 
+ /*
+  * backref_node, mapping_node and tree_block start with this
+@@ -3485,7 +3486,16 @@ again:
+ 			goto again;
+ 		}
+ 	}
+-	BUG_ON(ret);
++	if (ret) {
++		ASSERT(ret == 1);
++		btrfs_print_leaf(fs_info, path->nodes[0]);
++		btrfs_err(fs_info,
++	     "tree block extent item (%llu) is not found in extent tree",
++		     bytenr);
++		WARN_ON(1);
++		ret = -EINVAL;
++		goto out;
++	}
+ 
+ 	ret = add_tree_block(rc, &key, path, blocks);
+ out:

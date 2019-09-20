@@ -1,0 +1,38 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Tue, 28 Aug 2018 16:14:21 -0500
+Subject: [PATCH] SMB3: Backup intent flag missing from compounded ops
+Git-commit: 4d5bdf28690a304e089ce750efc8b7dd718945c7
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+When "backup intent" is requested on the mount (e.g. backupuid or
+backupgid mount options), the corresponding flag was missing from
+some of the new compounding operations as well (now that
+open_query_close is gone).
+
+Related to kernel bugzilla #200953
+
+Reported-and-tested-by: <whh@rubrik.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2inode.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/cifs/smb2inode.c b/fs/cifs/smb2inode.c
+index 247cc0b32539..c0b3622a7b53 100644
+--- a/fs/cifs/smb2inode.c
++++ b/fs/cifs/smb2inode.c
+@@ -83,6 +83,8 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 	oparms.desired_access = desired_access;
+ 	oparms.disposition = create_disposition;
+ 	oparms.create_options = create_options;
++	if (backup_cred(cifs_sb))
++		oparms.create_options |= CREATE_OPEN_BACKUP_INTENT;
+ 	oparms.fid = &fid;
+ 	oparms.reconnect = false;
+ 
+-- 
+2.16.4
+

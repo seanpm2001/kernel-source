@@ -1,0 +1,91 @@
+From: Long Li <longli@microsoft.com>
+Date: Wed, 22 Nov 2017 17:38:35 -0700
+Subject: [PATCH] CIFS: SMBD: Implement function to reconnect to a SMB Direct
+ transport
+Git-commit: ad57b8e1726ed1b61f74c278c602cd5aab21bd95
+Patch-mainline: v4.15
+References: bsc#1144333
+
+Add function to implement a reconnect to SMB Direct. This involves tearing down
+the current connection and establishing/negotiating a new connection.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smbdirect.c | 36 ++++++++++++++++++++++++++++++++++++
+ fs/cifs/smbdirect.h |  4 ++++
+ 2 files changed, 40 insertions(+)
+
+diff --git a/fs/cifs/smbdirect.c b/fs/cifs/smbdirect.c
+index 862cdf9424cb..a96058a3ad87 100644
+--- a/fs/cifs/smbdirect.c
++++ b/fs/cifs/smbdirect.c
+@@ -1387,6 +1387,42 @@ static void idle_connection_timer(struct work_struct *work)
+ 			info->keep_alive_interval*HZ);
+ }
+ 
++/*
++ * Reconnect this SMBD connection, called from upper layer
++ * return value: 0 on success, or actual error code
++ */
++int smbd_reconnect(struct TCP_Server_Info *server)
++{
++	log_rdma_event(INFO, "reconnecting rdma session\n");
++
++	if (!server->smbd_conn) {
++		log_rdma_event(ERR, "rdma session already destroyed\n");
++		return -EINVAL;
++	}
++
++	/*
++	 * This is possible if transport is disconnected and we haven't received
++	 * notification from RDMA, but upper layer has detected timeout
++	 */
++	if (server->smbd_conn->transport_status == SMBD_CONNECTED) {
++		log_rdma_event(INFO, "disconnecting transport\n");
++		smbd_disconnect_rdma_connection(server->smbd_conn);
++	}
++
++	/* wait until the transport is destroyed */
++	wait_event(server->smbd_conn->wait_destroy,
++		server->smbd_conn->transport_status == SMBD_DESTROYED);
++
++	destroy_workqueue(server->smbd_conn->workqueue);
++	kfree(server->smbd_conn);
++
++	log_rdma_event(INFO, "creating rdma session\n");
++	server->smbd_conn = smbd_get_connection(
++		server, (struct sockaddr *) &server->dstaddr);
++
++	return server->smbd_conn ? 0 : -ENOENT;
++}
++
+ static void destroy_caches_and_workqueue(struct smbd_connection *info)
+ {
+ 	destroy_receive_buffers(info);
+diff --git a/fs/cifs/smbdirect.h b/fs/cifs/smbdirect.h
+index 25b3782cc692..f1db2ee7c8c2 100644
+--- a/fs/cifs/smbdirect.h
++++ b/fs/cifs/smbdirect.h
+@@ -247,11 +247,15 @@ struct smbd_response {
+ struct smbd_connection *smbd_get_connection(
+ 	struct TCP_Server_Info *server, struct sockaddr *dstaddr);
+ 
++/* Reconnect SMBDirect session */
++int smbd_reconnect(struct TCP_Server_Info *server);
++
+ #else
+ #define cifs_rdma_enabled(server)	0
+ struct smbd_connection {};
+ static inline void *smbd_get_connection(
+ 	struct TCP_Server_Info *server, struct sockaddr *dstaddr) {return NULL;}
++static inline int smbd_reconnect(struct TCP_Server_Info *server) {return -1; }
+ #endif
+ 
+ #endif
+-- 
+2.16.4
+

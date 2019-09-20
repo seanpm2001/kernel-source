@@ -1,0 +1,54 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Mon, 3 Sep 2018 13:33:50 +1000
+Subject: [PATCH] cifs: create a define for the max number of iov we need for a
+ SMB2 set_info
+Git-commit: 14e562ada2b152cdeb49a1aec40fac402d19f3ce
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+So we don't overflow the io vector arrays accidentally
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2inode.c | 2 +-
+ fs/cifs/smb2pdu.h   | 9 +++++++++
+ 2 files changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2inode.c b/fs/cifs/smb2inode.c
+index cfa89494e4b0..247cc0b32539 100644
+--- a/fs/cifs/smb2inode.c
++++ b/fs/cifs/smb2inode.c
+@@ -56,7 +56,7 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 	struct kvec rsp_iov[3];
+ 	struct kvec open_iov[SMB2_CREATE_IOV_SIZE];
+ 	struct kvec qi_iov[1];
+-	struct kvec si_iov[3];  /* 2 + potential padding. */
++	struct kvec si_iov[SMB2_SET_INFO_IOV_SIZE];
+ 	struct kvec close_iov[1];
+ 	struct smb2_query_info_rsp *qi_rsp = NULL;
+ 	int flags = 0;
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index 8fb7887f2b3d..600e8fe1461b 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -1174,6 +1174,15 @@ struct smb2_query_info_rsp {
+ 	__u8   Buffer[1];
+ } __packed;
+ 
++/*
++ * Maximum number of iovs we need for a set-info request.
++ * The largest one is rename/hardlink
++ * [0] : struct smb2_set_info_req + smb2_file_[rename|link]_info
++ * [1] : path
++ * [2] : compound padding
++ */
++#define SMB2_SET_INFO_IOV_SIZE 3
++
+ struct smb2_set_info_req {
+ 	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize; /* Must be 33 */
+-- 
+2.16.4
+

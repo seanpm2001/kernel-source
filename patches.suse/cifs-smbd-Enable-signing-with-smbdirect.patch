@@ -1,0 +1,58 @@
+From: Long Li <longli@microsoft.com>
+Date: Wed, 25 Apr 2018 11:30:05 -0700
+Subject: [PATCH] cifs: smbd: Enable signing with smbdirect
+Git-commit: f7c439668a291ca94f358e44d3a3e9f2a2524b8a
+Patch-mainline: v4.17-rc5
+References: bsc#1144333
+
+Now signing is supported with RDMA transport.
+
+Remove the code that disabled it.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/connect.c | 8 --------
+ fs/cifs/smb2pdu.c | 5 -----
+ 2 files changed, 13 deletions(-)
+
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index a5aa158d535a..7a10a5d0731f 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -1977,14 +1977,6 @@ cifs_parse_mount_options(const char *mountdata, const char *devname,
+ 		goto cifs_parse_mount_err;
+ 	}
+ 
+-#ifdef CONFIG_CIFS_SMB_DIRECT
+-	if (vol->rdma && vol->sign) {
+-		cifs_dbg(VFS, "Currently SMB direct doesn't support signing."
+-			" This is being fixed\n");
+-		goto cifs_parse_mount_err;
+-	}
+-#endif
+-
+ #ifndef CONFIG_KEYS
+ 	/* Muliuser mounts require CONFIG_KEYS support */
+ 	if (vol->multiuser) {
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 260e9c4219d8..0f48741a0130 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -738,11 +738,6 @@ int smb3_validate_negotiate(const unsigned int xid, struct cifs_tcon *tcon)
+ 
+ 	cifs_dbg(FYI, "validate negotiate\n");
+ 
+-#ifdef CONFIG_CIFS_SMB_DIRECT
+-	if (tcon->ses->server->rdma)
+-		return 0;
+-#endif
+-
+ 	/* In SMB3.11 preauth integrity supersedes validate negotiate */
+ 	if (tcon->ses->server->dialect == SMB311_PROT_ID)
+ 		return 0;
+-- 
+2.16.4
+

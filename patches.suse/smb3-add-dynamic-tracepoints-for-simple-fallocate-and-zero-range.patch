@@ -1,0 +1,142 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Wed, 13 Mar 2019 01:41:49 -0500
+Subject: [PATCH] smb3: add dynamic tracepoints for simple fallocate and zero
+ range
+Git-commit: 779ede040dd491acdb076ed9660d7160228949fd
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Can be helpful in debugging various xfstests that are currently
+skipped or failing due to missing features in our current
+implementation of fallocate.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c | 32 ++++++++++++++++++++++++++++++++
+ fs/cifs/trace.h   |  6 ++++++
+ 2 files changed, 38 insertions(+)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index bd3d2288161c..823a58550dfd 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -2571,10 +2571,16 @@ static long smb3_zero_range(struct file *file, struct cifs_tcon *tcon,
+ 	inode = d_inode(cfile->dentry);
+ 	cifsi = CIFS_I(inode);
+ 
++        trace_smb3_zero_enter(xid, cfile->fid.persistent_fid, tcon->tid,
++			      ses->Suid, offset, len);
++
++
+ 	/* if file not oplocked can't be sure whether asking to extend size */
+ 	if (!CIFS_CACHE_READ(cifsi))
+ 		if (keep_size == false) {
+ 			rc = -EOPNOTSUPP;
++			trace_smb3_zero_err(xid, cfile->fid.persistent_fid,
++				tcon->tid, ses->Suid, offset, len, rc);
+ 			free_xid(xid);
+ 			return rc;
+ 		}
+@@ -2585,6 +2591,8 @@ static long smb3_zero_range(struct file *file, struct cifs_tcon *tcon,
+ 	 */
+ 	if (!(cifsi->cifsAttrs & FILE_ATTRIBUTE_SPARSE_FILE)) {
+ 		rc = -EOPNOTSUPP;
++		trace_smb3_zero_err(xid, cfile->fid.persistent_fid, tcon->tid,
++			      ses->Suid, offset, len, rc);
+ 		free_xid(xid);
+ 		return rc;
+ 	}
+@@ -2644,6 +2652,12 @@ static long smb3_zero_range(struct file *file, struct cifs_tcon *tcon,
+ 	free_rsp_buf(resp_buftype[0], rsp_iov[0].iov_base);
+ 	free_rsp_buf(resp_buftype[1], rsp_iov[1].iov_base);
+ 	free_xid(xid);
++	if (rc)
++		trace_smb3_zero_err(xid, cfile->fid.persistent_fid, tcon->tid,
++			      ses->Suid, offset, len, rc);
++	else
++		trace_smb3_zero_done(xid, cfile->fid.persistent_fid, tcon->tid,
++			      ses->Suid, offset, len);
+ 	return rc;
+ }
+ 
+@@ -2698,9 +2712,13 @@ static long smb3_simple_falloc(struct file *file, struct cifs_tcon *tcon,
+ 	inode = d_inode(cfile->dentry);
+ 	cifsi = CIFS_I(inode);
+ 
++	trace_smb3_falloc_enter(xid, cfile->fid.persistent_fid, tcon->tid,
++				tcon->ses->Suid, off, len);
+ 	/* if file not oplocked can't be sure whether asking to extend size */
+ 	if (!CIFS_CACHE_READ(cifsi))
+ 		if (keep_size == false) {
++			trace_smb3_falloc_err(xid, cfile->fid.persistent_fid,
++				tcon->tid, tcon->ses->Suid, off, len, rc);
+ 			free_xid(xid);
+ 			return rc;
+ 		}
+@@ -2720,6 +2738,12 @@ static long smb3_simple_falloc(struct file *file, struct cifs_tcon *tcon,
+ 		/* BB: in future add else clause to extend file */
+ 		else
+ 			rc = -EOPNOTSUPP;
++		if (rc)
++			trace_smb3_falloc_err(xid, cfile->fid.persistent_fid,
++				tcon->tid, tcon->ses->Suid, off, len, rc);
++		else
++			trace_smb3_falloc_done(xid, cfile->fid.persistent_fid,
++				tcon->tid, tcon->ses->Suid, off, len);
+ 		free_xid(xid);
+ 		return rc;
+ 	}
+@@ -2735,6 +2759,8 @@ static long smb3_simple_falloc(struct file *file, struct cifs_tcon *tcon,
+ 		 */
+ 		if ((off > 8192) || (off + len + 8192 < i_size_read(inode))) {
+ 			rc = -EOPNOTSUPP;
++			trace_smb3_falloc_err(xid, cfile->fid.persistent_fid,
++				tcon->tid, tcon->ses->Suid, off, len, rc);
+ 			free_xid(xid);
+ 			return rc;
+ 		}
+@@ -2743,6 +2769,12 @@ static long smb3_simple_falloc(struct file *file, struct cifs_tcon *tcon,
+ 	}
+ 	/* BB: else ... in future add code to extend file and set sparse */
+ 
++	if (rc)
++		trace_smb3_falloc_err(xid, cfile->fid.persistent_fid, tcon->tid,
++				tcon->ses->Suid, off, len, rc);
++	else
++		trace_smb3_falloc_done(xid, cfile->fid.persistent_fid, tcon->tid,
++				tcon->ses->Suid, off, len);
+ 
+ 	free_xid(xid);
+ 	return rc;
+diff --git a/fs/cifs/trace.h b/fs/cifs/trace.h
+index 30bf51c7e8fe..fa226de48ef3 100644
+--- a/fs/cifs/trace.h
++++ b/fs/cifs/trace.h
+@@ -59,6 +59,8 @@ DEFINE_EVENT(smb3_rw_err_class, smb3_##name,    \
+ DEFINE_SMB3_RW_ERR_EVENT(write_err);
+ DEFINE_SMB3_RW_ERR_EVENT(read_err);
+ DEFINE_SMB3_RW_ERR_EVENT(query_dir_err);
++DEFINE_SMB3_RW_ERR_EVENT(zero_err);
++DEFINE_SMB3_RW_ERR_EVENT(falloc_err);
+ 
+ 
+ /* For logging successful read or write */
+@@ -104,9 +106,13 @@ DEFINE_EVENT(smb3_rw_done_class, smb3_##name,   \
+ DEFINE_SMB3_RW_DONE_EVENT(write_enter);
+ DEFINE_SMB3_RW_DONE_EVENT(read_enter);
+ DEFINE_SMB3_RW_DONE_EVENT(query_dir_enter);
++DEFINE_SMB3_RW_DONE_EVENT(zero_enter);
++DEFINE_SMB3_RW_DONE_EVENT(falloc_enter);
+ DEFINE_SMB3_RW_DONE_EVENT(write_done);
+ DEFINE_SMB3_RW_DONE_EVENT(read_done);
+ DEFINE_SMB3_RW_DONE_EVENT(query_dir_done);
++DEFINE_SMB3_RW_DONE_EVENT(zero_done);
++DEFINE_SMB3_RW_DONE_EVENT(falloc_done);
+ 
+ /*
+  * For handle based calls other than read and write, and get/set info
+-- 
+2.16.4
+

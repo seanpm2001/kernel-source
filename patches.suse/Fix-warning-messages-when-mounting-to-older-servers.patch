@@ -1,0 +1,108 @@
+From: Steve French <smfrench@gmail.com>
+Date: Thu, 31 Aug 2017 21:34:24 -0500
+Subject: [PATCH] Fix warning messages when mounting to older servers
+Git-commit: 7e682f766f289887c5cbf7c0a1e4970103f01ac4
+Patch-mainline: v4.13
+References: bsc#1144333
+
+When mounting to older servers, such as Windows XP (or even Windows 7),
+the limited error messages that can be passed back to user space can
+get confusing since the default dialect has changed from SMB1 (CIFS) to
+more secure SMB3 dialect. Log additional information when the user chooses
+to use the default dialects and when the server does not support the
+dialect requested.
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/connect.c | 22 +++++++++++++++++++++-
+ fs/cifs/smb2pdu.c |  7 ++++++-
+ 2 files changed, 27 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 59647eb72c5f..83a8f52cd879 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -1223,6 +1223,7 @@ cifs_parse_mount_options(const char *mountdata, const char *devname,
+ 	char *tmp_end, *value;
+ 	char delim;
+ 	bool got_ip = false;
++	bool got_version = false;
+ 	unsigned short port = 0;
+ 	struct sockaddr *dstaddr = (struct sockaddr *)&vol->dstaddr;
+ 
+@@ -1874,24 +1875,35 @@ cifs_parse_mount_options(const char *mountdata, const char *devname,
+ 				pr_warn("CIFS: server netbiosname longer than 15 truncated.\n");
+ 			break;
+ 		case Opt_ver:
++			/* version of mount userspace tools, not dialect */
+ 			string = match_strdup(args);
+ 			if (string == NULL)
+ 				goto out_nomem;
+ 
++			/* If interface changes in mount.cifs bump to new ver */
+ 			if (strncasecmp(string, "1", 1) == 0) {
++				if (strlen(string) > 1) {
++					pr_warn("Bad mount helper ver=%s. Did "
++						"you want SMB1 (CIFS) dialect "
++						"and mean to type vers=1.0 "
++						"instead?\n", string);
++					goto cifs_parse_mount_err;
++				}
+ 				/* This is the default */
+ 				break;
+ 			}
+ 			/* For all other value, error */
+-			pr_warn("CIFS: Invalid version specified\n");
++			pr_warn("CIFS: Invalid mount helper version specified\n");
+ 			goto cifs_parse_mount_err;
+ 		case Opt_vers:
++			/* protocol version (dialect) */
+ 			string = match_strdup(args);
+ 			if (string == NULL)
+ 				goto out_nomem;
+ 
+ 			if (cifs_parse_smb_version(string, vol) != 0)
+ 				goto cifs_parse_mount_err;
++			got_version = true;
+ 			break;
+ 		case Opt_sec:
+ 			string = match_strdup(args);
+@@ -1973,6 +1985,14 @@ cifs_parse_mount_options(const char *mountdata, const char *devname,
+ 	else if (override_gid == 1)
+ 		pr_notice("CIFS: ignoring forcegid mount option specified with no gid= option.\n");
+ 
++	if (got_version == false)
++		pr_warn("No dialect specified on mount. Default has changed to "
++			"a more secure dialect, SMB3 (vers=3.0), from CIFS "
++			"(SMB1). To use the less secure SMB1 dialect to access "
++			"old servers which do not support SMB3 specify vers=1.0"
++			" on mount. For somewhat newer servers such as Windows "
++			"7 try vers=2.1.\n");
++
+ 	kfree(mountdata_copy);
+ 	return 0;
+ 
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 97edb4d376cd..7aa67206f6da 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -514,7 +514,12 @@ SMB2_negotiate(const unsigned int xid, struct cifs_ses *ses)
+ 	 * No tcon so can't do
+ 	 * cifs_stats_inc(&tcon->stats.smb2_stats.smb2_com_fail[SMB2...]);
+ 	 */
+-	if (rc != 0)
++	if (rc == -EOPNOTSUPP) {
++		cifs_dbg(VFS, "Dialect not supported by server. Consider "
++			"specifying vers=1.0 or vers=2.1 on mount for accessing"
++			" older servers\n");
++		goto neg_exit;
++	} else if (rc != 0)
+ 		goto neg_exit;
+ 
+ 	cifs_dbg(FYI, "mode 0x%x\n", rsp->SecurityMode);
+-- 
+2.16.4
+

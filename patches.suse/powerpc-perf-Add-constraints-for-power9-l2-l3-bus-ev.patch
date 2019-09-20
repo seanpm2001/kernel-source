@@ -1,0 +1,194 @@
+From 59029136d75022cb8b7c7bebd1738ae70232416e Mon Sep 17 00:00:00 2001
+From: Madhavan Srinivasan <maddy@linux.vnet.ibm.com>
+Date: Sun, 10 Jun 2018 19:57:01 +0530
+Subject: [PATCH] powerpc/perf: Add constraints for power9 l2/l3 bus events
+
+References: bsc#1056686
+Patch-mainline: v5.0-rc1
+Git-commit: 59029136d75022cb8b7c7bebd1738ae70232416e
+
+In previous generation processors, both bus events and direct
+events of performance monitoring unit can be individually
+programmabled and monitored in PMCs.
+
+But in Power9, L2/L3 bus events are always available as a
+"bank" of 4 events. To obtain the counts for any of the
+l2/l3 bus events in a given bank, the user will have to
+program PMC4 with corresponding l2/l3 bus event for that
+bank.
+
+Patch enforce two contraints incase of L2/L3 bus events.
+
+1)Any L2/L3 event when programmed is also expected to program corresponding
+PMC4 event from that group.
+2)PMC4 event should always been programmed first due to group constraint
+logic limitation
+
+For ex. consider these L3 bus events
+
+PM_L3_PF_ON_CHIP_MEM (0x460A0),
+PM_L3_PF_MISS_L3 (0x160A0),
+PM_L3_CO_MEM (0x260A0),
+PM_L3_PF_ON_CHIP_CACHE (0x360A0),
+
+1) This is an INVALID group for L3 Bus event monitoring,
+since it is missing PMC4 event.
+	perf stat -e "{r160A0,r260A0,r360A0}" < >
+
+And this is a VALID group for L3 Bus events:
+	perf stat -e "{r460A0,r160A0,r260A0,r360A0}" < >
+
+2) This is an INVALID group for L3 Bus event monitoring,
+since it is missing PMC4 event.
+	perf stat -e "{r260A0,r360A0}" < >
+
+And this is a VALID group for L3 Bus events:
+	perf stat -e "{r460A0,r260A0,r360A0}" < >
+
+3) This is an INVALID group for L3 Bus event monitoring,
+since it is missing PMC4 event.
+	perf stat -e "{r360A0}" < >
+
+And this is a VALID group for L3 Bus events:
+	perf stat -e "{r460A0,r360A0}" < >
+
+Patch here implements group constraint logic suggested by Michael Ellerman.
+
+Signed-off-by: Madhavan Srinivasan <maddy@linux.vnet.ibm.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/include/asm/perf_event_server.h |  2 ++
+ arch/powerpc/perf/core-book3s.c              | 20 ++++++++++----
+ arch/powerpc/perf/isa207-common.c            | 28 +++++++++++++-------
+ arch/powerpc/perf/isa207-common.h            |  5 ++++
+ arch/powerpc/perf/power9-pmu.c               |  2 ++
+ 5 files changed, 42 insertions(+), 15 deletions(-)
+
+diff --git a/arch/powerpc/include/asm/perf_event_server.h b/arch/powerpc/include/asm/perf_event_server.h
+index 67a8a9585d50..e60aeb46d6a0 100644
+--- a/arch/powerpc/include/asm/perf_event_server.h
++++ b/arch/powerpc/include/asm/perf_event_server.h
+@@ -41,6 +41,8 @@ struct power_pmu {
+ 	void		(*get_mem_data_src)(union perf_mem_data_src *dsrc,
+ 				u32 flags, struct pt_regs *regs);
+ 	void		(*get_mem_weight)(u64 *weight);
++	unsigned long	group_constraint_mask;
++	unsigned long	group_constraint_val;
+ 	u64             (*bhrb_filter_map)(u64 branch_sample_type);
+ 	void            (*config_bhrb)(u64 pmu_bhrb_filter);
+ 	void		(*disable_pmc)(unsigned int pmc, unsigned long mmcr[]);
+diff --git a/arch/powerpc/perf/core-book3s.c b/arch/powerpc/perf/core-book3s.c
+index b4976cae1005..383cc3640ac6 100644
+--- a/arch/powerpc/perf/core-book3s.c
++++ b/arch/powerpc/perf/core-book3s.c
+@@ -872,6 +872,8 @@ static int power_check_constraints(struct cpu_hw_events *cpuhw,
+ 	int i, j;
+ 	unsigned long addf = ppmu->add_fields;
+ 	unsigned long tadd = ppmu->test_adder;
++	unsigned long grp_mask = ppmu->group_constraint_mask;
++	unsigned long grp_val = ppmu->group_constraint_val;
+ 
+ 	if (n_ev > ppmu->n_counter)
+ 		return -1;
+@@ -892,15 +894,23 @@ static int power_check_constraints(struct cpu_hw_events *cpuhw,
+ 	for (i = 0; i < n_ev; ++i) {
+ 		nv = (value | cpuhw->avalues[i][0]) +
+ 			(value & cpuhw->avalues[i][0] & addf);
+-		if ((((nv + tadd) ^ value) & mask) != 0 ||
+-		    (((nv + tadd) ^ cpuhw->avalues[i][0]) &
+-		     cpuhw->amasks[i][0]) != 0)
++
++		if (((((nv + tadd) ^ value) & mask) & (~grp_mask)) != 0)
++			break;
++
++		if (((((nv + tadd) ^ cpuhw->avalues[i][0]) & cpuhw->amasks[i][0])
++			& (~grp_mask)) != 0)
+ 			break;
++
+ 		value = nv;
+ 		mask |= cpuhw->amasks[i][0];
+ 	}
+-	if (i == n_ev)
+-		return 0;	/* all OK */
++	if (i == n_ev) {
++		if ((value & mask & grp_mask) != (mask & grp_val))
++			return -1;
++		else
++			return 0;	/* all OK */
++	}
+ 
+ 	/* doesn't work, gather alternatives... */
+ 	if (!ppmu->get_alternatives)
+diff --git a/arch/powerpc/perf/isa207-common.c b/arch/powerpc/perf/isa207-common.c
+index 053b8e9aa9e7..a6c24d866b2f 100644
+--- a/arch/powerpc/perf/isa207-common.c
++++ b/arch/powerpc/perf/isa207-common.c
+@@ -287,17 +287,25 @@ int isa207_get_constraint(u64 event, unsigned long *maskp, unsigned long *valp)
+ 	}
+ 
+ 	if (unit >= 6 && unit <= 9) {
+-		/*
+-		 * L2/L3 events contain a cache selector field, which is
+-		 * supposed to be programmed into MMCRC. However MMCRC is only
+-		 * HV writable, and there is no API for guest kernels to modify
+-		 * it. The solution is for the hypervisor to initialise the
+-		 * field to zeroes, and for us to only ever allow events that
+-		 * have a cache selector of zero. The bank selector (bit 3) is
+-		 * irrelevant, as long as the rest of the value is 0.
+-		 */
+-		if (!cpu_has_feature(CPU_FTR_ARCH_300) && (cache & 0x7))
++		if (cpu_has_feature(CPU_FTR_ARCH_300)) {
++			mask  |= CNST_CACHE_GROUP_MASK;
++			value |= CNST_CACHE_GROUP_VAL(event & 0xff);
++
++			mask |= CNST_CACHE_PMC4_MASK;
++			if (pmc == 4)
++				value |= CNST_CACHE_PMC4_VAL;
++		} else if (cache & 0x7) {
++			/*
++			 * L2/L3 events contain a cache selector field, which is
++			 * supposed to be programmed into MMCRC. However MMCRC is only
++			 * HV writable, and there is no API for guest kernels to modify
++			 * it. The solution is for the hypervisor to initialise the
++			 * field to zeroes, and for us to only ever allow events that
++			 * have a cache selector of zero. The bank selector (bit 3) is
++			 * irrelevant, as long as the rest of the value is 0.
++			 */
+ 			return -1;
++		}
+ 
+ 	} else if (cpu_has_feature(CPU_FTR_ARCH_300) || (event & EVENT_IS_L1)) {
+ 		mask  |= CNST_L1_QUAL_MASK;
+diff --git a/arch/powerpc/perf/isa207-common.h b/arch/powerpc/perf/isa207-common.h
+index e5a621699a6d..91350f42a662 100644
+--- a/arch/powerpc/perf/isa207-common.h
++++ b/arch/powerpc/perf/isa207-common.h
+@@ -134,6 +134,11 @@
+ #define CNST_SAMPLE_VAL(v)	(((v) & EVENT_SAMPLE_MASK) << 16)
+ #define CNST_SAMPLE_MASK	CNST_SAMPLE_VAL(EVENT_SAMPLE_MASK)
+ 
++#define CNST_CACHE_GROUP_VAL(v)	(((v) & 0xffull) << 55)
++#define CNST_CACHE_GROUP_MASK	CNST_CACHE_GROUP_VAL(0xff)
++#define CNST_CACHE_PMC4_VAL	(1ull << 54)
++#define CNST_CACHE_PMC4_MASK	CNST_CACHE_PMC4_VAL
++
+ /*
+  * For NC we are counting up to 4 events. This requires three bits, and we need
+  * the fifth event to overflow and set the 4th bit. To achieve that we bias the
+diff --git a/arch/powerpc/perf/power9-pmu.c b/arch/powerpc/perf/power9-pmu.c
+index a5f8c563001b..deffe1c3c518 100644
+--- a/arch/powerpc/perf/power9-pmu.c
++++ b/arch/powerpc/perf/power9-pmu.c
+@@ -419,6 +419,8 @@ static struct power_pmu power9_pmu = {
+ 	.n_counter		= MAX_PMU_COUNTERS,
+ 	.add_fields		= ISA207_ADD_FIELDS,
+ 	.test_adder		= ISA207_TEST_ADDER,
++	.group_constraint_mask	= CNST_CACHE_PMC4_MASK,
++	.group_constraint_val	= CNST_CACHE_PMC4_VAL,
+ 	.compute_mmcr		= isa207_compute_mmcr,
+ 	.config_bhrb		= power9_config_bhrb,
+ 	.bhrb_filter_map	= power9_bhrb_filter_map,
+-- 
+2.22.0
+

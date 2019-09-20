@@ -1,0 +1,135 @@
+From: Vlastimil Babka <vbabka@suse.cz>
+Date: Thu, 11 Jul 2019 20:55:06 -0700
+Subject: mm, debug_pagelloc: use static keys to enable debugging
+Git-commit: 96a2b03f281d3a3b29c27028164f43090d6495b9
+Patch-mainline: v5.3-rc1
+References: PM-1168, bsc#1144653, VM Debug Functionality
+
+Patch series "debug_pagealloc improvements".
+
+I have been recently debugging some pcplist corruptions, where it would be
+useful to perform struct page checks immediately as pages are allocated
+from and freed to pcplists, which is now only possible by rebuilding the
+kernel with CONFIG_DEBUG_VM (details in Patch 2 changelog).
+
+To make this kind of debugging simpler in future on a distro kernel, I
+have improved CONFIG_DEBUG_PAGEALLOC so that it has even smaller overhead
+when not enabled at boot time (Patch 1) and also when enabled (Patch 3),
+and extended it to perform the struct page checks more often when enabled
+(Patch 2).  Now it can be configured in when building a distro kernel
+without extra overhead, and debugging page use after free or double free
+can be enabled simply by rebooting with debug_pagealloc=on.
+
+This patch (of 3):
+
+CONFIG_DEBUG_PAGEALLOC has been redesigned by 031bc5743f15
+("mm/debug-pagealloc: make debug-pagealloc boottime configurable") to
+allow being always enabled in a distro kernel, but only perform its
+expensive functionality when booted with debug_pagelloc=on.  We can
+further reduce the overhead when not boot-enabled (including page
+allocator fast paths) using static keys.  This patch introduces one for
+debug_pagealloc core functionality, and another for the optional guard
+page functionality (enabled by booting with debug_guardpage_minorder=X).
+
+Link: http://lkml.kernel.org/r/20190603143451.27353-2-vbabka@suse.cz
+Signed-off-by: Vlastimil Babka <vbabka@suse.cz>
+Reviewed-by: Andrew Morton <akpm@linux-foundation.org>
+Cc: Joonsoo Kim <iamjoonsoo.kim@lge.com>
+Cc: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+Cc: Michal Hocko <mhocko@kernel.org>
+Cc: Vlastimil Babka <vbabka@suse.cz>
+Cc: Matthew Wilcox <willy@infradead.org>
+Cc: Mel Gorman <mgorman@techsingularity.net>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+---
+ include/linux/mm.h |   15 +++++++++++----
+ mm/page_alloc.c    |   23 +++++++++++++++++------
+ 2 files changed, 28 insertions(+), 10 deletions(-)
+
+--- a/include/linux/mm.h
++++ b/include/linux/mm.h
+@@ -2537,12 +2537,19 @@ static inline bool page_is_poisoned(stru
+ #endif
+ 
+ #ifdef CONFIG_DEBUG_PAGEALLOC
+-extern bool _debug_pagealloc_enabled;
++#ifdef CONFIG_DEBUG_PAGEALLOC_ENABLE_DEFAULT
++DECLARE_STATIC_KEY_TRUE(_debug_pagealloc_enabled);
++#else
++DECLARE_STATIC_KEY_FALSE(_debug_pagealloc_enabled);
++#endif
+ extern void __kernel_map_pages(struct page *page, int numpages, int enable);
+ 
+ static inline bool debug_pagealloc_enabled(void)
+ {
+-	return _debug_pagealloc_enabled;
++	if (!IS_ENABLED(CONFIG_DEBUG_PAGEALLOC))
++		return false;
++
++	return static_branch_unlikely(&_debug_pagealloc_enabled);
+ }
+ 
+ static inline void
+@@ -2703,7 +2710,7 @@ extern struct page_ext_operations debug_
+ 
+ #ifdef CONFIG_DEBUG_PAGEALLOC
+ extern unsigned int _debug_guardpage_minorder;
+-extern bool _debug_guardpage_enabled;
++DECLARE_STATIC_KEY_FALSE(_debug_guardpage_enabled);
+ 
+ static inline unsigned int debug_guardpage_minorder(void)
+ {
+@@ -2712,7 +2719,7 @@ static inline unsigned int debug_guardpa
+ 
+ static inline bool debug_guardpage_enabled(void)
+ {
+-	return _debug_guardpage_enabled;
++	return static_branch_unlikely(&_debug_guardpage_enabled);
+ }
+ 
+ static inline bool page_is_guard(struct page *page)
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -623,16 +623,27 @@ void prep_compound_page(struct page *pag
+ 
+ #ifdef CONFIG_DEBUG_PAGEALLOC
+ unsigned int _debug_guardpage_minorder;
+-bool _debug_pagealloc_enabled __read_mostly
+-			= IS_ENABLED(CONFIG_DEBUG_PAGEALLOC_ENABLE_DEFAULT);
++
++#ifdef CONFIG_DEBUG_PAGEALLOC_ENABLE_DEFAULT
++DEFINE_STATIC_KEY_TRUE(_debug_pagealloc_enabled);
++#else
++DEFINE_STATIC_KEY_FALSE(_debug_pagealloc_enabled);
++#endif
+ EXPORT_SYMBOL(_debug_pagealloc_enabled);
+-bool _debug_guardpage_enabled __read_mostly;
++
++DEFINE_STATIC_KEY_FALSE(_debug_guardpage_enabled);
+ 
+ static int __init early_debug_pagealloc(char *buf)
+ {
+-	if (!buf)
++	bool enable = false;
++
++	if (kstrtobool(buf, &enable))
+ 		return -EINVAL;
+-	return kstrtobool(buf, &_debug_pagealloc_enabled);
++
++	if (enable)
++		static_branch_enable(&_debug_pagealloc_enabled);
++
++	return 0;
+ }
+ early_param("debug_pagealloc", early_debug_pagealloc);
+ 
+@@ -656,7 +667,7 @@ static void init_debug_guardpage(void)
+ 	if (!debug_guardpage_minorder())
+ 		return;
+ 
+-	_debug_guardpage_enabled = true;
++	static_branch_enable(&_debug_guardpage_enabled);
+ }
+ 
+ struct page_ext_operations debug_guardpage_ops = {

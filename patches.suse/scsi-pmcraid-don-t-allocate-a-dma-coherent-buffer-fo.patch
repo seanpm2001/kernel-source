@@ -1,0 +1,59 @@
+From: Christoph Hellwig <hch@lst.de>
+Date: Thu, 18 Oct 2018 15:05:36 +0200
+Subject: scsi: pmcraid: don't allocate a dma coherent buffer for sense data
+Patch-mainline: v5.0-rc1
+Git-commit: a9b9e3adc9a98ce59a8544d31da597807a473bd1
+References: bsc#1135990 jsc#SLE-4709
+
+We can just dma map the sense buffer passed with the scsi command,
+and that gets us out of the nasty business of doing dma coherent
+allocations from irq context.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/pmcraid.c |   24 ++++++++----------------
+ 1 file changed, 8 insertions(+), 16 deletions(-)
+
+--- a/drivers/scsi/pmcraid.c
++++ b/drivers/scsi/pmcraid.c
+@@ -851,16 +851,9 @@ static void pmcraid_erp_done(struct pmcr
+ 			    cmd->ioa_cb->ioarcb.cdb[0], ioasc);
+ 	}
+ 
+-	/* if we had allocated sense buffers for request sense, copy the sense
+-	 * release the buffers
+-	 */
+-	if (cmd->sense_buffer != NULL) {
+-		memcpy(scsi_cmd->sense_buffer,
+-		       cmd->sense_buffer,
+-		       SCSI_SENSE_BUFFERSIZE);
+-		pci_free_consistent(pinstance->pdev,
+-				    SCSI_SENSE_BUFFERSIZE,
+-				    cmd->sense_buffer, cmd->sense_buffer_dma);
++	if (cmd->sense_buffer) {
++		dma_unmap_single(&pinstance->pdev->dev, cmd->sense_buffer_dma,
++				 SCSI_SENSE_BUFFERSIZE, DMA_FROM_DEVICE);
+ 		cmd->sense_buffer = NULL;
+ 		cmd->sense_buffer_dma = 0;
+ 	}
+@@ -2451,13 +2444,12 @@ static void pmcraid_request_sense(struct
+ {
+ 	struct pmcraid_ioarcb *ioarcb = &cmd->ioa_cb->ioarcb;
+ 	struct pmcraid_ioadl_desc *ioadl = ioarcb->add_data.u.ioadl;
++	struct device *dev = &cmd->drv_inst->pdev->dev;
+ 
+-	/* allocate DMAable memory for sense buffers */
+-	cmd->sense_buffer = pci_alloc_consistent(cmd->drv_inst->pdev,
+-						 SCSI_SENSE_BUFFERSIZE,
+-						 &cmd->sense_buffer_dma);
+-
+-	if (cmd->sense_buffer == NULL) {
++	cmd->sense_buffer = cmd->scsi_cmd->sense_buffer;
++	cmd->sense_buffer_dma = dma_map_single(dev, cmd->sense_buffer,
++			SCSI_SENSE_BUFFERSIZE, DMA_FROM_DEVICE);
++	if (dma_mapping_error(dev, cmd->sense_buffer_dma)) {
+ 		pmcraid_err
+ 			("couldn't allocate sense buffer for request sense\n");
+ 		pmcraid_erp_done(cmd);

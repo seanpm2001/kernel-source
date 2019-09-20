@@ -1,0 +1,78 @@
+From: Ming Lei <ming.lei@redhat.com>
+Date: Tue, 18 Jun 2019 09:37:47 +0800
+Subject: scsi: pmcraid: use sg helper to iterate over scatterlist
+Patch-mainline: v5.3-rc1
+Git-commit: 74eb7446eda5e348dbb90981e91e9caf54f2fde4
+References: bsc#1135990 jsc#SLE-4709
+
+Unlike the legacy I/O path, scsi-mq preallocates a large array to hold
+the scatterlist for each request. This static allocation can consume
+substantial amounts of memory on modern controllers which support a
+large number of concurrently outstanding requests.
+
+To facilitate a switch to a smaller static allocation combined with a
+dynamic allocation for requests that need it, we need to make sure all
+SCSI drivers handle chained scatterlists correctly.
+
+Convert remaining drivers that directly dereference the scatterlist
+array to using the iterator functions.
+
+[mkp: clarified commit message]
+
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Bart Van Assche <bvanassche@acm.org>
+Signed-off-by: Ming Lei <ming.lei@redhat.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/pmcraid.c |   14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+--- a/drivers/scsi/pmcraid.c
++++ b/drivers/scsi/pmcraid.c
+@@ -3312,7 +3312,7 @@ static int pmcraid_copy_sglist(
+ 	int direction
+ )
+ {
+-	struct scatterlist *scatterlist;
++	struct scatterlist *sg;
+ 	void *kaddr;
+ 	int bsize_elem;
+ 	int i;
+@@ -3321,10 +3321,10 @@ static int pmcraid_copy_sglist(
+ 	/* Determine the actual number of bytes per element */
+ 	bsize_elem = PAGE_SIZE * (1 << sglist->order);
+ 
+-	scatterlist = sglist->scatterlist;
++	sg = sglist->scatterlist;
+ 
+-	for (i = 0; i < (len / bsize_elem); i++, buffer += bsize_elem) {
+-		struct page *page = sg_page(&scatterlist[i]);
++	for (i = 0; i < (len / bsize_elem); i++, sg = sg_next(sg), buffer += bsize_elem) {
++		struct page *page = sg_page(sg);
+ 
+ 		kaddr = kmap(page);
+ 		if (direction == DMA_TO_DEVICE)
+@@ -3339,11 +3339,11 @@ static int pmcraid_copy_sglist(
+ 			return -EFAULT;
+ 		}
+ 
+-		scatterlist[i].length = bsize_elem;
++		sg->length = bsize_elem;
+ 	}
+ 
+ 	if (len % bsize_elem) {
+-		struct page *page = sg_page(&scatterlist[i]);
++		struct page *page = sg_page(sg);
+ 
+ 		kaddr = kmap(page);
+ 
+@@ -3354,7 +3354,7 @@ static int pmcraid_copy_sglist(
+ 
+ 		kunmap(page);
+ 
+-		scatterlist[i].length = len % bsize_elem;
++		sg->length = len % bsize_elem;
+ 	}
+ 
+ 	if (rc) {

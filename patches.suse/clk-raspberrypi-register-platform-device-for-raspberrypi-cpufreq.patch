@@ -1,0 +1,67 @@
+From: Nicolas Saenz Julienne <nsaenzjulienne@suse.de>
+Date: Wed, 12 Jun 2019 20:24:57 +0200
+Subject: clk: raspberrypi: register platform device for raspberrypi-cpufreq
+Git-commit: e2bb18347c8e5c4187831f3700c380e3c759601a
+Patch-mainline: v5.3-rc1
+References: jsc#SLE-7294
+
+As 'clk-raspberrypi' depends on RPi's firmware interface, which might be
+configured as a module, the cpu clock might not be available for the
+cpufreq driver during it's init process. So we register the
+'raspberrypi-cpufreq' platform device after the probe sequence succeeds.
+
+Signed-off-by: Nicolas Saenz Julienne <nsaenzjulienne@suse.de>
+Acked-by: Eric Anholt <eric@anholt.net>
+Signed-off-by: Stephen Boyd <sboyd@kernel.org>
+---
+ drivers/clk/bcm/clk-raspberrypi.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/drivers/clk/bcm/clk-raspberrypi.c b/drivers/clk/bcm/clk-raspberrypi.c
+index fef1f7caee4f..1654fd0eedc9 100644
+--- a/drivers/clk/bcm/clk-raspberrypi.c
++++ b/drivers/clk/bcm/clk-raspberrypi.c
+@@ -34,6 +34,7 @@
+ struct raspberrypi_clk {
+ 	struct device *dev;
+ 	struct rpi_firmware *firmware;
++	struct platform_device *cpufreq;
+ 
+ 	unsigned long min_rate;
+ 	unsigned long max_rate;
+@@ -272,6 +273,7 @@ static int raspberrypi_clk_probe(struct platform_device *pdev)
+ 
+ 	rpi->dev = dev;
+ 	rpi->firmware = firmware;
++	platform_set_drvdata(pdev, rpi);
+ 
+ 	ret = raspberrypi_register_pllb(rpi);
+ 	if (ret) {
+@@ -283,6 +285,18 @@ static int raspberrypi_clk_probe(struct platform_device *pdev)
+ 	if (ret)
+ 		return ret;
+ 
++	rpi->cpufreq = platform_device_register_data(dev, "raspberrypi-cpufreq",
++						     -1, NULL, 0);
++
++	return 0;
++}
++
++static int raspberrypi_clk_remove(struct platform_device *pdev)
++{
++	struct raspberrypi_clk *rpi = platform_get_drvdata(pdev);
++
++	platform_device_unregister(rpi->cpufreq);
++
+ 	return 0;
+ }
+ 
+@@ -291,6 +305,7 @@ static struct platform_driver raspberrypi_clk_driver = {
+ 		.name = "raspberrypi-clk",
+ 	},
+ 	.probe          = raspberrypi_clk_probe,
++	.remove		= raspberrypi_clk_remove,
+ };
+ module_platform_driver(raspberrypi_clk_driver);
+ 
+

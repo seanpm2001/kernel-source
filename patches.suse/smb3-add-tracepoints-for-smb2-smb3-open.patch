@@ -1,0 +1,149 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Wed, 30 May 2018 21:42:34 -0500
+Subject: [PATCH] smb3: add tracepoints for smb2/smb3 open
+Git-commit: 28d59363ae746d01e7841479da718631f941353d
+Patch-mainline: v4.17
+References: bsc#1144333
+
+add two tracepoints for open completion. One for error one for completion (open_done).
+Sample output below
+
+            TASK-PID   CPU#  ||||    TIMESTAMP  FUNCTION
+               | |       |   ||||       |         |
+            bash-15348 [007] .... 42441.027492: smb3_enter: 	cifs_lookup: xid=45
+            bash-15348 [007] .... 42441.028214: smb3_cmd_err: 	sid=0x6173e4ce tid=0xa05150e6 cmd=5 mid=105 status=0xc0000034 rc=-2
+            bash-15348 [007] .... 42441.028219: smb3_open_err: xid=45 sid=0x6173e4ce tid=0xa05150e6 cr_opts=0x0 des_access=0x80 rc=-2
+            bash-15348 [007] .... 42441.028225: smb3_exit_done: 	cifs_lookup: xid=45
+          fop777-24560 [002] .... 42442.627617: smb3_enter: 	cifs_revalidate_dentry_attr: xid=46
+          fop777-24560 [003] .... 42442.628301: smb3_cmd_err: 	sid=0x6173e4ce tid=0xa05150e6 cmd=5 mid=106 status=0xc0000034 rc=-2
+          fop777-24560 [003] .... 42442.628319: smb3_open_err: xid=46 sid=0x6173e4ce tid=0xa05150e6 cr_opts=0x0 des_access=0x80 rc=-2
+          fop777-24560 [003] .... 42442.628335: smb3_enter: 	cifs_atomic_open: xid=47
+          fop777-24560 [003] .... 42442.629587: smb3_cmd_done: 	sid=0x6173e4ce tid=0xa05150e6 cmd=5 mid=107
+          fop777-24560 [003] .... 42442.629592: smb3_open_done: xid=47 sid=0x6173e4ce tid=0xa05150e6 fid=0xb8a0984d cr_opts=0x40 des_access=0x40000080
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c |  7 ++++-
+ fs/cifs/trace.h   | 86 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 92 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 5e947db322a7..6436e9187045 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -1975,8 +1975,13 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
+ 			resp_buftype = CIFS_NO_BUFFER;
+ 			rsp = NULL;
+ 		}
++		trace_smb3_open_err(xid, tcon->tid, ses->Suid,
++				    oparms->create_options, oparms->desired_access, rc);
+ 		goto creat_exit;
+-	}
++	} else
++		trace_smb3_open_done(xid, rsp->PersistentFileId, tcon->tid,
++				     ses->Suid, oparms->create_options,
++				     oparms->desired_access);
+ 
+ 	oparms->fid->persistent_fid = rsp->PersistentFileId;
+ 	oparms->fid->volatile_fid = rsp->VolatileFileId;
+diff --git a/fs/cifs/trace.h b/fs/cifs/trace.h
+index 9bba8e1b00ba..61e74d455d90 100644
+--- a/fs/cifs/trace.h
++++ b/fs/cifs/trace.h
+@@ -335,6 +335,92 @@ DEFINE_EVENT(smb3_enter_exit_class, smb3_##name,  \
+ DEFINE_SMB3_ENTER_EXIT_EVENT(enter);
+ DEFINE_SMB3_ENTER_EXIT_EVENT(exit_done);
+ 
++/*
++ * For smb2/smb3 open call
++ */
++DECLARE_EVENT_CLASS(smb3_open_err_class,
++	TP_PROTO(unsigned int xid,
++		__u32	tid,
++		__u64	sesid,
++		int	create_options,
++		int	desired_access,
++		int	rc),
++	TP_ARGS(xid, tid, sesid, create_options, desired_access, rc),
++	TP_STRUCT__entry(
++		__field(unsigned int, xid)
++		__field(__u32, tid)
++		__field(__u64, sesid)
++		__field(int,   create_options)
++		__field(int, desired_access)
++		__field(int, rc)
++	),
++	TP_fast_assign(
++		__entry->xid = xid;
++		__entry->tid = tid;
++		__entry->sesid = sesid;
++		__entry->create_options = create_options;
++		__entry->desired_access = desired_access;
++		__entry->rc = rc;
++	),
++	TP_printk("xid=%u sid=0x%llx tid=0x%x cr_opts=0x%x des_access=0x%x rc=%d",
++		__entry->xid, __entry->sesid, __entry->tid,
++		__entry->create_options, __entry->desired_access, __entry->rc)
++)
++
++#define DEFINE_SMB3_OPEN_ERR_EVENT(name)          \
++DEFINE_EVENT(smb3_open_err_class, smb3_##name,    \
++	TP_PROTO(unsigned int xid,		\
++		__u32	tid,			\
++		__u64	sesid,			\
++		int	create_options,		\
++		int	desired_access,		\
++		int	rc),			\
++	TP_ARGS(xid, tid, sesid, create_options, desired_access, rc))
++
++DEFINE_SMB3_OPEN_ERR_EVENT(open_err);
++
++
++DECLARE_EVENT_CLASS(smb3_open_done_class,
++	TP_PROTO(unsigned int xid,
++		__u64	fid,
++		__u32	tid,
++		__u64	sesid,
++		int	create_options,
++		int	desired_access),
++	TP_ARGS(xid, fid, tid, sesid, create_options, desired_access),
++	TP_STRUCT__entry(
++		__field(unsigned int, xid)
++		__field(__u64, fid)
++		__field(__u32, tid)
++		__field(__u64, sesid)
++		__field(int, create_options)
++		__field(int, desired_access)
++	),
++	TP_fast_assign(
++		__entry->xid = xid;
++		__entry->fid = fid;
++		__entry->tid = tid;
++		__entry->sesid = sesid;
++		__entry->create_options = create_options;
++		__entry->desired_access = desired_access;
++	),
++	TP_printk("xid=%u sid=0x%llx tid=0x%x fid=0x%llx cr_opts=0x%x des_access=0x%x",
++		__entry->xid, __entry->sesid, __entry->tid, __entry->fid,
++		__entry->create_options, __entry->desired_access)
++)
++
++#define DEFINE_SMB3_OPEN_DONE_EVENT(name)        \
++DEFINE_EVENT(smb3_open_done_class, smb3_##name,  \
++	TP_PROTO(unsigned int xid,		\
++		__u64	fid,			\
++		__u32	tid,			\
++		__u64	sesid,			\
++		int	create_options,		\
++		int	desired_access),	\
++	TP_ARGS(xid, fid, tid, sesid, create_options, desired_access))
++
++DEFINE_SMB3_OPEN_DONE_EVENT(open_done);
++
+ #endif /* _CIFS_TRACE_H */
+ 
+ #undef TRACE_INCLUDE_PATH
+-- 
+2.16.4
+

@@ -1,0 +1,81 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Sat, 1 Sep 2018 01:10:17 -0500
+Subject: [PATCH] smb3: add tracepoint to catch cases where credit refund of
+ failed op overlaps reconnect
+Git-commit: b340a4d4aa18691a6d8b0e747840b0cf30dc01cb
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+Add tracepoint to catch potential cases where a pending operation overlapping a
+reconnect could fail and incorrectly refund its credits causing the client
+to think it has more credits available than the server thinks it does.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c |  6 ++++++
+ fs/cifs/trace.h   | 30 ++++++++++++++++++++++++++++++
+ 2 files changed, 36 insertions(+)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 89985a0a6819..831fa60ef886 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -74,6 +74,12 @@ smb2_add_credits(struct TCP_Server_Info *server, const unsigned int add,
+ 	int *val, rc = 0;
+ 	spin_lock(&server->req_lock);
+ 	val = server->ops->get_credits_field(server, optype);
++
++	/* eg found case where write overlapping reconnect messed up credits */
++	if (((optype & CIFS_OP_MASK) == CIFS_NEG_OP) && (*val != 0))
++		trace_smb3_reconnect_with_invalid_credits(server->CurrentMid,
++			server->hostname, *val);
++
+ 	*val += add;
+ 	if (*val > 65000) {
+ 		*val = 65000; /* Don't get near 64K credits, avoid srv bugs */
+diff --git a/fs/cifs/trace.h b/fs/cifs/trace.h
+index d4aed5217a56..43e5bd417b81 100644
+--- a/fs/cifs/trace.h
++++ b/fs/cifs/trace.h
+@@ -486,6 +486,36 @@ DEFINE_EVENT(smb3_reconnect_class, smb3_##name,  \
+ DEFINE_SMB3_RECONNECT_EVENT(reconnect);
+ DEFINE_SMB3_RECONNECT_EVENT(partial_send_reconnect);
+ 
++DECLARE_EVENT_CLASS(smb3_credit_class,
++	TP_PROTO(__u64	currmid,
++		char *hostname,
++		int credits),
++	TP_ARGS(currmid, hostname, credits),
++	TP_STRUCT__entry(
++		__field(__u64, currmid)
++		__field(char *, hostname)
++		__field(int, credits)
++	),
++	TP_fast_assign(
++		__entry->currmid = currmid;
++		__entry->hostname = hostname;
++		__entry->credits = credits;
++	),
++	TP_printk("server=%s current_mid=0x%llx credits=%d",
++		__entry->hostname,
++		__entry->currmid,
++		__entry->credits)
++)
++
++#define DEFINE_SMB3_CREDIT_EVENT(name)        \
++DEFINE_EVENT(smb3_credit_class, smb3_##name,  \
++	TP_PROTO(__u64	currmid,		\
++		char *hostname,			\
++		int  credits),			\
++	TP_ARGS(currmid, hostname, credits))
++
++DEFINE_SMB3_CREDIT_EVENT(reconnect_with_invalid_credits);
++
+ #endif /* _CIFS_TRACE_H */
+ 
+ #undef TRACE_INCLUDE_PATH
+-- 
+2.16.4
+

@@ -1,0 +1,113 @@
+From: Boris Brezillon <bbrezillon@kernel.org>
+Date: Sat, 19 Jan 2019 16:04:12 +0100
+Subject: spi: spi-mem: Add devm_spi_mem_dirmap_{create,destroy}()
+
+Git-commit: 1fc1b63638da1accb27264a507b23aa6863c3852
+Patch-mainline: v5.1-rc1
+References: fate#326572
+
+Since direct mapping descriptors usually the same lifetime as the SPI
+MEM device adding devm_ variants of the spi_mem_dirmap_{create,destroy}()
+should greatly simplify error/remove path of spi-mem drivers making use
+of the direct mapping API.
+
+Signed-off-by: Boris Brezillon <bbrezillon@kernel.org>
+Signed-off-by: Mark Brown <broonie@kernel.org>
+Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
+---
+ drivers/spi/spi-mem.c       |   69 ++++++++++++++++++++++++++++++++++++++++++++
+ include/linux/spi/spi-mem.h |    5 +++
+ 2 files changed, 74 insertions(+)
+
+--- a/drivers/spi/spi-mem.c
++++ b/drivers/spi/spi-mem.c
+@@ -552,6 +552,75 @@ void spi_mem_dirmap_destroy(struct spi_m
+ }
+ EXPORT_SYMBOL_GPL(spi_mem_dirmap_destroy);
+ 
++static void devm_spi_mem_dirmap_release(struct device *dev, void *res)
++{
++	struct spi_mem_dirmap_desc *desc = *(struct spi_mem_dirmap_desc **)res;
++
++	spi_mem_dirmap_destroy(desc);
++}
++
++/**
++ * devm_spi_mem_dirmap_create() - Create a direct mapping descriptor and attach
++ *				  it to a device
++ * @dev: device the dirmap desc will be attached to
++ * @mem: SPI mem device this direct mapping should be created for
++ * @info: direct mapping information
++ *
++ * devm_ variant of the spi_mem_dirmap_create() function. See
++ * spi_mem_dirmap_create() for more details.
++ *
++ * Return: a valid pointer in case of success, and ERR_PTR() otherwise.
++ */
++struct spi_mem_dirmap_desc *
++devm_spi_mem_dirmap_create(struct device *dev, struct spi_mem *mem,
++			   const struct spi_mem_dirmap_info *info)
++{
++	struct spi_mem_dirmap_desc **ptr, *desc;
++
++	ptr = devres_alloc(devm_spi_mem_dirmap_release, sizeof(*ptr),
++			   GFP_KERNEL);
++	if (!ptr)
++		return ERR_PTR(-ENOMEM);
++
++	desc = spi_mem_dirmap_create(mem, info);
++	if (IS_ERR(desc)) {
++		devres_free(ptr);
++	} else {
++		*ptr = desc;
++		devres_add(dev, ptr);
++	}
++
++	return desc;
++}
++EXPORT_SYMBOL_GPL(devm_spi_mem_dirmap_create);
++
++static int devm_spi_mem_dirmap_match(struct device *dev, void *res, void *data)
++{
++        struct spi_mem_dirmap_desc **ptr = res;
++
++        if (WARN_ON(!ptr || !*ptr))
++                return 0;
++
++	return *ptr == data;
++}
++
++/**
++ * devm_spi_mem_dirmap_destroy() - Destroy a direct mapping descriptor attached
++ *				   to a device
++ * @dev: device the dirmap desc is attached to
++ * @desc: the direct mapping descriptor to destroy
++ *
++ * devm_ variant of the spi_mem_dirmap_destroy() function. See
++ * spi_mem_dirmap_destroy() for more details.
++ */
++void devm_spi_mem_dirmap_destroy(struct device *dev,
++				 struct spi_mem_dirmap_desc *desc)
++{
++	devres_release(dev, devm_spi_mem_dirmap_release,
++		       devm_spi_mem_dirmap_match, desc);
++}
++EXPORT_SYMBOL_GPL(devm_spi_mem_dirmap_destroy);
++
+ /**
+  * spi_mem_dirmap_dirmap_read() - Read data through a direct mapping
+  * @desc: direct mapping descriptor
+--- a/include/linux/spi/spi-mem.h
++++ b/include/linux/spi/spi-mem.h
+@@ -328,6 +328,11 @@ ssize_t spi_mem_dirmap_read(struct spi_m
+ 			    u64 offs, size_t len, void *buf);
+ ssize_t spi_mem_dirmap_write(struct spi_mem_dirmap_desc *desc,
+ 			     u64 offs, size_t len, const void *buf);
++struct spi_mem_dirmap_desc *
++devm_spi_mem_dirmap_create(struct device *dev, struct spi_mem *mem,
++			   const struct spi_mem_dirmap_info *info);
++void devm_spi_mem_dirmap_destroy(struct device *dev,
++				 struct spi_mem_dirmap_desc *desc);
+ 
+ int spi_mem_driver_register_with_owner(struct spi_mem_driver *drv,
+ 				       struct module *owner);

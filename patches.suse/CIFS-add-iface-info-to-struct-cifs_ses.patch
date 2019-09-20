@@ -1,0 +1,77 @@
+From: Aurelien Aptel <aaptel@suse.com>
+Date: Thu, 14 Jun 2018 15:43:18 +0200
+Subject: [PATCH] CIFS: add iface info to struct cifs_ses
+Git-commit: b6f0dd5d75f9689d57c7ea49e52c80cabb876cb4
+Patch-mainline: v4.18-rc1
+References: bsc#1144333
+
+Signed-off-by: Aurelien Aptel <aaptel@suse.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsglob.h | 21 +++++++++++++++++++++
+ fs/cifs/misc.c     |  2 ++
+ 2 files changed, 23 insertions(+)
+
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index ff280447dae5..9dd5f1a3d64b 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -841,6 +841,13 @@ static inline void cifs_set_net_ns(struct TCP_Server_Info *srv, struct net *net)
+ 
+ #endif
+ 
++struct cifs_server_iface {
++	size_t speed;
++	unsigned int rdma_capable : 1;
++	unsigned int rss_capable : 1;
++	struct sockaddr_storage sockaddr;
++};
++
+ /*
+  * Session structure.  One of these for each uid session with a particular host
+  */
+@@ -878,6 +885,20 @@ struct cifs_ses {
+ #ifdef CONFIG_CIFS_SMB311
+ 	__u8 preauth_sha_hash[SMB2_PREAUTH_HASH_SIZE];
+ #endif /* 3.1.1 */
++
++	/*
++	 * Network interfaces available on the server this session is
++	 * connected to.
++	 *
++	 * Other channels can be opened by connecting and binding this
++	 * session to interfaces from this list.
++	 *
++	 * iface_lock should be taken when accessing any of these fields
++	 */
++	spinlock_t iface_lock;
++	struct cifs_server_iface *iface_list;
++	size_t iface_count;
++	unsigned long iface_last_update; /* jiffies */
+ };
+ 
+ static inline bool
+diff --git a/fs/cifs/misc.c b/fs/cifs/misc.c
+index bb40f3c050f6..53e8362cbc4a 100644
+--- a/fs/cifs/misc.c
++++ b/fs/cifs/misc.c
+@@ -82,6 +82,7 @@ sesInfoAlloc(void)
+ 		INIT_LIST_HEAD(&ret_buf->smb_ses_list);
+ 		INIT_LIST_HEAD(&ret_buf->tcon_list);
+ 		mutex_init(&ret_buf->session_mutex);
++		spin_lock_init(&ret_buf->iface_lock);
+ 	}
+ 	return ret_buf;
+ }
+@@ -102,6 +103,7 @@ sesInfoFree(struct cifs_ses *buf_to_free)
+ 	kfree(buf_to_free->user_name);
+ 	kfree(buf_to_free->domainName);
+ 	kzfree(buf_to_free->auth_key.response);
++	kfree(buf_to_free->iface_list);
+ 	kzfree(buf_to_free);
+ }
+ 
+-- 
+2.16.4
+

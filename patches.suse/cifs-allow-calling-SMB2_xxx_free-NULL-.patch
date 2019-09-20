@@ -1,0 +1,83 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Wed, 24 Oct 2018 11:50:33 +1000
+Subject: [PATCH] cifs: allow calling SMB2_xxx_free(NULL)
+Git-commit: 32a1fb36f6e50183871c2c1fcf5493c633e84732
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+Change these free functions to allow passing NULL as the argument and
+treat it as a no-op just like free(NULL) would.
+Or, if rqst->rq_iov is NULL.
+
+The second scenario could happen for smb2_queryfs() if the call
+to SMB2_query_info_init() fails and we go to qfs_exit to clean up
+and free all resources.
+In that case we have not yet assigned rqst[2].rq_iov and thus
+the rq_iov dereference in SMB2_close_free() will cause a NULL pointer
+dereference.
+
+Fixes:  1eb9fb52040f ("cifs: create SMB2_open_init()/SMB2_open_free() helpers")
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+CC: Stable <stable@vger.kernel.org>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c | 19 ++++++++++++-------
+ 1 file changed, 12 insertions(+), 7 deletions(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 5a08c8f6a322..7d7b016fe8bb 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -2243,10 +2243,12 @@ SMB2_open_free(struct smb_rqst *rqst)
+ {
+ 	int i;
+ 
+-	cifs_small_buf_release(rqst->rq_iov[0].iov_base);
+-	for (i = 1; i < rqst->rq_nvec; i++)
+-		if (rqst->rq_iov[i].iov_base != smb2_padding)
+-			kfree(rqst->rq_iov[i].iov_base);
++	if (rqst && rqst->rq_iov) {
++		cifs_small_buf_release(rqst->rq_iov[0].iov_base);
++		for (i = 1; i < rqst->rq_nvec; i++)
++			if (rqst->rq_iov[i].iov_base != smb2_padding)
++				kfree(rqst->rq_iov[i].iov_base);
++	}
+ }
+ 
+ int
+@@ -2536,7 +2538,8 @@ SMB2_close_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
+ void
+ SMB2_close_free(struct smb_rqst *rqst)
+ {
+-	cifs_small_buf_release(rqst->rq_iov[0].iov_base); /* request */
++	if (rqst && rqst->rq_iov)
++		cifs_small_buf_release(rqst->rq_iov[0].iov_base); /* request */
+ }
+ 
+ int
+@@ -2689,7 +2692,8 @@ SMB2_query_info_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
+ void
+ SMB2_query_info_free(struct smb_rqst *rqst)
+ {
+-	cifs_small_buf_release(rqst->rq_iov[0].iov_base); /* request */
++	if (rqst && rqst->rq_iov)
++		cifs_small_buf_release(rqst->rq_iov[0].iov_base); /* request */
+ }
+ 
+ static int
+@@ -3803,7 +3807,8 @@ SMB2_set_info_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
+ void
+ SMB2_set_info_free(struct smb_rqst *rqst)
+ {
+-	cifs_buf_release(rqst->rq_iov[0].iov_base); /* request */
++	if (rqst && rqst->rq_iov)
++		cifs_buf_release(rqst->rq_iov[0].iov_base); /* request */
+ }
+ 
+ static int
+-- 
+2.16.4
+

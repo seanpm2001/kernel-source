@@ -1,0 +1,102 @@
+From 96164ab2d880c9539989bea68d4790f6fd619b1f Mon Sep 17 00:00:00 2001
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Thu, 26 Apr 2018 08:10:18 -0600
+Subject: [PATCH] cifs: store the leaseKey in the fid on SMB2_open
+Patch-mainline: v4.18-rc1
+Git-commit: 96164ab2d880c9539989bea68d4790f6fd619b1f
+References: bsc#1051510, bsc#1144333
+
+In SMB2_open(), if we got a lease we need to store this in the fid structure
+or else we will never be able to map a lease break back to which file/fid
+it applies to.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/cifsglob.h | 2 +-
+ fs/cifs/smb2ops.c  | 7 +++++--
+ fs/cifs/smb2pdu.c  | 8 +++++---
+ 3 files changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index d71585025ef6..4f674b75bbc8 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -417,7 +417,7 @@ struct smb_version_operations {
+ 	/* create lease context buffer for CREATE request */
+ 	char * (*create_lease_buf)(u8 *, u8);
+ 	/* parse lease context buffer and return oplock/epoch info */
+-	__u8 (*parse_lease_buf)(void *, unsigned int *);
++	__u8 (*parse_lease_buf)(void *buf, unsigned int *epoch, char *lkey);
+ 	ssize_t (*copychunk_range)(const unsigned int,
+ 			struct cifsFileInfo *src_file,
+ 			struct cifsFileInfo *target_file,
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 718dbe22528b..ceaa358723f0 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -2079,7 +2079,7 @@ smb3_create_lease_buf(u8 *lease_key, u8 oplock)
+ }
+ 
+ static __u8
+-smb2_parse_lease_buf(void *buf, unsigned int *epoch)
++smb2_parse_lease_buf(void *buf, unsigned int *epoch, char *lease_key)
+ {
+ 	struct create_lease *lc = (struct create_lease *)buf;
+ 
+@@ -2090,13 +2090,16 @@ smb2_parse_lease_buf(void *buf, unsigned int *epoch)
+ }
+ 
+ static __u8
+-smb3_parse_lease_buf(void *buf, unsigned int *epoch)
++smb3_parse_lease_buf(void *buf, unsigned int *epoch, char *lease_key)
+ {
+ 	struct create_lease_v2 *lc = (struct create_lease_v2 *)buf;
+ 
+ 	*epoch = le16_to_cpu(lc->lcontext.Epoch);
+ 	if (lc->lcontext.LeaseFlags & SMB2_LEASE_FLAG_BREAK_IN_PROGRESS)
+ 		return SMB2_OPLOCK_LEVEL_NOCHANGE;
++	if (lease_key)
++		memcpy(lease_key, &lc->lcontext.LeaseKeyLow,
++		       SMB2_LEASE_KEY_SIZE);
+ 	return le32_to_cpu(lc->lcontext.LeaseState);
+ }
+ 
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 0f48741a0130..ef77df4ebdf3 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -1575,7 +1575,7 @@ create_reconnect_durable_buf(struct cifs_fid *fid)
+ 
+ static __u8
+ parse_lease_state(struct TCP_Server_Info *server, struct smb2_create_rsp *rsp,
+-		  unsigned int *epoch)
++		  unsigned int *epoch, char *lease_key)
+ {
+ 	char *data_offset;
+ 	struct create_context *cc;
+@@ -1590,7 +1590,8 @@ parse_lease_state(struct TCP_Server_Info *server, struct smb2_create_rsp *rsp,
+ 		name = le16_to_cpu(cc->NameOffset) + (char *)cc;
+ 		if (le16_to_cpu(cc->NameLength) == 4 &&
+ 		    strncmp(name, "RqLs", 4) == 0)
+-			return server->ops->parse_lease_buf(cc, epoch);
++			return server->ops->parse_lease_buf(cc, epoch,
++							    lease_key);
+ 
+ 		next = le32_to_cpu(cc->Next);
+ 		if (!next)
+@@ -1972,7 +1973,8 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
+ 	}
+ 
+ 	if (rsp->OplockLevel == SMB2_OPLOCK_LEVEL_LEASE)
+-		*oplock = parse_lease_state(server, rsp, &oparms->fid->epoch);
++		*oplock = parse_lease_state(server, rsp, &oparms->fid->epoch,
++					    oparms->fid->lease_key);
+ 	else
+ 		*oplock = rsp->OplockLevel;
+ creat_exit:
+-- 
+2.16.4
+

@@ -1,0 +1,163 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Sun, 22 Apr 2018 15:30:12 -0600
+Subject: [PATCH] cifs: update calc_size to take a server argument
+Git-commit: 9ec672bd17131fe26c966960a573a76fdb1da323
+Patch-mainline: v4.17
+References: bsc#1144333
+
+and change the smb2 version to take heder_preamble_size into account
+instead of hardcoding it as 4 bytes.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsglob.h  |  2 +-
+ fs/cifs/cifsproto.h |  2 +-
+ fs/cifs/misc.c      |  2 +-
+ fs/cifs/netmisc.c   |  2 +-
+ fs/cifs/readdir.c   |  6 ++++--
+ fs/cifs/smb2misc.c  | 14 +++++++-------
+ fs/cifs/smb2proto.h |  2 +-
+ 7 files changed, 16 insertions(+), 14 deletions(-)
+
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 0e2b145aba46..d71585025ef6 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -372,7 +372,7 @@ struct smb_version_operations {
+ 	int (*close_dir)(const unsigned int, struct cifs_tcon *,
+ 			 struct cifs_fid *);
+ 	/* calculate a size of SMB message */
+-	unsigned int (*calc_smb_size)(void *);
++	unsigned int (*calc_smb_size)(void *buf, struct TCP_Server_Info *ptcpi);
+ 	/* check for STATUS_PENDING and process it in a positive case */
+ 	bool (*is_status_pending)(char *, struct TCP_Server_Info *, int);
+ 	/* check for STATUS_NETWORK_SESSION_EXPIRED */
+diff --git a/fs/cifs/cifsproto.h b/fs/cifs/cifsproto.h
+index 365a414a75e9..6c4da5de1ab5 100644
+--- a/fs/cifs/cifsproto.h
++++ b/fs/cifs/cifsproto.h
+@@ -124,7 +124,7 @@ extern void cifs_update_eof(struct cifsInodeInfo *cifsi, loff_t offset,
+ 			    unsigned int bytes_written);
+ extern struct cifsFileInfo *find_writable_file(struct cifsInodeInfo *, bool);
+ extern struct cifsFileInfo *find_readable_file(struct cifsInodeInfo *, bool);
+-extern unsigned int smbCalcSize(void *buf);
++extern unsigned int smbCalcSize(void *buf, struct TCP_Server_Info *server);
+ extern int decode_negTokenInit(unsigned char *security_blob, int length,
+ 			struct TCP_Server_Info *server);
+ extern int cifs_convert_address(struct sockaddr *dst, const char *src, int len);
+diff --git a/fs/cifs/misc.c b/fs/cifs/misc.c
+index 247a59774b7f..96849b530e32 100644
+--- a/fs/cifs/misc.c
++++ b/fs/cifs/misc.c
+@@ -342,7 +342,7 @@ checkSMB(char *buf, unsigned int total_read, struct TCP_Server_Info *server)
+ 	/* otherwise, there is enough to get to the BCC */
+ 	if (check_smb_hdr(smb))
+ 		return -EIO;
+-	clc_len = smbCalcSize(smb);
++	clc_len = smbCalcSize(smb, server);
+ 
+ 	if (4 + rfclen != total_read) {
+ 		cifs_dbg(VFS, "Length read does not match RFC1001 length %d\n",
+diff --git a/fs/cifs/netmisc.c b/fs/cifs/netmisc.c
+index cc88f4f0325e..d7ad0dfe4e68 100644
+--- a/fs/cifs/netmisc.c
++++ b/fs/cifs/netmisc.c
+@@ -903,7 +903,7 @@ map_smb_to_linux_error(char *buf, bool logErr)
+  * portion, the number of word parameters and the data portion of the message
+  */
+ unsigned int
+-smbCalcSize(void *buf)
++smbCalcSize(void *buf, struct TCP_Server_Info *server)
+ {
+ 	struct smb_hdr *ptr = (struct smb_hdr *)buf;
+ 	return (sizeof(struct smb_hdr) + (2 * ptr->WordCount) +
+diff --git a/fs/cifs/readdir.c b/fs/cifs/readdir.c
+index a27fc8791551..eeab81c9452f 100644
+--- a/fs/cifs/readdir.c
++++ b/fs/cifs/readdir.c
+@@ -650,7 +650,8 @@ find_cifs_entry(const unsigned int xid, struct cifs_tcon *tcon, loff_t pos,
+ 		char *cur_ent;
+ 		char *end_of_smb = cfile->srch_inf.ntwrk_buf_start +
+ 			server->ops->calc_smb_size(
+-					cfile->srch_inf.ntwrk_buf_start);
++					cfile->srch_inf.ntwrk_buf_start,
++					server);
+ 
+ 		cur_ent = cfile->srch_inf.srch_entries_start;
+ 		first_entry_in_buffer = cfile->srch_inf.index_of_last_entry
+@@ -831,7 +832,8 @@ int cifs_readdir(struct file *file, struct dir_context *ctx)
+ 	cifs_dbg(FYI, "loop through %d times filling dir for net buf %p\n",
+ 		 num_to_fill, cifsFile->srch_inf.ntwrk_buf_start);
+ 	max_len = tcon->ses->server->ops->calc_smb_size(
+-			cifsFile->srch_inf.ntwrk_buf_start);
++			cifsFile->srch_inf.ntwrk_buf_start,
++			tcon->ses->server);
+ 	end_of_smb = cifsFile->srch_inf.ntwrk_buf_start + max_len;
+ 
+ 	tmp_buf = kmalloc(UNICODE_NAME_MAX, GFP_KERNEL);
+diff --git a/fs/cifs/smb2misc.c b/fs/cifs/smb2misc.c
+index 68ea8491c160..f7f3ad760401 100644
+--- a/fs/cifs/smb2misc.c
++++ b/fs/cifs/smb2misc.c
+@@ -233,7 +233,7 @@ smb2_check_message(char *buf, unsigned int length, struct TCP_Server_Info *srvr)
+ 		return 1;
+ 	}
+ 
+-	clc_len = smb2_calc_size(hdr);
++	clc_len = smb2_calc_size(hdr, srvr);
+ 
+ #ifdef CONFIG_CIFS_SMB311
+ 	if (shdr->Command == SMB2_NEGOTIATE)
+@@ -403,7 +403,7 @@ smb2_get_data_area_len(int *off, int *len, struct smb2_hdr *hdr)
+  * portion, the number of word parameters and the data portion of the message.
+  */
+ unsigned int
+-smb2_calc_size(void *buf)
++smb2_calc_size(void *buf, struct TCP_Server_Info *srvr)
+ {
+ 	struct smb2_pdu *pdu = (struct smb2_pdu *)buf;
+ 	struct smb2_hdr *hdr = &pdu->hdr;
+@@ -411,7 +411,7 @@ smb2_calc_size(void *buf)
+ 	int offset; /* the offset from the beginning of SMB to data area */
+ 	int data_length; /* the length of the variable length data area */
+ 	/* Structure Size has already been checked to make sure it is 64 */
+-	int len = 4 + le16_to_cpu(shdr->StructureSize);
++	int len = srvr->vals->header_preamble_size + le16_to_cpu(shdr->StructureSize);
+ 
+ 	/*
+ 	 * StructureSize2, ie length of fixed parameter area has already
+@@ -433,12 +433,12 @@ smb2_calc_size(void *buf)
+ 		 * so we must add one to the calculation (and 4 to account for
+ 		 * the size of the RFC1001 hdr.
+ 		 */
+-		if (offset + 4 + 1 < len) {
+-			cifs_dbg(VFS, "data area offset %d overlaps SMB2 header %d\n",
+-				 offset + 4 + 1, len);
++		if (offset + srvr->vals->header_preamble_size + 1 < len) {
++			cifs_dbg(VFS, "data area offset %zu overlaps SMB2 header %d\n",
++				 offset + srvr->vals->header_preamble_size + 1, len);
+ 			data_length = 0;
+ 		} else {
+-			len = 4 + offset + data_length;
++			len = srvr->vals->header_preamble_size + offset + data_length;
+ 		}
+ 	}
+ calc_size_exit:
+diff --git a/fs/cifs/smb2proto.h b/fs/cifs/smb2proto.h
+index 800270b729e2..8d7bb9a1dcb4 100644
+--- a/fs/cifs/smb2proto.h
++++ b/fs/cifs/smb2proto.h
+@@ -36,7 +36,7 @@ struct smb_rqst;
+ extern int map_smb2_to_linux_error(char *buf, bool log_err);
+ extern int smb2_check_message(char *buf, unsigned int length,
+ 			      struct TCP_Server_Info *server);
+-extern unsigned int smb2_calc_size(void *buf);
++extern unsigned int smb2_calc_size(void *buf, struct TCP_Server_Info *server);
+ extern char *smb2_get_data_area_len(int *off, int *len, struct smb2_hdr *hdr);
+ extern __le16 *cifs_convert_path_to_utf16(const char *from,
+ 					  struct cifs_sb_info *cifs_sb);
+-- 
+2.16.4
+

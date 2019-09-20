@@ -1,0 +1,98 @@
+From: Pavel Shilovsky <pshilov@microsoft.com>
+Date: Wed, 23 Jan 2019 17:11:16 -0800
+Subject: [PATCH] CIFS: Count SMB3 credits for malformed pending responses
+Git-commit: 66265f134acfb202465fecfbeb61fefb66595c40
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Even if a response is malformed, we should count credits
+granted by the server to avoid miscalculations and unnecessary
+reconnects due to client or server bugs. If the response has
+been received partially, the session will be reconnected anyway
+on the next iteration of the demultiplex thread, so counting
+credits for such cases shouldn't break things.
+
+Signed-off-by: Pavel Shilovsky <pshilov@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsglob.h | 4 ++--
+ fs/cifs/cifssmb.c  | 2 +-
+ fs/cifs/connect.c  | 2 +-
+ fs/cifs/smb2ops.c  | 6 +++---
+ 4 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 1b25e6e95d45..0c796a27d1eb 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -385,8 +385,8 @@ struct smb_version_operations {
+ 			 struct cifs_fid *);
+ 	/* calculate a size of SMB message */
+ 	unsigned int (*calc_smb_size)(void *buf, struct TCP_Server_Info *ptcpi);
+-	/* check for STATUS_PENDING and process it in a positive case */
+-	bool (*is_status_pending)(char *, struct TCP_Server_Info *, int);
++	/* check for STATUS_PENDING and process the response if yes */
++	bool (*is_status_pending)(char *buf, struct TCP_Server_Info *server);
+ 	/* check for STATUS_NETWORK_SESSION_EXPIRED */
+ 	bool (*is_session_expired)(char *);
+ 	/* send oplock break response */
+diff --git a/fs/cifs/cifssmb.c b/fs/cifs/cifssmb.c
+index 6bd3605b9b65..683c7c9d5a02 100644
+--- a/fs/cifs/cifssmb.c
++++ b/fs/cifs/cifssmb.c
+@@ -1605,7 +1605,7 @@ cifs_readv_receive(struct TCP_Server_Info *server, struct mid_q_entry *mid)
+ 	}
+ 
+ 	if (server->ops->is_status_pending &&
+-	    server->ops->is_status_pending(buf, server, 0)) {
++	    server->ops->is_status_pending(buf, server)) {
+ 		cifs_discard_remaining_data(server);
+ 		return -1;
+ 	}
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 106b6508f138..306a2a6f4e47 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -1054,7 +1054,7 @@ cifs_handle_standard(struct TCP_Server_Info *server, struct mid_q_entry *mid)
+ 	}
+ 
+ 	if (server->ops->is_status_pending &&
+-	    server->ops->is_status_pending(buf, server, length))
++	    server->ops->is_status_pending(buf, server))
+ 		return -1;
+ 
+ 	if (!mid)
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 90b1a8e218c9..5adfe68f4754 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1773,14 +1773,14 @@ smb2_close_dir(const unsigned int xid, struct cifs_tcon *tcon,
+ * the number of credits and return true. Otherwise - return false.
+ */
+ static bool
+-smb2_is_status_pending(char *buf, struct TCP_Server_Info *server, int length)
++smb2_is_status_pending(char *buf, struct TCP_Server_Info *server)
+ {
+ 	struct smb2_sync_hdr *shdr = (struct smb2_sync_hdr *)buf;
+ 
+ 	if (shdr->Status != STATUS_PENDING)
+ 		return false;
+ 
+-	if (!length) {
++	if (shdr->CreditRequest) {
+ 		spin_lock(&server->req_lock);
+ 		server->credits += le16_to_cpu(shdr->CreditRequest);
+ 		spin_unlock(&server->req_lock);
+@@ -3239,7 +3239,7 @@ handle_read_data(struct TCP_Server_Info *server, struct mid_q_entry *mid,
+ 	}
+ 
+ 	if (server->ops->is_status_pending &&
+-			server->ops->is_status_pending(buf, server, 0))
++			server->ops->is_status_pending(buf, server))
+ 		return -1;
+ 
+ 	/* set up first two iov to get credits */
+-- 
+2.16.4
+

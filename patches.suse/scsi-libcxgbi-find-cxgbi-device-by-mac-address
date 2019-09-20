@@ -1,0 +1,47 @@
+From: Varun Prakash <varun@chelsio.com>
+Date: Sat, 13 Apr 2019 20:21:54 +0530
+Subject: scsi: libcxgbi: find cxgbi device by MAC address
+Git-commit: ffcd686b913eab35b7f447d8e373aae16d5fed34
+Patch-mainline: v5.2-rc1
+References: bsc#1136352 jsc#SLE-4687
+
+If cxgbi_device_find_by_netdev() returns NULL then find cxgbi device by MAC
+address.
+
+Signed-off-by: Varun Prakash <varun@chelsio.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/cxgbi/libcxgbi.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/scsi/cxgbi/libcxgbi.c b/drivers/scsi/cxgbi/libcxgbi.c
+index 1d9115484503..d7abc7e9ec94 100644
+--- a/drivers/scsi/cxgbi/libcxgbi.c
++++ b/drivers/scsi/cxgbi/libcxgbi.c
+@@ -282,7 +282,6 @@ struct cxgbi_device *cxgbi_device_find_by_netdev_rcu(struct net_device *ndev,
+ }
+ EXPORT_SYMBOL_GPL(cxgbi_device_find_by_netdev_rcu);
+ 
+-#if IS_ENABLED(CONFIG_IPV6)
+ static struct cxgbi_device *cxgbi_device_find_by_mac(struct net_device *ndev,
+ 						     int *port)
+ {
+@@ -315,7 +314,6 @@ static struct cxgbi_device *cxgbi_device_find_by_mac(struct net_device *ndev,
+ 		  ndev, ndev->name);
+ 	return NULL;
+ }
+-#endif
+ 
+ void cxgbi_hbas_remove(struct cxgbi_device *cdev)
+ {
+@@ -653,6 +651,8 @@ cxgbi_check_route(struct sockaddr *dst_addr, int ifindex)
+ 	}
+ 
+ 	cdev = cxgbi_device_find_by_netdev(ndev, &port);
++	if (!cdev)
++		cdev = cxgbi_device_find_by_mac(ndev, &port);
+ 	if (!cdev) {
+ 		pr_info("dst %pI4, %s, NOT cxgbi device.\n",
+ 			&daddr->sin_addr.s_addr, ndev->name);
+

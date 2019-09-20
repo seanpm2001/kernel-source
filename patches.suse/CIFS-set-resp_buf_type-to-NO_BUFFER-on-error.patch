@@ -1,0 +1,42 @@
+From: Steve French <smfrench@gmail.com>
+Date: Sun, 22 Apr 2018 10:24:19 -0500
+Subject: [PATCH] CIFS: set *resp_buf_type to NO_BUFFER on error
+Git-commit: 117e3b7fed552eba96ae0b3b92312fe8c5b0bfdd
+Patch-mainline: v4.17-rc3
+References: bsc#1144333
+
+Dan Carpenter had pointed this out a while ago, but the code around
+this had changed so wasn't causing any problems since that field
+was not used in this error path.
+
+Still, it is cleaner to always initialize this field, so changing
+the error path to set it.
+
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+CC: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/transport.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 8f6f25918229..3fb0e433b8e2 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -834,8 +834,11 @@ SendReceive2(const unsigned int xid, struct cifs_ses *ses,
+ 	if (n_vec + 1 > CIFS_MAX_IOV_SIZE) {
+ 		new_iov = kmalloc(sizeof(struct kvec) * (n_vec + 1),
+ 				  GFP_KERNEL);
+-		if (!new_iov)
++		if (!new_iov) {
++			/* otherwise cifs_send_recv below sets resp_buf_type */
++			*resp_buf_type = CIFS_NO_BUFFER;
+ 			return -ENOMEM;
++		}
+ 	} else
+ 		new_iov = s_iov;
+ 
+-- 
+2.16.4
+

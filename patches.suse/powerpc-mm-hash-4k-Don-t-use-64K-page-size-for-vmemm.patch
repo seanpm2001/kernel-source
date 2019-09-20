@@ -1,0 +1,39 @@
+From 78c949888549a6318ae420802703408caae999f5 Mon Sep 17 00:00:00 2001
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.ibm.com>
+Date: Mon, 1 Jul 2019 20:04:41 +0530
+Subject: [PATCH] powerpc/mm/hash/4k: Don't use 64K page size for vmemmap with
+ 4K pagesize
+
+References: bsc#1142685 LTC#179509 FATE#327775
+Patch-mainline: v5.3-rc1
+Git-commit: 78c949888549a6318ae420802703408caae999f5
+
+With hash translation and 4K PAGE_SIZE config, we need to make sure we don't
+use 64K page size for vmemmap.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.ibm.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/mm/hash_utils_64.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/arch/powerpc/mm/hash_utils_64.c b/arch/powerpc/mm/hash_utils_64.c
+index 1ff451892d7f..25a2cf32d544 100644
+--- a/arch/powerpc/mm/hash_utils_64.c
++++ b/arch/powerpc/mm/hash_utils_64.c
+@@ -688,10 +688,8 @@ static void __init htab_init_page_sizes(void)
+ 	if (mmu_psize_defs[MMU_PAGE_16M].shift &&
+ 	    memblock_phys_mem_size() >= 0x40000000)
+ 		mmu_vmemmap_psize = MMU_PAGE_16M;
+-	else if (mmu_psize_defs[MMU_PAGE_64K].shift)
+-		mmu_vmemmap_psize = MMU_PAGE_64K;
+ 	else
+-		mmu_vmemmap_psize = MMU_PAGE_4K;
++		mmu_vmemmap_psize = mmu_virtual_psize;
+ #endif /* CONFIG_SPARSEMEM_VMEMMAP */
+ 
+ 	printk(KERN_DEBUG "Page orders: linear mapping = %d, "
+-- 
+2.22.0
+

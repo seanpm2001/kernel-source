@@ -1,0 +1,129 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Mon, 24 Jun 2019 20:39:04 -0500
+Subject: [PATCH] smb3: do not send compression info by default
+Git-commit: 9fe5ff1c5d6a2a6c4ed4ba051a858571fdb7834c
+Patch-mainline: v5.3-rc1
+References: bsc#1144333
+
+Since in theory a server could respond with compressed read
+responses even if not requested on read request (assuming that
+a compression negcontext is sent in negotiate protocol) - do
+not send compression information during negotiate protocol
+unless the user asks for compression explicitly (compression
+is experimental), and add a mount warning that compression
+is experimental.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/cifsglob.h |  1 +
+ fs/cifs/connect.c  |  8 ++++++++
+ fs/cifs/smb2pdu.c  | 22 ++++++++++++----------
+ 3 files changed, 21 insertions(+), 10 deletions(-)
+
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index a4af850cd20a..fe610e7e3670 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -601,6 +601,7 @@ struct smb_vol {
+ 	__u64 snapshot_time; /* needed for timewarp tokens */
+ 	__u32 handle_timeout; /* persistent and durable handle timeout in ms */
+ 	unsigned int max_credits; /* smb3 max_credits 10 < credits < 60000 */
++	__u16 compression; /* compression algorithm 0xFFFF default 0=disabled */
+ };
+ 
+ /**
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 07c9cd7637c5..8ad8bbe8003b 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -97,6 +97,7 @@ enum {
+ 	Opt_persistent, Opt_nopersistent,
+ 	Opt_resilient, Opt_noresilient,
+ 	Opt_domainauto, Opt_rdma, Opt_modesid,
++	Opt_compress,
+ 
+ 	/* Mount options which take numeric value */
+ 	Opt_backupuid, Opt_backupgid, Opt_uid,
+@@ -213,6 +214,7 @@ static const match_table_t cifs_mount_option_tokens = {
+ 	{ Opt_echo_interval, "echo_interval=%s" },
+ 	{ Opt_max_credits, "max_credits=%s" },
+ 	{ Opt_snapshot, "snapshot=%s" },
++	{ Opt_compress, "compress=%s" },
+ 
+ 	{ Opt_blank_user, "user=" },
+ 	{ Opt_blank_user, "username=" },
+@@ -1915,6 +1917,11 @@ cifs_parse_mount_options(const char *mountdata, const char *devname,
+ 		case Opt_rdma:
+ 			vol->rdma = true;
+ 			break;
++		case Opt_compress:
++			vol->compression = UNKNOWN_TYPE;
++			cifs_dbg(VFS,
++				"SMB3 compression support is experimental\n");
++			break;
+ 
+ 		/* Numeric Values */
+ 		case Opt_backupuid:
+@@ -2691,6 +2698,7 @@ cifs_get_tcp_session(struct smb_vol *volume_info)
+ 	tcp_ses->sequence_number = 0;
+ 	tcp_ses->reconnect_instance = 1;
+ 	tcp_ses->lstrp = jiffies;
++	tcp_ses->compress_algorithm = cpu_to_le16(volume_info->compression);
+ 	spin_lock_init(&tcp_ses->req_lock);
+ 	INIT_LIST_HEAD(&tcp_ses->tcp_ses_list);
+ 	INIT_LIST_HEAD(&tcp_ses->smb_ses_list);
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index ab3300a39071..8e289404f6b0 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -521,7 +521,7 @@ build_posix_ctxt(struct smb2_posix_neg_context *pneg_ctxt)
+ 
+ static void
+ assemble_neg_contexts(struct smb2_negotiate_req *req,
+-		      unsigned int *total_len)
++		      struct TCP_Server_Info *server, unsigned int *total_len)
+ {
+ 	char *pneg_ctxt = (char *)req;
+ 	unsigned int ctxt_len;
+@@ -551,17 +551,19 @@ assemble_neg_contexts(struct smb2_negotiate_req *req,
+ 	*total_len += ctxt_len;
+ 	pneg_ctxt += ctxt_len;
+ 
+-	build_compression_ctxt((struct smb2_compression_capabilities_context *)
++	if (server->compress_algorithm) {
++		build_compression_ctxt((struct smb2_compression_capabilities_context *)
+ 				pneg_ctxt);
+-	ctxt_len = DIV_ROUND_UP(
+-		sizeof(struct smb2_compression_capabilities_context), 8) * 8;
+-	*total_len += ctxt_len;
+-	pneg_ctxt += ctxt_len;
+-
++		ctxt_len = DIV_ROUND_UP(
++			sizeof(struct smb2_compression_capabilities_context),
++				8) * 8;
++		*total_len += ctxt_len;
++		pneg_ctxt += ctxt_len;
++		req->NegotiateContextCount = cpu_to_le16(4);
++	} else
++		req->NegotiateContextCount = cpu_to_le16(3);
+ 	build_posix_ctxt((struct smb2_posix_neg_context *)pneg_ctxt);
+ 	*total_len += sizeof(struct smb2_posix_neg_context);
+-
+-	req->NegotiateContextCount = cpu_to_le16(4);
+ }
+ 
+ static void decode_preauth_context(struct smb2_preauth_neg_context *ctxt)
+@@ -829,7 +831,7 @@ SMB2_negotiate(const unsigned int xid, struct cifs_ses *ses)
+ 		if ((ses->server->vals->protocol_id == SMB311_PROT_ID) ||
+ 		    (strcmp(ses->server->vals->version_string,
+ 		     SMBDEFAULT_VERSION_STRING) == 0))
+-			assemble_neg_contexts(req, &total_len);
++			assemble_neg_contexts(req, server, &total_len);
+ 	}
+ 	iov[0].iov_base = (char *)req;
+ 	iov[0].iov_len = total_len;
+-- 
+2.22.0
+

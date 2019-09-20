@@ -1,0 +1,39 @@
+From: Long Li <longli@microsoft.com>
+Date: Wed, 22 Nov 2017 17:38:38 -0700
+Subject: [PATCH] CIFS: SMBD: Upper layer destroys SMB Direct session on
+ shutdown or umount
+Git-commit: bce9ce7cc0766f5fe532cb89567ca2ac5ad80a1f
+Patch-mainline: v4.15
+References: bsc#1144333
+
+When upper layer wants to umount, make it call shutdown on transport when
+SMB Direct is used.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/connect.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index fc460663b308..d8bfa89161e2 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -704,7 +704,10 @@ static void clean_demultiplex_info(struct TCP_Server_Info *server)
+ 	wake_up_all(&server->request_q);
+ 	/* give those requests time to exit */
+ 	msleep(125);
+-
++	if (cifs_rdma_enabled(server) && server->smbd_conn) {
++		smbd_destroy(server->smbd_conn);
++		server->smbd_conn = NULL;
++	}
+ 	if (server->ssocket) {
+ 		sock_release(server->ssocket);
+ 		server->ssocket = NULL;
+-- 
+2.16.4
+

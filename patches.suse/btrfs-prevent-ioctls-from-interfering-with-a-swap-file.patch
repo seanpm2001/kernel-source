@@ -79,9 +79,9 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  #define BTRFS_FS_CLOSING_START			2
  #define BTRFS_FS_CLOSING_DONE			3
 @@ -1143,6 +1165,10 @@ struct btrfs_fs_info {
- 	u32 nodesize;
- 	u32 sectorsize;
- 	u32 stripesize;
+ 	 * Updated while holding fs_info::balance_mutex.
+ 	 */
+ 	int send_in_progress;
 +
 +	/* Block groups and devices containing active swapfiles. */
 +	spinlock_t swapfile_pins_lock;
@@ -129,8 +129,8 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	root->log_transid_committed = -1;
  	root->last_log_commit = 0;
 @@ -2675,6 +2676,9 @@ int open_ctree(struct super_block *sb,
- 	fs_info->sectorsize = 4096;
- 	fs_info->stripesize = 4096;
+ 
+ 	fs_info->send_in_progress = 0;
  
 +	spin_lock_init(&fs_info->swapfile_pins_lock);
 +	fs_info->swapfile_pins = RB_ROOT;

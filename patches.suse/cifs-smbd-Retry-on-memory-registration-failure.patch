@@ -1,0 +1,46 @@
+From: Long Li <longli@microsoft.com>
+Date: Fri, 5 Apr 2019 21:36:34 +0000
+Subject: [PATCH] cifs: smbd: Retry on memory registration failure
+Git-commit: b7972092199f6d4eb10cc44095bbe3931116fc4b
+Patch-mainline: v5.2-rc1
+References: bsc#1144333
+
+Memory registration failure doesn't mean this I/O has failed, it means the
+transport is hitting I/O error or needs reconnect. This error is not from
+the server.
+
+Indicate this error to upper layer, and let upper layer decide how to
+reconnect and proceed with this I/O.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smb2pdu.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index a37774a55f3a..36cc34318429 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -3223,7 +3223,7 @@ smb2_new_read_req(void **buf, unsigned int *total_len,
+ 				rdata->nr_pages, rdata->page_offset,
+ 				rdata->tailsz, true, need_invalidate);
+ 		if (!rdata->mr)
+-			return -ENOBUFS;
++			return -EAGAIN;
+ 
+ 		req->Channel = SMB2_CHANNEL_RDMA_V1_INVALIDATE;
+ 		if (need_invalidate)
+@@ -3628,7 +3628,7 @@ smb2_async_writev(struct cifs_writedata *wdata,
+ 				wdata->nr_pages, wdata->page_offset,
+ 				wdata->tailsz, false, need_invalidate);
+ 		if (!wdata->mr) {
+-			rc = -ENOBUFS;
++			rc = -EAGAIN;
+ 			goto async_writev_out;
+ 		}
+ 		req->Length = 0;
+-- 
+2.22.0
+

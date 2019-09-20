@@ -1,0 +1,120 @@
+From: Daniel Wagner <dwagner@suse.de>
+Date: Fri, 23 Aug 2019 11:01:02 +0200
+Subject: scsi: hisi_sas: kabi fixes
+Patch-mainline: never, kabi
+References: bsc#1137322 bsc#1137323 bsc#1138099 bsc#1138100
+---
+ drivers/scsi/hisi_sas/hisi_sas.h |   26 ++++++++++++++++++--------
+ drivers/scsi/mvsas/mv_sas.h      |    3 +++
+ 2 files changed, 21 insertions(+), 8 deletions(-)
+
+--- a/drivers/scsi/hisi_sas/hisi_sas.h
++++ b/drivers/scsi/hisi_sas/hisi_sas.h
+@@ -157,8 +157,8 @@ struct hisi_sas_phy {
+ 	struct hisi_sas_port	*port;
+ 	struct asd_sas_phy	sas_phy;
+ 	struct sas_identify	identify;
+-	struct completion *reset_completion;
+ 	struct timer_list timer;
++	struct completion *reset_completion;
+ 	spinlock_t lock;
+ 	u64		port_id; /* from hw */
+ 	u64		frame_rcvd_size;
+@@ -167,10 +167,12 @@ struct hisi_sas_phy {
+ 	u8		in_reset;
+ 	u8		reserved[2];
+ 	u32		phy_type;
+-	u32		code_violation_err_count;
+ 	enum sas_linkrate	minimum_linkrate;
+ 	enum sas_linkrate	maximum_linkrate;
+ 	int enable;
++#ifndef __GENKSYMS__
++	u32		code_violation_err_count;
++#endif
+ };
+ 
+ struct hisi_sas_port {
+@@ -181,10 +183,12 @@ struct hisi_sas_port {
+ 
+ struct hisi_sas_cq {
+ 	struct hisi_hba *hisi_hba;
+-	const struct cpumask *pci_irq_mask;
+ 	struct tasklet_struct tasklet;
+ 	int	rd_point;
+ 	int	id;
++#ifndef __GENKSYMS__
++	const struct cpumask *pci_irq_mask;
++#endif
+ };
+ 
+ struct hisi_sas_dq {
+@@ -205,7 +209,9 @@ struct hisi_sas_device {
+ 	enum dev_status dev_status;
+ 	int device_id;
+ 	int sata_idx;
++#ifndef __GENKSYMS__
+ 	spinlock_t lock; /* For protecting slots */
++#endif
+ };
+ 
+ struct hisi_sas_tmf_task {
+@@ -221,14 +227,12 @@ struct hisi_sas_slot {
+ 	struct sas_task *task;
+ 	struct hisi_sas_port	*port;
+ 	u64	n_elem;
+-	u64	n_elem_dif;
+ 	int	dlvry_queue;
+ 	int	dlvry_queue_slot;
+ 	int	cmplt_queue;
+ 	int	cmplt_queue_slot;
+ 	int	abort;
+ 	int	ready;
+-	int	device_id;
+ 	void	*cmd_hdr;
+ 	dma_addr_t cmd_hdr_dma;
+ 	struct timer_list internal_abort_timer;
+@@ -238,6 +242,10 @@ struct hisi_sas_slot {
+ 	void	*buf;
+ 	dma_addr_t buf_dma;
+ 	u16	idx;
++#ifndef __GENKSYMS__
++	int	device_id;
++	u64	n_elem_dif;
++#endif
+ };
+ 
+ #define HISI_SAS_DEBUGFS_REG(x) {#x, x}
+@@ -377,9 +385,6 @@ struct hisi_hba {
+ 	u32 intr_coal_ticks;	/* Time of interrupt coalesce in us */
+ 	u32 intr_coal_count;	/* Interrupt count to coalesce */
+ 
+-	int cq_nvecs;
+-	unsigned int *reply_map;
+-
+ 	/* debugfs memories */
+ 	void *debugfs_global_reg;
+ 	void *debugfs_port_reg[HISI_SAS_MAX_PHYS];
+@@ -390,6 +395,11 @@ struct hisi_hba {
+ 
+ 	struct dentry *debugfs_dir;
+ 	struct dentry *debugfs_dump_dentry;
++
++#ifndef __GENKSYMS__
++	int cq_nvecs;
++	unsigned int *reply_map;
++#endif
+ };
+ 
+ /* Generic HW DMA host memory structures */
+--- a/drivers/scsi/mvsas/mv_sas.h
++++ b/drivers/scsi/mvsas/mv_sas.h
+@@ -247,6 +247,9 @@ struct mvs_device {
+ 	enum sas_device_type dev_type;
+ 	struct mvs_info *mvi_info;
+ 	struct domain_device *sas_device;
++#ifdef __GENKSYMS__
++	struct timer_list timer;
++#endif
+ 	u32 attached_phy;
+ 	u32 device_id;
+ 	u32 running_req;

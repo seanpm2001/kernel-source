@@ -1,0 +1,124 @@
+From: Aurelien Aptel <aaptel@suse.com>
+Date: Mon, 4 Jun 2018 22:29:34 +0200
+Subject: [PATCH] CIFS: Fix signing for SMB2/3
+Git-commit: 57f933ce9fba4a1cecb6e34ffafe841d093493cb
+Patch-mainline: v4.18-rc1
+References: bsc#1144333
+
+It seems Ronnie's preamble removal broke signing.
+
+the signing functions are called when:
+
+A) we send a request (to sign it)
+B) when we recv a response (to check the signature).
+
+On code path A, the smb2 header is in iov[1] but on code path B, the
+smb2 header is in iov[0] (and there's only one vector).
+
+So we have different iov indexes for the smb2 header but the signing
+function always use index 1. Fix this by checking the nb of io vectors
+in the signing function as a hint.
+
+Signed-off-by: Aurelien Aptel <aaptel@suse.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsencrypt.c   |  8 +++-----
+ fs/cifs/cifsproto.h     |  2 +-
+ fs/cifs/smb2transport.c | 12 ++++++++----
+ 3 files changed, 12 insertions(+), 10 deletions(-)
+
+diff --git a/fs/cifs/cifsencrypt.c b/fs/cifs/cifsencrypt.c
+index a6ef088e057b..d3e14d1fc0b5 100644
+--- a/fs/cifs/cifsencrypt.c
++++ b/fs/cifs/cifsencrypt.c
+@@ -37,6 +37,7 @@
+ #include <crypto/aead.h>
+ 
+ int __cifs_calc_signature(struct smb_rqst *rqst,
++			int start,
+ 			struct TCP_Server_Info *server, char *signature,
+ 			struct shash_desc *shash)
+ {
+@@ -45,10 +46,7 @@ int __cifs_calc_signature(struct smb_rqst *rqst,
+ 	struct kvec *iov = rqst->rq_iov;
+ 	int n_vec = rqst->rq_nvec;
+ 
+-	if (n_vec < 2 || iov[0].iov_len != 4)
+-		return -EIO;
+-
+-	for (i = 1; i < n_vec; i++) {
++	for (i = start; i < n_vec; i++) {
+ 		if (iov[i].iov_len == 0)
+ 			continue;
+ 		if (iov[i].iov_base == NULL) {
+@@ -119,7 +117,7 @@ static int cifs_calc_signature(struct smb_rqst *rqst,
+ 		return rc;
+ 	}
+ 
+-	return __cifs_calc_signature(rqst, server, signature,
++	return __cifs_calc_signature(rqst, 1, server, signature,
+ 				     &server->secmech.sdescmd5->shash);
+ }
+ 
+diff --git a/fs/cifs/cifsproto.h b/fs/cifs/cifsproto.h
+index 7933c5f9c076..7f0c773d5f6b 100644
+--- a/fs/cifs/cifsproto.h
++++ b/fs/cifs/cifsproto.h
+@@ -544,7 +544,7 @@ int cifs_create_mf_symlink(unsigned int xid, struct cifs_tcon *tcon,
+ 			   struct cifs_sb_info *cifs_sb,
+ 			   const unsigned char *path, char *pbuf,
+ 			   unsigned int *pbytes_written);
+-int __cifs_calc_signature(struct smb_rqst *rqst,
++int __cifs_calc_signature(struct smb_rqst *rqst, int start,
+ 			struct TCP_Server_Info *server, char *signature,
+ 			struct shash_desc *shash);
+ enum securityEnum cifs_select_sectype(struct TCP_Server_Info *,
+diff --git a/fs/cifs/smb2transport.c b/fs/cifs/smb2transport.c
+index 2c671123a6bf..349d5ccf854c 100644
+--- a/fs/cifs/smb2transport.c
++++ b/fs/cifs/smb2transport.c
+@@ -171,7 +171,9 @@ smb2_calc_signature(struct smb_rqst *rqst, struct TCP_Server_Info *server)
+ 	unsigned char smb2_signature[SMB2_HMACSHA256_SIZE];
+ 	unsigned char *sigptr = smb2_signature;
+ 	struct kvec *iov = rqst->rq_iov;
+-	struct smb2_sync_hdr *shdr = (struct smb2_sync_hdr *)iov[1].iov_base;
++	int iov_hdr_index = rqst->rq_nvec > 1 ? 1 : 0;
++	struct smb2_sync_hdr *shdr =
++		(struct smb2_sync_hdr *)iov[iov_hdr_index].iov_base;
+ 	struct cifs_ses *ses;
+ 
+ 	ses = smb2_find_smb_ses(server, shdr->SessionId);
+@@ -202,7 +204,7 @@ smb2_calc_signature(struct smb_rqst *rqst, struct TCP_Server_Info *server)
+ 		return rc;
+ 	}
+ 
+-	rc = __cifs_calc_signature(rqst, server, sigptr,
++	rc = __cifs_calc_signature(rqst, iov_hdr_index,  server, sigptr,
+ 		&server->secmech.sdeschmacsha256->shash);
+ 
+ 	if (!rc)
+@@ -412,7 +414,9 @@ smb3_calc_signature(struct smb_rqst *rqst, struct TCP_Server_Info *server)
+ 	unsigned char smb3_signature[SMB2_CMACAES_SIZE];
+ 	unsigned char *sigptr = smb3_signature;
+ 	struct kvec *iov = rqst->rq_iov;
+-	struct smb2_sync_hdr *shdr = (struct smb2_sync_hdr *)iov[1].iov_base;
++	int iov_hdr_index = rqst->rq_nvec > 1 ? 1 : 0;
++	struct smb2_sync_hdr *shdr =
++		(struct smb2_sync_hdr *)iov[iov_hdr_index].iov_base;
+ 	struct cifs_ses *ses;
+ 
+ 	ses = smb2_find_smb_ses(server, shdr->SessionId);
+@@ -443,7 +447,7 @@ smb3_calc_signature(struct smb_rqst *rqst, struct TCP_Server_Info *server)
+ 		return rc;
+ 	}
+ 
+-	rc = __cifs_calc_signature(rqst, server, sigptr,
++	rc = __cifs_calc_signature(rqst, iov_hdr_index, server, sigptr,
+ 				   &server->secmech.sdesccmacaes->shash);
+ 
+ 	if (!rc)
+-- 
+2.16.4
+

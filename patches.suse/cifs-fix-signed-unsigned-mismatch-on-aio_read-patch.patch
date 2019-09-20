@@ -1,0 +1,79 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Thu, 1 Nov 2018 10:54:32 -0500
+Subject: [PATCH] cifs: fix signed/unsigned mismatch on aio_read patch
+Git-commit: b98e26df07549d4649ac5b8f24c49f5c722bbc7e
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+The patch "CIFS: Add support for direct I/O read" had
+a signed/unsigned mismatch (ssize_t vs. size_t) in the
+return from one function.  Similar trivial change
+in aio_write
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reported-by: Julia Lawall <julia.lawall@lip6.fr>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/file.c | 17 +++++++++++------
+ 1 file changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/fs/cifs/file.c b/fs/cifs/file.c
+index 937ffa79066b..74c33d5fafc8 100644
+--- a/fs/cifs/file.c
++++ b/fs/cifs/file.c
+@@ -2625,18 +2625,21 @@ cifs_write_from_iter(loff_t offset, size_t len, struct iov_iter *from,
+ 			break;
+ 
+ 		if (ctx->direct_io) {
+-			cur_len = iov_iter_get_pages_alloc(
++			ssize_t result;
++
++			result = iov_iter_get_pages_alloc(
+ 				from, &pagevec, wsize, &start);
+-			if (cur_len < 0) {
++			if (result < 0) {
+ 				cifs_dbg(VFS,
+ 					"direct_writev couldn't get user pages "
+ 					"(rc=%zd) iter type %d iov_offset %zd "
+ 					"count %zd\n",
+-					cur_len, from->type,
++					result, from->type,
+ 					from->iov_offset, from->count);
+ 				dump_stack();
+ 				break;
+ 			}
++			cur_len = (size_t)result;
+ 			iov_iter_advance(from, cur_len);
+ 
+ 			nr_pages =
+@@ -3322,21 +3325,23 @@ cifs_send_async_read(loff_t offset, size_t len, struct cifsFileInfo *open_file,
+ 		cur_len = min_t(const size_t, len, rsize);
+ 
+ 		if (ctx->direct_io) {
++			ssize_t result;
+ 
+-			cur_len = iov_iter_get_pages_alloc(
++			result = iov_iter_get_pages_alloc(
+ 					&direct_iov, &pagevec,
+ 					cur_len, &start);
+-			if (cur_len < 0) {
++			if (result < 0) {
+ 				cifs_dbg(VFS,
+ 					"couldn't get user pages (cur_len=%zd)"
+ 					" iter type %d"
+ 					" iov_offset %zd count %zd\n",
+-					cur_len, direct_iov.type,
++					result, direct_iov.type,
+ 					direct_iov.iov_offset,
+ 					direct_iov.count);
+ 				dump_stack();
+ 				break;
+ 			}
++			cur_len = (size_t)result;
+ 			iov_iter_advance(&direct_iov, cur_len);
+ 
+ 			rdata = cifs_readdata_direct_alloc(
+-- 
+2.16.4
+

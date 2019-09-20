@@ -1,0 +1,42 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Thu, 11 Apr 2019 14:53:24 -0700
+Subject: scsi: qla2xxx: Remove two superfluous casts
+Patch-mainline: v5.2-rc1
+Git-commit: 81bcf1c5cf0ee875de3f3b0c930194dcf56969ee
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+Casting a void pointer into another pointer before assigning the pointer to
+a variable is not useful. Hence remove such casts.
+
+Cc: Himanshu Madhani <hmadhani@marvell.com>
+Cc: Giridhar Malavali <gmalavali@marvell.com>
+Reviewed-by: Johannes Thumshirn <jthumshirn@suse.de>
+Acked-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_target.c |    5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_target.c
++++ b/drivers/scsi/qla2xxx/qla_target.c
+@@ -4042,7 +4042,7 @@ static void qlt_do_ctio_completion(struc
+ 		return;
+ 	}
+ 
+-	cmd = (struct qla_tgt_cmd *)qlt_ctio_to_cmd(vha, rsp, handle, ctio);
++	cmd = qlt_ctio_to_cmd(vha, rsp, handle, ctio);
+ 	if (cmd == NULL)
+ 		return;
+ 
+@@ -5834,8 +5834,7 @@ static void qlt_handle_abts_completion(s
+ 	struct qla_tgt_mgmt_cmd *mcmd;
+ 	struct qla_hw_data *ha = vha->hw;
+ 
+-	mcmd = (struct qla_tgt_mgmt_cmd *)qlt_ctio_to_cmd(vha, rsp,
+-	    pkt->handle, pkt);
++	mcmd = qlt_ctio_to_cmd(vha, rsp, pkt->handle, pkt);
+ 	if (mcmd == NULL && h != QLA_TGT_SKIP_HANDLE) {
+ 		ql_dbg(ql_dbg_async, vha, 0xe064,
+ 		    "qla_target(%d): ABTS Comp without mcmd\n",

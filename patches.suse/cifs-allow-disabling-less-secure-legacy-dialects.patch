@@ -1,0 +1,119 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Thu, 24 May 2018 04:11:07 -0500
+Subject: [PATCH] cifs: allow disabling less secure legacy dialects
+Git-commit: f92a720ee9d5d4e76a9621ce0812aef133c7b981
+Patch-mainline: v4.17
+References: bsc#1144333
+
+To improve security it may be helpful to have additional ways to restrict the
+ability to override the default dialects (SMB2.1, SMB3 and SMB3.02) on mount
+with old dialects (CIFS/SMB1 and SMB2) since vers=1.0 (CIFS/SMB1) and vers=2.0
+are weaker and less secure.
+
+Add a module parameter "disable_legacy_dialects"
+(/sys/module/cifs/parameters/disable_legacy_dialects) which can be set to
+1 (or equivalently Y) to forbid use of vers=1.0 or vers=2.0 on mount.
+
+Also cleans up a few build warnings about globals for various module parms.
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsfs.c   | 10 ++++++++++
+ fs/cifs/cifsglob.h | 19 ++++++++++---------
+ fs/cifs/connect.c  |  9 +++++++++
+ 3 files changed, 29 insertions(+), 9 deletions(-)
+
+diff --git a/fs/cifs/cifsfs.c b/fs/cifs/cifsfs.c
+index fe30aabe00d7..c608ea62f536 100644
+--- a/fs/cifs/cifsfs.c
++++ b/fs/cifs/cifsfs.c
+@@ -58,6 +58,7 @@ bool traceSMB;
+ bool enable_oplocks = true;
+ bool linuxExtEnabled = true;
+ bool lookupCacheEnabled = true;
++bool disable_legacy_dialects; /* false by default */
+ unsigned int global_secflags = CIFSSEC_DEF;
+ /* unsigned int ntlmv2_support = 0; */
+ unsigned int sign_CIFS_PDUs = 1;
+@@ -83,6 +84,15 @@ MODULE_PARM_DESC(cifs_max_pending, "Simultaneous requests to server for "
+ module_param(enable_oplocks, bool, 0644);
+ MODULE_PARM_DESC(enable_oplocks, "Enable or disable oplocks. Default: y/Y/1");
+ 
++module_param(disable_legacy_dialects, bool, 0644);
++MODULE_PARM_DESC(disable_legacy_dialects, "To improve security it may be "
++				  "helpful to restrict the ability to "
++				  "override the default dialects (SMB2.1, "
++				  "SMB3 and SMB3.02) on mount with old "
++				  "dialects (CIFS/SMB1 and SMB2) since "
++				  "vers=1.0 (CIFS/SMB1) and vers=2.0 are weaker"
++				  " and less secure. Default: n/N/0");
++
+ extern mempool_t *cifs_sm_req_poolp;
+ extern mempool_t *cifs_req_poolp;
+ extern mempool_t *cifs_mid_poolp;
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index d8c8700454ed..d2ac9ced28c9 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -1700,16 +1700,17 @@ GLOBAL_EXTERN atomic_t smBufAllocCount;
+ GLOBAL_EXTERN atomic_t midCount;
+ 
+ /* Misc globals */
+-GLOBAL_EXTERN bool enable_oplocks; /* enable or disable oplocks */
+-GLOBAL_EXTERN bool lookupCacheEnabled;
+-GLOBAL_EXTERN unsigned int global_secflags;	/* if on, session setup sent
++extern bool enable_oplocks; /* enable or disable oplocks */
++extern bool lookupCacheEnabled;
++extern unsigned int global_secflags;	/* if on, session setup sent
+ 				with more secure ntlmssp2 challenge/resp */
+-GLOBAL_EXTERN unsigned int sign_CIFS_PDUs;  /* enable smb packet signing */
+-GLOBAL_EXTERN bool linuxExtEnabled;/*enable Linux/Unix CIFS extensions*/
+-GLOBAL_EXTERN unsigned int CIFSMaxBufSize;  /* max size not including hdr */
+-GLOBAL_EXTERN unsigned int cifs_min_rcv;    /* min size of big ntwrk buf pool */
+-GLOBAL_EXTERN unsigned int cifs_min_small;  /* min size of small buf pool */
+-GLOBAL_EXTERN unsigned int cifs_max_pending; /* MAX requests at once to server*/
++extern unsigned int sign_CIFS_PDUs;  /* enable smb packet signing */
++extern bool linuxExtEnabled;/*enable Linux/Unix CIFS extensions*/
++extern unsigned int CIFSMaxBufSize;  /* max size not including hdr */
++extern unsigned int cifs_min_rcv;    /* min size of big ntwrk buf pool */
++extern unsigned int cifs_min_small;  /* min size of small buf pool */
++extern unsigned int cifs_max_pending; /* MAX requests at once to server*/
++extern bool disable_legacy_dialects;  /* forbid vers=1.0 and vers=2.0 mounts */
+ 
+ #ifdef CONFIG_CIFS_ACL
+ GLOBAL_EXTERN struct rb_root uidtree;
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 83b0234d443c..ed3b6de88395 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -61,6 +61,7 @@
+ #define RFC1001_PORT 139
+ 
+ extern mempool_t *cifs_req_poolp;
++extern bool disable_legacy_dialects;
+ 
+ /* FIXME: should these be tunable? */
+ #define TLINK_ERROR_EXPIRE	(1 * HZ)
+@@ -1146,10 +1147,18 @@ cifs_parse_smb_version(char *value, struct smb_vol *vol)
+ 
+ 	switch (match_token(value, cifs_smb_version_tokens, args)) {
+ 	case Smb_1:
++		if (disable_legacy_dialects) {
++			cifs_dbg(VFS, "mount with legacy dialect disabled\n");
++			return 1;
++		}
+ 		vol->ops = &smb1_operations;
+ 		vol->vals = &smb1_values;
+ 		break;
+ 	case Smb_20:
++		if (disable_legacy_dialects) {
++			cifs_dbg(VFS, "mount with legacy dialect disabled\n");
++			return 1;
++		}
+ 		vol->ops = &smb20_operations;
+ 		vol->vals = &smb20_values;
+ 		break;
+-- 
+2.16.4
+

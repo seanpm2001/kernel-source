@@ -1,0 +1,82 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Tue, 25 Jun 2019 04:39:51 -0500
+Subject: [PATCH] smb3: Send netname context during negotiate protocol
+Git-commit: 96d3cca1241d6e56910b74435301e095705e1ebc
+Patch-mainline: v5.3-rc1
+References: bsc#1144333
+
+See MS-SMB2 2.2.3.1.4
+
+Allows hostname to be used by load balancers
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smb2pdu.c | 25 +++++++++++++++++++++++--
+ fs/cifs/smb2pdu.h |  6 ++++++
+ 2 files changed, 29 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 8e289404f6b0..34d5397a1989 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -495,6 +495,21 @@ build_encrypt_ctxt(struct smb2_encryption_neg_context *pneg_ctxt)
+ 	pneg_ctxt->Ciphers[1] = SMB2_ENCRYPTION_AES128_CCM;
+ }
+ 
++static unsigned int
++build_netname_ctxt(struct smb2_netname_neg_context *pneg_ctxt, char *hostname)
++{
++	struct nls_table *cp = load_nls_default();
++
++	pneg_ctxt->ContextType = SMB2_NETNAME_NEGOTIATE_CONTEXT_ID;
++
++	/* copy up to max of first 100 bytes of server name to NetName field */
++	pneg_ctxt->DataLength = cpu_to_le16(2 +
++		(2 * cifs_strtoUTF16(pneg_ctxt->NetName, hostname, 100, cp)));
++	/* context size is DataLength + minimal smb2_neg_context */
++	return DIV_ROUND_UP(le16_to_cpu(pneg_ctxt->DataLength) +
++			sizeof(struct smb2_neg_context), 8) * 8;
++}
++
+ static void
+ build_posix_ctxt(struct smb2_posix_neg_context *pneg_ctxt)
+ {
+@@ -559,9 +574,15 @@ assemble_neg_contexts(struct smb2_negotiate_req *req,
+ 				8) * 8;
+ 		*total_len += ctxt_len;
+ 		pneg_ctxt += ctxt_len;
++		req->NegotiateContextCount = cpu_to_le16(5);
++	} else
+ 		req->NegotiateContextCount = cpu_to_le16(4);
+-	} else
+-		req->NegotiateContextCount = cpu_to_le16(3);
++
++	ctxt_len = build_netname_ctxt((struct smb2_netname_neg_context *)pneg_ctxt,
++					server->hostname);
++	*total_len += ctxt_len;
++	pneg_ctxt += ctxt_len;
++
+ 	build_posix_ctxt((struct smb2_posix_neg_context *)pneg_ctxt);
+ 	*total_len += sizeof(struct smb2_posix_neg_context);
+ }
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index e5f7e8135a39..053ec621e7b9 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -317,6 +317,12 @@ struct smb2_compression_capabilities_context {
+  * For smb2_netname_negotiate_context_id See MS-SMB2 2.2.3.1.4.
+  * Its struct simply contains NetName, an array of Unicode characters
+  */
++struct smb2_netname_neg_context {
++	__le16	ContextType; /* 0x100 */
++	__le16	DataLength;
++	__le32	Reserved;
++	__le16	NetName[0]; /* hostname of target converted to UCS-2 */
++} __packed;
+ 
+ #define POSIX_CTXT_DATA_LEN	16
+ struct smb2_posix_neg_context {
+-- 
+2.22.0
+

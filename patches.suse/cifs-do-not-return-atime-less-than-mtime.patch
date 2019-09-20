@@ -1,0 +1,66 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Sat, 22 Sep 2018 12:07:06 -0500
+Subject: [PATCH] cifs: do not return atime less than mtime
+Git-commit: 9b9c5bea0b960616d638711d0ecc270c3a074e7f
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+In network file system it is fairly easy for server and client
+atime vs. mtime to get confused (and atime updated less frequently)
+which we noticed broke some apps which expect atime >= mtime
+
+Also ignore relatime mount option (rather than error on it) since
+relatime is basically what some network server fs are doing
+(relatime).
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/connect.c |    1 +
+ fs/cifs/file.c    |    8 ++++++--
+ fs/cifs/inode.c   |    6 +++++-
+ 3 files changed, 12 insertions(+), 3 deletions(-)
+
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -250,6 +250,7 @@ static const match_table_t cifs_mount_op
+ 	{ Opt_ignore, "dev" },
+ 	{ Opt_ignore, "mand" },
+ 	{ Opt_ignore, "nomand" },
++	{ Opt_ignore, "relatime" },
+ 	{ Opt_ignore, "_netdev" },
+ 
+ 	{ Opt_err, NULL }
+--- a/fs/cifs/file.c
++++ b/fs/cifs/file.c
+@@ -3907,8 +3907,12 @@ static int cifs_readpage_worker(struct f
+ 	else
+ 		cifs_dbg(FYI, "Bytes read %d\n", rc);
+ 
+-	file_inode(file)->i_atime =
+-		current_time(file_inode(file));
++	/* we do not want atime to be less than mtime, it broke some apps */
++	file_inode(file)->i_atime = current_time(file_inode(file));
++	if (timespec_compare(&(file_inode(file)->i_atime), &(file_inode(file)->i_mtime)))
++		file_inode(file)->i_atime = file_inode(file)->i_mtime;
++	else
++		file_inode(file)->i_atime = current_time(file_inode(file));
+ 
+ 	if (PAGE_SIZE > rc)
+ 		memset(read_data + rc, 0, PAGE_SIZE - rc);
+--- a/fs/cifs/inode.c
++++ b/fs/cifs/inode.c
+@@ -162,7 +162,11 @@ cifs_fattr_to_inode(struct inode *inode,
+ 	cifs_revalidate_cache(inode, fattr);
+ 
+ 	spin_lock(&inode->i_lock);
+-	inode->i_atime = fattr->cf_atime;
++	/* we do not want atime to be less than mtime, it broke some apps */
++	if (timespec_compare(&fattr->cf_atime, &fattr->cf_mtime))
++		inode->i_atime = fattr->cf_mtime;
++	else
++		inode->i_atime = fattr->cf_atime;
+ 	inode->i_mtime = fattr->cf_mtime;
+ 	inode->i_ctime = fattr->cf_ctime;
+ 	inode->i_rdev = fattr->cf_rdev;

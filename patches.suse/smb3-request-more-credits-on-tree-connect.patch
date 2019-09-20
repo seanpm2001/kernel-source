@@ -1,0 +1,43 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Thu, 14 Feb 2019 01:19:02 -0600
+Subject: [PATCH] smb3: request more credits on tree connect
+Git-commit: 4fe75c4e4bc2caeb4159573e26cf3075e2c0fd9b
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+If we try large I/O (read or write) immediately after mount
+we won't typically have enough credits because we only request
+large amounts of credits on the first session setup.  So if
+large I/O is attempted soon after mount we will typically only
+have about 43 credits rather than 105 credits (with this patch)
+available for the large i/o (which needs 64 credits minimum).
+
+This patch requests more credits during tree connect, which
+helps ensure that we have enough credits when mount completes
+(between these requests and the first session setup) in order
+ to start large I/O immediately after mount if needed.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 7d9a1cb9ecae..3e9bee35a03c 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -1614,6 +1614,9 @@ SMB2_tcon(const unsigned int xid, struct cifs_ses *ses, const char *tree,
+ 	rqst.rq_iov = iov;
+ 	rqst.rq_nvec = 2;
+ 
++	/* Need 64 for max size write so ask for more in case not there yet */
++	req->sync_hdr.CreditRequest = cpu_to_le16(64);
++
+ 	rc = cifs_send_recv(xid, ses, &rqst, &resp_buftype, flags, &rsp_iov);
+ 	cifs_small_buf_release(req);
+ 	rsp = (struct smb2_tree_connect_rsp *)rsp_iov.iov_base;
+-- 
+2.16.4
+

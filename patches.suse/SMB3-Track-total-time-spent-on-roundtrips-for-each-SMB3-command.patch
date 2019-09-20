@@ -1,0 +1,131 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Tue, 26 Mar 2019 13:53:21 -0500
+Subject: [PATCH] SMB3: Track total time spent on roundtrips for each SMB3
+ command
+Git-commit: 433b8dd7672be1140ffbb17eacba776298bf4733
+Patch-mainline: v5.2-rc1
+References: bsc#1144333
+
+Also track minimum and maximum time by command in /proc/fs/cifs/Stats
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/cifs_debug.c | 19 +++++++++++++++++--
+ fs/cifs/cifsglob.h   |  4 ++++
+ fs/cifs/transport.c  | 27 +++++++++++++++++++++++----
+ 3 files changed, 44 insertions(+), 6 deletions(-)
+
+diff --git a/fs/cifs/cifs_debug.c b/fs/cifs/cifs_debug.c
+index 13c1288b04a7..19ed9abe00de 100644
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -462,8 +462,13 @@ static ssize_t cifs_stats_proc_write(struct file *file,
+ 			server = list_entry(tmp1, struct TCP_Server_Info,
+ 					    tcp_ses_list);
+ #ifdef CONFIG_CIFS_STATS2
+-			for (i = 0; i < NUMBER_OF_SMB2_COMMANDS; i++)
++			for (i = 0; i < NUMBER_OF_SMB2_COMMANDS; i++) {
++				atomic_set(&server->num_cmds[i], 0);
+ 				atomic_set(&server->smb2slowcmd[i], 0);
++				server->time_per_cmd[i] = 0;
++				server->slowest_cmd[i] = 0;
++				server->fastest_cmd[0] = 0;
++			}
+ #endif /* CONFIG_CIFS_STATS2 */
+ 			list_for_each(tmp2, &server->smb_ses_list) {
+ 				ses = list_entry(tmp2, struct cifs_ses,
+@@ -531,9 +536,19 @@ static int cifs_stats_proc_show(struct seq_file *m, void *v)
+ 		server = list_entry(tmp1, struct TCP_Server_Info,
+ 				    tcp_ses_list);
+ #ifdef CONFIG_CIFS_STATS2
++		seq_puts(m, "\nTotal time spent processing by command. Time ");
++		seq_printf(m, "units are jiffies (%d per second)\n", HZ);
++		seq_puts(m, "  SMB3 CMD\tNumber\tTotal Time\tFastest\tSlowest\n");
++		seq_puts(m, "  --------\t------\t----------\t-------\t-------\n");
++		for (j = 0; j < NUMBER_OF_SMB2_COMMANDS; j++)
++			seq_printf(m, "  %d\t\t%d\t%llu\t\t%u\t%u\n", j,
++				atomic_read(&server->num_cmds[j]),
++				server->time_per_cmd[j],
++				server->fastest_cmd[j],
++				server->slowest_cmd[j]);
+ 		for (j = 0; j < NUMBER_OF_SMB2_COMMANDS; j++)
+ 			if (atomic_read(&server->smb2slowcmd[j]))
+-				seq_printf(m, "%d slow responses from %s for command %d\n",
++				seq_printf(m, "  %d slow responses from %s for command %d\n",
+ 					atomic_read(&server->smb2slowcmd[j]),
+ 					server->hostname, j);
+ #endif /* STATS2 */
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 585ad3207cb1..779ceb1f0412 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -714,7 +714,11 @@ struct TCP_Server_Info {
+ #ifdef CONFIG_CIFS_STATS2
+ 	atomic_t in_send; /* requests trying to send */
+ 	atomic_t num_waiters;   /* blocked waiting to get in sendrecv */
++	atomic_t num_cmds[NUMBER_OF_SMB2_COMMANDS]; /* total requests by cmd */
+ 	atomic_t smb2slowcmd[NUMBER_OF_SMB2_COMMANDS]; /* count resps > 1 sec */
++	__u64 time_per_cmd[NUMBER_OF_SMB2_COMMANDS]; /* total time per cmd */
++	__u32 slowest_cmd[NUMBER_OF_SMB2_COMMANDS];
++	__u32 fastest_cmd[NUMBER_OF_SMB2_COMMANDS];
+ #endif /* STATS2 */
+ 	unsigned int	max_read;
+ 	unsigned int	max_write;
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 1de8e996e566..65d9f3e2eb88 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -104,7 +104,10 @@ DeleteMidQEntry(struct mid_q_entry *midEntry)
+ {
+ #ifdef CONFIG_CIFS_STATS2
+ 	__le16 command = midEntry->server->vals->lock_cmd;
++	__u16 smb_cmd = le16_to_cpu(midEntry->command);
+ 	unsigned long now;
++	unsigned long roundtrip_time;
++	struct TCP_Server_Info *server = midEntry->server;
+ #endif
+ 	midEntry->mid_state = MID_FREE;
+ 	atomic_dec(&midCount);
+@@ -114,6 +117,23 @@ DeleteMidQEntry(struct mid_q_entry *midEntry)
+ 		cifs_small_buf_release(midEntry->resp_buf);
+ #ifdef CONFIG_CIFS_STATS2
+ 	now = jiffies;
++	if (now < midEntry->when_alloc)
++		cifs_dbg(VFS, "invalid mid allocation time\n");
++	roundtrip_time = now - midEntry->when_alloc;
++
++	if (smb_cmd < NUMBER_OF_SMB2_COMMANDS) {
++		if (atomic_read(&server->num_cmds[smb_cmd]) == 0) {
++			server->slowest_cmd[smb_cmd] = roundtrip_time;
++			server->fastest_cmd[smb_cmd] = roundtrip_time;
++		} else {
++			if (server->slowest_cmd[smb_cmd] < roundtrip_time)
++				server->slowest_cmd[smb_cmd] = roundtrip_time;
++			else if (server->fastest_cmd[smb_cmd] > roundtrip_time)
++				server->fastest_cmd[smb_cmd] = roundtrip_time;
++		}
++		cifs_stats_inc(&server->num_cmds[smb_cmd]);
++		server->time_per_cmd[smb_cmd] += roundtrip_time;
++	}
+ 	/*
+ 	 * commands taking longer than one second (default) can be indications
+ 	 * that something is wrong, unless it is quite a slow link or a very
+@@ -131,11 +151,10 @@ DeleteMidQEntry(struct mid_q_entry *midEntry)
+ 		 * smb2slowcmd[NUMBER_OF_SMB2_COMMANDS] counts by command
+ 		 * NB: le16_to_cpu returns unsigned so can not be negative below
+ 		 */
+-		if (le16_to_cpu(midEntry->command) < NUMBER_OF_SMB2_COMMANDS)
+-			cifs_stats_inc(&midEntry->server->smb2slowcmd[le16_to_cpu(midEntry->command)]);
++		if (smb_cmd < NUMBER_OF_SMB2_COMMANDS)
++			cifs_stats_inc(&server->smb2slowcmd[smb_cmd]);
+ 
+-		trace_smb3_slow_rsp(le16_to_cpu(midEntry->command),
+-			       midEntry->mid, midEntry->pid,
++		trace_smb3_slow_rsp(smb_cmd, midEntry->mid, midEntry->pid,
+ 			       midEntry->when_sent, midEntry->when_received);
+ 		if (cifsFYI & CIFS_TIMER) {
+ 			pr_debug(" CIFS slow rsp: cmd %d mid %llu",
+-- 
+2.22.0
+

@@ -1,0 +1,75 @@
+From: Ard Biesheuvel <ard.biesheuvel@linaro.org>
+Date: Tue, 6 Mar 2018 17:15:35 +0000
+Subject: arm64/kernel: enable A53 erratum #8434319 handling at runtime
+
+Git-commit: ca79acca273630935f2cfdfdf3fc7425ff51ce1c
+Patch-mainline: v4.17-rc1
+References: bsc#1148219
+
+Omit patching of ADRP instruction at module load time if the current
+CPUs are not susceptible to the erratum.
+
+Signed-off-by: Ard Biesheuvel <ard.biesheuvel@linaro.org>
+[will: Drop duplicate initialisation of .def_scope field]
+Signed-off-by: Will Deacon <will.deacon@arm.com>
+
+Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
+---
+ arch/arm64/include/asm/cpucaps.h |    3 ++-
+ arch/arm64/kernel/cpu_errata.c   |    9 +++++++++
+ arch/arm64/kernel/module-plts.c  |    3 ++-
+ arch/arm64/kernel/module.c       |    1 +
+ 4 files changed, 14 insertions(+), 2 deletions(-)
+
+--- a/arch/arm64/include/asm/cpucaps.h
++++ b/arch/arm64/include/asm/cpucaps.h
+@@ -44,7 +44,8 @@
+ #define ARM64_HARDEN_BRANCH_PREDICTOR		23
+ #define ARM64_HARDEN_BP_POST_GUEST_EXIT		24
+ #define ARM64_HAS_RAS_EXTN			25
++#define ARM64_WORKAROUND_843419			29
+ 
+-#define ARM64_NCAPS				26
++#define ARM64_NCAPS				30
+ 
+ #endif /* __ASM_CPUCAPS_H */
+--- a/arch/arm64/kernel/cpu_errata.c
++++ b/arch/arm64/kernel/cpu_errata.c
+@@ -284,6 +284,15 @@ const struct arm64_cpu_capabilities arm6
+ 			   MIDR_CPU_VAR_REV(1, 2)),
+ 	},
+ #endif
++#ifdef CONFIG_ARM64_ERRATUM_843419
++	{
++	/* Cortex-A53 r0p[01234] */
++		.desc = "ARM erratum 843419",
++		.capability = ARM64_WORKAROUND_843419,
++		MIDR_RANGE(MIDR_CORTEX_A53, 0x00, 0x04),
++		MIDR_FIXED(0x4, BIT(8)),
++	},
++#endif
+ #ifdef CONFIG_ARM64_ERRATUM_845719
+ 	{
+ 	/* Cortex-A53 r0p[01234] */
+--- a/arch/arm64/kernel/module-plts.c
++++ b/arch/arm64/kernel/module-plts.c
+@@ -158,7 +158,8 @@ static unsigned int count_plts(Elf64_Sym
+ 			break;
+ 		case R_AARCH64_ADR_PREL_PG_HI21_NC:
+ 		case R_AARCH64_ADR_PREL_PG_HI21:
+-			if (!IS_ENABLED(CONFIG_ARM64_ERRATUM_843419))
++			if (!IS_ENABLED(CONFIG_ARM64_ERRATUM_843419) ||
++			    !cpus_have_const_cap(ARM64_WORKAROUND_843419))
+ 				break;
+ 
+ 			/*
+--- a/arch/arm64/kernel/module.c
++++ b/arch/arm64/kernel/module.c
+@@ -203,6 +203,7 @@ static int reloc_insn_adrp(struct module
+ 	u32 insn;
+ 
+ 	if (!IS_ENABLED(CONFIG_ARM64_ERRATUM_843419) ||
++	    !cpus_have_const_cap(ARM64_WORKAROUND_843419) ||
+ 	    ((u64)place & 0xfff) < 0xff8)
+ 		return reloc_insn_imm(RELOC_OP_PAGE, place, val, 12, 21,
+ 				      AARCH64_INSN_IMM_ADR);

@@ -1,0 +1,61 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Sun, 7 Oct 2018 13:52:18 -0500
+Subject: [PATCH] cifs: minor clarification in comments
+Git-commit: 8c1beb9801293b175cfa0341e5df89581a87dc02
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+Clarify meaning (in comments) meaning of various
+options for debug messages in cifs.ko. Also fixed
+trivial formatting/style issue with previous patch.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifs_debug.h | 12 ++++++++++++
+ fs/cifs/cifsfs.c     |  6 ++++--
+ 2 files changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/cifs_debug.h b/fs/cifs/cifs_debug.h
+index 72db2987e066..631dc1bb21c1 100644
+--- a/fs/cifs/cifs_debug.h
++++ b/fs/cifs/cifs_debug.h
+@@ -47,6 +47,18 @@ extern int cifsFYI;
+  */
+ #ifdef CONFIG_CIFS_DEBUG
+ 
++
++/*
++ * When adding tracepoints and debug messages we have various choices.
++ * Some considerations:
++ *
++ * Use cifs_dbg(VFS, ...) for things we always want logged, and the user to see
++ *     cifs_info(...) slightly less important, admin can filter via loglevel > 6
++ *     cifs_dbg(FYI, ...) minor debugging messages, off by default
++ *     trace_smb3_*  ftrace functions are preferred for complex debug messages
++ *                 intended for developers or experienced admins, off by default
++ */
++
+ /* Information level messages, minor events */
+ #define cifs_info_func(ratefunc, fmt, ...)			\
+ do {								\
+diff --git a/fs/cifs/cifsfs.c b/fs/cifs/cifsfs.c
+index d78a31560995..7de9603c54f1 100644
+--- a/fs/cifs/cifsfs.c
++++ b/fs/cifs/cifsfs.c
+@@ -717,8 +717,10 @@ cifs_smb3_do_mount(struct file_system_type *fs_type,
+ 	struct cifs_mnt_data mnt_data;
+ 	struct dentry *root;
+ 
+-	/* Prints in Kernel / CIFS log the attempted mount operation *
+-	 *	IF CIFS_DEBUG && cifs_FYI */
++	/*
++	 * Prints in Kernel / CIFS log the attempted mount operation
++	 *	If CIFS_DEBUG && cifs_FYI
++	 */
+ 	if (cifsFYI)
+ 		cifs_dbg(FYI, "Devname: %s flags: %d\n", dev_name, flags);
+ 	else
+-- 
+2.16.4
+

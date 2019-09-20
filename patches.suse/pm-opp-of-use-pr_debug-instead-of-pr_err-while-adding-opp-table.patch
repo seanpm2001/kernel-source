@@ -1,0 +1,45 @@
+From: Viresh Kumar <viresh.kumar@linaro.org>
+Date: Wed, 12 Jul 2017 09:21:49 +0530
+Subject: PM / OPP: OF: Use pr_debug() instead of pr_err() while adding OPP
+ table
+Git-commit: 5b60697cd89cf5a438b2984e11859228e5ec1c6b
+Patch-mainline: v4.14-rc1
+References: jsc#SLE-7294
+
+Some platforms add the OPPs dynamically from platform specific drivers
+instead of getting them statically from DT. The cpufreq-dt driver
+already ignores the return value of dev_pm_opp_of_cpumask_add_table() to
+not error out for such cases, but we still end up printing error message
+from that routine. That's not nice.
+
+Convert the print message to use pr_debug() instead.
+
+Reported-by: Mason <slash.tmp@free.fr>
+Signed-off-by: Viresh Kumar <viresh.kumar@linaro.org>
+Reviewed-by: Stephen Boyd <sboyd@codeaurora.org>
+Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Acked-by: Nicolas Saenz Julienne <nsaenzjulienne@suse.de>
+---
+ drivers/base/power/opp/of.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/base/power/opp/of.c b/drivers/base/power/opp/of.c
+index 57eec1ca0569..6f0497b377c7 100644
+--- a/drivers/base/power/opp/of.c
++++ b/drivers/base/power/opp/of.c
+@@ -539,8 +539,12 @@ int dev_pm_opp_of_cpumask_add_table(const struct cpumask *cpumask)
+ 
+ 		ret = dev_pm_opp_of_add_table(cpu_dev);
+ 		if (ret) {
+-			pr_err("%s: couldn't find opp table for cpu:%d, %d\n",
+-			       __func__, cpu, ret);
++			/*
++			 * OPP may get registered dynamically, don't print error
++			 * message here.
++			 */
++			pr_debug("%s: couldn't find opp table for cpu:%d, %d\n",
++				 __func__, cpu, ret);
+ 
+ 			/* Free all other OPPs */
+ 			dev_pm_opp_of_cpumask_remove_table(cpumask);
+

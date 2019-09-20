@@ -1,0 +1,38 @@
+From c721c38957fb19982416f6be71aae7b30630d83b Mon Sep 17 00:00:00 2001
+From: Steve French <smfrench@gmail.com>
+Date: Tue, 19 Sep 2017 18:40:03 -0500
+Subject: [PATCH] SMB3: Warn user if trying to sign connection that
+ authenticated as guest
+Git-commit: c721c38957fb19982416f6be71aae7b30630d83b
+Patch-mainline: v4.14-rc2
+References: bsc#1085536, bsc#1144333
+
+It can be confusing if user ends up authenticated as guest but they
+requested signing (server will return error validating signed packets)
+so add log message for this.
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Cc: Stable <stable@vger.kernel.org>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+
+---
+ fs/cifs/smb2pdu.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index b4c58a1db1ae..d499ce265c3b 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -1176,6 +1176,8 @@ SMB2_sess_setup(const unsigned int xid, struct cifs_ses *ses,
+ 	while (sess_data->func)
+ 		sess_data->func(sess_data);
+ 
++	if ((ses->session_flags & SMB2_SESSION_FLAG_IS_GUEST) && (ses->sign))
++		cifs_dbg(VFS, "signing requested but authenticated as guest\n");
+ 	rc = sess_data->result;
+ out:
+ 	kfree(sess_data);
+-- 
+2.16.4
+

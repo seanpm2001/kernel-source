@@ -1,0 +1,55 @@
+From 42787ed79638dc7f0f8d5c164caba1e87bfab50f Mon Sep 17 00:00:00 2001
+From: "Rafael J. Wysocki" <rafael.j.wysocki@intel.com>
+Date: Thu, 1 Aug 2019 01:31:08 +0200
+Subject: [PATCH] ACPI: PM: Fix regression in acpi_device_set_power()
+Git-commit: 42787ed79638dc7f0f8d5c164caba1e87bfab50f
+Patch-mainline: 5.3-rc3
+References: bsc#1051510
+
+Commit f850a48a0799 ("ACPI: PM: Allow transitions to D0 to occur in
+special cases") overlooked the fact that acpi_power_transition() may
+change the power.state value for the target device and if that
+happens, it may confuse acpi_device_set_power() and cause it to
+omit the _PS0 evaluation which on some systems is necessary to
+change power states of devices from low-power to D0.
+
+Fix that by saving the current value of power.state for the
+target device before passing it to acpi_power_transition() and
+using the saved value in a subsequent check.
+
+Fixes: f850a48a0799 ("ACPI: PM: Allow transitions to D0 to occur in special cases")
+Reported-by: Kai-Heng Feng <kai.heng.feng@canonical.com>
+Reported-by: Mario Limonciello <mario.limonciello@dell.com>
+Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Tested-by: Kai-Heng Feng <kai.heng.feng@canonical.com>
+Tested-by: Mario Limonciello <mario.limonciello@dell.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/acpi/device_pm.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/acpi/device_pm.c b/drivers/acpi/device_pm.c
+index 28cffaaf9d82..f616b16c1f0b 100644
+--- a/drivers/acpi/device_pm.c
++++ b/drivers/acpi/device_pm.c
+@@ -232,13 +232,15 @@ int acpi_device_set_power(struct acpi_device *device, int state)
+ 		if (device->power.flags.power_resources)
+ 			result = acpi_power_transition(device, target_state);
+ 	} else {
++		int cur_state = device->power.state;
++
+ 		if (device->power.flags.power_resources) {
+ 			result = acpi_power_transition(device, ACPI_STATE_D0);
+ 			if (result)
+ 				goto end;
+ 		}
+ 
+-		if (device->power.state == ACPI_STATE_D0) {
++		if (cur_state == ACPI_STATE_D0) {
+ 			int psc;
+ 
+ 			/* Nothing to do here if _PSC is not present. */
+-- 
+2.16.4
+

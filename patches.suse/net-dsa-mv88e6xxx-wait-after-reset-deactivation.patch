@@ -1,0 +1,29 @@
+From: Baruch Siach <baruch@tkos.co.il>
+Date: Thu, 27 Jun 2019 21:17:39 +0300
+Subject: net: dsa: mv88e6xxx: wait after reset deactivation
+Git-commit: 7b75e49de424ceb53d13e60f35d0a73765626fda
+Patch-mainline: 5.3-rc1
+References: networking-stable-19_07_25
+
+Add a 1ms delay after reset deactivation. Otherwise the chip returns
+bogus ID value. This is observed with 88E6390 (Peridot) chip.
+
+Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+Reviewed-by: Andrew Lunn <andrew@lunn.ch>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ drivers/net/dsa/mv88e6xxx/chip.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/drivers/net/dsa/mv88e6xxx/chip.c
++++ b/drivers/net/dsa/mv88e6xxx/chip.c
+@@ -4272,6 +4272,8 @@ static int mv88e6xxx_probe(struct mdio_d
+ 	chip->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
+ 	if (IS_ERR(chip->reset))
+ 		return PTR_ERR(chip->reset);
++	if (chip->reset)
++		usleep_range(1000, 2000);
+ 
+ 	err = mv88e6xxx_detect(chip);
+ 	if (err)

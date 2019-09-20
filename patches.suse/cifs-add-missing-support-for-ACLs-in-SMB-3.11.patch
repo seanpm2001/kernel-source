@@ -1,0 +1,39 @@
+From c1777df1a5d541cda918ff0450c8adcc8b69c2fd Mon Sep 17 00:00:00 2001
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Fri, 10 Aug 2018 11:03:55 +1000
+Subject: [PATCH] cifs: add missing support for ACLs in SMB 3.11
+Git-commit: c1777df1a5d541cda918ff0450c8adcc8b69c2fd
+Patch-mainline: v4.19-rc1
+References: bsc#1051510, bsc#1144333
+
+We were missing the methods for get_acl and friends for the 3.11
+dialect.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+CC: Stable <stable@vger.kernel.org>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smb2ops.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 7869ea4f6fab..541258447c4c 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -3586,6 +3586,11 @@ struct smb_version_operations smb311_operations = {
+ 	.query_all_EAs = smb2_query_eas,
+ 	.set_EA = smb2_set_ea,
+ #endif /* CIFS_XATTR */
++#ifdef CONFIG_CIFS_ACL
++	.get_acl = get_smb2_acl,
++	.get_acl_by_fid = get_smb2_acl_by_fid,
++	.set_acl = set_smb2_acl,
++#endif /* CIFS_ACL */
+ 	.next_header = smb2_next_header,
+ };
+ 
+-- 
+2.16.4
+

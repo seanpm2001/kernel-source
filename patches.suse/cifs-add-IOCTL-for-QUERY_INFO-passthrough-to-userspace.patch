@@ -1,0 +1,314 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Sun, 7 Oct 2018 19:19:58 -0500
+Subject: [PATCH] cifs: add IOCTL for QUERY_INFO passthrough to userspace
+Git-commit: f5b05d622a3e99e6a97a189fe500414be802a05c
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+This allows userspace tools to query the raw info levels for cifs files
+and process the response in userspace.
+In particular this is useful for many of those data where there is no
+corresponding native data structure in linux.
+For example querying the security descriptor for a file and extract the
+SIDs.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifs_ioctl.h | 11 +++++++
+ fs/cifs/cifsglob.h   |  4 +++
+ fs/cifs/ioctl.c      | 21 +++++++++++++
+ fs/cifs/smb2inode.c  |  2 +-
+ fs/cifs/smb2ops.c    | 87 +++++++++++++++++++++++++++++++++++++++++++++++++++-
+ fs/cifs/smb2pdu.c    | 17 +++++-----
+ fs/cifs/smb2proto.h  |  3 +-
+ 7 files changed, 134 insertions(+), 11 deletions(-)
+
+diff --git a/fs/cifs/cifs_ioctl.h b/fs/cifs/cifs_ioctl.h
+index 57ff0756e30c..d8bce2f862de 100644
+--- a/fs/cifs/cifs_ioctl.h
++++ b/fs/cifs/cifs_ioctl.h
+@@ -43,8 +43,19 @@ struct smb_snapshot_array {
+ 	/*	snapshots[]; */
+ } __packed;
+ 
++struct smb_query_info {
++	__u32   info_type;
++	__u32   file_info_class;
++	__u32   additional_information;
++	__u32   flags;
++	__u32	input_buffer_length;
++	__u32	output_buffer_length;
++	/* char buffer[]; */
++} __packed;
++
+ #define CIFS_IOCTL_MAGIC	0xCF
+ #define CIFS_IOC_COPYCHUNK_FILE	_IOW(CIFS_IOCTL_MAGIC, 3, int)
+ #define CIFS_IOC_SET_INTEGRITY  _IO(CIFS_IOCTL_MAGIC, 4)
+ #define CIFS_IOC_GET_MNT_INFO _IOR(CIFS_IOCTL_MAGIC, 5, struct smb_mnt_fs_info)
+ #define CIFS_ENUMERATE_SNAPSHOTS _IOR(CIFS_IOCTL_MAGIC, 6, struct smb_snapshot_array)
++#define CIFS_QUERY_INFO _IOWR(CIFS_IOCTL_MAGIC, 7, struct smb_query_info)
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 819ead41bbe2..73801254cc21 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -465,6 +465,10 @@ struct smb_version_operations {
+ 	enum securityEnum (*select_sectype)(struct TCP_Server_Info *,
+ 			    enum securityEnum);
+ 	int (*next_header)(char *);
++	/* ioctl passthrough for query_info */
++	int (*ioctl_query_info)(const unsigned int xid,
++				struct cifsFileInfo *file,
++				unsigned long p);
+ };
+ 
+ struct smb_version_values {
+diff --git a/fs/cifs/ioctl.c b/fs/cifs/ioctl.c
+index 565cf7d6f81f..77c7a5796dfd 100644
+--- a/fs/cifs/ioctl.c
++++ b/fs/cifs/ioctl.c
+@@ -34,6 +34,24 @@
+ #include "cifs_ioctl.h"
+ #include <linux/btrfs.h>
+ 
++static long cifs_ioctl_query_info(unsigned int xid, struct file *filep,
++				  unsigned long p)
++{
++	struct cifsFileInfo *pSMBFile = filep->private_data;
++	struct cifs_tcon *tcon;
++
++	cifs_dbg(FYI, "%s %p\n", __func__, pSMBFile);
++	if (pSMBFile == NULL)
++		return -EISDIR;
++	tcon = tlink_tcon(pSMBFile->tlink);
++
++	if (tcon->ses->server->ops->ioctl_query_info)
++		return tcon->ses->server->ops->ioctl_query_info(
++				xid, pSMBFile, p);
++	else
++		return -EOPNOTSUPP;
++}
++
+ static long cifs_ioctl_copychunk(unsigned int xid, struct file *dst_file,
+ 			unsigned long srcfd)
+ {
+@@ -194,6 +212,9 @@ long cifs_ioctl(struct file *filep, unsigned int command, unsigned long arg)
+ 		case CIFS_IOC_COPYCHUNK_FILE:
+ 			rc = cifs_ioctl_copychunk(xid, filep, arg);
+ 			break;
++		case CIFS_QUERY_INFO:
++			rc = cifs_ioctl_query_info(xid, filep, arg);
++			break;
+ 		case CIFS_IOC_SET_INTEGRITY:
+ 			if (pSMBFile == NULL)
+ 				break;
+diff --git a/fs/cifs/smb2inode.c b/fs/cifs/smb2inode.c
+index c0b3622a7b53..50d4a9afb36a 100644
+--- a/fs/cifs/smb2inode.c
++++ b/fs/cifs/smb2inode.c
+@@ -110,7 +110,7 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 				COMPOUND_FID, FILE_ALL_INFORMATION,
+ 				SMB2_O_INFO_FILE, 0,
+ 				sizeof(struct smb2_file_all_info) +
+-					  PATH_MAX * 2);
++					  PATH_MAX * 2, 0, NULL);
+ 		smb2_set_next_command(server, &rqst[num_rqst]);
+ 		smb2_set_related(&rqst[num_rqst++]);
+ 		break;
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index b744221f685d..c6c6450d0f38 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1118,6 +1118,86 @@ SMB2_request_res_key(const unsigned int xid, struct cifs_tcon *tcon,
+ 	return rc;
+ }
+ 
++static int
++smb2_ioctl_query_info(const unsigned int xid,
++		      struct cifsFileInfo *file,
++		      unsigned long p)
++{
++	struct cifs_tcon *tcon = tlink_tcon(file->tlink);
++	struct cifs_ses *ses = tcon->ses;
++	char __user *arg = (char __user *)p;
++	struct smb_query_info qi;
++	struct smb_query_info __user *pqi;
++	int rc = 0;
++	int flags = 0;
++	struct smb_rqst rqst;
++	struct kvec iov[1];
++	struct kvec rsp_iov;
++	int resp_buftype;
++	struct smb2_query_info_rsp *rsp = NULL;
++	void *buffer;
++
++	if (copy_from_user(&qi, arg, sizeof(struct smb_query_info)))
++		return -EFAULT;
++
++	if (qi.output_buffer_length > 1024)
++		return -EINVAL;
++
++	if (!ses || !(ses->server))
++		return -EIO;
++
++	if (smb3_encryption_required(tcon))
++		flags |= CIFS_TRANSFORM_REQ;
++
++	buffer = kmalloc(qi.output_buffer_length, GFP_KERNEL);
++	if (buffer == NULL)
++		return -ENOMEM;
++
++	if (copy_from_user(buffer, arg + sizeof(struct smb_query_info),
++			   qi.output_buffer_length)) {
++		kfree(buffer);
++		return -EFAULT;
++	}
++
++	memset(&rqst, 0, sizeof(struct smb_rqst));
++	memset(&iov, 0, sizeof(iov));
++	rqst.rq_iov = iov;
++	rqst.rq_nvec = 1;
++
++	rc = SMB2_query_info_init(tcon, &rqst, file->fid.persistent_fid,
++				  file->fid.volatile_fid,
++				  qi.file_info_class, qi.info_type,
++				  qi.additional_information,
++				  qi.input_buffer_length,
++				  qi.output_buffer_length, buffer);
++	kfree(buffer);
++	if (rc)
++		goto iqinf_exit;
++
++	rc = cifs_send_recv(xid, ses, &rqst, &resp_buftype, flags, &rsp_iov);
++	rsp = (struct smb2_query_info_rsp *)rsp_iov.iov_base;
++	if (rc)
++		goto iqinf_exit;
++
++	pqi = (struct smb_query_info __user *)arg;
++	if (le32_to_cpu(rsp->OutputBufferLength) < qi.input_buffer_length)
++		qi.input_buffer_length = le32_to_cpu(rsp->OutputBufferLength);
++	if (copy_to_user(&pqi->input_buffer_length, &qi.input_buffer_length,
++			 sizeof(qi.input_buffer_length))) {
++		rc = -EFAULT;
++		goto iqinf_exit;
++	}
++	if (copy_to_user(pqi + 1, rsp->Buffer, qi.input_buffer_length)) {
++		rc = -EFAULT;
++		goto iqinf_exit;
++	}
++
++ iqinf_exit:
++	SMB2_query_info_free(&rqst);
++	free_rsp_buf(resp_buftype, rsp);
++	return rc;
++}
++
+ static ssize_t
+ smb2_copychunk_range(const unsigned int xid,
+ 			struct cifsFileInfo *srcfile,
+@@ -1697,7 +1777,8 @@ smb2_queryfs(const unsigned int xid, struct cifs_tcon *tcon,
+ 	rc = SMB2_query_info_init(tcon, &rqst[1], COMPOUND_FID, COMPOUND_FID,
+ 				  FS_FULL_SIZE_INFORMATION,
+ 				  SMB2_O_INFO_FILESYSTEM, 0,
+-				  sizeof(struct smb2_fs_full_size_info));
++				  sizeof(struct smb2_fs_full_size_info), 0,
++				  NULL);
+ 	if (rc)
+ 		goto qfs_exit;
+ 	smb2_set_next_command(server, &rqst[1]);
+@@ -3364,6 +3445,7 @@ struct smb_version_operations smb20_operations = {
+ 	.set_acl = set_smb2_acl,
+ #endif /* CIFS_ACL */
+ 	.next_header = smb2_next_header,
++	.ioctl_query_info = smb2_ioctl_query_info,
+ };
+ 
+ struct smb_version_operations smb21_operations = {
+@@ -3459,6 +3541,7 @@ struct smb_version_operations smb21_operations = {
+ 	.set_acl = set_smb2_acl,
+ #endif /* CIFS_ACL */
+ 	.next_header = smb2_next_header,
++	.ioctl_query_info = smb2_ioctl_query_info,
+ };
+ 
+ struct smb_version_operations smb30_operations = {
+@@ -3563,6 +3646,7 @@ struct smb_version_operations smb30_operations = {
+ 	.set_acl = set_smb2_acl,
+ #endif /* CIFS_ACL */
+ 	.next_header = smb2_next_header,
++	.ioctl_query_info = smb2_ioctl_query_info,
+ };
+ 
+ struct smb_version_operations smb311_operations = {
+@@ -3668,6 +3752,7 @@ struct smb_version_operations smb311_operations = {
+ 	.set_acl = set_smb2_acl,
+ #endif /* CIFS_ACL */
+ 	.next_header = smb2_next_header,
++	.ioctl_query_info = smb2_ioctl_query_info,
+ };
+ 
+ struct smb_version_values smb20_values = {
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index dacc3400eac6..1310bb355e32 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -2651,7 +2651,7 @@ int
+ SMB2_query_info_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
+ 		     u64 persistent_fid, u64 volatile_fid,
+ 		     u8 info_class, u8 info_type, u32 additional_info,
+-		     size_t output_len)
++		     size_t output_len, size_t input_len, void *input)
+ {
+ 	struct smb2_query_info_req *req;
+ 	struct kvec *iov = rqst->rq_iov;
+@@ -2669,16 +2669,17 @@ SMB2_query_info_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
+ 	req->VolatileFileId = volatile_fid;
+ 	req->AdditionalInformation = cpu_to_le32(additional_info);
+ 
+-	/*
+-	 * We do not use the input buffer (do not send extra byte)
+-	 */
+-	req->InputBufferOffset = 0;
+-
+ 	req->OutputBufferLength = cpu_to_le32(output_len);
++	if (input_len) {
++		req->InputBufferLength = cpu_to_le32(input_len);
++		/* total_len for smb query request never close to le16 max */
++		req->InputBufferOffset = cpu_to_le16(total_len - 1);
++		memcpy(req->Buffer, input, input_len);
++	}
+ 
+ 	iov[0].iov_base = (char *)req;
+ 	/* 1 for Buffer */
+-	iov[0].iov_len = total_len - 1;
++	iov[0].iov_len = total_len - 1 + input_len;
+ 	return 0;
+ }
+ 
+@@ -2718,7 +2719,7 @@ query_info(const unsigned int xid, struct cifs_tcon *tcon,
+ 
+ 	rc = SMB2_query_info_init(tcon, &rqst, persistent_fid, volatile_fid,
+ 				  info_class, info_type, additional_info,
+-				  output_len);
++				  output_len, 0, NULL);
+ 	if (rc)
+ 		goto qinf_exit;
+ 
+diff --git a/fs/cifs/smb2proto.h b/fs/cifs/smb2proto.h
+index 48c5c61702f1..9f4e9ed9ce53 100644
+--- a/fs/cifs/smb2proto.h
++++ b/fs/cifs/smb2proto.h
+@@ -163,7 +163,8 @@ extern int SMB2_query_info(const unsigned int xid, struct cifs_tcon *tcon,
+ extern int SMB2_query_info_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
+ 				u64 persistent_fid, u64 volatile_fid,
+ 				u8 info_class, u8 info_type,
+-				u32 additional_info, size_t output_len);
++				u32 additional_info, size_t output_len,
++				size_t input_len, void *input);
+ extern void SMB2_query_info_free(struct smb_rqst *rqst);
+ extern int SMB2_query_acl(const unsigned int xid, struct cifs_tcon *tcon,
+ 			   u64 persistent_file_id, u64 volatile_file_id,
+-- 
+2.16.4
+

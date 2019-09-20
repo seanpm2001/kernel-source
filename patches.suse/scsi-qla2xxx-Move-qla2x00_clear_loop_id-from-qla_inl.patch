@@ -1,0 +1,74 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Wed, 17 Apr 2019 14:44:15 -0700
+Subject: scsi: qla2xxx: Move qla2x00_clear_loop_id() from qla_inline.h into
+ qla_init.c
+Patch-mainline: v5.2-rc1
+Git-commit: ef1eb688b86ca3052131e8dc3ae85edb9fdca4a3
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+Since qla2x00_clear_loop_id() is not in the hot path, uninline it.
+
+Cc: Himanshu Madhani <hmadhani@marvell.com>
+Cc: Giridhar Malavali <gmalavali@marvell.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Acked-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_gbl.h    |    1 +
+ drivers/scsi/qla2xxx/qla_init.c   |   12 ++++++++++++
+ drivers/scsi/qla2xxx/qla_inline.h |   12 ------------
+ 3 files changed, 13 insertions(+), 12 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_gbl.h
++++ b/drivers/scsi/qla2xxx/qla_gbl.h
+@@ -38,6 +38,7 @@ extern int qla81xx_load_risc(scsi_qla_ho
+ 
+ extern int qla2x00_perform_loop_resync(scsi_qla_host_t *);
+ extern int qla2x00_loop_resync(scsi_qla_host_t *);
++extern void qla2x00_clear_loop_id(fc_port_t *fcport);
+ 
+ extern int qla2x00_fabric_login(scsi_qla_host_t *, fc_port_t *, uint16_t *);
+ extern int qla2x00_local_device_login(scsi_qla_host_t *, fc_port_t *);
+--- a/drivers/scsi/qla2xxx/qla_init.c
++++ b/drivers/scsi/qla2xxx/qla_init.c
+@@ -557,6 +557,18 @@ static int qla2x00_find_new_loop_id(scsi
+ 	return rval;
+ }
+ 
++void qla2x00_clear_loop_id(fc_port_t *fcport)
++{
++	struct qla_hw_data *ha = fcport->vha->hw;
++
++	if (fcport->loop_id == FC_NO_LOOP_ID ||
++	    qla2x00_is_reserved_id(fcport->vha, fcport->loop_id))
++		return;
++
++	clear_bit(fcport->loop_id, ha->loop_id_map);
++	fcport->loop_id = FC_NO_LOOP_ID;
++}
++
+ static void qla24xx_handle_gnl_done_event(scsi_qla_host_t *vha,
+ 	struct event_arg *ea)
+ {
+--- a/drivers/scsi/qla2xxx/qla_inline.h
++++ b/drivers/scsi/qla2xxx/qla_inline.h
+@@ -102,18 +102,6 @@ qla2x00_is_reserved_id(scsi_qla_host_t *
+ }
+ 
+ static inline void
+-qla2x00_clear_loop_id(fc_port_t *fcport) {
+-	struct qla_hw_data *ha = fcport->vha->hw;
+-
+-	if (fcport->loop_id == FC_NO_LOOP_ID ||
+-	    qla2x00_is_reserved_id(fcport->vha, fcport->loop_id))
+-		return;
+-
+-	clear_bit(fcport->loop_id, ha->loop_id_map);
+-	fcport->loop_id = FC_NO_LOOP_ID;
+-}
+-
+-static inline void
+ qla2x00_clean_dsd_pool(struct qla_hw_data *ha, struct crc_context *ctx)
+ {
+ 	struct dsd_dma *dsd, *tdsd;

@@ -1,0 +1,45 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Fri, 29 Jun 2018 16:06:15 -0500
+Subject: [PATCH] smb3: snapshot mounts are read-only and make sure info is
+ displayable about the mount
+Git-commit: 8a69e96e610b3ec8a55f6fd4e44363452838caa7
+Patch-mainline: v4.18
+References: bsc#1144333
+
+snapshot mounts were not marked as read-only and did not display the snapshot
+time (in /proc/mounts) specified on mount
+
+With this patch - note that can not write to the snapshot mount (see "ro" in
+/proc/mounts line) and also the missing snapshot timewarp token time is
+dumped.  Sample line from /proc/mounts with the patch:
+
+//127.0.0.1/scratch /mnt2 smb3 ro,relatime,vers=default,cache=strict,username=testuser,domain=,uid=0,noforceuid,gid=0,noforcegid,addr=127.0.0.1,file_mode=0755,dir_mode=0755,soft,nounix,serverino,mapposix,noperm,rsize=1048576,wsize=1048576,echo_interval=60,snapshot=1234567,actimeo=1 0 0
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Paulo Alcantara <palcantara@suse.de>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsfs.c |    5 +++++
+ 1 file changed, 5 insertions(+)
+
+--- a/fs/cifs/cifsfs.c
++++ b/fs/cifs/cifsfs.c
+@@ -139,6 +139,9 @@ cifs_read_super(struct super_block *sb)
+ 	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_POSIXACL)
+ 		sb->s_flags |= MS_POSIXACL;
+ 
++	if (tcon->snapshot_time)
++		sb->s_flags |= MS_RDONLY;
++
+ 	if (tcon->ses->capabilities & tcon->ses->server->vals->cap_large_files)
+ 		sb->s_maxbytes = MAX_LFS_FILESIZE;
+ 	else
+@@ -540,6 +543,8 @@ cifs_show_options(struct seq_file *s, st
+ 	seq_printf(s, ",wsize=%u", cifs_sb->wsize);
+ 	seq_printf(s, ",echo_interval=%lu",
+ 			tcon->ses->server->echo_interval / HZ);
++	if (tcon->snapshot_time)
++		seq_printf(s, ",snapshot=%llu", tcon->snapshot_time);
+ 	/* convert actimeo and display it in seconds */
+ 	seq_printf(s, ",actimeo=%lu", cifs_sb->actimeo / HZ);
+ 

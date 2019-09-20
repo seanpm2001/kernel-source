@@ -1,0 +1,292 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Thu, 28 Mar 2019 22:32:49 -0500
+Subject: [PATCH] smb3: Fix enumerating snapshots to Azure
+Git-commit: 153322f7536a181e4d1b288aa6f01c0ce65f5c7c
+Patch-mainline: v5.1-rc4
+References: bsc#1144333
+
+Some servers (see MS-SMB2 protocol specification
+section 3.3.5.15.1) expect that the FSCTL enumerate snapshots
+is done twice, with the first query having EXACTLY the minimum
+size response buffer requested (16 bytes) which refreshes
+the snapshot list (otherwise that and subsequent queries get
+an empty list returned).  So had to add code to set
+the maximum response size differently for the first snapshot
+query (which gets the size needed for the second query which
+contains the actual list of snapshots).
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+CC: Stable <stable@vger.kernel.org> # 4.19+
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2file.c  |  2 +-
+ fs/cifs/smb2ops.c   | 44 ++++++++++++++++++++++++++++++++------------
+ fs/cifs/smb2pdu.c   | 35 ++++++++++++++++++++++-------------
+ fs/cifs/smb2proto.h |  5 +++--
+ 4 files changed, 58 insertions(+), 28 deletions(-)
+
+diff --git a/fs/cifs/smb2file.c b/fs/cifs/smb2file.c
+index b204e84b87fb..ac97e0c01d4e 100644
+--- a/fs/cifs/smb2file.c
++++ b/fs/cifs/smb2file.c
+@@ -74,7 +74,7 @@ smb2_open_file(const unsigned int xid, struct cifs_open_parms *oparms,
+ 			fid->volatile_fid, FSCTL_LMR_REQUEST_RESILIENCY,
+ 			true /* is_fsctl */,
+ 			(char *)&nr_ioctl_req, sizeof(nr_ioctl_req),
+-			NULL, NULL /* no return info */);
++			CIFSMaxBufSize, NULL, NULL /* no return info */);
+ 		if (rc == -EOPNOTSUPP) {
+ 			cifs_dbg(VFS,
+ 			     "resiliency not supported by server, disabling\n");
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 7cfafac255aa..b22be10ee980 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -581,7 +581,7 @@ SMB3_request_interfaces(const unsigned int xid, struct cifs_tcon *tcon)
+ 	rc = SMB2_ioctl(xid, tcon, NO_FILE_ID, NO_FILE_ID,
+ 			FSCTL_QUERY_NETWORK_INTERFACE_INFO, true /* is_fsctl */,
+ 			NULL /* no data input */, 0 /* no data input */,
+-			(char **)&out_buf, &ret_data_len);
++			CIFSMaxBufSize, (char **)&out_buf, &ret_data_len);
+ 	if (rc == -EOPNOTSUPP) {
+ 		cifs_dbg(FYI,
+ 			 "server does not support query network interfaces\n");
+@@ -1297,7 +1297,7 @@ SMB2_request_res_key(const unsigned int xid, struct cifs_tcon *tcon,
+ 
+ 	rc = SMB2_ioctl(xid, tcon, persistent_fid, volatile_fid,
+ 			FSCTL_SRV_REQUEST_RESUME_KEY, true /* is_fsctl */,
+-			NULL, 0 /* no input */,
++			NULL, 0 /* no input */, CIFSMaxBufSize,
+ 			(char **)&res_key, &ret_data_len);
+ 
+ 	if (rc) {
+@@ -1402,7 +1402,7 @@ smb2_ioctl_query_info(const unsigned int xid,
+ 			rc = SMB2_ioctl_init(tcon, &rqst[1],
+ 					     COMPOUND_FID, COMPOUND_FID,
+ 					     qi.info_type, true, NULL,
+-					     0);
++					     0, CIFSMaxBufSize);
+ 		}
+ 	} else if (qi.flags == PASSTHRU_QUERY_INFO) {
+ 		memset(&qi_iov, 0, sizeof(qi_iov));
+@@ -1530,8 +1530,8 @@ smb2_copychunk_range(const unsigned int xid,
+ 		rc = SMB2_ioctl(xid, tcon, trgtfile->fid.persistent_fid,
+ 			trgtfile->fid.volatile_fid, FSCTL_SRV_COPYCHUNK_WRITE,
+ 			true /* is_fsctl */, (char *)pcchunk,
+-			sizeof(struct copychunk_ioctl),	(char **)&retbuf,
+-			&ret_data_len);
++			sizeof(struct copychunk_ioctl),	CIFSMaxBufSize,
++			(char **)&retbuf, &ret_data_len);
+ 		if (rc == 0) {
+ 			if (ret_data_len !=
+ 					sizeof(struct copychunk_ioctl_rsp)) {
+@@ -1691,7 +1691,7 @@ static bool smb2_set_sparse(const unsigned int xid, struct cifs_tcon *tcon,
+ 	rc = SMB2_ioctl(xid, tcon, cfile->fid.persistent_fid,
+ 			cfile->fid.volatile_fid, FSCTL_SET_SPARSE,
+ 			true /* is_fctl */,
+-			&setsparse, 1, NULL, NULL);
++			&setsparse, 1, CIFSMaxBufSize, NULL, NULL);
+ 	if (rc) {
+ 		tcon->broken_sparse_sup = true;
+ 		cifs_dbg(FYI, "set sparse rc = %d\n", rc);
+@@ -1764,7 +1764,7 @@ smb2_duplicate_extents(const unsigned int xid,
+ 			true /* is_fsctl */,
+ 			(char *)&dup_ext_buf,
+ 			sizeof(struct duplicate_extents_to_file),
+-			NULL,
++			CIFSMaxBufSize, NULL,
+ 			&ret_data_len);
+ 
+ 	if (ret_data_len > 0)
+@@ -1799,7 +1799,7 @@ smb3_set_integrity(const unsigned int xid, struct cifs_tcon *tcon,
+ 			true /* is_fsctl */,
+ 			(char *)&integr_info,
+ 			sizeof(struct fsctl_set_integrity_information_req),
+-			NULL,
++			CIFSMaxBufSize, NULL,
+ 			&ret_data_len);
+ 
+ }
+@@ -1807,6 +1807,8 @@ smb3_set_integrity(const unsigned int xid, struct cifs_tcon *tcon,
+ /* GMT Token is @GMT-YYYY.MM.DD-HH.MM.SS Unicode which is 48 bytes + null */
+ #define GMT_TOKEN_SIZE 50
+ 
++#define MIN_SNAPSHOT_ARRAY_SIZE 16 /* See MS-SMB2 section 3.3.5.15.1 */
++
+ /*
+  * Input buffer contains (empty) struct smb_snapshot array with size filled in
+  * For output see struct SRV_SNAPSHOT_ARRAY in MS-SMB2 section 2.2.32.2
+@@ -1818,13 +1820,29 @@ smb3_enum_snapshots(const unsigned int xid, struct cifs_tcon *tcon,
+ 	char *retbuf = NULL;
+ 	unsigned int ret_data_len = 0;
+ 	int rc;
++	u32 max_response_size;
+ 	struct smb_snapshot_array snapshot_in;
+ 
++	if (get_user(ret_data_len, (unsigned int __user *)ioc_buf))
++		return -EFAULT;
++
++	/*
++	 * Note that for snapshot queries that servers like Azure expect that
++	 * the first query be minimal size (and just used to get the number/size
++	 * of previous versions) so response size must be specified as EXACTLY
++	 * sizeof(struct snapshot_array) which is 16 when rounded up to multiple
++	 * of eight bytes.
++	 */
++	if (ret_data_len == 0)
++		max_response_size = MIN_SNAPSHOT_ARRAY_SIZE;
++	else
++		max_response_size = CIFSMaxBufSize;
++
+ 	rc = SMB2_ioctl(xid, tcon, cfile->fid.persistent_fid,
+ 			cfile->fid.volatile_fid,
+ 			FSCTL_SRV_ENUMERATE_SNAPSHOTS,
+ 			true /* is_fsctl */,
+-			NULL, 0 /* no input data */,
++			NULL, 0 /* no input data */, max_response_size,
+ 			(char **)&retbuf,
+ 			&ret_data_len);
+ 	cifs_dbg(FYI, "enum snaphots ioctl returned %d and ret buflen is %d\n",
+@@ -2302,7 +2320,7 @@ smb2_get_dfs_refer(const unsigned int xid, struct cifs_ses *ses,
+ 		rc = SMB2_ioctl(xid, tcon, NO_FILE_ID, NO_FILE_ID,
+ 				FSCTL_DFS_GET_REFERRALS,
+ 				true /* is_fsctl */,
+-				(char *)dfs_req, dfs_req_size,
++				(char *)dfs_req, dfs_req_size, CIFSMaxBufSize,
+ 				(char **)&dfs_rsp, &dfs_rsp_size);
+ 	} while (rc == -EAGAIN);
+ 
+@@ -2656,7 +2674,8 @@ static long smb3_zero_range(struct file *file, struct cifs_tcon *tcon,
+ 	rc = SMB2_ioctl_init(tcon, &rqst[num++], cfile->fid.persistent_fid,
+ 			     cfile->fid.volatile_fid, FSCTL_SET_ZERO_DATA,
+ 			     true /* is_fctl */, (char *)&fsctl_buf,
+-			     sizeof(struct file_zero_data_information));
++			     sizeof(struct file_zero_data_information),
++			     CIFSMaxBufSize);
+ 	if (rc)
+ 		goto zero_range_exit;
+ 
+@@ -2733,7 +2752,8 @@ static long smb3_punch_hole(struct file *file, struct cifs_tcon *tcon,
+ 	rc = SMB2_ioctl(xid, tcon, cfile->fid.persistent_fid,
+ 			cfile->fid.volatile_fid, FSCTL_SET_ZERO_DATA,
+ 			true /* is_fctl */, (char *)&fsctl_buf,
+-			sizeof(struct file_zero_data_information), NULL, NULL);
++			sizeof(struct file_zero_data_information),
++			CIFSMaxBufSize, NULL, NULL);
+ 	free_xid(xid);
+ 	return rc;
+ }
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 21ac19ff19cb..0dc66f36ff5b 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -1002,7 +1002,8 @@ int smb3_validate_negotiate(const unsigned int xid, struct cifs_tcon *tcon)
+ 
+ 	rc = SMB2_ioctl(xid, tcon, NO_FILE_ID, NO_FILE_ID,
+ 		FSCTL_VALIDATE_NEGOTIATE_INFO, true /* is_fsctl */,
+-		(char *)pneg_inbuf, inbuflen, (char **)&pneg_rsp, &rsplen);
++		(char *)pneg_inbuf, inbuflen, CIFSMaxBufSize,
++		(char **)&pneg_rsp, &rsplen);
+ 	if (rc == -EOPNOTSUPP) {
+ 		/*
+ 		 * Old Windows versions or Netapp SMB server can return
+@@ -2478,7 +2479,8 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
+ int
+ SMB2_ioctl_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
+ 		u64 persistent_fid, u64 volatile_fid, u32 opcode,
+-		bool is_fsctl, char *in_data, u32 indatalen)
++		bool is_fsctl, char *in_data, u32 indatalen,
++		__u32 max_response_size)
+ {
+ 	struct smb2_ioctl_req *req;
+ 	struct kvec *iov = rqst->rq_iov;
+@@ -2520,16 +2522,21 @@ SMB2_ioctl_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
+ 	req->OutputCount = 0; /* MBZ */
+ 
+ 	/*
+-	 * Could increase MaxOutputResponse, but that would require more
+-	 * than one credit. Windows typically sets this smaller, but for some
++	 * In most cases max_response_size is set to 16K (CIFSMaxBufSize)
++	 * We Could increase default MaxOutputResponse, but that could require
++	 * more credits. Windows typically sets this smaller, but for some
+ 	 * ioctls it may be useful to allow server to send more. No point
+ 	 * limiting what the server can send as long as fits in one credit
+-	 * Unfortunately - we can not handle more than CIFS_MAX_MSG_SIZE
+-	 * (by default, note that it can be overridden to make max larger)
+-	 * in responses (except for read responses which can be bigger.
+-	 * We may want to bump this limit up
++	 * We can not handle more than CIFS_MAX_BUF_SIZE yet but may want
++	 * to increase this limit up in the future.
++	 * Note that for snapshot queries that servers like Azure expect that
++	 * the first query be minimal size (and just used to get the number/size
++	 * of previous versions) so response size must be specified as EXACTLY
++	 * sizeof(struct snapshot_array) which is 16 when rounded up to multiple
++	 * of eight bytes.  Currently that is the only case where we set max
++	 * response size smaller.
+ 	 */
+-	req->MaxOutputResponse = cpu_to_le32(CIFSMaxBufSize);
++	req->MaxOutputResponse = cpu_to_le32(max_response_size);
+ 
+ 	if (is_fsctl)
+ 		req->Flags = cpu_to_le32(SMB2_0_IOCTL_IS_FSCTL);
+@@ -2550,13 +2557,14 @@ SMB2_ioctl_free(struct smb_rqst *rqst)
+ 		cifs_small_buf_release(rqst->rq_iov[0].iov_base); /* request */
+ }
+ 
++
+ /*
+  *	SMB2 IOCTL is used for both IOCTLs and FSCTLs
+  */
+ int
+ SMB2_ioctl(const unsigned int xid, struct cifs_tcon *tcon, u64 persistent_fid,
+ 	   u64 volatile_fid, u32 opcode, bool is_fsctl,
+-	   char *in_data, u32 indatalen,
++	   char *in_data, u32 indatalen, u32 max_out_data_len,
+ 	   char **out_data, u32 *plen /* returned data len */)
+ {
+ 	struct smb_rqst rqst;
+@@ -2593,8 +2601,8 @@ SMB2_ioctl(const unsigned int xid, struct cifs_tcon *tcon, u64 persistent_fid,
+ 	rqst.rq_iov = iov;
+ 	rqst.rq_nvec = SMB2_IOCTL_IOV_SIZE;
+ 
+-	rc = SMB2_ioctl_init(tcon, &rqst, persistent_fid, volatile_fid,
+-			     opcode, is_fsctl, in_data, indatalen);
++	rc = SMB2_ioctl_init(tcon, &rqst, persistent_fid, volatile_fid, opcode,
++			     is_fsctl, in_data, indatalen, max_out_data_len);
+ 	if (rc)
+ 		goto ioctl_exit;
+ 
+@@ -2672,7 +2680,8 @@ SMB2_set_compression(const unsigned int xid, struct cifs_tcon *tcon,
+ 	rc = SMB2_ioctl(xid, tcon, persistent_fid, volatile_fid,
+ 			FSCTL_SET_COMPRESSION, true /* is_fsctl */,
+ 			(char *)&fsctl_input /* data input */,
+-			2 /* in data len */, &ret_data /* out data */, NULL);
++			2 /* in data len */, CIFSMaxBufSize /* max out data */,
++			&ret_data /* out data */, NULL);
+ 
+ 	cifs_dbg(FYI, "set compression rc %d\n", rc);
+ 
+diff --git a/fs/cifs/smb2proto.h b/fs/cifs/smb2proto.h
+index 3c32d0cfea69..52df125e9189 100644
+--- a/fs/cifs/smb2proto.h
++++ b/fs/cifs/smb2proto.h
+@@ -142,11 +142,12 @@ extern int SMB2_open_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
+ extern void SMB2_open_free(struct smb_rqst *rqst);
+ extern int SMB2_ioctl(const unsigned int xid, struct cifs_tcon *tcon,
+ 		     u64 persistent_fid, u64 volatile_fid, u32 opcode,
+-		     bool is_fsctl, char *in_data, u32 indatalen,
++		     bool is_fsctl, char *in_data, u32 indatalen, u32 maxoutlen,
+ 		     char **out_data, u32 *plen /* returned data len */);
+ extern int SMB2_ioctl_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
+ 			   u64 persistent_fid, u64 volatile_fid, u32 opcode,
+-			   bool is_fsctl, char *in_data, u32 indatalen);
++			   bool is_fsctl, char *in_data, u32 indatalen,
++			   __u32 max_response_size);
+ extern void SMB2_ioctl_free(struct smb_rqst *rqst);
+ extern int SMB2_close(const unsigned int xid, struct cifs_tcon *tcon,
+ 		      u64 persistent_file_id, u64 volatile_file_id);
+-- 
+2.16.4
+

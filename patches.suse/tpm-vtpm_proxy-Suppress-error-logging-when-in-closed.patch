@@ -1,0 +1,57 @@
+From 402149c6470d9562fe6891e0165df7f5f6bff7a7 Mon Sep 17 00:00:00 2001
+From: Stefan Berger <stefanb@linux.vnet.ibm.com>
+Date: Thu, 25 May 2017 18:29:13 -0400
+Subject: [PATCH] tpm: vtpm_proxy: Suppress error logging when in closed state
+
+References: bsc#1082555
+Patch-mainline: v4.13-rc1
+Git-commit: 402149c6470d9562fe6891e0165df7f5f6bff7a7
+
+Suppress the error logging when the core TPM driver sends commands
+to the VTPM proxy driver and -EPIPE is returned in case the VTPM
+proxy driver is 'closed' (closed anonymous file descriptor).  This
+error code is only returned by the send function and by tpm_transmit
+when the VTPM proxy driver is being used.
+
+Signed-off-by: Stefan Berger <stefanb@linux.vnet.ibm.com>
+Reviewed-by: Jarkko Sakkinen <jarkko.sakkinen@linux.intel.com>
+Tested-by: Jarkko Sakkinen <jarkko.sakkinen@linux.intel.com>
+Signed-off-by: Jarkko Sakkinen <jarkko.sakkinen@linux.intel.com>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ drivers/char/tpm/tpm-interface.c | 5 +++--
+ drivers/char/tpm/tpm2-cmd.c      | 2 +-
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/char/tpm/tpm-interface.c b/drivers/char/tpm/tpm-interface.c
+index be5415923886..a965a9f0e5d2 100644
+--- a/drivers/char/tpm/tpm-interface.c
++++ b/drivers/char/tpm/tpm-interface.c
+@@ -429,8 +429,9 @@ ssize_t tpm_transmit(struct tpm_chip *chip, struct tpm_space *space,
+ 
+ 	rc = chip->ops->send(chip, (u8 *) buf, count);
+ 	if (rc < 0) {
+-		dev_err(&chip->dev,
+-			"tpm_transmit: tpm_send: error %d\n", rc);
++		if (rc != -EPIPE)
++			dev_err(&chip->dev,
++				"%s: tpm_send: error %d\n", __func__, rc);
+ 		goto out;
+ 	}
+ 
+diff --git a/drivers/char/tpm/tpm2-cmd.c b/drivers/char/tpm/tpm2-cmd.c
+index 3ee6883f26c1..3a9964326279 100644
+--- a/drivers/char/tpm/tpm2-cmd.c
++++ b/drivers/char/tpm/tpm2-cmd.c
+@@ -840,7 +840,7 @@ void tpm2_shutdown(struct tpm_chip *chip, u16 shutdown_type)
+ 	/* In places where shutdown command is sent there's no much we can do
+ 	 * except print the error code on a system failure.
+ 	 */
+-	if (rc < 0)
++	if (rc < 0 && rc != -EPIPE)
+ 		dev_warn(&chip->dev, "transmit returned %d while stopping the TPM",
+ 			 rc);
+ }
+-- 
+2.22.0
+

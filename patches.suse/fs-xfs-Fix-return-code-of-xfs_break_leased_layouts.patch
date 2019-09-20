@@ -1,0 +1,39 @@
+From b68271609c4f16a79eae8069933f64345afcf888 Mon Sep 17 00:00:00 2001
+From: Ira Weiny <ira.weiny@intel.com>
+Date: Mon, 19 Aug 2019 18:15:28 -0700
+Subject: [PATCH] fs/xfs: Fix return code of xfs_break_leased_layouts()
+Git-commit: b68271609c4f16a79eae8069933f64345afcf888
+Patch-mainline: v5.3-rc6
+References: bsc#1148031
+
+The parens used in the while loop would result in error being assigned
+the value 1 rather than the intended errno value.
+
+This is required to return -ETXTBSY from follow on break_layout()
+changes.
+
+Signed-off-by: Ira Weiny <ira.weiny@intel.com>
+Reviewed-by: Darrick J. Wong <darrick.wong@oracle.com>
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Acked-by: Anthony Iliopoulos <ailiopoulos@suse.com>
+
+---
+ fs/xfs/xfs_pnfs.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/xfs/xfs_pnfs.c b/fs/xfs/xfs_pnfs.c
+index 0c954cad7449..a339bd5fa260 100644
+--- a/fs/xfs/xfs_pnfs.c
++++ b/fs/xfs/xfs_pnfs.c
+@@ -32,7 +32,7 @@ xfs_break_leased_layouts(
+ 	struct xfs_inode	*ip = XFS_I(inode);
+ 	int			error;
+ 
+-	while ((error = break_layout(inode, false) == -EWOULDBLOCK)) {
++	while ((error = break_layout(inode, false)) == -EWOULDBLOCK) {
+ 		xfs_iunlock(ip, *iolock);
+ 		*did_unlock = true;
+ 		error = break_layout(inode, true);
+-- 
+2.16.4
+

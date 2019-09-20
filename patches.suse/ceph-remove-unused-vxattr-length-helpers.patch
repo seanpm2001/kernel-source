@@ -1,0 +1,135 @@
+From: David Disseldorp <ddiss@suse.de>
+Date: Thu, 18 Apr 2019 14:15:49 +0200
+Subject: ceph: remove unused vxattr length helpers
+Git-commit: d0f191d20c1ce22ccfd7c8e2327f19fbba7f7521
+Patch-mainline: v5.3-rc1
+References: bsc#1148133 bsc#1148570
+
+ceph_listxattr() now calculates the length of vxattrs dynamically, so
+these helpers, which incorrectly ignore vxattr.exists_cb(), can be
+removed.
+
+Signed-off-by: David Disseldorp <ddiss@suse.de>
+Reviewed-by: "Yan, Zheng" <zyan@redhat.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+---
+ fs/ceph/super.c |  7 ++-----
+ fs/ceph/super.h |  2 --
+ fs/ceph/xattr.c | 43 -------------------------------------------
+ 3 files changed, 2 insertions(+), 50 deletions(-)
+
+diff --git a/fs/ceph/super.c b/fs/ceph/super.c
+index d57fa60dcd43..542b31994e3b 100644
+--- a/fs/ceph/super.c
++++ b/fs/ceph/super.c
+@@ -1161,17 +1161,15 @@ static int __init init_ceph(void)
+ 		goto out;
+ 
+ 	ceph_flock_init();
+-	ceph_xattr_init();
+ 	ret = register_filesystem(&ceph_fs_type);
+ 	if (ret)
+-		goto out_xattr;
++		goto out_caches;
+ 
+ 	pr_info("loaded (mds proto %d)\n", CEPH_MDSC_PROTOCOL);
+ 
+ 	return 0;
+ 
+-out_xattr:
+-	ceph_xattr_exit();
++out_caches:
+ 	destroy_caches();
+ out:
+ 	return ret;
+@@ -1181,7 +1179,6 @@ static void __exit exit_ceph(void)
+ {
+ 	dout("exit_ceph\n");
+ 	unregister_filesystem(&ceph_fs_type);
+-	ceph_xattr_exit();
+ 	destroy_caches();
+ }
+ 
+diff --git a/fs/ceph/super.h b/fs/ceph/super.h
+index 1de6b1f4f094..7209548527ab 100644
+--- a/fs/ceph/super.h
++++ b/fs/ceph/super.h
+@@ -922,8 +922,6 @@ ssize_t __ceph_getxattr(struct inode *, const char *, void *, size_t);
+ extern ssize_t ceph_listxattr(struct dentry *, char *, size_t);
+ extern void __ceph_build_xattrs_blob(struct ceph_inode_info *ci);
+ extern void __ceph_destroy_xattrs(struct ceph_inode_info *ci);
+-extern void __init ceph_xattr_init(void);
+-extern void ceph_xattr_exit(void);
+ extern const struct xattr_handler *ceph_xattr_handlers[];
+ 
+ #ifdef CONFIG_SECURITY
+diff --git a/fs/ceph/xattr.c b/fs/ceph/xattr.c
+index ffbe1c006bb6..57350e4b7da0 100644
+--- a/fs/ceph/xattr.c
++++ b/fs/ceph/xattr.c
+@@ -363,7 +363,6 @@ static struct ceph_vxattr ceph_dir_vxattrs[] = {
+ 	},
+ 	{ .name = NULL, 0 }	/* Required table terminator */
+ };
+-static size_t ceph_dir_vxattrs_name_size;	/* total size of all names */
+ 
+ /* files */
+ 
+@@ -389,7 +388,6 @@ static struct ceph_vxattr ceph_file_vxattrs[] = {
+ 	},
+ 	{ .name = NULL, 0 }	/* Required table terminator */
+ };
+-static size_t ceph_file_vxattrs_name_size;	/* total size of all names */
+ 
+ static struct ceph_vxattr *ceph_inode_vxattrs(struct inode *inode)
+ {
+@@ -400,47 +398,6 @@ static struct ceph_vxattr *ceph_inode_vxattrs(struct inode *inode)
+ 	return NULL;
+ }
+ 
+-static size_t ceph_vxattrs_name_size(struct ceph_vxattr *vxattrs)
+-{
+-	if (vxattrs == ceph_dir_vxattrs)
+-		return ceph_dir_vxattrs_name_size;
+-	if (vxattrs == ceph_file_vxattrs)
+-		return ceph_file_vxattrs_name_size;
+-	BUG_ON(vxattrs);
+-	return 0;
+-}
+-
+-/*
+- * Compute the aggregate size (including terminating '\0') of all
+- * virtual extended attribute names in the given vxattr table.
+- */
+-static size_t __init vxattrs_name_size(struct ceph_vxattr *vxattrs)
+-{
+-	struct ceph_vxattr *vxattr;
+-	size_t size = 0;
+-
+-	for (vxattr = vxattrs; vxattr->name; vxattr++) {
+-		if (!(vxattr->flags & VXATTR_FLAG_HIDDEN))
+-			size += vxattr->name_size;
+-	}
+-
+-	return size;
+-}
+-
+-/* Routines called at initialization and exit time */
+-
+-void __init ceph_xattr_init(void)
+-{
+-	ceph_dir_vxattrs_name_size = vxattrs_name_size(ceph_dir_vxattrs);
+-	ceph_file_vxattrs_name_size = vxattrs_name_size(ceph_file_vxattrs);
+-}
+-
+-void ceph_xattr_exit(void)
+-{
+-	ceph_dir_vxattrs_name_size = 0;
+-	ceph_file_vxattrs_name_size = 0;
+-}
+-
+ static struct ceph_vxattr *ceph_match_vxattr(struct inode *inode,
+ 						const char *name)
+ {
+

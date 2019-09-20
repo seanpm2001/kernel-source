@@ -1,0 +1,91 @@
+From: Pavel Shilovsky <pshilov@microsoft.com>
+Date: Tue, 15 Jan 2019 16:07:52 -0800
+Subject: [PATCH] CIFS: Check for reconnects before sending compound requests
+Git-commit: 97ea499883cc0566b1fafdc12ca49d0926aab332
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+The reconnect might have happended after we obtained credits
+and before we acquired srv_mutex. Check for that under the mutex
+and retry a sync operation if the reconnect is detected.
+
+Signed-off-by: Pavel Shilovsky <pshilov@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/transport.c | 38 ++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 36 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 5a3e499caec8..2045f886546c 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -843,6 +843,7 @@ compound_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 		{ .value = 0, .instance = 0 }
+ 	};
+ 	unsigned int instance;
++	unsigned int first_instance = 0;
+ 	char *buf;
+ 
+ 	timeout = flags & CIFS_TIMEOUT_MASK;
+@@ -870,6 +871,25 @@ compound_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 	for (i = 0; i < num_rqst; i++) {
+ 		rc = wait_for_free_request(ses->server, timeout, optype,
+ 					   &instance);
++
++		if (rc == 0) {
++			credits[i].value = 1;
++			credits[i].instance = instance;
++			/*
++			 * All parts of the compound chain must get credits from
++			 * the same session, otherwise we may end up using more
++			 * credits than the server granted. If there were
++			 * reconnects in between, return -EAGAIN and let callers
++			 * handle it.
++			 */
++			if (i == 0)
++				first_instance = instance;
++			else if (first_instance != instance) {
++				i++;
++				rc = -EAGAIN;
++			}
++		}
++
+ 		if (rc) {
+ 			/*
+ 			 * We haven't sent an SMB packet to the server yet but
+@@ -884,8 +904,6 @@ compound_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 				add_credits(ses->server, &credits[j], optype);
+ 			return rc;
+ 		}
+-		credits[i].value = 1;
+-		credits[i].instance = instance;
+ 	}
+ 
+ 	/*
+@@ -896,6 +914,22 @@ compound_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 
+ 	mutex_lock(&ses->server->srv_mutex);
+ 
++	/*
++	 * All the parts of the compound chain belong obtained credits from the
++	 * same session (see the appropriate checks above). In the same time
++	 * there might be reconnects after those checks but before we acquired
++	 * the srv_mutex. We can not use credits obtained from the previous
++	 * session to send this request. Check if there were reconnects after
++	 * we obtained credits and return -EAGAIN in such cases to let callers
++	 * handle it.
++	 */
++	if (first_instance != ses->server->reconnect_instance) {
++		mutex_unlock(&ses->server->srv_mutex);
++		for (j = 0; j < num_rqst; j++)
++			add_credits(ses->server, &credits[j], optype);
++		return -EAGAIN;
++	}
++
+ 	for (i = 0; i < num_rqst; i++) {
+ 		midQ[i] = ses->server->ops->setup_request(ses, &rqst[i]);
+ 		if (IS_ERR(midQ[i])) {
+-- 
+2.16.4
+

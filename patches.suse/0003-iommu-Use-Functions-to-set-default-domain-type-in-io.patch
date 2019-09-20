@@ -1,0 +1,34 @@
+From: Joerg Roedel <jroedel@suse.de>
+Date: Thu, 15 Aug 2019 10:36:44 +0200
+Subject: [PATCH 03/11] iommu: Use Functions to set default domain type in
+ iommu_set_def_domain_type()
+Patch-mainline: v5.4-rc1
+Git-commit: adab0b07cbbc73f9fc338e4fc1749714dd093a7c
+References: bsc#1136039
+
+There are functions now to set the default domain type which
+take care of updating other necessary state. Don't open-code
+it in iommu_set_def_domain_type() and use those functions
+instead.
+
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+---
+ drivers/iommu/iommu.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+--- a/drivers/iommu/iommu.c
++++ b/drivers/iommu/iommu.c
+@@ -139,9 +139,11 @@ static int __init iommu_set_def_domain_t
+ 	if (!str || strtobool(str, &pt))
+ 		return -EINVAL;
+ 
+-	iommu_set_cmd_line_dma_api();
++	if (pt)
++		iommu_set_default_passthrough(true);
++	else
++		iommu_set_default_translated(true);
+ 
+-	iommu_def_domain_type = pt ? IOMMU_DOMAIN_IDENTITY : IOMMU_DOMAIN_DMA;
+ 	return 0;
+ }
+ early_param("iommu.passthrough", iommu_set_def_domain_type);

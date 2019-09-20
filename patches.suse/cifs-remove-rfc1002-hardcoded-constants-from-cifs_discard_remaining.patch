@@ -1,0 +1,35 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Mon, 9 Apr 2018 18:06:31 +1000
+Subject: [PATCH] cifs: remove rfc1002 hardcoded constants from
+ cifs_discard_remaining_data()
+Git-commit: 05432e2938ddb8bd942e5a89298e763cf785edb6
+Patch-mainline: v4.17-rc1
+References: bsc#1144333
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifssmb.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/cifssmb.c b/fs/cifs/cifssmb.c
+index 890b3a40c79c..6d3e40d7029c 100644
+--- a/fs/cifs/cifssmb.c
++++ b/fs/cifs/cifssmb.c
+@@ -1418,8 +1418,9 @@ CIFS_open(const unsigned int xid, struct cifs_open_parms *oparms, int *oplock,
+ int
+ cifs_discard_remaining_data(struct TCP_Server_Info *server)
+ {
+-	unsigned int rfclen = get_rfc1002_length(server->smallbuf);
+-	int remaining = rfclen + 4 - server->total_read;
++	unsigned int rfclen = server->pdu_size;
++	int remaining = rfclen + server->vals->header_preamble_size -
++		server->total_read;
+ 
+ 	while (remaining > 0) {
+ 		int length;
+-- 
+2.16.4
+

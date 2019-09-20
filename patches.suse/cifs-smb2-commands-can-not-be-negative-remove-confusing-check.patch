@@ -1,0 +1,42 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Wed, 14 Nov 2018 01:37:39 -0600
+Subject: [PATCH] cifs: smb2 commands can not be negative, remove confusing
+ check
+Git-commit: f5942db5ef25531d53f2aa2ff84a46e1763b4196
+Patch-mainline: v5.0-rc1
+References: bsc#1144333
+
+As Coverity points out le16_to_cpu(midEntry->Command) can not be
+less than zero.
+
+Detected by CoverityScan, CID#1438650 ("Macro compares unsigned to 0")
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/transport.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 83ff0c25710d..5be7302853b6 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -126,9 +126,11 @@ DeleteMidQEntry(struct mid_q_entry *midEntry)
+ 	if ((slow_rsp_threshold != 0) &&
+ 	    time_after(now, midEntry->when_alloc + (slow_rsp_threshold * HZ)) &&
+ 	    (midEntry->command != command)) {
+-		/* smb2slowcmd[NUMBER_OF_SMB2_COMMANDS] counts by command */
+-		if ((le16_to_cpu(midEntry->command) < NUMBER_OF_SMB2_COMMANDS) &&
+-		    (le16_to_cpu(midEntry->command) >= 0))
++		/*
++		 * smb2slowcmd[NUMBER_OF_SMB2_COMMANDS] counts by command
++		 * NB: le16_to_cpu returns unsigned so can not be negative below
++		 */
++		if (le16_to_cpu(midEntry->command) < NUMBER_OF_SMB2_COMMANDS)
+ 			cifs_stats_inc(&midEntry->server->smb2slowcmd[le16_to_cpu(midEntry->command)]);
+ 
+ 		trace_smb3_slow_rsp(le16_to_cpu(midEntry->command),
+-- 
+2.16.4
+

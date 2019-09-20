@@ -1,11 +1,10 @@
-From d9345e0ae7cff25e9aed39d21f092dbb482dffec Mon Sep 17 00:00:00 2001
 From: Paulo Alcantara <palcantara@suse.de>
 Date: Wed, 14 Nov 2018 14:18:22 -0200
 Subject: [PATCH] cifs: Make devname param optional in
  cifs_compose_mount_options()
 Git-commit: d9345e0ae7cff25e9aed39d21f092dbb482dffec
 Patch-mainline: v5.0-rc1
-References: FATE#325270
+References: bsc#1144333
 
 If we only want to get the mount options strings, do not return the
 devname.
@@ -17,7 +16,6 @@ Signed-off-by: Paulo Alcantara <palcantara@suse.de>
 Reviewed-by: Aurelien Aptel <aaptel@suse.com>
 Signed-off-by: Steve French <stfrench@microsoft.com>
 Acked-by: Aurelien Aptel <aaptel@suse.com>
-Acked-by: Paulo Alcantara <palcantara@suse.de>
 ---
  fs/cifs/cifs_dfs_ref.c | 21 ++++++++++++---------
  1 file changed, 12 insertions(+), 9 deletions(-)
@@ -46,7 +44,7 @@ index b97c74efd04a..7adbdf9eb137 100644
 @@ -158,17 +159,17 @@ char *cifs_compose_mount_options(const char *sb_mountdata,
  			prepath++;
  	}
-
+ 
 -	*devname = cifs_build_devname(ref->node_name, prepath);
 -	if (IS_ERR(*devname)) {
 -		rc = PTR_ERR(*devname);
@@ -57,7 +55,7 @@ index b97c74efd04a..7adbdf9eb137 100644
 +		name = NULL;
  		goto compose_mount_options_err;
  	}
-
+ 
 -	rc = dns_resolve_server_name_to_ip(*devname, &srvIP);
 +	rc = dns_resolve_server_name_to_ip(name, &srvIP);
  	if (rc < 0) {
@@ -66,17 +64,17 @@ index b97c74efd04a..7adbdf9eb137 100644
 +			 __func__, name, rc);
  		goto compose_mount_options_err;
  	}
-
+ 
 @@ -224,6 +225,9 @@ char *cifs_compose_mount_options(const char *sb_mountdata,
  	strcat(mountdata, "ip=");
  	strcat(mountdata, srvIP);
-
+ 
 +	if (devname)
 +		*devname = name;
 +
  	/*cifs_dbg(FYI, "%s: parent mountdata: %s\n", __func__, sb_mountdata);*/
  	/*cifs_dbg(FYI, "%s: submount mountdata: %s\n", __func__, mountdata );*/
-
+ 
 @@ -234,8 +238,7 @@ char *cifs_compose_mount_options(const char *sb_mountdata,
  compose_mount_options_err:
  	kfree(mountdata);
@@ -86,6 +84,7 @@ index b97c74efd04a..7adbdf9eb137 100644
 +	kfree(name);
  	goto compose_mount_options_out;
  }
+ 
+-- 
+2.16.4
 
---
-2.20.1

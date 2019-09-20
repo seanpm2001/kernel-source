@@ -1,0 +1,82 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Wed, 17 Apr 2019 14:44:21 -0700
+Subject: scsi: qla2xxx: Increase the size of the mailbox arrays from 4 to 8
+Patch-mainline: v5.2-rc1
+Git-commit: 0a59cea487e4d3c04364f29df241c9f7001ac6ff
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+This patch avoids that Coverity complains that qla2x00_async_event() writes
+outside the bounds of the mb[] arrays (MBA_IDC_AEN case).
+
+Cc: Himanshu Madhani <hmadhani@marvell.com>
+Cc: Giridhar Malavali <gmalavali@marvell.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Acked-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_isr.c |    4 ++--
+ drivers/scsi/qla2xxx/qla_nx.c  |    6 +++---
+ drivers/scsi/qla2xxx/qla_nx2.c |    2 +-
+ 3 files changed, 6 insertions(+), 6 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_isr.c
++++ b/drivers/scsi/qla2xxx/qla_isr.c
+@@ -49,7 +49,7 @@ qla2100_intr_handler(int irq, void *dev_
+ 	int		status;
+ 	unsigned long	iter;
+ 	uint16_t	hccr;
+-	uint16_t	mb[4];
++	uint16_t	mb[8];
+ 	struct rsp_que *rsp;
+ 	unsigned long	flags;
+ 
+@@ -168,7 +168,7 @@ qla2300_intr_handler(int irq, void *dev_
+ 	unsigned long	iter;
+ 	uint32_t	stat;
+ 	uint16_t	hccr;
+-	uint16_t	mb[4];
++	uint16_t	mb[8];
+ 	struct rsp_que *rsp;
+ 	struct qla_hw_data *ha;
+ 	unsigned long	flags;
+--- a/drivers/scsi/qla2xxx/qla_nx.c
++++ b/drivers/scsi/qla2xxx/qla_nx.c
+@@ -2039,7 +2039,7 @@ qla82xx_intr_handler(int irq, void *dev_
+ 	unsigned long	flags;
+ 	unsigned long	iter;
+ 	uint32_t	stat = 0;
+-	uint16_t	mb[4];
++	uint16_t	mb[8];
+ 
+ 	rsp = (struct rsp_que *) dev_id;
+ 	if (!rsp) {
+@@ -2123,7 +2123,7 @@ qla82xx_msix_default(int irq, void *dev_
+ 	unsigned long flags;
+ 	uint32_t stat = 0;
+ 	uint32_t host_int = 0;
+-	uint16_t mb[4];
++	uint16_t mb[8];
+ 
+ 	rsp = (struct rsp_que *) dev_id;
+ 	if (!rsp) {
+@@ -2219,7 +2219,7 @@ qla82xx_poll(int irq, void *dev_id)
+ 	int status = 0;
+ 	uint32_t stat;
+ 	uint32_t host_int = 0;
+-	uint16_t mb[4];
++	uint16_t mb[8];
+ 	unsigned long flags;
+ 
+ 	rsp = (struct rsp_que *) dev_id;
+--- a/drivers/scsi/qla2xxx/qla_nx2.c
++++ b/drivers/scsi/qla2xxx/qla_nx2.c
+@@ -3895,7 +3895,7 @@ qla8044_intr_handler(int irq, void *dev_
+ 	unsigned long	flags;
+ 	unsigned long	iter;
+ 	uint32_t	stat;
+-	uint16_t	mb[4];
++	uint16_t	mb[8];
+ 	uint32_t leg_int_ptr = 0, pf_bit;
+ 
+ 	rsp = (struct rsp_que *) dev_id;

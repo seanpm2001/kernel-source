@@ -1,0 +1,130 @@
+From: Jeff Layton <jlayton@kernel.org>
+Date: Wed, 29 May 2019 12:23:14 -0400
+Subject: ceph: handle btime in cap messages
+Git-commit: ec62b894df1ae69eb8e66d69317dfff517f6d1f3
+Patch-mainline: v5.3-rc1
+References: bsc#1148133 bsc#1136682
+
+Signed-off-by: Jeff Layton <jlayton@kernel.org>
+Reviewed-by: "Yan, Zheng" <zyan@redhat.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+[luis: s/timespec64/timespec]
+---
+ fs/ceph/caps.c  | 18 ++++++++++++------
+ fs/ceph/snap.c  |  1 +
+ fs/ceph/super.h |  2 +-
+ 3 files changed, 14 insertions(+), 7 deletions(-)
+
+diff --git a/fs/ceph/caps.c b/fs/ceph/caps.c
+index 50409d9fdc90..623b82684e90 100644
+--- a/fs/ceph/caps.c
++++ b/fs/ceph/caps.c
+@@ -1115,7 +1115,7 @@ struct cap_msg_args {
+ 	u64			flush_tid, oldest_flush_tid, size, max_size;
+ 	u64			xattr_version;
+ 	struct ceph_buffer	*xattr_buf;
+-	struct timespec		atime, mtime, ctime;
++	struct timespec		atime, mtime, ctime, btime;
+ 	int			op, caps, wanted, dirty;
+ 	u32			seq, issue_seq, mseq, time_warp_seq;
+ 	u32			flags;
+@@ -1136,7 +1136,6 @@ static int send_cap_msg(struct cap_msg_a
+ 	struct ceph_msg *msg;
+ 	void *p;
+ 	size_t extra_len;
+-	struct timespec zerotime = {0};
+ 	struct ceph_osd_client *osdc = &arg->session->s_mdsc->fsc->client->osdc;
+ 
+ 	dout("send_cap_msg %s %llx %llx caps %s wanted %s dirty %s"
+@@ -1227,7 +1226,7 @@ static int send_cap_msg(struct cap_msg_a
+ 	 * We just zero these out for now, as the MDS ignores them unless
+ 	 * the requisite feature flags are set (which we don't do yet).
+ 	 */
+-	ceph_encode_timespec(p, &zerotime);
++	ceph_encode_timespec(p, &arg->btime);
+ 	p += sizeof(struct ceph_timespec);
+ 	ceph_encode_64(&p, 0);
+ 
+@@ -1353,6 +1352,7 @@ static int __send_cap(struct ceph_mds_cl
+ 	arg.mtime = inode->i_mtime;
+ 	arg.atime = inode->i_atime;
+ 	arg.ctime = inode->i_ctime;
++	arg.btime = ci->i_btime;
+ 
+ 	arg.op = op;
+ 	arg.caps = cap->implemented;
+@@ -1412,6 +1412,7 @@ static inline int __send_flush_snap(stru
+ 	arg.atime = capsnap->atime;
+ 	arg.mtime = capsnap->mtime;
+ 	arg.ctime = capsnap->ctime;
++	arg.btime = capsnap->btime;
+ 
+ 	arg.op = CEPH_CAP_OP_FLUSHSNAP;
+ 	arg.caps = capsnap->issued;
+@@ -3028,6 +3029,7 @@ struct cap_extra_info {
+ 	u64 nsubdirs;
+ 	/* currently issued */
+ 	int issued;
++	struct timespec btime;
+ };
+ 
+ /*
+@@ -3114,6 +3116,7 @@ static void handle_cap_grant(struct inod
+ 		inode->i_mode = le32_to_cpu(grant->mode);
+ 		inode->i_uid = make_kuid(&init_user_ns, le32_to_cpu(grant->uid));
+ 		inode->i_gid = make_kgid(&init_user_ns, le32_to_cpu(grant->gid));
++		ci->i_btime = extra_info->btime;
+ 		dout("%p mode 0%o uid.gid %d.%d\n", inode, inode->i_mode,
+ 		     from_kuid(&init_user_ns, inode->i_uid),
+ 		     from_kgid(&init_user_ns, inode->i_gid));
+@@ -3834,17 +3837,20 @@ void ceph_handle_caps(struct ceph_mds_se
+ 		}
+ 	}
+ 
+-	if (msg_version >= 11) {
++	if (msg_version >= 9) {
+ 		struct ceph_timespec *btime;
+ 		u64 change_attr;
+-		u32 flags;
+ 
+-		/* version >= 9 */
+ 		if (p + sizeof(*btime) > end)
+ 			goto bad;
+ 		btime = p;
++		ceph_decode_timespec(&extra_info.btime, btime);
+ 		p += sizeof(*btime);
+ 		ceph_decode_64_safe(&p, end, change_attr, bad);
++	}
++
++	if (msg_version >= 11) {
++		u32 flags;
+ 		/* version >= 10 */
+ 		ceph_decode_32_safe(&p, end, flags, bad);
+ 		/* version >= 11 */
+diff --git a/fs/ceph/snap.c b/fs/ceph/snap.c
+index 72c6c022f02b..854308e13f12 100644
+--- a/fs/ceph/snap.c
++++ b/fs/ceph/snap.c
+@@ -601,6 +601,7 @@ int __ceph_finish_cap_snap(struct ceph_i
+ 	capsnap->mtime = inode->i_mtime;
+ 	capsnap->atime = inode->i_atime;
+ 	capsnap->ctime = inode->i_ctime;
++	capsnap->btime = ci->i_btime;
+ 	capsnap->time_warp_seq = ci->i_time_warp_seq;
+ 	capsnap->truncate_size = ci->i_truncate_size;
+ 	capsnap->truncate_seq = ci->i_truncate_seq;
+diff --git a/fs/ceph/super.h b/fs/ceph/super.h
+index 859d1f3a0d4a..2e20fc780f53 100644
+--- a/fs/ceph/super.h
++++ b/fs/ceph/super.h
+@@ -193,7 +193,7 @@ struct ceph_cap_snap {
+ 	u64 xattr_version;
+ 
+ 	u64 size;
+-	struct timespec mtime, atime, ctime;
++	struct timespec mtime, atime, ctime, btime;
+ 	u64 time_warp_seq;
+ 	u64 truncate_size;
+ 	u32 truncate_seq;
+

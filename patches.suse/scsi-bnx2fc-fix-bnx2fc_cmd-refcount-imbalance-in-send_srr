@@ -1,0 +1,40 @@
+From: Lin Yi <teroincn@163.com>
+Date: Tue, 25 Jun 2019 10:35:29 +0800
+Subject: scsi: bnx2fc: fix bnx2fc_cmd refcount imbalance in send_srr
+Git-commit: 7bfe5ae57c803dd529aaf6feb32c3b49ebff66bd
+Patch-mainline: v5.3-rc1
+References: bsc#1144582
+
+If cb_arg alloc failed, we can't release the struct orig_io_req refcount
+before we take its refcount. As Saurav said, move the srr_err label down
+to avoid unnecessary refcount release and nullptr free.
+
+Signed-off-by: Lin Yi <teroincn@163.com>
+Acked-by: Saurav Kashyap <skashyap@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/bnx2fc/bnx2fc_els.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/scsi/bnx2fc/bnx2fc_els.c b/drivers/scsi/bnx2fc/bnx2fc_els.c
+index 9a8e40bc694b..754f2e82d955 100644
+--- a/drivers/scsi/bnx2fc/bnx2fc_els.c
++++ b/drivers/scsi/bnx2fc/bnx2fc_els.c
+@@ -654,7 +654,6 @@ int bnx2fc_send_srr(struct bnx2fc_cmd *orig_io_req, u32 offset, u8 r_ctl)
+ 	rc = bnx2fc_initiate_els(tgt, ELS_SRR, &srr, sizeof(srr),
+ 				 bnx2fc_srr_compl, cb_arg,
+ 				 r_a_tov);
+-srr_err:
+ 	if (rc) {
+ 		BNX2FC_IO_DBG(orig_io_req, "SRR failed - release\n");
+ 		spin_lock_bh(&tgt->tgt_lock);
+@@ -664,6 +663,7 @@ int bnx2fc_send_srr(struct bnx2fc_cmd *orig_io_req, u32 offset, u8 r_ctl)
+ 	} else
+ 		set_bit(BNX2FC_FLAG_SRR_SENT, &orig_io_req->req_flags);
+ 
++srr_err:
+ 	return rc;
+ }
+ 
+

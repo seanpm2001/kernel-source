@@ -1,0 +1,177 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Sat, 9 Feb 2019 09:51:11 +1000
+Subject: [PATCH] cifs: replace snprintf with scnprintf
+Git-commit: 74ea5f983f9e86ebb4b7ed611937776dab18c67e
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+a trivial patch that replaces all use of snprintf with scnprintf.
+scnprintf() is generally seen as a safer function to use than
+snprintf for many use cases.
+
+In our case, there is no actual difference between the two since we never
+look at the return value. Thus we did not have any of the bugs that
+scnprintf protects against and the patch does nothing.
+
+However, for people reading our code it will be a receipt that we
+have done our due dilligence and checked our code for this type of bugs.
+
+See the presentation "Making C Less Dangerous In The Linux Kernel"
+at this years LCA
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifssmb.c   |  6 +++---
+ fs/cifs/connect.c   |  6 +++---
+ fs/cifs/link.c      | 14 +++++++-------
+ fs/cifs/smb2pdu.c   |  6 +++---
+ fs/cifs/smbdirect.c |  6 +++---
+ 5 files changed, 19 insertions(+), 19 deletions(-)
+
+diff --git a/fs/cifs/cifssmb.c b/fs/cifs/cifssmb.c
+index 551924beb86f..6bd3605b9b65 100644
+--- a/fs/cifs/cifssmb.c
++++ b/fs/cifs/cifssmb.c
+@@ -139,8 +139,8 @@ static int __cifs_reconnect_tcon(const struct nls_table *nlsc,
+ 		return -ENOMEM;
+ 
+ 	if (tcon->ipc) {
+-		snprintf(tree, MAX_TREE_SIZE, "\\\\%s\\IPC$",
+-			 tcon->ses->server->hostname);
++		scnprintf(tree, MAX_TREE_SIZE, "\\\\%s\\IPC$",
++			  tcon->ses->server->hostname);
+ 		rc = CIFSTCon(0, tcon->ses, tree, tcon, nlsc);
+ 		goto out;
+ 	}
+@@ -172,7 +172,7 @@ static int __cifs_reconnect_tcon(const struct nls_table *nlsc,
+ 			continue;
+ 		}
+ 
+-		snprintf(tree, MAX_TREE_SIZE, "\\%s", tgt);
++		scnprintf(tree, MAX_TREE_SIZE, "\\%s", tgt);
+ 
+ 		rc = CIFSTCon(0, tcon->ses, tree, tcon, nlsc);
+ 		if (!rc)
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 2ed773b395a4..7c9108ce3de0 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -348,7 +348,7 @@ static int reconn_set_ipaddr(struct TCP_Server_Info *server)
+ 		cifs_dbg(FYI, "%s: failed to create UNC path\n", __func__);
+ 		return -ENOMEM;
+ 	}
+-	snprintf(unc, len, "\\\\%s", server->hostname);
++	scnprintf(unc, len, "\\\\%s", server->hostname);
+ 
+ 	rc = dns_resolve_server_name_to_ip(unc, &ipaddr);
+ 	kfree(unc);
+@@ -2775,7 +2775,7 @@ cifs_setup_ipc(struct cifs_ses *ses, struct smb_vol *volume_info)
+ 	if (tcon == NULL)
+ 		return -ENOMEM;
+ 
+-	snprintf(unc, sizeof(unc), "\\\\%s\\IPC$", ses->server->hostname);
++	scnprintf(unc, sizeof(unc), "\\\\%s\\IPC$", ses->server->hostname);
+ 
+ 	/* cannot fail */
+ 	nls_codepage = load_nls_default();
+@@ -4203,7 +4203,7 @@ static int update_vol_info(const struct dfs_cache_tgt_iterator *tgt_it,
+ 	new_unc = kmalloc(len, GFP_KERNEL);
+ 	if (!new_unc)
+ 		return -ENOMEM;
+-	snprintf(new_unc, len, "\\%s", tgt);
++	scnprintf(new_unc, len, "\\%s", tgt);
+ 
+ 	kfree(vol->UNC);
+ 	vol->UNC = new_unc;
+diff --git a/fs/cifs/link.c b/fs/cifs/link.c
+index 2148b0f60e5e..62216dc8f9f5 100644
+--- a/fs/cifs/link.c
++++ b/fs/cifs/link.c
+@@ -103,9 +103,9 @@ parse_mf_symlink(const u8 *buf, unsigned int buf_len, unsigned int *_link_len,
+ 		return rc;
+ 	}
+ 
+-	snprintf(md5_str2, sizeof(md5_str2),
+-		 CIFS_MF_SYMLINK_MD5_FORMAT,
+-		 CIFS_MF_SYMLINK_MD5_ARGS(md5_hash));
++	scnprintf(md5_str2, sizeof(md5_str2),
++		  CIFS_MF_SYMLINK_MD5_FORMAT,
++		  CIFS_MF_SYMLINK_MD5_ARGS(md5_hash));
+ 
+ 	if (strncmp(md5_str1, md5_str2, 17) != 0)
+ 		return -EINVAL;
+@@ -142,10 +142,10 @@ format_mf_symlink(u8 *buf, unsigned int buf_len, const char *link_str)
+ 		return rc;
+ 	}
+ 
+-	snprintf(buf, buf_len,
+-		 CIFS_MF_SYMLINK_LEN_FORMAT CIFS_MF_SYMLINK_MD5_FORMAT,
+-		 link_len,
+-		 CIFS_MF_SYMLINK_MD5_ARGS(md5_hash));
++	scnprintf(buf, buf_len,
++		  CIFS_MF_SYMLINK_LEN_FORMAT CIFS_MF_SYMLINK_MD5_FORMAT,
++		  link_len,
++		  CIFS_MF_SYMLINK_MD5_ARGS(md5_hash));
+ 
+ 	ofs = CIFS_MF_SYMLINK_LINK_OFFSET;
+ 	memcpy(buf + ofs, link_str, link_len);
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 77b3aaa39b35..7d9a1cb9ecae 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -173,8 +173,8 @@ static int __smb2_reconnect(const struct nls_table *nlsc,
+ 		return -ENOMEM;
+ 
+ 	if (tcon->ipc) {
+-		snprintf(tree, MAX_TREE_SIZE, "\\\\%s\\IPC$",
+-			 tcon->ses->server->hostname);
++		scnprintf(tree, MAX_TREE_SIZE, "\\\\%s\\IPC$",
++			  tcon->ses->server->hostname);
+ 		rc = SMB2_tcon(0, tcon->ses, tree, tcon, nlsc);
+ 		goto out;
+ 	}
+@@ -206,7 +206,7 @@ static int __smb2_reconnect(const struct nls_table *nlsc,
+ 			continue;
+ 		}
+ 
+-		snprintf(tree, MAX_TREE_SIZE, "\\%s", tgt);
++		scnprintf(tree, MAX_TREE_SIZE, "\\%s", tgt);
+ 
+ 		rc = SMB2_tcon(0, tcon->ses, tree, tcon, nlsc);
+ 		if (!rc)
+diff --git a/fs/cifs/smbdirect.c b/fs/cifs/smbdirect.c
+index a568dac7b3a1..b943b74cd246 100644
+--- a/fs/cifs/smbdirect.c
++++ b/fs/cifs/smbdirect.c
+@@ -1550,7 +1550,7 @@ static int allocate_caches_and_workqueue(struct smbd_connection *info)
+ 	char name[MAX_NAME_LEN];
+ 	int rc;
+ 
+-	snprintf(name, MAX_NAME_LEN, "smbd_request_%p", info);
++	scnprintf(name, MAX_NAME_LEN, "smbd_request_%p", info);
+ 	info->request_cache =
+ 		kmem_cache_create(
+ 			name,
+@@ -1566,7 +1566,7 @@ static int allocate_caches_and_workqueue(struct smbd_connection *info)
+ 	if (!info->request_mempool)
+ 		goto out1;
+ 
+-	snprintf(name, MAX_NAME_LEN, "smbd_response_%p", info);
++	scnprintf(name, MAX_NAME_LEN, "smbd_response_%p", info);
+ 	info->response_cache =
+ 		kmem_cache_create(
+ 			name,
+@@ -1582,7 +1582,7 @@ static int allocate_caches_and_workqueue(struct smbd_connection *info)
+ 	if (!info->response_mempool)
+ 		goto out3;
+ 
+-	snprintf(name, MAX_NAME_LEN, "smbd_%p", info);
++	scnprintf(name, MAX_NAME_LEN, "smbd_%p", info);
+ 	info->workqueue = create_workqueue(name);
+ 	if (!info->workqueue)
+ 		goto out4;
+-- 
+2.16.4
+

@@ -1,10 +1,9 @@
-From 54be1f6c1c37498bba557049df646cc239fa37e3 Mon Sep 17 00:00:00 2001
 From: Paulo Alcantara <palcantara@suse.de>
 Date: Wed, 14 Nov 2018 16:01:21 -0200
 Subject: [PATCH] cifs: Add DFS cache routines
 Git-commit: 54be1f6c1c37498bba557049df646cc239fa37e3
 Patch-mainline: v5.0-rc1
-References: FATE#325270
+References: bsc#1144333
 
 * Add new dfs_cache.[ch] files
 
@@ -59,22 +58,23 @@ Signed-off-by: Paulo Alcantara <palcantara@suse.de>
 Signed-off-by: Aurelien Aptel <aaptel@suse.com>
 Signed-off-by: Steve French <stfrench@microsoft.com>
 Acked-by: Aurelien Aptel <aaptel@suse.com>
-Acked-by: Paulo Alcantara <palcantara@suse.de>
 ---
- fs/cifs/Makefile     |    2 
- fs/cifs/cifs_debug.c |   11 
- fs/cifs/cifsglob.h   |    5 
- fs/cifs/cifsproto.h  |    3 
- fs/cifs/connect.c    |    2 
- fs/cifs/dfs_cache.c  | 1365 +++++++++++++++++++++++++++++++++++++++++++++++++++
- fs/cifs/dfs_cache.h  |   97 +++
- 7 files changed, 1483 insertions(+), 2 deletions(-)
+ fs/cifs/Makefile     |    2 +-
+ fs/cifs/cifs_debug.c |   12 +
+ fs/cifs/cifsglob.h   |    5 +
+ fs/cifs/cifsproto.h  |    3 +
+ fs/cifs/connect.c    |    2 +-
+ fs/cifs/dfs_cache.c  | 1365 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/cifs/dfs_cache.h  |   97 ++++
+ 7 files changed, 1484 insertions(+), 2 deletions(-)
  create mode 100644 fs/cifs/dfs_cache.c
  create mode 100644 fs/cifs/dfs_cache.h
 
+diff --git a/fs/cifs/Makefile b/fs/cifs/Makefile
+index 85817991ee68..51af69a1a328 100644
 --- a/fs/cifs/Makefile
 +++ b/fs/cifs/Makefile
-@@ -15,6 +15,6 @@ cifs-$(CONFIG_CIFS_ACL) += cifsacl.o
+@@ -17,7 +17,7 @@ cifs-$(CONFIG_CIFS_ACL) += cifsacl.o
  
  cifs-$(CONFIG_CIFS_UPCALL) += cifs_spnego.o
  
@@ -82,6 +82,9 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 +cifs-$(CONFIG_CIFS_DFS_UPCALL) += dns_resolve.o cifs_dfs_ref.o dfs_cache.o
  
  cifs-$(CONFIG_CIFS_FSCACHE) += fscache.o cache.o
+ 
+diff --git a/fs/cifs/cifs_debug.c b/fs/cifs/cifs_debug.c
+index ba178b09de0b..593fb422d0f3 100644
 --- a/fs/cifs/cifs_debug.c
 +++ b/fs/cifs/cifs_debug.c
 @@ -30,6 +30,9 @@
@@ -91,21 +94,22 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 +#ifdef CONFIG_CIFS_DFS_UPCALL
 +#include "dfs_cache.h"
 +#endif
- 
- void
- cifs_dump_mem(char *label, void *data, int length)
-@@ -433,6 +436,10 @@ cifs_proc_init(void)
+ #ifdef CONFIG_CIFS_SMB_DIRECT
+ #include "smbdirect.h"
+ #endif
+@@ -629,6 +632,11 @@ cifs_proc_init(void)
  		    &cifs_security_flags_proc_fops);
- 	proc_create("LookupCacheEnabled", 0, proc_fs_cifs,
+ 	proc_create("LookupCacheEnabled", 0644, proc_fs_cifs,
  		    &cifs_lookup_cache_proc_fops);
 +
 +#ifdef CONFIG_CIFS_DFS_UPCALL
 +	proc_create("dfscache", 0644, proc_fs_cifs, &dfscache_proc_fops);
 +#endif
- }
- 
- void
-@@ -450,6 +457,10 @@ cifs_proc_clean(void)
++
+ #ifdef CONFIG_CIFS_SMB_DIRECT
+ 	proc_create("rdma_readwrite_threshold", 0644, proc_fs_cifs,
+ 		&cifs_rdma_readwrite_threshold_proc_fops);
+@@ -663,6 +671,10 @@ cifs_proc_clean(void)
  	remove_proc_entry("SecurityFlags", proc_fs_cifs);
  	remove_proc_entry("LinuxExtensionsEnabled", proc_fs_cifs);
  	remove_proc_entry("LookupCacheEnabled", proc_fs_cifs);
@@ -113,14 +117,16 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 +#ifdef CONFIG_CIFS_DFS_UPCALL
 +	remove_proc_entry("dfscache", proc_fs_cifs);
 +#endif
- 	remove_proc_entry("fs/cifs", NULL);
- }
- 
+ #ifdef CONFIG_CIFS_SMB_DIRECT
+ 	remove_proc_entry("rdma_readwrite_threshold", proc_fs_cifs);
+ 	remove_proc_entry("smbd_max_frmr_depth", proc_fs_cifs);
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 3b1aa12708a0..66c487634c9e 100644
 --- a/fs/cifs/cifsglob.h
 +++ b/fs/cifs/cifsglob.h
-@@ -959,6 +959,11 @@ struct cifs_tcon {
- #endif
+@@ -1014,6 +1014,11 @@ struct cifs_tcon {
  	struct list_head pending_opens;	/* list of incomplete opens */
+ 	struct cached_fid crfid; /* Cached root fid */
  	/* BB add field for back pointer to sb struct(s)? */
 +#ifdef CONFIG_CIFS_DFS_UPCALL
 +	char *dfs_path;
@@ -130,9 +136,11 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  };
  
  /*
+diff --git a/fs/cifs/cifsproto.h b/fs/cifs/cifsproto.h
+index f4dd2a3795dd..efa5e36b3762 100644
 --- a/fs/cifs/cifsproto.h
 +++ b/fs/cifs/cifsproto.h
-@@ -515,6 +515,9 @@ extern int SMBencrypt(unsigned char *pas
+@@ -527,6 +527,9 @@ extern int SMBencrypt(unsigned char *passwd, const unsigned char *c8,
  extern void
  cifs_cleanup_volume_info_contents(struct smb_vol *volume_info);
  
@@ -142,9 +150,11 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  void cifs_readdata_release(struct kref *refcount);
  int cifs_async_readv(struct cifs_readdata *rdata);
  int cifs_readv_receive(struct TCP_Server_Info *server, struct mid_q_entry *mid);
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index d0de4fb8ee43..5feb3bf97d70 100644
 --- a/fs/cifs/connect.c
 +++ b/fs/cifs/connect.c
-@@ -2154,7 +2154,7 @@ static int match_server(struct TCP_Serve
+@@ -2295,7 +2295,7 @@ static int match_server(struct TCP_Server_Info *server, struct smb_vol *vol)
  	return 1;
  }
  
@@ -153,6 +163,9 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  cifs_find_tcp_session(struct smb_vol *vol)
  {
  	struct TCP_Server_Info *server;
+diff --git a/fs/cifs/dfs_cache.c b/fs/cifs/dfs_cache.c
+new file mode 100644
+index 000000000000..1af078e531c1
 --- /dev/null
 +++ b/fs/cifs/dfs_cache.c
 @@ -0,0 +1,1365 @@
@@ -1521,6 +1534,9 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 +	queue_delayed_work(cifsiod_wq, &dc->dc_refresh, dc->dc_ttl * HZ);
 +	mutex_unlock(&dc->dc_lock);
 +}
+diff --git a/fs/cifs/dfs_cache.h b/fs/cifs/dfs_cache.h
+new file mode 100644
+index 000000000000..22f366514f3a
 --- /dev/null
 +++ b/fs/cifs/dfs_cache.h
 @@ -0,0 +1,97 @@
@@ -1621,3 +1637,6 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 +}
 +
 +#endif /* _CIFS_DFS_CACHE_H */
+-- 
+2.16.4
+

@@ -1,0 +1,50 @@
+From 56780940389a344a949d53ed7be77012a20ced7a Mon Sep 17 00:00:00 2001
+From: "Leo (Sunpeng) Li" <sunpeng.li@amd.com>
+Date: Wed, 1 Aug 2018 10:20:53 -0400
+Subject: [PATCH] drm/amd/display: Remove redundant non-zero and overflow check
+Git-commit: 56780940389a344a949d53ed7be77012a20ced7a
+Patch-mainline: v4.20-rc1
+References: bsc#1145946
+
+[Why]
+Unsigned int is guaranteed to be >= 0, and read_channel_reply checks for
+overflows. read_channel_reply also returns -1 on error, which is what
+dc_link_aux_transfer is expected to return on error.
+
+[How]
+Remove the if-statement. Return result of read_channel_reply directly.
+
+Signed-off-by: Leo (Sunpeng) Li <sunpeng.li@amd.com>
+Reviewed-by: Mikita Lipski <Mikita.Lipski@amd.com>
+Acked-by: Leo Li <sunpeng.li@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/gpu/drm/amd/display/dc/core/dc_link_ddc.c | 10 +++-------
+ 1 file changed, 3 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/gpu/drm/amd/display/dc/core/dc_link_ddc.c b/drivers/gpu/drm/amd/display/dc/core/dc_link_ddc.c
+index 8def0d9fa0ff..506a97e16956 100644
+--- a/drivers/gpu/drm/amd/display/dc/core/dc_link_ddc.c
++++ b/drivers/gpu/drm/amd/display/dc/core/dc_link_ddc.c
+@@ -666,13 +666,9 @@ int dc_link_aux_transfer(struct ddc_service *ddc,
+ 
+ 	switch (operation_result) {
+ 	case AUX_CHANNEL_OPERATION_SUCCEEDED:
+-		res = returned_bytes;
+-
+-		if (res <= size && res >= 0)
+-			res = aux_engine->funcs->read_channel_reply(aux_engine, size,
+-								buffer, reply,
+-								&status);
+-
++		res = aux_engine->funcs->read_channel_reply(aux_engine, size,
++							buffer, reply,
++							&status);
+ 		break;
+ 	case AUX_CHANNEL_OPERATION_FAILED_HPD_DISCON:
+ 		res = 0;
+-- 
+2.16.4
+

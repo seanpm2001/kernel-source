@@ -1,0 +1,109 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Fri, 13 Apr 2018 09:03:19 +1000
+Subject: [PATCH] cifs: Change SMB2_open to return an iov for the error
+ parameter
+Git-commit: 91cb74f5142c14dd921ab2d064b7b128054f9fae
+Patch-mainline: v4.17-rc1
+References: bsc#1144333
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c   | 10 ++++++----
+ fs/cifs/smb2pdu.c   | 10 ++++++----
+ fs/cifs/smb2proto.h |  2 +-
+ 3 files changed, 13 insertions(+), 9 deletions(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index def84fed3571..b4ae932ea134 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1451,6 +1451,7 @@ smb2_query_symlink(const unsigned int xid, struct cifs_tcon *tcon,
+ 	__u8 oplock = SMB2_OPLOCK_LEVEL_NONE;
+ 	struct cifs_open_parms oparms;
+ 	struct cifs_fid fid;
++	struct kvec err_iov = {NULL, 0};
+ 	struct smb2_err_rsp *err_buf = NULL;
+ 	struct smb2_symlink_err_rsp *symlink;
+ 	unsigned int sub_len;
+@@ -1473,15 +1474,16 @@ smb2_query_symlink(const unsigned int xid, struct cifs_tcon *tcon,
+ 	oparms.fid = &fid;
+ 	oparms.reconnect = false;
+ 
+-	rc = SMB2_open(xid, &oparms, utf16_path, &oplock, NULL, &err_buf);
++	rc = SMB2_open(xid, &oparms, utf16_path, &oplock, NULL, &err_iov);
+ 
+ 	if (!rc || !err_buf) {
+ 		kfree(utf16_path);
+ 		return -ENOENT;
+ 	}
+ 
++	err_buf = err_iov.iov_base;
+ 	if (le32_to_cpu(err_buf->ByteCount) < sizeof(struct smb2_symlink_err_rsp) ||
+-	    get_rfc1002_length(err_buf) + server->vals->header_preamble_size < SMB2_SYMLINK_STRUCT_SIZE) {
++	    err_iov.iov_len + server->vals->header_preamble_size < SMB2_SYMLINK_STRUCT_SIZE) {
+ 		kfree(utf16_path);
+ 		return -ENOENT;
+ 	}
+@@ -1494,13 +1496,13 @@ smb2_query_symlink(const unsigned int xid, struct cifs_tcon *tcon,
+ 	print_len = le16_to_cpu(symlink->PrintNameLength);
+ 	print_offset = le16_to_cpu(symlink->PrintNameOffset);
+ 
+-	if (get_rfc1002_length(err_buf) + server->vals->header_preamble_size <
++	if (err_iov.iov_len + server->vals->header_preamble_size <
+ 			SMB2_SYMLINK_STRUCT_SIZE + sub_offset + sub_len) {
+ 		kfree(utf16_path);
+ 		return -ENOENT;
+ 	}
+ 
+-	if (get_rfc1002_length(err_buf) + server->vals->header_preamble_size <
++	if (err_iov.iov_len + server->vals->header_preamble_size <
+ 			SMB2_SYMLINK_STRUCT_SIZE + print_offset + print_len) {
+ 		kfree(utf16_path);
+ 		return -ENOENT;
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index be44c5c3e77e..8a6921ef2ce1 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -1807,7 +1807,7 @@ alloc_path_with_tree_prefix(__le16 **out_path, int *out_size, int *out_len,
+ int
+ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
+ 	  __u8 *oplock, struct smb2_file_all_info *buf,
+-	  struct smb2_err_rsp **err_buf)
++	  struct kvec *err_iov)
+ {
+ 	struct smb2_create_req *req;
+ 	struct smb2_create_rsp *rsp;
+@@ -1947,9 +1947,11 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
+ 
+ 	if (rc != 0) {
+ 		cifs_stats_fail_inc(tcon, SMB2_CREATE_HE);
+-		if (err_buf && rsp)
+-			*err_buf = kmemdup(rsp, get_rfc1002_length(rsp) + 4,
+-					   GFP_KERNEL);
++		if (err_iov && rsp) {
++			*err_iov = rsp_iov;
++			resp_buftype = CIFS_NO_BUFFER;
++			rsp = NULL;
++		}
+ 		goto creat_exit;
+ 	}
+ 
+diff --git a/fs/cifs/smb2proto.h b/fs/cifs/smb2proto.h
+index cbcce3f7e86f..8ba24a95db71 100644
+--- a/fs/cifs/smb2proto.h
++++ b/fs/cifs/smb2proto.h
+@@ -122,7 +122,7 @@ extern int SMB2_tdis(const unsigned int xid, struct cifs_tcon *tcon);
+ extern int SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms,
+ 		     __le16 *path, __u8 *oplock,
+ 		     struct smb2_file_all_info *buf,
+-		     struct smb2_err_rsp **err_buf);
++		     struct kvec *err_iov);
+ extern int SMB2_ioctl(const unsigned int xid, struct cifs_tcon *tcon,
+ 		     u64 persistent_fid, u64 volatile_fid, u32 opcode,
+ 		     bool is_fsctl, char *in_data, u32 indatalen,
+-- 
+2.16.4
+

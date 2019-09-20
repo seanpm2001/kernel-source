@@ -1,0 +1,43 @@
+From a3839bc6351d79cf85790f302238dfc84382429f Mon Sep 17 00:00:00 2001
+From: Dan Carpenter <dan.carpenter@oracle.com>
+Date: Wed, 10 Apr 2019 11:12:31 +0300
+Subject: [PATCH] dm zoned: Silence a static checker warning
+Git-commit: a3839bc6351d79cf85790f302238dfc84382429f
+Patch-mainline: v5.2-rc1
+References: git fixes
+
+My static checker complains about this line from dmz_get_zoned_device()
+
+	aligned_capacity = dev->capacity & ~(blk_queue_zone_sectors(q) - 1);
+
+The problem is that "aligned_capacity" and "dev->capacity" are sector_t
+type (which is a u64 under most configs) but blk_queue_zone_sectors(q)
+returns a u32 so the higher 32 bits in aligned_capacity are cleared to
+zero.  This patch adds a cast to address the issue.
+
+Fixes: 114e025968b5 ("dm zoned: ignore last smaller runt zone")
+Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
+Reviewed-by: Damien Le Moal <damien.lemoal@wdc.com>
+Signed-off-by: Mike Snitzer <snitzer@redhat.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+---
+ drivers/md/dm-zoned-target.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/md/dm-zoned-target.c b/drivers/md/dm-zoned-target.c
+index 8865c1709e16..51d029bbb740 100644
+--- a/drivers/md/dm-zoned-target.c
++++ b/drivers/md/dm-zoned-target.c
+@@ -643,7 +643,8 @@ static int dmz_get_zoned_device(struct dm_target *ti, char *path)
+ 
+ 	q = bdev_get_queue(dev->bdev);
+ 	dev->capacity = i_size_read(dev->bdev->bd_inode) >> SECTOR_SHIFT;
+-	aligned_capacity = dev->capacity & ~(blk_queue_zone_sectors(q) - 1);
++	aligned_capacity = dev->capacity &
++				~((sector_t)blk_queue_zone_sectors(q) - 1);
+ 	if (ti->begin ||
+ 	    ((ti->len != dev->capacity) && (ti->len != aligned_capacity))) {
+ 		ti->error = "Partial mapping not supported";
+-- 
+2.16.4
+

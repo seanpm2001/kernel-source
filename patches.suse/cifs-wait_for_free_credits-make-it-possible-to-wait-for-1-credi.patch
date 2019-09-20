@@ -1,0 +1,106 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Fri, 8 Mar 2019 12:58:20 +1000
+Subject: [PATCH] cifs: wait_for_free_credits() make it possible to wait for
+ >=1 credits
+Git-commit: b227d215deef4f3528b8f754accef4db03539a59
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Change wait_for_free_credits() to allow waiting for >=1 credits instead of just
+a single credit.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsglob.h  |  4 ++--
+ fs/cifs/smb2ops.c   |  2 +-
+ fs/cifs/transport.c | 14 +++++++-------
+ 3 files changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index f293e052e351..ddb299494cd6 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -735,13 +735,13 @@ in_flight(struct TCP_Server_Info *server)
+ }
+ 
+ static inline bool
+-has_credits(struct TCP_Server_Info *server, int *credits)
++has_credits(struct TCP_Server_Info *server, int *credits, int num_credits)
+ {
+ 	int num;
+ 	spin_lock(&server->req_lock);
+ 	num = *credits;
+ 	spin_unlock(&server->req_lock);
+-	return num > 0;
++	return num >= num_credits;
+ }
+ 
+ static inline void
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 085e91436da7..1654d50b8aef 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -185,7 +185,7 @@ smb2_wait_mtu_credits(struct TCP_Server_Info *server, unsigned int size,
+ 			spin_unlock(&server->req_lock);
+ 			cifs_num_waiters_inc(server);
+ 			rc = wait_event_killable(server->request_q,
+-					has_credits(server, &server->credits));
++				has_credits(server, &server->credits, 1));
+ 			cifs_num_waiters_dec(server);
+ 			if (rc)
+ 				return rc;
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 9fcc4a82943d..1951f9f74bb2 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -486,8 +486,8 @@ smb_send(struct TCP_Server_Info *server, struct smb_hdr *smb_buffer,
+ }
+ 
+ static int
+-wait_for_free_credits(struct TCP_Server_Info *server, const int flags,
+-		      unsigned int *instance)
++wait_for_free_credits(struct TCP_Server_Info *server, const int num_credits,
++		      const int flags, unsigned int *instance)
+ {
+ 	int rc;
+ 	int *credits;
+@@ -513,11 +513,11 @@ wait_for_free_credits(struct TCP_Server_Info *server, const int flags,
+ 	}
+ 
+ 	while (1) {
+-		if (*credits <= 0) {
++		if (*credits < num_credits) {
+ 			spin_unlock(&server->req_lock);
+ 			cifs_num_waiters_inc(server);
+ 			rc = wait_event_killable(server->request_q,
+-						 has_credits(server, credits));
++				has_credits(server, credits, num_credits));
+ 			cifs_num_waiters_dec(server);
+ 			if (rc)
+ 				return rc;
+@@ -535,8 +535,8 @@ wait_for_free_credits(struct TCP_Server_Info *server, const int flags,
+ 
+ 			/* update # of requests on the wire to server */
+ 			if ((flags & CIFS_TIMEOUT_MASK) != CIFS_BLOCKING_OP) {
+-				*credits -= 1;
+-				server->in_flight++;
++				*credits -= num_credits;
++				server->in_flight += num_credits;
+ 				*instance = server->reconnect_instance;
+ 			}
+ 			spin_unlock(&server->req_lock);
+@@ -550,7 +550,7 @@ static int
+ wait_for_free_request(struct TCP_Server_Info *server, const int flags,
+ 		      unsigned int *instance)
+ {
+-	return wait_for_free_credits(server, flags, instance);
++	return wait_for_free_credits(server, 1, flags, instance);
+ }
+ 
+ int
+-- 
+2.16.4
+

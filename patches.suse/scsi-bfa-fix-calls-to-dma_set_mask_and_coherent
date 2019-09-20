@@ -1,0 +1,73 @@
+From: Hannes Reinecke <hare@suse.de>
+Date: Mon, 18 Feb 2019 08:34:23 +0100
+Subject: scsi: bfa: fix calls to dma_set_mask_and_coherent()
+Git-commit: 11ea3824140ca994f4560c4bec6a32d257ef3e83
+Patch-mainline: v5.0
+References: bsc#1136496 jsc#SLE-4698
+
+The change to use dma_set_mask_and_coherent() incorrectly made a second
+call with the 32 bit DMA mask value when the call with the 64 bit DMA mask
+value succeeded.
+
+[mkp: fixed commit message]
+
+Fixes: a69b080025ea ("scsi: bfa: use dma_set_mask_and_coherent")
+Cc: <stable@vger.kernel.org>
+Suggested-by: Ewan D. Milne <emilne@redhat.com>
+Signed-off-by: Hannes Reinecke <hare@suse.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Ewan D. Milne <emilne@redhat.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/bfa/bfad.c |   18 +++++++++++++-----
+ 1 file changed, 13 insertions(+), 5 deletions(-)
+
+--- a/drivers/scsi/bfa/bfad.c
++++ b/drivers/scsi/bfa/bfad.c
+@@ -730,7 +730,7 @@ bfad_init_timer(struct bfad_s *bfad)
+ int
+ bfad_pci_init(struct pci_dev *pdev, struct bfad_s *bfad)
+ {
+-	int		rc = -ENODEV;
++	int rc = -ENODEV;
+ 
+ 	if (pci_enable_device(pdev)) {
+ 		printk(KERN_ERR "pci_enable_device fail %p\n", pdev);
+@@ -742,8 +742,12 @@ bfad_pci_init(struct pci_dev *pdev, stru
+ 
+ 	pci_set_master(pdev);
+ 
+-	if (dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64)) ||
+-	    dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32))) {
++	rc = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
++	if (rc)
++		rc = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
++
++	if (rc) {
++		rc = -ENODEV;
+ 		printk(KERN_ERR "dma_set_mask_and_coherent fail %p\n", pdev);
+ 		goto out_release_region;
+ 	}
+@@ -1537,6 +1541,7 @@ bfad_pci_slot_reset(struct pci_dev *pdev
+ {
+ 	struct bfad_s *bfad = pci_get_drvdata(pdev);
+ 	u8 byte;
++	int rc;
+ 
+ 	dev_printk(KERN_ERR, &pdev->dev,
+ 		   "bfad_pci_slot_reset flags: 0x%x\n", bfad->bfad_flags);
+@@ -1564,8 +1569,11 @@ bfad_pci_slot_reset(struct pci_dev *pdev
+ 	pci_save_state(pdev);
+ 	pci_set_master(pdev);
+ 
+-	if (dma_set_mask_and_coherent(&bfad->pcidev->dev, DMA_BIT_MASK(64)) ||
+-	    dma_set_mask_and_coherent(&bfad->pcidev->dev, DMA_BIT_MASK(32)))
++	rc = dma_set_mask_and_coherent(&bfad->pcidev->dev, DMA_BIT_MASK(64));
++	if (rc)
++		rc = dma_set_mask_and_coherent(&bfad->pcidev->dev,
++					       DMA_BIT_MASK(32));
++	if (rc)
+ 		goto out_disable_device;
+ 
+ 	pci_cleanup_aer_uncorrect_error_status(pdev);

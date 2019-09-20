@@ -1,0 +1,37 @@
+From: Xiang Chen <chenxiang66@hisilicon.com>
+Date: Wed, 29 May 2019 17:58:47 +0800
+Subject: scsi: hisi_sas: Disable stash for v3 hw
+Patch-mainline: v5.3-rc1
+Git-commit: 97fcf176b43bedcfd64cca5fd7e07e2cd2bde284
+References: bsc#1137322 bsc#1137323 bsc#1138099 bsc#1138100
+
+For v3 hw, stash is enabled to promote performance, but it does little to
+improve performance according to current tests. What's more, it causes
+exceptions for some situations, so disable it.
+
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: John Garry <john.garry@huawei.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/hisi_sas/hisi_sas_v3_hw.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/drivers/scsi/hisi_sas/hisi_sas_v3_hw.c
++++ b/drivers/scsi/hisi_sas/hisi_sas_v3_hw.c
+@@ -28,6 +28,7 @@
+ #define ITCT_CLR_EN_MSK			(0x1 << ITCT_CLR_EN_OFF)
+ #define ITCT_DEV_OFF			0
+ #define ITCT_DEV_MSK			(0x7ff << ITCT_DEV_OFF)
++#define SAS_AXI_USER3			0x50
+ #define IO_SATA_BROKEN_MSG_ADDR_LO	0x58
+ #define IO_SATA_BROKEN_MSG_ADDR_HI	0x5c
+ #define SATA_INITI_D2H_STORE_ADDR_LO	0x60
+@@ -554,6 +555,7 @@ static void init_reg_v3_hw(struct hisi_h
+ 	/* Global registers init */
+ 	hisi_sas_write32(hisi_hba, DLVRY_QUEUE_ENABLE,
+ 			 (u32)((1ULL << hisi_hba->queue_count) - 1));
++	hisi_sas_write32(hisi_hba, SAS_AXI_USER3, 0);
+ 	hisi_sas_write32(hisi_hba, CFG_MAX_TAG, 0xfff0400);
+ 	hisi_sas_write32(hisi_hba, HGC_SAS_TXFAIL_RETRY_CTRL, 0x108);
+ 	hisi_sas_write32(hisi_hba, CFG_AGING_TIME, 0x1);

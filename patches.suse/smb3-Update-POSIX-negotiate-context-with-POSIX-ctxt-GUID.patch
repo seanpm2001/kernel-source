@@ -1,0 +1,68 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Sun, 24 Feb 2019 17:56:33 -0600
+Subject: [PATCH] smb3: Update POSIX negotiate context with POSIX ctxt GUID
+Git-commit: 0d481325a9e5e3a31bf83bfcd3690a7a7152ece1
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+POSIX negotiate context now includes the GUID specifying
+which POSIX open context we support.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Jeremy Allison <jra@samba.org>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c | 17 +++++++++++++++++
+ fs/cifs/smb2pdu.h |  4 ++--
+ 2 files changed, 19 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 49c2843b1bcf..64e172633bc4 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -490,6 +490,23 @@ build_posix_ctxt(struct smb2_posix_neg_context *pneg_ctxt)
+ {
+ 	pneg_ctxt->ContextType = SMB2_POSIX_EXTENSIONS_AVAILABLE;
+ 	pneg_ctxt->DataLength = cpu_to_le16(POSIX_CTXT_DATA_LEN);
++	/* SMB2_CREATE_TAG_POSIX is "0x93AD25509CB411E7B42383DE968BCD7C" */
++	pneg_ctxt->Name[0] = 0x93;
++	pneg_ctxt->Name[1] = 0xAD;
++	pneg_ctxt->Name[2] = 0x25;
++	pneg_ctxt->Name[3] = 0x50;
++	pneg_ctxt->Name[4] = 0x9C;
++	pneg_ctxt->Name[5] = 0xB4;
++	pneg_ctxt->Name[6] = 0x11;
++	pneg_ctxt->Name[7] = 0xE7;
++	pneg_ctxt->Name[8] = 0xB4;
++	pneg_ctxt->Name[9] = 0x23;
++	pneg_ctxt->Name[10] = 0x83;
++	pneg_ctxt->Name[11] = 0xDE;
++	pneg_ctxt->Name[12] = 0x96;
++	pneg_ctxt->Name[13] = 0x8B;
++	pneg_ctxt->Name[14] = 0xCD;
++	pneg_ctxt->Name[15] = 0x7C;
+ }
+ 
+ static void
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index 538e2299805f..0bd4d4802701 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -288,12 +288,12 @@ struct smb2_encryption_neg_context {
+ 	__le16	Ciphers[1]; /* Ciphers[0] since only one used now */
+ } __packed;
+ 
+-#define POSIX_CTXT_DATA_LEN	8
++#define POSIX_CTXT_DATA_LEN	16
+ struct smb2_posix_neg_context {
+ 	__le16	ContextType; /* 0x100 */
+ 	__le16	DataLength;
+ 	__le32	Reserved;
+-	__le64	Reserved1; /* In case needed for future (eg version or caps) */
++	__u8	Name[16]; /* POSIX ctxt GUID 93AD25509CB411E7B42383DE968BCD7C */
+ } __packed;
+ 
+ struct smb2_negotiate_rsp {
+-- 
+2.16.4
+

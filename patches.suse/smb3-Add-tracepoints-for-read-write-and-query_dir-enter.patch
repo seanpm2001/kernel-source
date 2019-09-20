@@ -1,0 +1,84 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Mon, 25 Feb 2019 00:52:43 -0600
+Subject: [PATCH] smb3: Add tracepoints for read, write and query_dir enter
+Git-commit: d323c24617527f28cdb03f3bb7d8f9b62eecee80
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Allows tracing begin (not just completion) of read, write
+and query_dir which may be helpful in finding slow requests
+and other timing information
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c | 15 +++++++++++++++
+ fs/cifs/trace.h   |  3 +++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 965c4c7e87f9..ec9abe293279 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -3142,6 +3142,11 @@ smb2_new_read_req(void **buf, unsigned int *total_len,
+ 	req->MinimumCount = 0;
+ 	req->Length = cpu_to_le32(io_parms->length);
+ 	req->Offset = cpu_to_le64(io_parms->offset);
++
++	trace_smb3_read_enter(0 /* xid */,
++			io_parms->persistent_fid,
++			io_parms->tcon->tid, io_parms->tcon->ses->Suid,
++			io_parms->offset, io_parms->length);
+ #ifdef CONFIG_CIFS_SMB_DIRECT
+ 	/*
+ 	 * If we want to do a RDMA write, fill in and append
+@@ -3541,6 +3546,9 @@ smb2_async_writev(struct cifs_writedata *wdata,
+ 	req->DataOffset = cpu_to_le16(
+ 				offsetof(struct smb2_write_req, Buffer));
+ 	req->RemainingBytes = 0;
++
++	trace_smb3_write_enter(0 /* xid */, wdata->cfile->fid.persistent_fid,
++		tcon->tid, tcon->ses->Suid, wdata->offset, wdata->bytes);
+ #ifdef CONFIG_CIFS_SMB_DIRECT
+ 	/*
+ 	 * If we want to do a server RDMA read, fill in and append
+@@ -3688,6 +3696,10 @@ SMB2_write(const unsigned int xid, struct cifs_io_parms *io_parms,
+ 				offsetof(struct smb2_write_req, Buffer));
+ 	req->RemainingBytes = 0;
+ 
++	trace_smb3_write_enter(xid, io_parms->persistent_fid,
++		io_parms->tcon->tid, io_parms->tcon->ses->Suid,
++		io_parms->offset, io_parms->length);
++
+ 	iov[0].iov_base = (char *)req;
+ 	/* 1 for Buffer */
+ 	iov[0].iov_len = total_len - 1;
+@@ -3850,6 +3862,9 @@ SMB2_query_directory(const unsigned int xid, struct cifs_tcon *tcon,
+ 	rqst.rq_iov = iov;
+ 	rqst.rq_nvec = 2;
+ 
++	trace_smb3_query_dir_enter(xid, persistent_fid, tcon->tid,
++			tcon->ses->Suid, index, output_size);
++
+ 	rc = cifs_send_recv(xid, ses, &rqst, &resp_buftype, flags, &rsp_iov);
+ 	cifs_small_buf_release(req);
+ 	rsp = (struct smb2_query_directory_rsp *)rsp_iov.iov_base;
+diff --git a/fs/cifs/trace.h b/fs/cifs/trace.h
+index bf4f43f6893b..660176e34dde 100644
+--- a/fs/cifs/trace.h
++++ b/fs/cifs/trace.h
+@@ -101,6 +101,9 @@ DEFINE_EVENT(smb3_rw_done_class, smb3_##name,   \
+ 		__u32	len),			\
+ 	TP_ARGS(xid, fid, tid, sesid, offset, len))
+ 
++DEFINE_SMB3_RW_DONE_EVENT(write_enter);
++DEFINE_SMB3_RW_DONE_EVENT(read_enter);
++DEFINE_SMB3_RW_DONE_EVENT(query_dir_enter);
+ DEFINE_SMB3_RW_DONE_EVENT(write_done);
+ DEFINE_SMB3_RW_DONE_EVENT(read_done);
+ DEFINE_SMB3_RW_DONE_EVENT(query_dir_done);
+-- 
+2.16.4
+

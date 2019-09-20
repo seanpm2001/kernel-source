@@ -1,0 +1,45 @@
+From: Paulo Alcantara <paulo@paulo.ac>
+Date: Wed, 13 Jun 2018 13:54:14 -0300
+Subject: [PATCH] cifs: Fix encryption/signing
+Git-commit: cd2dca60be6f4742b63373fd7e4b445c8a634e51
+Patch-mainline: v4.18-rc1
+References: bsc#1144333
+
+Since the rfc1002 generation was moved down to __smb_send_rqst(),
+the transform header is now in rqst->rq_iov[0].
+
+Correctly assign the transform header pointer in crypt_message().
+
+Signed-off-by: Paulo Alcantara <palcantara@suse.de>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 9153407f97e8..c3648e9b5ec7 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -2187,7 +2187,7 @@ static inline void smb2_sg_set_buf(struct scatterlist *sg, const void *buf,
+ }
+ 
+ /* Assumes:
+- * rqst->rq_iov[0]  is tranform header
++ * rqst->rq_iov[0]  is transform header
+  * rqst->rq_iov[1+] data to be encrypted/decrypted
+  */
+ static struct scatterlist *
+@@ -2249,7 +2249,7 @@ static int
+ crypt_message(struct TCP_Server_Info *server, struct smb_rqst *rqst, int enc)
+ {
+ 	struct smb2_transform_hdr *tr_hdr =
+-			(struct smb2_transform_hdr *)rqst->rq_iov[1].iov_base;
++			(struct smb2_transform_hdr *)rqst->rq_iov[0].iov_base;
+ 	unsigned int assoc_data_len = sizeof(struct smb2_transform_hdr) - 20;
+ 	int rc = 0;
+ 	struct scatterlist *sg;
+-- 
+2.16.4
+

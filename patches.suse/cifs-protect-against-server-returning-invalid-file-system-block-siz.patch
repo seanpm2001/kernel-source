@@ -1,0 +1,70 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Sat, 15 Sep 2018 14:07:09 -0500
+Subject: [PATCH] cifs: protect against server returning invalid file system
+ block size
+Git-commit: 5a519bead49938aa0e3086bc753930d610fbd705
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+For a network file system we generally prefer large i/o, but
+if the server returns invalid file system block/sector sizes
+in cifs (vers=1.0) QFSInfo then set block size to a default
+of a reasonable minimum (4K).
+
+Reported-by: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifssmb.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/fs/cifs/cifssmb.c b/fs/cifs/cifssmb.c
+index 5657b79dbc99..41329f41a599 100644
+--- a/fs/cifs/cifssmb.c
++++ b/fs/cifs/cifssmb.c
+@@ -5027,6 +5027,13 @@ SMBOldQFSInfo(const unsigned int xid, struct cifs_tcon *tcon,
+ 				le16_to_cpu(response_data->BytesPerSector) *
+ 				le32_to_cpu(response_data->
+ 					SectorsPerAllocationUnit);
++			/*
++			 * much prefer larger but if server doesn't report
++			 * a valid size than 4K is a reasonable minimum
++			 */
++			if (FSData->f_bsize < 512)
++				FSData->f_bsize = 4096;
++
+ 			FSData->f_blocks =
+ 			       le32_to_cpu(response_data->TotalAllocationUnits);
+ 			FSData->f_bfree = FSData->f_bavail =
+@@ -5107,6 +5114,13 @@ CIFSSMBQFSInfo(const unsigned int xid, struct cifs_tcon *tcon,
+ 			    le32_to_cpu(response_data->BytesPerSector) *
+ 			    le32_to_cpu(response_data->
+ 					SectorsPerAllocationUnit);
++			/*
++			 * much prefer larger but if server doesn't report
++			 * a valid size than 4K is a reasonable minimum
++			 */
++			if (FSData->f_bsize < 512)
++				FSData->f_bsize = 4096;
++
+ 			FSData->f_blocks =
+ 			    le64_to_cpu(response_data->TotalAllocationUnits);
+ 			FSData->f_bfree = FSData->f_bavail =
+@@ -5470,6 +5484,13 @@ CIFSSMBQFSPosixInfo(const unsigned int xid, struct cifs_tcon *tcon,
+ 				 data_offset);
+ 			FSData->f_bsize =
+ 					le32_to_cpu(response_data->BlockSize);
++			/*
++			 * much prefer larger but if server doesn't report
++			 * a valid size than 4K is a reasonable minimum
++			 */
++			if (FSData->f_bsize < 512)
++				FSData->f_bsize = 4096;
++
+ 			FSData->f_blocks =
+ 					le64_to_cpu(response_data->TotalBlocks);
+ 			FSData->f_bfree =
+-- 
+2.16.4
+

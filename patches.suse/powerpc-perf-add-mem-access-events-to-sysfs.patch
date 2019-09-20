@@ -1,0 +1,77 @@
+From: Madhavan Srinivasan <maddy@linux.vnet.ibm.com>
+Date: Mon, 10 Dec 2018 09:29:05 +0530
+Subject: powerpc/perf: Add mem access events to sysfs
+Git-commit: ab4510e9ac6dcdd5e9ec0380bec279b5ae97ce10
+Patch-mainline: v5.1-rc1
+References: FATE#326866, FATE#326869, bsc#1124370 
+Signed-off-by: Tony Jones <tonyj@suse.de>
+
+Add mem-loads/mem-stores events to sysfs.
+The event is formed based on raw event encoding.
+Primary PMU event used here is PM_MRK_INST_CMPL
+along with MMCRA[SM] modes and Thresholding bit
+
+Signed-off-by: Madhavan Srinivasan <maddy@linux.vnet.ibm.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+---
+ arch/powerpc/perf/power9-events-list.h | 24 ++++++++++++++++++++++++
+ arch/powerpc/perf/power9-pmu.c         |  4 ++++
+ 2 files changed, 28 insertions(+)
+
+diff --git a/arch/powerpc/perf/power9-events-list.h b/arch/powerpc/perf/power9-events-list.h
+index 7de344b7d9cc..063c9d9f2516 100644
+--- a/arch/powerpc/perf/power9-events-list.h
++++ b/arch/powerpc/perf/power9-events-list.h
+@@ -97,3 +97,27 @@ EVENT(PM_MRK_DTLB_MISS_64K,			0x3d156)
+ EVENT(PM_DTLB_MISS_16M,				0x4c056)
+ EVENT(PM_DTLB_MISS_1G,				0x4c05a)
+ EVENT(PM_MRK_DTLB_MISS_16M,			0x4c15e)
++
++/*
++ * Memory Access Events
++ *
++ * Primary PMU event used here is PM_MRK_INST_CMPL (0x401e0)
++ * To enable capturing of memory profiling, these MMCRA bits
++ * needs to be programmed and corresponding raw event format
++ * encoding.
++ *
++ * MMCRA bits encoding needed are
++ *     SM (Sampling Mode)
++ *     EM (Eligibility for Random Sampling)
++ *     TECE (Threshold Event Counter Event)
++ *     TS (Threshold Start Event)
++ *     TE (Threshold End Event)
++ *
++ * Corresponding Raw Encoding bits:
++ *     sample [EM,SM]
++ *     thresh_sel (TECE)
++ *     thresh start (TS)
++ *     thresh end (TE)
++ */
++EVENT(MEM_LOADS,				0x34340401e0)
++EVENT(MEM_STORES,				0x343c0401e0)
+diff --git a/arch/powerpc/perf/power9-pmu.c b/arch/powerpc/perf/power9-pmu.c
+index 0ff9c43733e9..030544e35959 100644
+--- a/arch/powerpc/perf/power9-pmu.c
++++ b/arch/powerpc/perf/power9-pmu.c
+@@ -160,6 +160,8 @@ GENERIC_EVENT_ATTR(branch-instructions,		PM_BR_CMPL);
+ GENERIC_EVENT_ATTR(branch-misses,		PM_BR_MPRED_CMPL);
+ GENERIC_EVENT_ATTR(cache-references,		PM_LD_REF_L1);
+ GENERIC_EVENT_ATTR(cache-misses,		PM_LD_MISS_L1_FIN);
++GENERIC_EVENT_ATTR(mem-loads,			MEM_LOADS);
++GENERIC_EVENT_ATTR(mem-stores,			MEM_STORES);
+ 
+ CACHE_EVENT_ATTR(L1-dcache-load-misses,		PM_LD_MISS_L1_FIN);
+ CACHE_EVENT_ATTR(L1-dcache-loads,		PM_LD_REF_L1);
+@@ -185,6 +187,8 @@ static struct attribute *power9_events_attr[] = {
+ 	GENERIC_EVENT_PTR(PM_BR_MPRED_CMPL),
+ 	GENERIC_EVENT_PTR(PM_LD_REF_L1),
+ 	GENERIC_EVENT_PTR(PM_LD_MISS_L1_FIN),
++	GENERIC_EVENT_PTR(MEM_LOADS),
++	GENERIC_EVENT_PTR(MEM_STORES),
+ 	CACHE_EVENT_PTR(PM_LD_MISS_L1_FIN),
+ 	CACHE_EVENT_PTR(PM_LD_REF_L1),
+ 	CACHE_EVENT_PTR(PM_L1_PREF),
+-- 
+cgit 1.2-0.3.lf.el7
+

@@ -1,0 +1,144 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Thu, 28 Jun 2018 10:47:14 +1000
+Subject: [PATCH] cifs: fix SMB1 breakage
+Git-commit: 81f39f951b8098b1c59b01ad10d06d7dc01c7019
+Patch-mainline: v4.18-rc4
+References: bsc#1144333
+
+SMB1 mounting broke in commit 35e2cc1ba755
+("cifs: Use correct packet length in SMB2_TRANSFORM header")
+Fix it and also rename smb2_rqst_len to smb_rqst_len
+to make it less unobvious that the function is also called from
+CIFS/SMB1
+
+Good job by Paulo reviewing and cleaning up Ronnie's original patch.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Reviewed-by: Paulo Alcantara <palcantara@suse.de>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c   | 2 +-
+ fs/cifs/smb2proto.h | 4 ++--
+ fs/cifs/smbdirect.c | 5 +++--
+ fs/cifs/smbdirect.h | 4 ++--
+ fs/cifs/transport.c | 9 +++++----
+ 5 files changed, 13 insertions(+), 11 deletions(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index e9216ce88796..04578f6e306b 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -2522,7 +2522,7 @@ smb3_init_transform_rq(struct TCP_Server_Info *server, struct smb_rqst *new_rq,
+ 	if (!tr_hdr)
+ 		goto err_free_iov;
+ 
+-	orig_len = smb2_rqst_len(old_rq, false);
++	orig_len = smb_rqst_len(server, old_rq);
+ 
+ 	/* fill the 2nd iov with a transform header */
+ 	fill_transform_hdr(tr_hdr, orig_len, old_rq);
+diff --git a/fs/cifs/smb2proto.h b/fs/cifs/smb2proto.h
+index 3ae208ac2a77..6e6a4f2ec890 100644
+--- a/fs/cifs/smb2proto.h
++++ b/fs/cifs/smb2proto.h
+@@ -113,8 +113,8 @@ extern int smb2_unlock_range(struct cifsFileInfo *cfile,
+ extern int smb2_push_mandatory_locks(struct cifsFileInfo *cfile);
+ extern void smb2_reconnect_server(struct work_struct *work);
+ extern int smb3_crypto_aead_allocate(struct TCP_Server_Info *server);
+-extern unsigned long
+-smb2_rqst_len(struct smb_rqst *rqst, bool skip_rfc1002_marker);
++extern unsigned long smb_rqst_len(struct TCP_Server_Info *server,
++				  struct smb_rqst *rqst);
+ 
+ /*
+  * SMB2 Worker functions - most of protocol specific implementation details
+diff --git a/fs/cifs/smbdirect.c b/fs/cifs/smbdirect.c
+index 6fd94d9ffac2..c55ea4e6201b 100644
+--- a/fs/cifs/smbdirect.c
++++ b/fs/cifs/smbdirect.c
+@@ -2083,8 +2083,9 @@ int smbd_recv(struct smbd_connection *info, struct msghdr *msg)
+  * rqst: the data to write
+  * return value: 0 if successfully write, otherwise error code
+  */
+-int smbd_send(struct smbd_connection *info, struct smb_rqst *rqst)
++int smbd_send(struct TCP_Server_Info *server, struct smb_rqst *rqst)
+ {
++	struct smbd_connection *info = server->smbd_conn;
+ 	struct kvec vec;
+ 	int nvecs;
+ 	int size;
+@@ -2118,7 +2119,7 @@ int smbd_send(struct smbd_connection *info, struct smb_rqst *rqst)
+ 	 * rq_tailsz to PAGE_SIZE when the buffer has multiple pages and
+ 	 * ends at page boundary
+ 	 */
+-	buflen = smb2_rqst_len(rqst, true);
++	buflen = smb_rqst_len(server, rqst);
+ 
+ 	if (buflen + sizeof(struct smbd_data_transfer) >
+ 		info->max_fragmented_send_size) {
+diff --git a/fs/cifs/smbdirect.h b/fs/cifs/smbdirect.h
+index 1e419c21dc60..a11096254f29 100644
+--- a/fs/cifs/smbdirect.h
++++ b/fs/cifs/smbdirect.h
+@@ -292,7 +292,7 @@ void smbd_destroy(struct smbd_connection *info);
+ 
+ /* Interface for carrying upper layer I/O through send/recv */
+ int smbd_recv(struct smbd_connection *info, struct msghdr *msg);
+-int smbd_send(struct smbd_connection *info, struct smb_rqst *rqst);
++int smbd_send(struct TCP_Server_Info *server, struct smb_rqst *rqst);
+ 
+ enum mr_state {
+ 	MR_READY,
+@@ -332,7 +332,7 @@ static inline void *smbd_get_connection(
+ static inline int smbd_reconnect(struct TCP_Server_Info *server) {return -1; }
+ static inline void smbd_destroy(struct smbd_connection *info) {}
+ static inline int smbd_recv(struct smbd_connection *info, struct msghdr *msg) {return -1; }
+-static inline int smbd_send(struct smbd_connection *info, struct smb_rqst *rqst) {return -1; }
++static inline int smbd_send(struct TCP_Server_Info *server, struct smb_rqst *rqst) {return -1; }
+ #endif
+ 
+ #endif
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 208ecb830466..a341ec839c83 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -218,14 +218,15 @@ smb_send_kvec(struct TCP_Server_Info *server, struct msghdr *smb_msg,
+ }
+ 
+ unsigned long
+-smb2_rqst_len(struct smb_rqst *rqst, bool skip_rfc1002_marker)
++smb_rqst_len(struct TCP_Server_Info *server, struct smb_rqst *rqst)
+ {
+ 	unsigned int i;
+ 	struct kvec *iov;
+ 	int nvec;
+ 	unsigned long buflen = 0;
+ 
+-	if (skip_rfc1002_marker && rqst->rq_iov[0].iov_len == 4) {
++	if (server->vals->header_preamble_size == 0 &&
++	    rqst->rq_nvec >= 2 && rqst->rq_iov[0].iov_len == 4) {
+ 		iov = &rqst->rq_iov[1];
+ 		nvec = rqst->rq_nvec - 1;
+ 	} else {
+@@ -276,7 +277,7 @@ __smb_send_rqst(struct TCP_Server_Info *server, int num_rqst,
+ 	__be32 rfc1002_marker;
+ 
+ 	if (cifs_rdma_enabled(server) && server->smbd_conn) {
+-		rc = smbd_send(server->smbd_conn, rqst);
++		rc = smbd_send(server, rqst);
+ 		goto smbd_done;
+ 	}
+ 	if (ssocket == NULL)
+@@ -287,7 +288,7 @@ __smb_send_rqst(struct TCP_Server_Info *server, int num_rqst,
+ 				(char *)&val, sizeof(val));
+ 
+ 	for (j = 0; j < num_rqst; j++)
+-		send_length += smb2_rqst_len(&rqst[j], true);
++		send_length += smb_rqst_len(server, &rqst[j]);
+ 	rfc1002_marker = cpu_to_be32(send_length);
+ 
+ 	/* Generate a rfc1002 marker for SMB2+ */
+-- 
+2.16.4
+

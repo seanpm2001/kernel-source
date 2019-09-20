@@ -15,9 +15,9 @@ Reviewed-by: Hendrik Brueckner <brueckner@linux.ibm.com>
 Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
 Acked-by: Petr Tesarik <ptesarik@suse.com>
 ---
- arch/s390/kernel/perf_cpum_cf.c        |    4 -
+ arch/s390/kernel/perf_cpum_cf.c        |   15 +++-
  arch/s390/kernel/perf_cpum_cf_events.c |  107 ++++++++++++++++++++++-----------
- 2 files changed, 75 insertions(+), 36 deletions(-)
+ 2 files changed, 84 insertions(+), 38 deletions(-)
 
 --- a/arch/s390/kernel/perf_cpum_cf.c
 +++ b/arch/s390/kernel/perf_cpum_cf.c
@@ -32,9 +32,39 @@ Acked-by: Petr Tesarik <ptesarik@suse.com>
   *
   * This program is free software; you can redistribute it and/or modify
   * it under the terms of the GNU General Public License (version 2 only)
+@@ -49,7 +49,7 @@ static enum cpumf_ctr_set get_counter_se
+ 		set = CPUMF_CTR_SET_USER;
+ 	else if (event < 128)
+ 		set = CPUMF_CTR_SET_CRYPTO;
+-	else if (event < 256)
++	else if (event < 288)
+ 		set = CPUMF_CTR_SET_EXT;
+ 	else if (event >= 448 && event < 496)
+ 		set = CPUMF_CTR_SET_MT_DIAG;
+@@ -73,12 +73,19 @@ static int validate_ctr_version(const st
+ 			err = -EOPNOTSUPP;
+ 		break;
+ 	case CPUMF_CTR_SET_CRYPTO:
++		if ((cpuhw->info.csvn >= 1 && cpuhw->info.csvn <= 5 &&
++		     hwc->config > 79) ||
++		    (cpuhw->info.csvn >= 6 && hwc->config > 83))
++			err = -EOPNOTSUPP;
++		break;
+ 	case CPUMF_CTR_SET_EXT:
+ 		if (cpuhw->info.csvn < 1)
+ 			err = -EOPNOTSUPP;
+ 		if ((cpuhw->info.csvn == 1 && hwc->config > 159) ||
+ 		    (cpuhw->info.csvn == 2 && hwc->config > 175) ||
+-		    (cpuhw->info.csvn  > 2 && hwc->config > 255))
++		    (cpuhw->info.csvn >= 3 && cpuhw->info.csvn <= 5
++		     && hwc->config > 255) ||
++		    (cpuhw->info.csvn >= 6 && hwc->config > 287))
+ 			err = -EOPNOTSUPP;
+ 		break;
+ 	case CPUMF_CTR_SET_MT_DIAG:
 --- a/arch/s390/kernel/perf_cpum_cf_events.c
 +++ b/arch/s390/kernel/perf_cpum_cf_events.c
-@@ -29,22 +29,26 @@ CPUMF_EVENT_ATTR(cf_fvn3, PROBLEM_STATE_
+@@ -30,22 +30,26 @@ CPUMF_EVENT_ATTR(cf_fvn3, PROBLEM_STATE_
  CPUMF_EVENT_ATTR(cf_fvn3, PROBLEM_STATE_INSTRUCTIONS, 0x0021);
  CPUMF_EVENT_ATTR(cf_fvn3, L1D_DIR_WRITES, 0x0004);
  CPUMF_EVENT_ATTR(cf_fvn3, L1D_PENALTY_CYCLES, 0x0005);
@@ -77,7 +107,7 @@ Acked-by: Petr Tesarik <ptesarik@suse.com>
  CPUMF_EVENT_ATTR(cf_z10, L1I_L2_SOURCED_WRITES, 0x0080);
  CPUMF_EVENT_ATTR(cf_z10, L1D_L2_SOURCED_WRITES, 0x0081);
  CPUMF_EVENT_ATTR(cf_z10, L1I_L3_LOCAL_WRITES, 0x0082);
-@@ -260,23 +264,47 @@ static struct attribute *cpumcf_fvn3_pmu
+@@ -261,23 +265,47 @@ static struct attribute *cpumcf_fvn3_pmu
  	NULL,
  };
  
@@ -142,7 +172,7 @@ Acked-by: Petr Tesarik <ptesarik@suse.com>
  	NULL,
  };
  
-@@ -560,7 +588,18 @@ __init const struct attribute_group **cp
+@@ -561,7 +589,18 @@ __init const struct attribute_group **cp
  	default:
  		cfvn = none;
  	}

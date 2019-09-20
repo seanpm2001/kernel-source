@@ -1,0 +1,41 @@
+From 7871aa60ae0086fe4626abdf5ed13eeddf306c61 Mon Sep 17 00:00:00 2001
+From: Eugen Hristev <eugen.hristev@microchip.com>
+Date: Thu, 8 Aug 2019 08:35:40 +0000
+Subject: [PATCH] mmc: sdhci-of-at91: add quirk for broken HS200
+Git-commit: 7871aa60ae0086fe4626abdf5ed13eeddf306c61
+Patch-mainline: v5.3-rc7
+References: bsc#1051510
+
+HS200 is not implemented in the driver, but the controller claims it
+through caps. Remove it via a quirk, to make sure the mmc core do not try
+to enable HS200, as it causes the eMMC initialization to fail.
+
+Signed-off-by: Eugen Hristev <eugen.hristev@microchip.com>
+Acked-by: Ludovic Desroches <ludovic.desroches@microchip.com>
+Acked-by: Adrian Hunter <adrian.hunter@intel.com>
+Fixes: bb5f8ea4d514 ("mmc: sdhci-of-at91: introduce driver for the Atmel SDMMC")
+Cc: stable@vger.kernel.org # v4.4+
+Signed-off-by: Ulf Hansson <ulf.hansson@linaro.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/mmc/host/sdhci-of-at91.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/mmc/host/sdhci-of-at91.c b/drivers/mmc/host/sdhci-of-at91.c
+index d4e7e8b7be77..e7d1920729fb 100644
+--- a/drivers/mmc/host/sdhci-of-at91.c
++++ b/drivers/mmc/host/sdhci-of-at91.c
+@@ -357,6 +357,9 @@ static int sdhci_at91_probe(struct platform_device *pdev)
+ 	pm_runtime_set_autosuspend_delay(&pdev->dev, 50);
+ 	pm_runtime_use_autosuspend(&pdev->dev);
+ 
++	/* HS200 is broken at this moment */
++	host->quirks2 = SDHCI_QUIRK2_BROKEN_HS200;
++
+ 	ret = sdhci_add_host(host);
+ 	if (ret)
+ 		goto pm_runtime_disable;
+-- 
+2.16.4
+

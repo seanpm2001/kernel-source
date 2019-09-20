@@ -1,0 +1,128 @@
+From: Christian Borntraeger <borntraeger@de.ibm.com>
+Date: Fri, 28 Dec 2018 09:33:35 +0100
+Subject: KVM: s390: add MSA9 to cpumodel
+Git-commit: 13209ad0395c4de7fa48108b1dac72e341d5c089
+Patch-mainline: v5.2-rc1
+References: jsc#SLE-6240 FATE#327380
+
+This enables stfle.155 and adds the subfunctions for KDSA. Bit 155 is
+added to the list of facilities that will be enabled when there is no
+cpu model involved as MSA9 requires no additional handling from
+userspace, e.g. for migration.
+
+Please note that a cpu model enabled user space can and will have the
+final decision on the facility bits for a guests.
+
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Acked-by: Janosch Frank <frankja@linux.ibm.com>
+Reviewed-by: Collin Walling <walling@linux.ibm.com>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Acked-by: Petr Tesarik <ptesarik@suse.com>
+---
+ Documentation/virtual/kvm/devices/vm.txt |    3 ++-
+ arch/s390/include/asm/cpacf.h            |    1 +
+ arch/s390/include/uapi/asm/kvm.h         |    3 ++-
+ arch/s390/kvm/kvm-s390.c                 |   13 +++++++++++++
+ arch/s390/tools/gen_facilities.c         |    1 +
+ tools/arch/s390/include/uapi/asm/kvm.h   |    3 ++-
+ 6 files changed, 21 insertions(+), 3 deletions(-)
+
+--- a/Documentation/virtual/kvm/devices/vm.txt
++++ b/Documentation/virtual/kvm/devices/vm.txt
+@@ -141,7 +141,8 @@ struct kvm_s390_vm_cpu_subfunc {
+        u8 pcc[16];           # valid with Message-Security-Assist-Extension 4
+        u8 ppno[16];          # valid with Message-Security-Assist-Extension 5
+        u8 kma[16];           # valid with Message-Security-Assist-Extension 8
+-       u8 reserved[1808];    # reserved for future instructions
++       u8 kdsa[16];          # valid with Message-Security-Assist-Extension 9
++       u8 reserved[1792];    # reserved for future instructions
+ };
+ 
+ Parameters: address of a buffer to load the subfunction blocks from.
+--- a/arch/s390/include/asm/cpacf.h
++++ b/arch/s390/include/asm/cpacf.h
+@@ -27,6 +27,7 @@
+ #define CPACF_KMCTR		0xb92d		/* MSA4 */
+ #define CPACF_PRNO		0xb93c		/* MSA5 */
+ #define CPACF_KMA		0xb929		/* MSA8 */
++#define CPACF_KDSA		0xb93a		/* MSA9 */
+ 
+ /*
+  * En/decryption modifier bits
+--- a/arch/s390/include/uapi/asm/kvm.h
++++ b/arch/s390/include/uapi/asm/kvm.h
+@@ -155,7 +155,8 @@ struct kvm_s390_vm_cpu_subfunc {
+ 	__u8 pcc[16];		/* with MSA4 */
+ 	__u8 ppno[16];		/* with MSA5 */
+ 	__u8 kma[16];		/* with MSA8 */
+-	__u8 reserved[1808];
++	__u8 kdsa[16];		/* with MSA9 */
++	__u8 reserved[1792];
+ };
+ 
+ /* kvm attributes for crypto */
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -349,6 +349,10 @@ static void kvm_s390_cpu_feat_init(void)
+ 		__cpacf_query(CPACF_KMA, (cpacf_mask_t *)
+ 			      kvm_s390_available_subfunc.kma);
+ 
++	if (test_facility(155)) /* MSA9 */
++		__cpacf_query(CPACF_KDSA, (cpacf_mask_t *)
++			      kvm_s390_available_subfunc.kdsa);
++
+ 	if (MACHINE_HAS_ESOP)
+ 		allow_cpu_feat(KVM_S390_VM_CPU_FEAT_ESOP);
+ 	/*
+@@ -1319,6 +1323,9 @@ static int kvm_s390_set_processor_subfun
+ 	VM_EVENT(kvm, 3, "SET: guest KMA    subfunc 0x%16.16lx.%16.16lx",
+ 		 ((unsigned long *) &kvm->arch.model.subfuncs.kma)[0],
+ 		 ((unsigned long *) &kvm->arch.model.subfuncs.kma)[1]);
++	VM_EVENT(kvm, 3, "SET: guest KDSA   subfunc 0x%16.16lx.%16.16lx",
++		 ((unsigned long *) &kvm->arch.model.subfuncs.kdsa)[0],
++		 ((unsigned long *) &kvm->arch.model.subfuncs.kdsa)[1]);
+ 
+ 	return 0;
+ }
+@@ -1479,6 +1486,9 @@ static int kvm_s390_get_processor_subfun
+ 	VM_EVENT(kvm, 3, "GET: guest KMA    subfunc 0x%16.16lx.%16.16lx",
+ 		 ((unsigned long *) &kvm->arch.model.subfuncs.kma)[0],
+ 		 ((unsigned long *) &kvm->arch.model.subfuncs.kma)[1]);
++	VM_EVENT(kvm, 3, "GET: guest KDSA   subfunc 0x%16.16lx.%16.16lx",
++		 ((unsigned long *) &kvm->arch.model.subfuncs.kdsa)[0],
++		 ((unsigned long *) &kvm->arch.model.subfuncs.kdsa)[1]);
+ 
+ 	return 0;
+ }
+@@ -1534,6 +1544,9 @@ static int kvm_s390_get_machine_subfunc(
+ 	VM_EVENT(kvm, 3, "GET: host  KMA    subfunc 0x%16.16lx.%16.16lx",
+ 		 ((unsigned long *) &kvm_s390_available_subfunc.kma)[0],
+ 		 ((unsigned long *) &kvm_s390_available_subfunc.kma)[1]);
++	VM_EVENT(kvm, 3, "GET: host  KDSA   subfunc 0x%16.16lx.%16.16lx",
++		 ((unsigned long *) &kvm_s390_available_subfunc.kdsa)[0],
++		 ((unsigned long *) &kvm_s390_available_subfunc.kdsa)[1]);
+ 
+ 	return 0;
+ }
+--- a/arch/s390/tools/gen_facilities.c
++++ b/arch/s390/tools/gen_facilities.c
+@@ -94,6 +94,7 @@ static struct facility_def facility_defs
+ 			131, /* enhanced-SOP 2 and side-effect */
+ 			139, /* multiple epoch facility */
+ 			146, /* msa extension 8 */
++			155, /* msa extension 9 */
+ 			-1  /* END */
+ 		}
+ 	},
+--- a/tools/arch/s390/include/uapi/asm/kvm.h
++++ b/tools/arch/s390/include/uapi/asm/kvm.h
+@@ -148,7 +148,8 @@ struct kvm_s390_vm_cpu_subfunc {
+ 	__u8 pcc[16];		/* with MSA4 */
+ 	__u8 ppno[16];		/* with MSA5 */
+ 	__u8 kma[16];		/* with MSA8 */
+-	__u8 reserved[1808];
++	__u8 kdsa[16];		/* with MSA9 */
++	__u8 reserved[1792];
+ };
+ 
+ /* kvm attributes for crypto */

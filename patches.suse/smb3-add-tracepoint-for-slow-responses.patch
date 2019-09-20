@@ -1,0 +1,93 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Wed, 1 Aug 2018 16:38:07 -0500
+Subject: [PATCH] smb3: add tracepoint for slow responses
+Git-commit: 020eec5f712ffb4254233490076cc21600b810db
+Patch-mainline: v4.18
+References: bsc#1144333
+
+If responses take longer than one second from the server,
+we can optionally log them to dmesg in current cifs.ko code
+(CONFIG_CIFS_STATS2 must be configured and a
+/proc/fs/cifs/cifsFYI flag must be set), but can be more useful
+to log these via ftrace (tracepoint is smb3_slow_rsp) which
+is easier and more granular (still requires CONFIG_CIFS_STATS2
+to be configured in the build though).
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/trace.h     | 37 +++++++++++++++++++++++++++++++++++++
+ fs/cifs/transport.c |  8 ++++++--
+ 2 files changed, 43 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/trace.h b/fs/cifs/trace.h
+index 6b50b57e2416..d4aed5217a56 100644
+--- a/fs/cifs/trace.h
++++ b/fs/cifs/trace.h
+@@ -283,6 +283,43 @@ DEFINE_EVENT(smb3_cmd_done_class, smb3_##name,    \
+ DEFINE_SMB3_CMD_DONE_EVENT(cmd_done);
+ DEFINE_SMB3_CMD_DONE_EVENT(ses_expired);
+ 
++DECLARE_EVENT_CLASS(smb3_mid_class,
++	TP_PROTO(__u16	cmd,
++		__u64	mid,
++		__u32	pid,
++		unsigned long when_sent,
++		unsigned long when_received),
++	TP_ARGS(cmd, mid, pid, when_sent, when_received),
++	TP_STRUCT__entry(
++		__field(__u16, cmd)
++		__field(__u64, mid)
++		__field(__u32, pid)
++		__field(unsigned long, when_sent)
++		__field(unsigned long, when_received)
++	),
++	TP_fast_assign(
++		__entry->cmd = cmd;
++		__entry->mid = mid;
++		__entry->pid = pid;
++		__entry->when_sent = when_sent;
++		__entry->when_received = when_received;
++	),
++	TP_printk("\tcmd=%u mid=%llu pid=%u, when_sent=%lu when_rcv=%lu",
++		__entry->cmd, __entry->mid, __entry->pid, __entry->when_sent,
++		__entry->when_received)
++)
++
++#define DEFINE_SMB3_MID_EVENT(name)          \
++DEFINE_EVENT(smb3_mid_class, smb3_##name,    \
++	TP_PROTO(__u16	cmd,			\
++		__u64	mid,			\
++		__u32	pid,			\
++		unsigned long when_sent,	\
++		unsigned long when_received),	\
++	TP_ARGS(cmd, mid, pid, when_sent, when_received))
++
++DEFINE_SMB3_MID_EVENT(slow_rsp);
++
+ DECLARE_EVENT_CLASS(smb3_exit_err_class,
+ 	TP_PROTO(unsigned int xid,
+ 		const char *func_name,
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 0b9d0e859f86..92de5c528161 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -115,8 +115,12 @@ DeleteMidQEntry(struct mid_q_entry *midEntry)
+ 	now = jiffies;
+ 	/* commands taking longer than one second are indications that
+ 	   something is wrong, unless it is quite a slow link or server */
+-	if (time_after(now, midEntry->when_alloc + HZ)) {
+-		if ((cifsFYI & CIFS_TIMER) && (midEntry->command != command)) {
++	if (time_after(now, midEntry->when_alloc + HZ) &&
++	    (midEntry->command != command)) {
++		trace_smb3_slow_rsp(le16_to_cpu(midEntry->command),
++			       midEntry->mid, midEntry->pid,
++			       midEntry->when_sent, midEntry->when_received);
++		if (cifsFYI & CIFS_TIMER) {
+ 			pr_debug(" CIFS slow rsp: cmd %d mid %llu",
+ 			       midEntry->command, midEntry->mid);
+ 			pr_info(" A: 0x%lx S: 0x%lx R: 0x%lx\n",
+-- 
+2.16.4
+

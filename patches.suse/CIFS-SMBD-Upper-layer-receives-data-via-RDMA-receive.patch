@@ -1,0 +1,38 @@
+From: Long Li <longli@microsoft.com>
+Date: Wed, 22 Nov 2017 17:38:41 -0700
+Subject: [PATCH] CIFS: SMBD: Upper layer receives data via RDMA receive
+Git-commit: 2fef137a2e6a2e5a7984f991e6b9546ddd93c6f2
+Patch-mainline: v4.15
+References: bsc#1144333
+
+With SMB Direct connected, use it for receiving data via RDMA receive.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/connect.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index d8bfa89161e2..1677401660d0 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -542,8 +542,10 @@ cifs_readv_from_socket(struct TCP_Server_Info *server, struct msghdr *smb_msg)
+ 
+ 		if (server_unresponsive(server))
+ 			return -ECONNABORTED;
+-
+-		length = sock_recvmsg(server->ssocket, smb_msg, 0);
++		if (cifs_rdma_enabled(server) && server->smbd_conn)
++			length = smbd_recv(server->smbd_conn, smb_msg);
++		else
++			length = sock_recvmsg(server->ssocket, smb_msg, 0);
+ 
+ 		if (server->tcpStatus == CifsExiting)
+ 			return -ESHUTDOWN;
+-- 
+2.16.4
+

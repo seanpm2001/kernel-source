@@ -1,0 +1,88 @@
+From 858b44dc62a1018312fd9cbd15db24237a897e0e Mon Sep 17 00:00:00 2001
+From: "Darrick J. Wong" <darrick.wong@oracle.com>
+Date: Sun, 11 Aug 2019 15:52:26 -0700
+Subject: [PATCH] xfs: remove more ondisk directory corruption asserts
+Git-commit: 858b44dc62a1018312fd9cbd15db24237a897e0e
+Patch-mainline: v5.3-rc5
+References: bsc#1148034
+
+Continue our game of replacing ASSERTs for corrupt ondisk metadata with
+EFSCORRUPTED returns.
+
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Reviewed-by: Bill O'Donnell <billodo@redhat.com>
+Acked-by: Anthony Iliopoulos <ailiopoulos@suse.com>
+
+---
+ fs/xfs/libxfs/xfs_da_btree.c  | 19 ++++++++++++-------
+ fs/xfs/libxfs/xfs_dir2_node.c |  3 ++-
+ 2 files changed, 14 insertions(+), 8 deletions(-)
+
+diff --git a/fs/xfs/libxfs/xfs_da_btree.c b/fs/xfs/libxfs/xfs_da_btree.c
+index d1c77fd0815d..0bf56e94bfe9 100644
+--- a/fs/xfs/libxfs/xfs_da_btree.c
++++ b/fs/xfs/libxfs/xfs_da_btree.c
+@@ -487,10 +487,8 @@ xfs_da3_split(
+ 	ASSERT(state->path.active == 0);
+ 	oldblk = &state->path.blk[0];
+ 	error = xfs_da3_root_split(state, oldblk, addblk);
+-	if (error) {
+-		addblk->bp = NULL;
+-		return error;	/* GROT: dir is inconsistent */
+-	}
++	if (error)
++		goto out;
+ 
+ 	/*
+ 	 * Update pointers to the node which used to be block 0 and just got
+@@ -505,7 +503,10 @@ xfs_da3_split(
+ 	 */
+ 	node = oldblk->bp->b_addr;
+ 	if (node->hdr.info.forw) {
+-		ASSERT(be32_to_cpu(node->hdr.info.forw) == addblk->blkno);
++		if (be32_to_cpu(node->hdr.info.forw) != addblk->blkno) {
++			error = -EFSCORRUPTED;
++			goto out;
++		}
+ 		node = addblk->bp->b_addr;
+ 		node->hdr.info.back = cpu_to_be32(oldblk->blkno);
+ 		xfs_trans_log_buf(state->args->trans, addblk->bp,
+@@ -514,15 +515,19 @@ xfs_da3_split(
+ 	}
+ 	node = oldblk->bp->b_addr;
+ 	if (node->hdr.info.back) {
+-		ASSERT(be32_to_cpu(node->hdr.info.back) == addblk->blkno);
++		if (be32_to_cpu(node->hdr.info.back) != addblk->blkno) {
++			error = -EFSCORRUPTED;
++			goto out;
++		}
+ 		node = addblk->bp->b_addr;
+ 		node->hdr.info.forw = cpu_to_be32(oldblk->blkno);
+ 		xfs_trans_log_buf(state->args->trans, addblk->bp,
+ 				  XFS_DA_LOGRANGE(node, &node->hdr.info,
+ 				  sizeof(node->hdr.info)));
+ 	}
++out:
+ 	addblk->bp = NULL;
+-	return 0;
++	return error;
+ }
+ 
+ /*
+diff --git a/fs/xfs/libxfs/xfs_dir2_node.c b/fs/xfs/libxfs/xfs_dir2_node.c
+index afcc6642690a..1fc44efc344d 100644
+--- a/fs/xfs/libxfs/xfs_dir2_node.c
++++ b/fs/xfs/libxfs/xfs_dir2_node.c
+@@ -741,7 +741,8 @@ xfs_dir2_leafn_lookup_for_entry(
+ 	ents = dp->d_ops->leaf_ents_p(leaf);
+ 
+ 	xfs_dir3_leaf_check(dp, bp);
+-	ASSERT(leafhdr.count > 0);
++	if (leafhdr.count <= 0)
++		return -EFSCORRUPTED;
+ 
+ 	/*
+ 	 * Look up the hash value in the leaf entries.
+-- 
+2.16.4
+

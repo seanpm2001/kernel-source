@@ -5,7 +5,7 @@ Subject: [PATCH net-next] ibmveth: Update ethtool settings to reflect virtual
  properties
 
 References: bsc#1136157, LTC#177197
-Patch-mainline: no, tbd
+Patch-mainline: submitted https://patchwork.ozlabs.org/patch/1142940/
 
 As a paravirtual ethernet adapter, the current hardcoded ethtool
 link settings no longer reflect the actual capable speed of the
@@ -26,11 +26,9 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  drivers/net/ethernet/ibm/ibmveth.h |  3 ++
  2 files changed, 64 insertions(+), 22 deletions(-)
 
-diff --git a/drivers/net/ethernet/ibm/ibmveth.c b/drivers/net/ethernet/ibm/ibmveth.c
-index d654c234aaf7..77af9c2c0571 100644
 --- a/drivers/net/ethernet/ibm/ibmveth.c
 +++ b/drivers/net/ethernet/ibm/ibmveth.c
-@@ -712,31 +712,68 @@ static int ibmveth_close(struct net_device *netdev)
+@@ -725,31 +725,68 @@ static int ibmveth_close(struct net_devi
  	return 0;
  }
  
@@ -40,7 +38,9 @@ index d654c234aaf7..77af9c2c0571 100644
 +ibmveth_validate_ethtool_cmd(const struct ethtool_link_ksettings *cmd)
  {
 -	u32 supported, advertising;
--
++	struct ethtool_link_ksettings diff1 = *cmd;
++	struct ethtool_link_ksettings diff2 = {};
+ 
 -	supported = (SUPPORTED_1000baseT_Full | SUPPORTED_Autoneg |
 -				SUPPORTED_FIBRE);
 -	advertising = (ADVERTISED_1000baseT_Full | ADVERTISED_Autoneg |
@@ -55,9 +55,6 @@ index d654c234aaf7..77af9c2c0571 100644
 -						supported);
 -	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.advertising,
 -						advertising);
-+	struct ethtool_link_ksettings diff1 = *cmd;
-+	struct ethtool_link_ksettings diff2 = {};
-+
 +	diff2.base.port = PORT_OTHER;
 +	diff1.base.speed = 0;
 +	diff1.base.duplex = 0;
@@ -90,12 +87,10 @@ index d654c234aaf7..77af9c2c0571 100644
 +		return -EINVAL;
 +	adapter->speed = speed;
 +	adapter->duplex = duplex;
- 
- 	return 0;
- }
- 
--static void netdev_get_drvinfo(struct net_device *dev,
--			       struct ethtool_drvinfo *info)
++
++	return 0;
++}
++
 +static int ibmveth_get_link_ksettings(struct net_device *dev,
 +				      struct ethtool_link_ksettings *cmd)
 +{
@@ -104,10 +99,12 @@ index d654c234aaf7..77af9c2c0571 100644
 +	cmd->base.speed = adapter->speed;
 +	cmd->base.duplex = adapter->duplex;
 +	cmd->base.port = PORT_OTHER;
-+
-+	return 0;
-+}
-+
+ 
+ 	return 0;
+ }
+ 
+-static void netdev_get_drvinfo(struct net_device *dev,
+-			       struct ethtool_drvinfo *info)
 +static void ibmveth_init_link_settings(struct ibmveth_adapter *adapter)
 +{
 +	adapter->duplex = DUPLEX_UNKNOWN;
@@ -119,7 +116,7 @@ index d654c234aaf7..77af9c2c0571 100644
  {
  	strlcpy(info->driver, ibmveth_driver_name, sizeof(info->driver));
  	strlcpy(info->version, ibmveth_driver_version, sizeof(info->version));
-@@ -965,12 +1002,13 @@ static void ibmveth_get_ethtool_stats(struct net_device *dev,
+@@ -978,12 +1015,13 @@ static void ibmveth_get_ethtool_stats(st
  }
  
  static const struct ethtool_ops netdev_ethtool_ops = {
@@ -135,19 +132,17 @@ index d654c234aaf7..77af9c2c0571 100644
  };
  
  static int ibmveth_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
-@@ -1647,6 +1685,7 @@ static int ibmveth_probe(struct vio_dev *dev, const struct vio_device_id *id)
+@@ -1661,6 +1699,7 @@ static int ibmveth_probe(struct vio_dev
  	adapter->netdev = netdev;
- 	adapter->mcastFilterSize = *mcastFilterSize_p;
+ 	adapter->mcastFilterSize = be32_to_cpu(*mcastFilterSize_p);
  	adapter->pool_config = 0;
 +	ibmveth_init_link_settings(adapter);
  
  	netif_napi_add(netdev, &adapter->napi, ibmveth_poll, 16);
  
-diff --git a/drivers/net/ethernet/ibm/ibmveth.h b/drivers/net/ethernet/ibm/ibmveth.h
-index 4e9bf3421f4f..db96c8812d18 100644
 --- a/drivers/net/ethernet/ibm/ibmveth.h
 +++ b/drivers/net/ethernet/ibm/ibmveth.h
-@@ -162,6 +162,9 @@ struct ibmveth_adapter {
+@@ -174,6 +174,9 @@ struct ibmveth_adapter {
      u64 tx_send_failed;
      u64 tx_large_packets;
      u64 rx_large_packets;
@@ -157,6 +152,3 @@ index 4e9bf3421f4f..db96c8812d18 100644
  };
  
  /*
--- 
-2.12.3
-

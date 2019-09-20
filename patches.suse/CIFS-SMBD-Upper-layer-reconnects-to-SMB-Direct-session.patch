@@ -1,0 +1,38 @@
+From: Long Li <longli@microsoft.com>
+Date: Wed, 22 Nov 2017 17:38:36 -0700
+Subject: [PATCH] CIFS: SMBD: Upper layer reconnects to SMB Direct session
+Git-commit: 781a8050f2a8e1474a75122b7d940959cc579e14
+Patch-mainline: v4.15
+References: bsc#1144333
+
+Do a reconnect on SMB Direct when it is used as the connection. Reconnect can
+happen for many reasons and it's mostly the decision of SMB2 upper layer.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/connect.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index fafaecb5fb18..fc460663b308 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -406,7 +406,10 @@ cifs_reconnect(struct TCP_Server_Info *server)
+ 
+ 		/* we should try only the port we connected to before */
+ 		mutex_lock(&server->srv_mutex);
+-		rc = generic_ip_connect(server);
++		if (cifs_rdma_enabled(server))
++			rc = smbd_reconnect(server);
++		else
++			rc = generic_ip_connect(server);
+ 		if (rc) {
+ 			cifs_dbg(FYI, "reconnect error %d\n", rc);
+ 			mutex_unlock(&server->srv_mutex);
+-- 
+2.16.4
+

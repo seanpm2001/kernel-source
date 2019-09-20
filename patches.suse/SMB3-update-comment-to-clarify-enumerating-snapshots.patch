@@ -1,0 +1,37 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Thu, 4 Apr 2019 00:41:04 -0500
+Subject: [PATCH] SMB3: update comment to clarify enumerating snapshots
+Git-commit: 973189aba69e59f11d987c21bd18409e58ece6fd
+Patch-mainline: v5.2-rc1
+References: bsc#1144333
+
+Trivial update to comment suggested by Pavel.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smb2ops.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index c36ff0d1fe2a..ab4737e3c31f 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1821,6 +1821,14 @@ smb3_enum_snapshots(const unsigned int xid, struct cifs_tcon *tcon,
+ 	u32 max_response_size;
+ 	struct smb_snapshot_array snapshot_in;
+ 
++	/*
++	 * On the first query to enumerate the list of snapshots available
++	 * for this volume the buffer begins with 0 (number of snapshots
++	 * which can be returned is zero since at that point we do not know
++	 * how big the buffer needs to be). On the second query,
++	 * it (ret_data_len) is set to number of snapshots so we can
++	 * know to set the maximum response size larger (see below).
++	 */
+ 	if (get_user(ret_data_len, (unsigned int __user *)ioc_buf))
+ 		return -EFAULT;
+ 
+-- 
+2.22.0
+

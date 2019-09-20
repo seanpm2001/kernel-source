@@ -1,0 +1,45 @@
+From: Quinn Tran <qtran@marvell.com>
+Date: Tue, 2 Apr 2019 14:24:29 -0700
+Subject: scsi: qla2xxx: Cleanup fcport memory to prevent leak
+Patch-mainline: v5.2-rc1
+Git-commit: ffbc64766683634d2c233519f2e70d2123580108
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+Clean up fcport list and loopid in one place and iterate through for loop.
+
+Signed-off-by: Quinn Tran <qtran@marvell.com>
+Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_init.c |    2 ++
+ drivers/scsi/qla2xxx/qla_os.c   |    7 ++-----
+ 2 files changed, 4 insertions(+), 5 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_init.c
++++ b/drivers/scsi/qla2xxx/qla_init.c
+@@ -4821,6 +4821,8 @@ qla2x00_free_fcport(fc_port_t *fcport)
+ 
+ 		fcport->ct_desc.ct_sns = NULL;
+ 	}
++	list_del(&fcport->list);
++	qla2x00_clear_loop_id(fcport);
+ 	kfree(fcport);
+ }
+ 
+--- a/drivers/scsi/qla2xxx/qla_os.c
++++ b/drivers/scsi/qla2xxx/qla_os.c
+@@ -3915,11 +3915,8 @@ void qla2x00_free_fcports(struct scsi_ql
+ {
+ 	fc_port_t *fcport, *tfcport;
+ 
+-	list_for_each_entry_safe(fcport, tfcport, &vha->vp_fcports, list) {
+-		list_del(&fcport->list);
+-		qla2x00_clear_loop_id(fcport);
+-		kfree(fcport);
+-	}
++	list_for_each_entry_safe(fcport, tfcport, &vha->vp_fcports, list)
++		qla2x00_free_fcport(fcport);
+ }
+ 
+ static inline void

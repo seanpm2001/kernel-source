@@ -1,0 +1,54 @@
+From: Long Li <longli@microsoft.com>
+Date: Wed, 22 Nov 2017 17:38:43 -0700
+Subject: [PATCH] CIFS: SMBD: Upper layer sends data via RDMA send
+Git-commit: 9762c2d080926b7c292cb7c64ca6030e88d6a6e4
+Patch-mainline: v4.15
+References: bsc#1144333
+
+With SMB Direct connected, use it for sending data via RDMA send.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/transport.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 510f41a435c8..9779b3292d8e 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -37,6 +37,7 @@
+ #include "cifsglob.h"
+ #include "cifsproto.h"
+ #include "cifs_debug.h"
++#include "smbdirect.h"
+ 
+ /* Max number of iovectors we can use off the stack when sending requests. */
+ #define CIFS_MAX_IOV_SIZE 8
+@@ -232,7 +233,10 @@ __smb_send_rqst(struct TCP_Server_Info *server, struct smb_rqst *rqst)
+ 	struct socket *ssocket = server->ssocket;
+ 	struct msghdr smb_msg;
+ 	int val = 1;
+-
++	if (cifs_rdma_enabled(server) && server->smbd_conn) {
++		rc = smbd_send(server->smbd_conn, rqst);
++		goto smbd_done;
++	}
+ 	if (ssocket == NULL)
+ 		return -ENOTSOCK;
+ 
+@@ -301,7 +305,7 @@ __smb_send_rqst(struct TCP_Server_Info *server, struct smb_rqst *rqst)
+ 		 */
+ 		server->tcpStatus = CifsNeedReconnect;
+ 	}
+-
++smbd_done:
+ 	if (rc < 0 && rc != -EINTR)
+ 		cifs_dbg(VFS, "Error %d sending data on socket to server\n",
+ 			 rc);
+-- 
+2.16.4
+

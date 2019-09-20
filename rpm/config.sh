@@ -4,7 +4,7 @@ SRCVERSION=4.12
 VARIANT=-rt
 # buildservice projects to build the kernel against
 OBS_PROJECT=SUSE:SLE-12-SP4:Update
-IBS_PROJECT=SUSE:SLE-12-SP5:GA
+IBS_PROJECT=SUSE:SLE-12-SP5:Update
 # Bugzilla info
 BUGZILLA_SERVER="apibugzilla.suse.com"
 BUGZILLA_PRODUCT="SUSE Linux Enterprise Server 12 SP5"

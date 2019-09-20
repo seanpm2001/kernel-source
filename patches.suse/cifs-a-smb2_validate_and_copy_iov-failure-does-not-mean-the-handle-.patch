@@ -1,0 +1,45 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Mon, 1 Apr 2019 09:53:44 +1000
+Subject: [PATCH] cifs: a smb2_validate_and_copy_iov failure does not mean the
+ handle is invalid.
+Git-commit: 4811e3096daaa56e145a1d2bec45e2e9fe790729
+Patch-mainline: v5.1-rc4
+References: bsc#1144333
+
+It only means that we do not have a valid cached value for the
+file_all_info structure.
+
+CC: Stable <stable@vger.kernel.org>
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c | 8 +++-----
+ 1 file changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index b22be10ee980..00225e699d03 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -733,14 +733,12 @@ int open_shroot(unsigned int xid, struct cifs_tcon *tcon, struct cifs_fid *pfid)
+ 	qi_rsp = (struct smb2_query_info_rsp *)rsp_iov[1].iov_base;
+ 	if (le32_to_cpu(qi_rsp->OutputBufferLength) < sizeof(struct smb2_file_all_info))
+ 		goto oshr_exit;
+-	rc = smb2_validate_and_copy_iov(
++	if (!smb2_validate_and_copy_iov(
+ 				le16_to_cpu(qi_rsp->OutputBufferOffset),
+ 				sizeof(struct smb2_file_all_info),
+ 				&rsp_iov[1], sizeof(struct smb2_file_all_info),
+-				(char *)&tcon->crfid.file_all_info);
+-	if (rc)
+-		goto oshr_exit;
+-	tcon->crfid.file_all_info_is_valid = 1;
++				(char *)&tcon->crfid.file_all_info))
++		tcon->crfid.file_all_info_is_valid = 1;
+ 
+  oshr_exit:
+ 	mutex_unlock(&tcon->crfid.fid_mutex);
+-- 
+2.16.4
+

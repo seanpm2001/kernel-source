@@ -1,0 +1,243 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Tue, 27 Nov 2018 09:52:04 +1000
+Subject: [PATCH] cifs: change smb2_query_eas to use the compound query-info
+ helper
+Git-commit: f9793b6fcc8ede4c2eb5f2d5816b1c8b4f927032
+Patch-mainline: v5.0-rc1
+References: bsc#1144333
+
+Reducing the number of network roundtrips improves the performance
+of query xattrs
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c   | 105 +++++++++++++++++++++-------------------------------
+ fs/cifs/smb2pdu.c   |  12 ------
+ fs/cifs/smb2pdu.h   |   1 -
+ fs/cifs/smb2proto.h |  10 +++--
+ 4 files changed, 49 insertions(+), 79 deletions(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index daa7115adc5f..6c99a146fcec 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -831,72 +831,48 @@ smb2_query_eas(const unsigned int xid, struct cifs_tcon *tcon,
+ {
+ 	int rc;
+ 	__le16 *utf16_path;
+-	__u8 oplock = SMB2_OPLOCK_LEVEL_NONE;
+-	struct cifs_open_parms oparms;
+-	struct cifs_fid fid;
+-	struct smb2_file_full_ea_info *smb2_data;
+-	int ea_buf_size = SMB2_MIN_EA_BUF;
++	struct kvec rsp_iov = {NULL, 0};
++	int buftype = CIFS_NO_BUFFER;
++	struct smb2_query_info_rsp *rsp;
++	struct smb2_file_full_ea_info *info = NULL;
+ 
+ 	utf16_path = cifs_convert_path_to_utf16(path, cifs_sb);
+ 	if (!utf16_path)
+ 		return -ENOMEM;
+ 
+-	oparms.tcon = tcon;
+-	oparms.desired_access = FILE_READ_EA;
+-	oparms.disposition = FILE_OPEN;
+-	if (backup_cred(cifs_sb))
+-		oparms.create_options = CREATE_OPEN_BACKUP_INTENT;
+-	else
+-		oparms.create_options = 0;
+-	oparms.fid = &fid;
+-	oparms.reconnect = false;
+-
+-	rc = SMB2_open(xid, &oparms, utf16_path, &oplock, NULL, NULL, NULL);
+-	kfree(utf16_path);
++	rc = smb2_query_info_compound(xid, tcon, utf16_path,
++				      FILE_READ_EA,
++				      FILE_FULL_EA_INFORMATION,
++				      SMB2_O_INFO_FILE,
++				      SMB2_MAX_EA_BUF,
++				      &rsp_iov, &buftype, cifs_sb);
+ 	if (rc) {
+-		cifs_dbg(FYI, "open failed rc=%d\n", rc);
+-		return rc;
+-	}
+-
+-	while (1) {
+-		smb2_data = kzalloc(ea_buf_size, GFP_KERNEL);
+-		if (smb2_data == NULL) {
+-			SMB2_close(xid, tcon, fid.persistent_fid,
+-				   fid.volatile_fid);
+-			return -ENOMEM;
+-		}
+-
+-		rc = SMB2_query_eas(xid, tcon, fid.persistent_fid,
+-				    fid.volatile_fid,
+-				    ea_buf_size, smb2_data);
+-
+-		if (rc != -E2BIG)
+-			break;
+-
+-		kfree(smb2_data);
+-		ea_buf_size <<= 1;
+-
+-		if (ea_buf_size > SMB2_MAX_EA_BUF) {
+-			cifs_dbg(VFS, "EA size is too large\n");
+-			SMB2_close(xid, tcon, fid.persistent_fid,
+-				   fid.volatile_fid);
+-			return -ENOMEM;
+-		}
++		/*
++		 * If ea_name is NULL (listxattr) and there are no EAs,
++		 * return 0 as it's not an error. Otherwise, the specified
++		 * ea_name was not found.
++		 */
++		if (!ea_name && rc == -ENODATA)
++			rc = 0;
++		goto qeas_exit;
+ 	}
+ 
+-	SMB2_close(xid, tcon, fid.persistent_fid, fid.volatile_fid);
++	rsp = (struct smb2_query_info_rsp *)rsp_iov.iov_base;
++	rc = smb2_validate_iov(le16_to_cpu(rsp->OutputBufferOffset),
++			       le32_to_cpu(rsp->OutputBufferLength),
++			       &rsp_iov,
++			       sizeof(struct smb2_file_full_ea_info));
++	if (rc)
++		goto qeas_exit;
+ 
+-	/*
+-	 * If ea_name is NULL (listxattr) and there are no EAs, return 0 as it's
+-	 * not an error. Otherwise, the specified ea_name was not found.
+-	 */
+-	if (!rc)
+-		rc = move_smb2_ea_to_cifs(ea_data, buf_size, smb2_data,
+-					  SMB2_MAX_EA_BUF, ea_name);
+-	else if (!ea_name && rc == -ENODATA)
+-		rc = 0;
++	info = (struct smb2_file_full_ea_info *)(
++			le16_to_cpu(rsp->OutputBufferOffset) + (char *)rsp);
++	rc = move_smb2_ea_to_cifs(ea_data, buf_size, info,
++			le32_to_cpu(rsp->OutputBufferLength), ea_name);
+ 
+-	kfree(smb2_data);
++ qeas_exit:
++	kfree(utf16_path);
++	free_rsp_buf(buftype, rsp_iov.iov_base);
+ 	return rc;
+ }
+ 
+@@ -1841,11 +1817,12 @@ smb2_set_next_command(struct TCP_Server_Info *server, struct smb_rqst *rqst,
+  * Passes the query info response back to the caller on success.
+  * Caller need to free this with free_rsp_buf().
+  */
+-static int
++int
+ smb2_query_info_compound(const unsigned int xid, struct cifs_tcon *tcon,
+ 			 __le16 *utf16_path, u32 desired_access,
+ 			 u32 class, u32 type, u32 output_len,
+-			 struct kvec *rsp, int *buftype)
++			 struct kvec *rsp, int *buftype,
++			 struct cifs_sb_info *cifs_sb)
+ {
+ 	struct cifs_ses *ses = tcon->ses;
+ 	struct TCP_Server_Info *server = ses->server;
+@@ -1875,7 +1852,10 @@ smb2_query_info_compound(const unsigned int xid, struct cifs_tcon *tcon,
+ 	oparms.tcon = tcon;
+ 	oparms.desired_access = desired_access;
+ 	oparms.disposition = FILE_OPEN;
+-	oparms.create_options = 0;
++	if (cifs_sb && backup_cred(cifs_sb))
++		oparms.create_options = CREATE_OPEN_BACKUP_INTENT;
++	else
++		oparms.create_options = 0;
+ 	oparms.fid = &fid;
+ 	oparms.reconnect = false;
+ 
+@@ -1908,9 +1888,10 @@ smb2_query_info_compound(const unsigned int xid, struct cifs_tcon *tcon,
+ 
+ 	rc = compound_send_recv(xid, ses, flags, 3, rqst,
+ 				resp_buftype, rsp_iov);
+-	if (rc)
++	if (rc) {
++		free_rsp_buf(resp_buftype[1], rsp_iov[1].iov_base);
+ 		goto qic_exit;
+-
++	}
+ 	*rsp = rsp_iov[1];
+ 	*buftype = resp_buftype[1];
+ 
+@@ -1940,7 +1921,7 @@ smb2_queryfs(const unsigned int xid, struct cifs_tcon *tcon,
+ 				      FS_FULL_SIZE_INFORMATION,
+ 				      SMB2_O_INFO_FILESYSTEM,
+ 				      sizeof(struct smb2_fs_full_size_info),
+-				      &rsp_iov, &buftype);
++				      &rsp_iov, &buftype, NULL);
+ 	if (rc)
+ 		goto qfs_exit;
+ 
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 27f86537a5d1..448031898dd4 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -2768,18 +2768,6 @@ query_info(const unsigned int xid, struct cifs_tcon *tcon,
+ 	return rc;
+ }
+ 
+-int SMB2_query_eas(const unsigned int xid, struct cifs_tcon *tcon,
+-		   u64 persistent_fid, u64 volatile_fid,
+-		   int ea_buf_size, struct smb2_file_full_ea_info *data)
+-{
+-	return query_info(xid, tcon, persistent_fid, volatile_fid,
+-			  FILE_FULL_EA_INFORMATION, SMB2_O_INFO_FILE, 0,
+-			  ea_buf_size,
+-			  sizeof(struct smb2_file_full_ea_info),
+-			  (void **)&data,
+-			  NULL);
+-}
+-
+ int SMB2_query_info(const unsigned int xid, struct cifs_tcon *tcon,
+ 	u64 persistent_fid, u64 volatile_fid, struct smb2_file_all_info *data)
+ {
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index 5671d5ee7f58..05dea6750c33 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -1398,7 +1398,6 @@ struct smb2_file_link_info { /* encoding of request for level 11 */
+ 	char   FileName[0];     /* Name to be assigned to new link */
+ } __packed; /* level 11 Set */
+ 
+-#define SMB2_MIN_EA_BUF  2048
+ #define SMB2_MAX_EA_BUF 65536
+ 
+ struct smb2_file_full_ea_info { /* encoding of response for level 15 */
+diff --git a/fs/cifs/smb2proto.h b/fs/cifs/smb2proto.h
+index 2fe78acd7d0c..4029ee037ab4 100644
+--- a/fs/cifs/smb2proto.h
++++ b/fs/cifs/smb2proto.h
+@@ -154,10 +154,6 @@ extern int SMB2_close_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
+ extern void SMB2_close_free(struct smb_rqst *rqst);
+ extern int SMB2_flush(const unsigned int xid, struct cifs_tcon *tcon,
+ 		      u64 persistent_file_id, u64 volatile_file_id);
+-extern int SMB2_query_eas(const unsigned int xid, struct cifs_tcon *tcon,
+-			  u64 persistent_file_id, u64 volatile_file_id,
+-			  int ea_buf_size,
+-			  struct smb2_file_full_ea_info *data);
+ extern int SMB2_query_info(const unsigned int xid, struct cifs_tcon *tcon,
+ 			   u64 persistent_file_id, u64 volatile_file_id,
+ 			   struct smb2_file_all_info *data);
+@@ -241,4 +237,10 @@ extern void smb2_copy_fs_info_to_kstatfs(
+ extern int smb311_crypto_shash_allocate(struct TCP_Server_Info *server);
+ extern int smb311_update_preauth_hash(struct cifs_ses *ses,
+ 				      struct kvec *iov, int nvec);
++extern int smb2_query_info_compound(const unsigned int xid,
++				    struct cifs_tcon *tcon,
++				    __le16 *utf16_path, u32 desired_access,
++				    u32 class, u32 type, u32 output_len,
++				    struct kvec *rsp, int *buftype,
++				    struct cifs_sb_info *cifs_sb);
+ #endif			/* _SMB2PROTO_H */
+-- 
+2.16.4
+

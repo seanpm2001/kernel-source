@@ -1,0 +1,39 @@
+From: Julian Wiedmann <jwi@linux.ibmi.com>
+Subject: s390/qdio: handle PENDING state for QEBSM devices
+Git-commit: 04310324c6f482921c071444833e70fe861b73d9
+Patch-mainline: v5.2-rc3
+References: bsc#1142117 bsc#1142118 bsc#1142119 LTC#179329 LTC#179330 LTC#179331
+
+When a CQ-enabled device uses QEBSM for SBAL state inspection,
+get_buf_states() can return the PENDING state for an Output Queue.
+get_outbound_buffer_frontier() isn't prepared for this, and any PENDING
+buffer will permanently stall all further completion processing on this
+Queue.
+
+This isn't a concern for non-QEBSM devices, as get_buf_states() for such
+devices will manually turn PENDING buffers into EMPTY ones.
+
+Fixes: 104ea556ee7f ("qdio: support asynchronous delivery of storage blocks")
+Signed-off-by: Julian Wiedmann <jwi@linux.ibm.com>
+Signed-off-by: Heiko Carstens <heiko.carstens@de.ibm.com>
+Acked-by: Denis Kirjanov <dkirjanov@suse.com>
+Acked-by: Petr Tesarik <ptesarik@suse.com>
+---
+ drivers/s390/cio/qdio_main.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/s390/cio/qdio_main.c b/drivers/s390/cio/qdio_main.c
+index 7b7620de2acd..730c4e68094b 100644
+--- a/drivers/s390/cio/qdio_main.c
++++ b/drivers/s390/cio/qdio_main.c
+@@ -736,6 +736,7 @@ static int get_outbound_buffer_frontier(struct qdio_q *q, unsigned int start)
+ 
+ 	switch (state) {
+ 	case SLSB_P_OUTPUT_EMPTY:
++	case SLSB_P_OUTPUT_PENDING:
+ 		/* the adapter got it */
+ 		DBF_DEV_EVENT(DBF_INFO, q->irq_ptr,
+ 			"out empty:%1d %02x", q->nr, count);
+-- 
+2.21.0
+

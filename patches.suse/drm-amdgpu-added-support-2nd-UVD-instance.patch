@@ -1,0 +1,63 @@
+From d4e838431d56ac132a7f387b34e5c9f227dce428 Mon Sep 17 00:00:00 2001
+From: Evan Quan <evan.quan@amd.com>
+Date: Tue, 14 Aug 2018 14:53:52 -0400
+Subject: [PATCH] drm/amdgpu: added support 2nd UVD instance
+Git-commit: d4e838431d56ac132a7f387b34e5c9f227dce428
+Patch-mainline: v4.20-rc1
+References: bsc#1143331
+
+[ backport note: the code change for psp_v11_0.c is dropped -- tiwai ]
+
+Added psp fw loading support for vega20 2nd UVD instance.
+
+Signed-off-by: Evan Quan <evan.quan@amd.com>
+Acked-by: Huang Rui <ray.huang@amd.com>
+Reviewed-by: Alex Deucher <alexander.deucher@amd.com>
+Signed-off-by: Feifei Xu <Feifei.Xu@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/gpu/drm/amd/amdgpu/amdgpu_ucode.h |    1 +
+ drivers/gpu/drm/amd/amdgpu/psp_gfx_if.h   |    3 ++-
+ drivers/gpu/drm/amd/amdgpu/uvd_v7_0.c     |    7 +++++++
+ 3 files changed, 10 insertions(+), 1 deletion(-)
+
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_ucode.h
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_ucode.h
+@@ -193,6 +193,7 @@ enum AMDGPU_UCODE_ID {
+ 	AMDGPU_UCODE_ID_STORAGE,
+ 	AMDGPU_UCODE_ID_SMC,
+ 	AMDGPU_UCODE_ID_UVD,
++	AMDGPU_UCODE_ID_UVD1,
+ 	AMDGPU_UCODE_ID_VCE,
+ 	AMDGPU_UCODE_ID_VCN,
+ 	AMDGPU_UCODE_ID_MAXIMUM,
+--- a/drivers/gpu/drm/amd/amdgpu/psp_gfx_if.h
++++ b/drivers/gpu/drm/amd/amdgpu/psp_gfx_if.h
+@@ -189,7 +189,8 @@ enum psp_gfx_fw_type
+     GFX_FW_TYPE_RLC_RESTORE_LIST_GPM_MEM        = 20,
+     GFX_FW_TYPE_RLC_RESTORE_LIST_SRM_MEM        = 21,
+     GFX_FW_TYPE_RLC_RESTORE_LIST_CNTL           = 22,
+-    GFX_FW_TYPE_MAX         = 23
++    GFX_FW_TYPE_UVD1        = 23,
++    GFX_FW_TYPE_MAX         = 24
+ };
+ 
+ /* Command to load HW IP FW. */
+--- a/drivers/gpu/drm/amd/amdgpu/uvd_v7_0.c
++++ b/drivers/gpu/drm/amd/amdgpu/uvd_v7_0.c
+@@ -441,6 +441,13 @@ static int uvd_v7_0_sw_init(void *handle
+ 		adev->firmware.ucode[AMDGPU_UCODE_ID_UVD].fw = adev->uvd.fw;
+ 		adev->firmware.fw_size +=
+ 			ALIGN(le32_to_cpu(hdr->ucode_size_bytes), PAGE_SIZE);
++
++		if (adev->uvd.num_uvd_inst == UVD7_MAX_HW_INSTANCES_VEGA20) {
++			adev->firmware.ucode[AMDGPU_UCODE_ID_UVD1].ucode_id = AMDGPU_UCODE_ID_UVD1;
++			adev->firmware.ucode[AMDGPU_UCODE_ID_UVD1].fw = adev->uvd.fw;
++			adev->firmware.fw_size +=
++				ALIGN(le32_to_cpu(hdr->ucode_size_bytes), PAGE_SIZE);
++		}
+ 		DRM_INFO("PSP loading UVD firmware\n");
+ 	}
+ 

@@ -1,0 +1,137 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Fri, 1 Jun 2018 10:53:05 +1000
+Subject: [PATCH] cifs: change smb2_get_data_area_len to take a smb2_sync_hdr
+ as argument
+Git-commit: e4dc31fe9ace8f0134f835d3f34fb84f598deefc
+Patch-mainline: v4.17
+References: bsc#1144333
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2misc.c  | 37 +++++++++++++++++++------------------
+ fs/cifs/smb2pdu.c   |  2 +-
+ fs/cifs/smb2proto.h |  3 ++-
+ 3 files changed, 22 insertions(+), 20 deletions(-)
+
+diff --git a/fs/cifs/smb2misc.c b/fs/cifs/smb2misc.c
+index 2e92b2df3675..2f1db5af7a65 100644
+--- a/fs/cifs/smb2misc.c
++++ b/fs/cifs/smb2misc.c
+@@ -295,15 +295,14 @@ static const bool has_smb2_data_area[NUMBER_OF_SMB2_COMMANDS] = {
+  * area and the offset to it (from the beginning of the smb are also returned.
+  */
+ char *
+-smb2_get_data_area_len(int *off, int *len, struct smb2_hdr *hdr)
++smb2_get_data_area_len(int *off, int *len, struct smb2_sync_hdr *shdr)
+ {
+-	struct smb2_sync_hdr *shdr = get_sync_hdr(hdr);
+ 	*off = 0;
+ 	*len = 0;
+ 
+ 	/* error responses do not have data area */
+ 	if (shdr->Status && shdr->Status != STATUS_MORE_PROCESSING_REQUIRED &&
+-	    (((struct smb2_err_rsp *)hdr)->StructureSize) ==
++	    (((struct smb2_err_rsp *)shdr)->StructureSize) ==
+ 						SMB2_ERROR_STRUCTURE_SIZE2)
+ 		return NULL;
+ 
+@@ -315,42 +314,44 @@ smb2_get_data_area_len(int *off, int *len, struct smb2_hdr *hdr)
+ 	switch (shdr->Command) {
+ 	case SMB2_NEGOTIATE:
+ 		*off = le16_to_cpu(
+-		    ((struct smb2_negotiate_rsp *)hdr)->SecurityBufferOffset);
++		  ((struct smb2_negotiate_rsp *)shdr)->SecurityBufferOffset);
+ 		*len = le16_to_cpu(
+-		    ((struct smb2_negotiate_rsp *)hdr)->SecurityBufferLength);
++		  ((struct smb2_negotiate_rsp *)shdr)->SecurityBufferLength);
+ 		break;
+ 	case SMB2_SESSION_SETUP:
+ 		*off = le16_to_cpu(
+-		    ((struct smb2_sess_setup_rsp *)hdr)->SecurityBufferOffset);
++		  ((struct smb2_sess_setup_rsp *)shdr)->SecurityBufferOffset);
+ 		*len = le16_to_cpu(
+-		    ((struct smb2_sess_setup_rsp *)hdr)->SecurityBufferLength);
++		  ((struct smb2_sess_setup_rsp *)shdr)->SecurityBufferLength);
+ 		break;
+ 	case SMB2_CREATE:
+ 		*off = le32_to_cpu(
+-		    ((struct smb2_create_rsp *)hdr)->CreateContextsOffset);
++		    ((struct smb2_create_rsp *)shdr)->CreateContextsOffset);
+ 		*len = le32_to_cpu(
+-		    ((struct smb2_create_rsp *)hdr)->CreateContextsLength);
++		    ((struct smb2_create_rsp *)shdr)->CreateContextsLength);
+ 		break;
+ 	case SMB2_QUERY_INFO:
+ 		*off = le16_to_cpu(
+-		    ((struct smb2_query_info_rsp *)hdr)->OutputBufferOffset);
++		    ((struct smb2_query_info_rsp *)shdr)->OutputBufferOffset);
+ 		*len = le32_to_cpu(
+-		    ((struct smb2_query_info_rsp *)hdr)->OutputBufferLength);
++		    ((struct smb2_query_info_rsp *)shdr)->OutputBufferLength);
+ 		break;
+ 	case SMB2_READ:
+-		*off = ((struct smb2_read_rsp *)hdr)->DataOffset;
+-		*len = le32_to_cpu(((struct smb2_read_rsp *)hdr)->DataLength);
++		/* TODO: is this a bug ? */
++		*off = ((struct smb2_read_rsp *)shdr)->DataOffset;
++		*len = le32_to_cpu(((struct smb2_read_rsp *)shdr)->DataLength);
+ 		break;
+ 	case SMB2_QUERY_DIRECTORY:
+ 		*off = le16_to_cpu(
+-		  ((struct smb2_query_directory_rsp *)hdr)->OutputBufferOffset);
++		  ((struct smb2_query_directory_rsp *)shdr)->OutputBufferOffset);
+ 		*len = le32_to_cpu(
+-		  ((struct smb2_query_directory_rsp *)hdr)->OutputBufferLength);
++		  ((struct smb2_query_directory_rsp *)shdr)->OutputBufferLength);
+ 		break;
+ 	case SMB2_IOCTL:
+ 		*off = le32_to_cpu(
+-		  ((struct smb2_ioctl_rsp *)hdr)->OutputOffset);
+-		*len = le32_to_cpu(((struct smb2_ioctl_rsp *)hdr)->OutputCount);
++		  ((struct smb2_ioctl_rsp *)shdr)->OutputOffset);
++		*len = le32_to_cpu(
++		  ((struct smb2_ioctl_rsp *)shdr)->OutputCount);
+ 		break;
+ 	case SMB2_CHANGE_NOTIFY:
+ 	default:
+@@ -411,7 +412,7 @@ smb2_calc_size(void *buf, struct TCP_Server_Info *srvr)
+ 	if (has_smb2_data_area[le16_to_cpu(shdr->Command)] == false)
+ 		goto calc_size_exit;
+ 
+-	smb2_get_data_area_len(&offset, &data_length, (struct smb2_hdr *)buf);
++	smb2_get_data_area_len(&offset, &data_length, shdr);
+ 	cifs_dbg(FYI, "SMB2 data length %d offset %d\n", data_length, offset);
+ 
+ 	if (data_length > 0) {
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 35fbd9261ca0..21b69badcd31 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -767,7 +767,7 @@ SMB2_negotiate(const unsigned int xid, struct cifs_ses *ses)
+ 	server->capabilities |= SMB2_NT_FIND | SMB2_LARGE_FILES;
+ 
+ 	security_blob = smb2_get_data_area_len(&blob_offset, &blob_length,
+-					       &rsp->hdr);
++					       &rsp->hdr.sync_hdr);
+ 	/*
+ 	 * See MS-SMB2 section 2.2.4: if no blob, client picks default which
+ 	 * for us will be
+diff --git a/fs/cifs/smb2proto.h b/fs/cifs/smb2proto.h
+index 4b0db6af7fe7..908555b1c6b5 100644
+--- a/fs/cifs/smb2proto.h
++++ b/fs/cifs/smb2proto.h
+@@ -37,7 +37,8 @@ extern int map_smb2_to_linux_error(char *buf, bool log_err);
+ extern int smb2_check_message(char *buf, unsigned int length,
+ 			      struct TCP_Server_Info *server);
+ extern unsigned int smb2_calc_size(void *buf, struct TCP_Server_Info *server);
+-extern char *smb2_get_data_area_len(int *off, int *len, struct smb2_hdr *hdr);
++extern char *smb2_get_data_area_len(int *off, int *len,
++				    struct smb2_sync_hdr *shdr);
+ extern __le16 *cifs_convert_path_to_utf16(const char *from,
+ 					  struct cifs_sb_info *cifs_sb);
+ 
+-- 
+2.16.4
+

@@ -1,0 +1,149 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Fri, 28 Sep 2018 19:44:23 -0500
+Subject: [PATCH] smb3: add tracepoint for sending lease break responses to
+ server
+Git-commit: 179e44d49c2f6f4e90479f0a98d896e415742c96
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+Be able to log a ftrace message on success and/or failure of
+sending a lease break response to the server.
+
+Example output:
+
+           TASK-PID   CPU#  ||||    TIMESTAMP  FUNCTION
+             | |       |   ||||       |         |
+     kworker/1:1-5681  [001] .... 11123.530457: smb3_lease_done: sid=0x291e3e0f tid=0x8ba43071 lease_key=0x1852ca0d3ecd9b55847750a86716fde lease_state=0x0
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c | 10 ++++++-
+ fs/cifs/trace.h   | 79 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 88 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 5f1d9994fd7a..3d331db65785 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -4277,6 +4277,8 @@ SMB2_lease_break(const unsigned int xid, struct cifs_tcon *tcon,
+ 	struct kvec iov[1];
+ 	struct kvec rsp_iov;
+ 	int resp_buf_type;
++	__u64 *please_key_high;
++	__u64 *please_key_low;
+ 
+ 	cifs_dbg(FYI, "SMB2_lease_break\n");
+ 	rc = smb2_plain_req_init(SMB2_OPLOCK_BREAK, tcon, (void **) &req,
+@@ -4306,10 +4308,16 @@ SMB2_lease_break(const unsigned int xid, struct cifs_tcon *tcon,
+ 	rc = cifs_send_recv(xid, ses, &rqst, &resp_buf_type, flags, &rsp_iov);
+ 	cifs_small_buf_release(req);
+ 
++	please_key_low = (__u64 *)req->LeaseKey;
++	please_key_high = (__u64 *)(req->LeaseKey+8);
+ 	if (rc) {
+ 		cifs_stats_fail_inc(tcon, SMB2_OPLOCK_BREAK_HE);
++		trace_smb3_lease_err(le32_to_cpu(lease_state), tcon->tid,
++			ses->Suid, *please_key_low, *please_key_high, rc);
+ 		cifs_dbg(FYI, "Send error in Lease Break = %d\n", rc);
+-	}
++	} else
++		trace_smb3_lease_done(le32_to_cpu(lease_state), tcon->tid,
++			ses->Suid, *please_key_low, *please_key_high);
+ 
+ 	return rc;
+ }
+diff --git a/fs/cifs/trace.h b/fs/cifs/trace.h
+index 43e5bd417b81..cce8414fe7ec 100644
+--- a/fs/cifs/trace.h
++++ b/fs/cifs/trace.h
+@@ -460,6 +460,85 @@ DEFINE_EVENT(smb3_open_done_class, smb3_##name,  \
+ DEFINE_SMB3_OPEN_DONE_EVENT(open_done);
+ DEFINE_SMB3_OPEN_DONE_EVENT(posix_mkdir_done);
+ 
++
++DECLARE_EVENT_CLASS(smb3_lease_done_class,
++	TP_PROTO(__u32	lease_state,
++		__u32	tid,
++		__u64	sesid,
++		__u64	lease_key_low,
++		__u64	lease_key_high),
++	TP_ARGS(lease_state, tid, sesid, lease_key_low, lease_key_high),
++	TP_STRUCT__entry(
++		__field(__u32, lease_state)
++		__field(__u32, tid)
++		__field(__u64, sesid)
++		__field(__u64, lease_key_low)
++		__field(__u64, lease_key_high)
++	),
++	TP_fast_assign(
++		__entry->lease_state = lease_state;
++		__entry->tid = tid;
++		__entry->sesid = sesid;
++		__entry->lease_key_low = lease_key_low;
++		__entry->lease_key_high = lease_key_high;
++	),
++	TP_printk("sid=0x%llx tid=0x%x lease_key=0x%llx%llx lease_state=0x%x",
++		__entry->sesid, __entry->tid, __entry->lease_key_high,
++		__entry->lease_key_low, __entry->lease_state)
++)
++
++#define DEFINE_SMB3_LEASE_DONE_EVENT(name)        \
++DEFINE_EVENT(smb3_lease_done_class, smb3_##name,  \
++	TP_PROTO(__u32	lease_state,		\
++		__u32	tid,			\
++		__u64	sesid,			\
++		__u64	lease_key_low,		\
++		__u64	lease_key_high),	\
++	TP_ARGS(lease_state, tid, sesid, lease_key_low, lease_key_high))
++
++DEFINE_SMB3_LEASE_DONE_EVENT(lease_done);
++
++DECLARE_EVENT_CLASS(smb3_lease_err_class,
++	TP_PROTO(__u32	lease_state,
++		__u32	tid,
++		__u64	sesid,
++		__u64	lease_key_low,
++		__u64	lease_key_high,
++		int	rc),
++	TP_ARGS(lease_state, tid, sesid, lease_key_low, lease_key_high, rc),
++	TP_STRUCT__entry(
++		__field(__u32, lease_state)
++		__field(__u32, tid)
++		__field(__u64, sesid)
++		__field(__u64, lease_key_low)
++		__field(__u64, lease_key_high)
++		__field(int, rc)
++	),
++	TP_fast_assign(
++		__entry->lease_state = lease_state;
++		__entry->tid = tid;
++		__entry->sesid = sesid;
++		__entry->lease_key_low = lease_key_low;
++		__entry->lease_key_high = lease_key_high;
++		__entry->rc = rc;
++	),
++	TP_printk("sid=0x%llx tid=0x%x lease_key=0x%llx%llx lease_state=0x%x rc=%d",
++		__entry->sesid, __entry->tid, __entry->lease_key_high,
++		__entry->lease_key_low, __entry->lease_state, __entry->rc)
++)
++
++#define DEFINE_SMB3_LEASE_ERR_EVENT(name)        \
++DEFINE_EVENT(smb3_lease_err_class, smb3_##name,  \
++	TP_PROTO(__u32	lease_state,		\
++		__u32	tid,			\
++		__u64	sesid,			\
++		__u64	lease_key_low,		\
++		__u64	lease_key_high,		\
++		int	rc),			\
++	TP_ARGS(lease_state, tid, sesid, lease_key_low, lease_key_high, rc))
++
++DEFINE_SMB3_LEASE_ERR_EVENT(lease_err);
++
+ DECLARE_EVENT_CLASS(smb3_reconnect_class,
+ 	TP_PROTO(__u64	currmid,
+ 		char *hostname),
+-- 
+2.16.4
+

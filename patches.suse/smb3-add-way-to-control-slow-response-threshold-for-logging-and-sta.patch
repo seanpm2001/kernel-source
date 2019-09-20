@@ -1,0 +1,105 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Tue, 18 Sep 2018 14:05:18 -0500
+Subject: [PATCH] smb3: add way to control slow response threshold for logging
+ and stats
+Git-commit: 00778e2294d560361e2ed4e94cc003351a2d82d9
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+/proc/fs/cifs/Stats when CONFIG_CIFS_STATS2 is enabled logs 'slow'
+responses, but depending on the server you are debugging a
+one second timeout may be too fast, so allow setting it to
+a larger number of seconds via new module parameter
+
+/sys/module/cifs/parameters/slow_rsp_threshold
+
+or via modprobe:
+
+slow_rsp_threshold:Amount of time (in seconds) to wait before
+logging that a response is delayed.
+Default: 1 (if set to 0 disables msg). (uint)
+
+Recommended values are 0 (disabled) to 32767 (9 hours) with
+the default remaining as 1 second.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsfs.c    | 13 +++++++++++++
+ fs/cifs/cifsglob.h  |  1 +
+ fs/cifs/transport.c | 15 ++++++++++++---
+ 3 files changed, 26 insertions(+), 3 deletions(-)
+
+diff --git a/fs/cifs/cifsfs.c b/fs/cifs/cifsfs.c
+index af6c2e1795ef..ba0054604f85 100644
+--- a/fs/cifs/cifsfs.c
++++ b/fs/cifs/cifsfs.c
+@@ -81,6 +81,14 @@ module_param(cifs_max_pending, uint, 0444);
+ MODULE_PARM_DESC(cifs_max_pending, "Simultaneous requests to server for "
+ 				   "CIFS/SMB1 dialect (N/A for SMB3) "
+ 				   "Default: 32767 Range: 2 to 32767.");
++#ifdef CONFIG_CIFS_STATS2
++unsigned int slow_rsp_threshold = 1;
++module_param(slow_rsp_threshold, uint, 0644);
++MODULE_PARM_DESC(slow_rsp_threshold, "Amount of time (in seconds) to wait "
++				   "before logging that a response is delayed. "
++				   "Default: 1 (if set to 0 disables msg).");
++#endif /* STATS2 */
++
+ module_param(enable_oplocks, bool, 0644);
+ MODULE_PARM_DESC(enable_oplocks, "Enable or disable oplocks. Default: y/Y/1");
+ 
+@@ -1418,6 +1426,11 @@ init_cifs(void)
+ #ifdef CONFIG_CIFS_STATS2
+ 	atomic_set(&totBufAllocCount, 0);
+ 	atomic_set(&totSmBufAllocCount, 0);
++	if (slow_rsp_threshold < 1)
++		cifs_dbg(FYI, "slow_response_threshold msgs disabled\n");
++	else if (slow_rsp_threshold > 32767)
++		cifs_dbg(VFS,
++		       "slow response threshold set higher than recommended (0 to 32767)\n");
+ #endif /* CONFIG_CIFS_STATS2 */
+ 
+ 	atomic_set(&midCount, 0);
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 9dcaed031843..d59588e4aeb4 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -1715,6 +1715,7 @@ GLOBAL_EXTERN atomic_t bufAllocCount;    /* current number allocated  */
+ #ifdef CONFIG_CIFS_STATS2
+ GLOBAL_EXTERN atomic_t totBufAllocCount; /* total allocated over all time */
+ GLOBAL_EXTERN atomic_t totSmBufAllocCount;
++extern unsigned int slow_rsp_threshold; /* number of secs before logging */
+ #endif
+ GLOBAL_EXTERN atomic_t smBufAllocCount;
+ GLOBAL_EXTERN atomic_t midCount;
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 333729cf46cd..a1a1199578d5 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -113,9 +113,18 @@ DeleteMidQEntry(struct mid_q_entry *midEntry)
+ 		cifs_small_buf_release(midEntry->resp_buf);
+ #ifdef CONFIG_CIFS_STATS2
+ 	now = jiffies;
+-	/* commands taking longer than one second are indications that
+-	   something is wrong, unless it is quite a slow link or server */
+-	if (time_after(now, midEntry->when_alloc + HZ) &&
++	/*
++	 * commands taking longer than one second (default) can be indications
++	 * that something is wrong, unless it is quite a slow link or a very
++	 * busy server. Note that this calc is unlikely or impossible to wrap
++	 * as long as slow_rsp_threshold is not set way above recommended max
++	 * value (32767 ie 9 hours) and is generally harmless even if wrong
++	 * since only affects debug counters - so leaving the calc as simple
++	 * comparison rather than doing multiple conversions and overflow
++	 * checks
++	 */
++	if ((slow_rsp_threshold != 0) &&
++	    time_after(now, midEntry->when_alloc + (slow_rsp_threshold * HZ)) &&
+ 	    (midEntry->command != command)) {
+ 		/* smb2slowcmd[NUMBER_OF_SMB2_COMMANDS] counts by command */
+ 		if ((le16_to_cpu(midEntry->command) < NUMBER_OF_SMB2_COMMANDS) &&
+-- 
+2.16.4
+

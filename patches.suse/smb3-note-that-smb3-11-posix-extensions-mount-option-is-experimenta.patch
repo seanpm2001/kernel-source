@@ -1,0 +1,34 @@
+From: Steve French <smfrench@gmail.com>
+Date: Tue, 12 Jun 2018 12:11:31 -0500
+Subject: [PATCH] smb3: note that smb3.11 posix extensions mount option is
+ experimental
+Git-commit: 2fbb56446fde14a80790de9b182ae6f7c36a039a
+Patch-mainline: v4.18-rc1
+References: bsc#1144333
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/connect.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 96645a7d8f27..267c6f70cf98 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -3029,8 +3029,11 @@ cifs_get_tcon(struct cifs_ses *ses, struct smb_vol *volume_info)
+ 
+ #ifdef CONFIG_CIFS_SMB311
+ 	if ((volume_info->linux_ext) && (ses->server->posix_ext_supported)) {
+-		if (ses->server->vals->protocol_id == SMB311_PROT_ID)
++		if (ses->server->vals->protocol_id == SMB311_PROT_ID) {
+ 			tcon->posix_extensions = true;
++			printk_once(KERN_WARNING
++				"SMB3.11 POSIX Extensions are experimental\n");
++		}
+ 	}
+ #endif /* 311 */
+ 
+-- 
+2.16.4
+

@@ -1,0 +1,58 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Wed, 4 Apr 2018 14:08:52 -0500
+Subject: [PATCH] SMB3: Log at least once if tree connect fails during
+ reconnect
+Git-commit: c318e6c26cbe91bfcd1e9bca8840de2fb57aef4f
+Patch-mainline: v4.17-rc1
+References: bsc#1144333
+
+Adding an extra debug message to show if a tree connect failure during
+reconnect (and made it a log once so it doesn't spam the logs).
+Saw a case recently where tree connect repeatedly returned
+access denied on reconnect and it wasn't as easy to spot as it
+should have been.
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifssmb.c | 4 +++-
+ fs/cifs/smb2pdu.c | 5 ++++-
+ 2 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/cifssmb.c b/fs/cifs/cifssmb.c
+index 59c09a596c0a..abdc93d4fee8 100644
+--- a/fs/cifs/cifssmb.c
++++ b/fs/cifs/cifssmb.c
+@@ -206,8 +206,10 @@ cifs_reconnect_tcon(struct cifs_tcon *tcon, int smb_command)
+ 	mutex_unlock(&ses->session_mutex);
+ 	cifs_dbg(FYI, "reconnect tcon rc = %d\n", rc);
+ 
+-	if (rc)
++	if (rc) {
++		printk_once(KERN_WARNING "reconnect tcon failed rc = %d\n", rc);
+ 		goto out;
++	}
+ 
+ 	atomic_inc(&tconInfoReconnectCount);
+ 
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index e5ac474d5d87..6c2910e6c984 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -268,8 +268,11 @@ smb2_reconnect(__le16 smb2_command, struct cifs_tcon *tcon)
+ 	mutex_unlock(&tcon->ses->session_mutex);
+ 
+ 	cifs_dbg(FYI, "reconnect tcon rc = %d\n", rc);
+-	if (rc)
++	if (rc) {
++		/* If sess reconnected but tcon didn't, something strange ... */
++		printk_once(KERN_WARNING "reconnect tcon failed rc = %d\n", rc);
+ 		goto out;
++	}
+ 
+ 	if (smb2_command != SMB2_INTERNAL_CMD)
+ 		queue_delayed_work(cifsiod_wq, &server->reconnect, 0);
+-- 
+2.16.4
+

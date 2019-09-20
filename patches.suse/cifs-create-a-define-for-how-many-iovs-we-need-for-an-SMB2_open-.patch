@@ -1,0 +1,87 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Tue, 21 Aug 2018 11:49:21 +1000
+Subject: [PATCH] cifs: create a define for how many iovs we need for an
+ SMB2_open()
+Git-commit: 4d8dfafc5cb88fe294a9273a3ef75dd4f9fa1aa2
+Patch-mainline: v4.19-rc1
+References: bsc#1144333
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c |  4 ++--
+ fs/cifs/smb2pdu.c |  4 ++--
+ fs/cifs/smb2pdu.h | 12 ++++++++++++
+ 3 files changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 541258447c4c..247a98e6c856 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1582,7 +1582,7 @@ smb2_queryfs(const unsigned int xid, struct cifs_tcon *tcon,
+ 	struct smb_rqst rqst[3];
+ 	int resp_buftype[3];
+ 	struct kvec rsp_iov[3];
+-	struct kvec open_iov[5]; /* 4 + potential padding. */
++	struct kvec open_iov[SMB2_CREATE_IOV_SIZE];
+ 	struct kvec qi_iov[1];
+ 	struct kvec close_iov[1];
+ 	struct cifs_ses *ses = tcon->ses;
+@@ -1603,7 +1603,7 @@ smb2_queryfs(const unsigned int xid, struct cifs_tcon *tcon,
+ 
+ 	memset(&open_iov, 0, sizeof(open_iov));
+ 	rqst[0].rq_iov = open_iov;
+-	rqst[0].rq_nvec = 4;
++	rqst[0].rq_nvec = SMB2_CREATE_IOV_SIZE;
+ 
+ 	oparms.tcon = tcon;
+ 	oparms.desired_access = FILE_READ_ATTRIBUTES;
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 2f1938011395..5740aa809be6 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -2256,7 +2256,7 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
+ 	struct TCP_Server_Info *server;
+ 	struct cifs_tcon *tcon = oparms->tcon;
+ 	struct cifs_ses *ses = tcon->ses;
+-	struct kvec iov[5]; /* make sure at least one for each open context */
++	struct kvec iov[SMB2_CREATE_IOV_SIZE];
+ 	struct kvec rsp_iov = {NULL, 0};
+ 	int resp_buftype;
+ 	int rc = 0;
+@@ -2274,7 +2274,7 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
+ 	memset(&rqst, 0, sizeof(struct smb_rqst));
+ 	memset(&iov, 0, sizeof(iov));
+ 	rqst.rq_iov = iov;
+-	rqst.rq_nvec = 5;
++	rqst.rq_nvec = SMB2_CREATE_IOV_SIZE;
+ 
+ 	rc = SMB2_open_init(tcon, &rqst, oplock, oparms, path);
+ 	if (rc)
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index a2eeae9e0432..8fb7887f2b3d 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -614,6 +614,18 @@ struct smb2_tree_disconnect_rsp {
+ #define SMB2_CREATE_TAG_POSIX		0x93AD25509CB411E7B42383DE968BCD7C
+ 
+ 
++/*
++ * Maximum number of iovs we need for an open/create request.
++ * [0] : struct smb2_create_req
++ * [1] : path
++ * [2] : lease context
++ * [3] : durable context
++ * [4] : posix context
++ * [5] : time warp context
++ * [6] : compound padding
++ */
++#define SMB2_CREATE_IOV_SIZE 7
++
+ struct smb2_create_req {
+ 	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize;	/* Must be 57 */
+-- 
+2.16.4
+

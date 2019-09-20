@@ -1,0 +1,48 @@
+From: YueHaibing <yuehaibing@huawei.com>
+Date: Tue, 18 Dec 2018 01:35:29 +0000
+Subject: [PATCH] cifs: remove set but not used variable 'sep'
+Git-commit: 5a650501eb8cb785593155441c5b0b9900edfcdf
+Patch-mainline: v5.0-rc1
+References: bsc#1144333
+
+Fixes gcc '-Wunused-but-set-variable' warning:
+
+fs/cifs/cifs_dfs_ref.c: In function 'cifs_dfs_do_automount':
+fs/cifs/cifs_dfs_ref.c:309:7: warning:
+ variable 'sep' set but not used [-Wunused-but-set-variable]
+
+It never used since introdution in commit 0f56b277073c ("cifs: Make use
+of DFS cache to get new DFS referrals")
+
+Signed-off-by: YueHaibing <yuehaibing@huawei.com>
+Reviewed-by: Paulo Alcantara <palcantara@suse.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifs_dfs_ref.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/fs/cifs/cifs_dfs_ref.c b/fs/cifs/cifs_dfs_ref.c
+index 6e6953f35db2..8bd6f6b76da8 100644
+--- a/fs/cifs/cifs_dfs_ref.c
++++ b/fs/cifs/cifs_dfs_ref.c
+@@ -295,7 +295,6 @@ static struct vfsmount *cifs_dfs_do_automount(struct dentry *mntpt)
+ 	int len;
+ 	int rc;
+ 	struct vfsmount *mnt;
+-	char sep;
+ 
+ 	cifs_dbg(FYI, "in %s\n", __func__);
+ 	BUG_ON(IS_ROOT(mntpt));
+@@ -314,8 +313,6 @@ static struct vfsmount *cifs_dfs_do_automount(struct dentry *mntpt)
+ 		goto cdda_exit;
+ 	}
+ 
+-	sep = CIFS_DIR_SEP(cifs_sb);
+-
+ 	/* always use tree name prefix */
+ 	full_path = build_path_from_dentry_optional_prefix(mntpt, true);
+ 	if (full_path == NULL)
+-- 
+2.16.4
+

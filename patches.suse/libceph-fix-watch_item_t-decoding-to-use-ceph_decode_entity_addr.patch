@@ -1,0 +1,58 @@
+From: Jeff Layton <jlayton@kernel.org>
+Date: Tue, 4 Jun 2019 14:35:18 -0400
+Subject: libceph: fix watch_item_t decoding to use ceph_decode_entity_addr
+Git-commit: 51fc7ab44519adc6684ac6575826f8b1a16ee4b3
+Patch-mainline: v5.3-rc1
+References: bsc#1148133 bsc#1136682
+
+While we're in there, let's also fix up the decoder to do proper
+bounds checking.
+
+Signed-off-by: Jeff Layton <jlayton@kernel.org>
+Reviewed-by: "Yan, Zheng" <zyan@redhat.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+
+---
+ net/ceph/osd_client.c | 20 +++++++++++++-------
+ 1 file changed, 13 insertions(+), 7 deletions(-)
+
+diff --git a/net/ceph/osd_client.c b/net/ceph/osd_client.c
+index 9a8eca5eda65..54170a35ecec 100644
+--- a/net/ceph/osd_client.c
++++ b/net/ceph/osd_client.c
+@@ -4914,20 +4914,26 @@ static int decode_watcher(void **p, void *end, struct ceph_watch_item *item)
+ 	ret = ceph_start_decoding(p, end, 2, "watch_item_t",
+ 				  &struct_v, &struct_len);
+ 	if (ret)
+-		return ret;
++		goto bad;
++
++	ret = -EINVAL;
++	ceph_decode_copy_safe(p, end, &item->name, sizeof(item->name), bad);
++	ceph_decode_64_safe(p, end, item->cookie, bad);
++	ceph_decode_skip_32(p, end, bad); /* skip timeout seconds */
+ 
+-	ceph_decode_copy(p, &item->name, sizeof(item->name));
+-	item->cookie = ceph_decode_64(p);
+-	*p += 4; /* skip timeout_seconds */
+ 	if (struct_v >= 2) {
+-		ceph_decode_copy(p, &item->addr, sizeof(item->addr));
+-		ceph_decode_addr(&item->addr);
++		ret = ceph_decode_entity_addr(p, end, &item->addr);
++		if (ret)
++			goto bad;
++	} else {
++		ret = 0;
+ 	}
+ 
+ 	dout("%s %s%llu cookie %llu addr %s\n", __func__,
+ 	     ENTITY_NAME(item->name), item->cookie,
+ 	     ceph_pr_addr(&item->addr));
+-	return 0;
++bad:
++	return ret;
+ }
+ 
+ static int decode_watchers(void **p, void *end,
+

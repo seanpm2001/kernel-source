@@ -1,0 +1,285 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Thu, 25 Apr 2019 16:45:29 +1000
+Subject: [PATCH] cifs: add fiemap support
+Git-commit: 2f3ebaba13cebd8badfb9aed31c0cf3cc82eb4f4
+Patch-mainline: v5.2-rc1
+References: bsc#1144333
+
+Useful for improved copy performance as well as for
+applications which query allocated ranges of sparse
+files.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/cifsfs.c   |  1 +
+ fs/cifs/cifsfs.h   |  2 ++
+ fs/cifs/cifsglob.h |  3 ++
+ fs/cifs/inode.c    | 37 ++++++++++++++++++++++
+ fs/cifs/smb2ops.c  | 77 ++++++++++++++++++++++++++++++++++++++++++++++
+ fs/cifs/smb2pdu.c  |  7 ++++-
+ fs/cifs/smb2pdu.h  |  5 +++
+ fs/cifs/smbfsctl.h |  2 +-
+ 8 files changed, 132 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/cifsfs.c b/fs/cifs/cifsfs.c
+index 54c065ada4de..b1a5fcfa3ce1 100644
+--- a/fs/cifs/cifsfs.c
++++ b/fs/cifs/cifsfs.c
+@@ -986,6 +986,7 @@ const struct inode_operations cifs_file_inode_ops = {
+ 	.getattr = cifs_getattr,
+ 	.permission = cifs_permission,
+ 	.listxattr = cifs_listxattr,
++	.fiemap = cifs_fiemap,
+ };
+ 
+ const struct inode_operations cifs_symlink_inode_ops = {
+diff --git a/fs/cifs/cifsfs.h b/fs/cifs/cifsfs.h
+index 5c0298b9998f..c47d93d74d75 100644
+--- a/fs/cifs/cifsfs.h
++++ b/fs/cifs/cifsfs.h
+@@ -84,6 +84,8 @@ extern int cifs_revalidate_mapping(struct inode *inode);
+ extern int cifs_zap_mapping(struct inode *inode);
+ extern int cifs_getattr(const struct path *, struct kstat *, u32, unsigned int);
+ extern int cifs_setattr(struct dentry *, struct iattr *);
++extern int cifs_fiemap(struct inode *, struct fiemap_extent_info *, u64 start,
++		       u64 len);
+ 
+ extern const struct inode_operations cifs_file_inode_ops;
+ extern const struct inode_operations cifs_symlink_inode_ops;
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 0dc55f4e6929..5ffe0e538cec 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -493,6 +493,9 @@ struct smb_version_operations {
+ 			 char *full_path,
+ 			 umode_t mode,
+ 			 dev_t device_number);
++	/* version specific fiemap implementation */
++	int (*fiemap)(struct cifs_tcon *tcon, struct cifsFileInfo *,
++		      struct fiemap_extent_info *, u64, u64);
+ };
+ 
+ struct smb_version_values {
+diff --git a/fs/cifs/inode.c b/fs/cifs/inode.c
+index 538fd7d807e4..d7cc62252634 100644
+--- a/fs/cifs/inode.c
++++ b/fs/cifs/inode.c
+@@ -2116,6 +2116,43 @@ int cifs_getattr(const struct path *path, struct kstat *stat,
+ 	return rc;
+ }
+ 
++int cifs_fiemap(struct inode *inode, struct fiemap_extent_info *fei, u64 start,
++		u64 len)
++{
++	struct cifsInodeInfo *cifs_i = CIFS_I(inode);
++	struct cifs_sb_info *cifs_sb = CIFS_SB(cifs_i->vfs_inode.i_sb);
++	struct cifs_tcon *tcon = cifs_sb_master_tcon(cifs_sb);
++	struct TCP_Server_Info *server = tcon->ses->server;
++	struct cifsFileInfo *cfile;
++	int rc;
++
++	/*
++	 * We need to be sure that all dirty pages are written as they
++	 * might fill holes on the server.
++	 */
++	if (!CIFS_CACHE_READ(CIFS_I(inode)) && inode->i_mapping &&
++	    inode->i_mapping->nrpages != 0) {
++		rc = filemap_fdatawait(inode->i_mapping);
++		if (rc) {
++			mapping_set_error(inode->i_mapping, rc);
++			return rc;
++		}
++	}
++
++	cfile = find_readable_file(cifs_i, false);
++	if (cfile == NULL)
++		return -EINVAL;
++
++	if (server->ops->fiemap) {
++		rc = server->ops->fiemap(tcon, cfile, fei, start, len);
++		cifsFileInfo_put(cfile);
++		return rc;
++	}
++
++	cifsFileInfo_put(cfile);
++	return -ENOTSUPP;
++}
++
+ static int cifs_truncate_page(struct address_space *mapping, loff_t from)
+ {
+ 	pgoff_t index = from >> PAGE_SHIFT;
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 4002e1433ccb..78bca7d46eac 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -2886,6 +2886,79 @@ static long smb3_simple_falloc(struct file *file, struct cifs_tcon *tcon,
+ 	return rc;
+ }
+ 
++static int smb3_fiemap(struct cifs_tcon *tcon,
++		       struct cifsFileInfo *cfile,
++		       struct fiemap_extent_info *fei, u64 start, u64 len)
++{
++	unsigned int xid;
++	struct file_allocated_range_buffer in_data, *out_data;
++	u32 out_data_len;
++	int i, num, rc, flags, last_blob;
++	u64 next;
++
++	if (fiemap_check_flags(fei, FIEMAP_FLAG_SYNC))
++		return -EBADR;
++
++	xid = get_xid();
++ again:
++	in_data.file_offset = cpu_to_le64(start);
++	in_data.length = cpu_to_le64(len);
++
++	rc = SMB2_ioctl(xid, tcon, cfile->fid.persistent_fid,
++			cfile->fid.volatile_fid,
++			FSCTL_QUERY_ALLOCATED_RANGES, true,
++			(char *)&in_data, sizeof(in_data),
++			1024 * sizeof(struct file_allocated_range_buffer),
++			(char **)&out_data, &out_data_len);
++	if (rc == -E2BIG) {
++		last_blob = 0;
++		rc = 0;
++	} else
++		last_blob = 1;
++	if (rc)
++		goto out;
++
++	if (out_data_len < sizeof(struct file_allocated_range_buffer)) {
++		rc = -EINVAL;
++		goto out;
++	}
++	if (out_data_len % sizeof(struct file_allocated_range_buffer)) {
++		rc = -EINVAL;
++		goto out;
++	}
++
++	num = out_data_len / sizeof(struct file_allocated_range_buffer);
++	for (i = 0; i < num; i++) {
++		flags = 0;
++		if (i == num - 1 && last_blob)
++			flags |= FIEMAP_EXTENT_LAST;
++
++		rc = fiemap_fill_next_extent(fei,
++				le64_to_cpu(out_data[i].file_offset),
++				le64_to_cpu(out_data[i].file_offset),
++				le64_to_cpu(out_data[i].length),
++				flags);
++		if (rc < 0)
++			goto out;
++		if (rc == 1) {
++			rc = 0;
++			goto out;
++		}
++	}
++
++	if (!last_blob) {
++		next = le64_to_cpu(out_data[num - 1].file_offset) +
++		  le64_to_cpu(out_data[num - 1].length);
++		len = len - (next - start);
++		start = next;
++		goto again;
++	}
++
++ out:
++	free_xid(xid);
++	kfree(out_data);
++	return rc;
++}
+ 
+ static long smb3_fallocate(struct file *file, struct cifs_tcon *tcon, int mode,
+ 			   loff_t off, loff_t len)
+@@ -4054,6 +4127,7 @@ struct smb_version_operations smb20_operations = {
+ 	.next_header = smb2_next_header,
+ 	.ioctl_query_info = smb2_ioctl_query_info,
+ 	.make_node = smb2_make_node,
++	.fiemap = smb3_fiemap,
+ };
+ 
+ struct smb_version_operations smb21_operations = {
+@@ -4153,6 +4227,7 @@ struct smb_version_operations smb21_operations = {
+ 	.next_header = smb2_next_header,
+ 	.ioctl_query_info = smb2_ioctl_query_info,
+ 	.make_node = smb2_make_node,
++	.fiemap = smb3_fiemap,
+ };
+ 
+ struct smb_version_operations smb30_operations = {
+@@ -4261,6 +4336,7 @@ struct smb_version_operations smb30_operations = {
+ 	.next_header = smb2_next_header,
+ 	.ioctl_query_info = smb2_ioctl_query_info,
+ 	.make_node = smb2_make_node,
++	.fiemap = smb3_fiemap,
+ };
+ 
+ struct smb_version_operations smb311_operations = {
+@@ -4370,6 +4446,7 @@ struct smb_version_operations smb311_operations = {
+ 	.next_header = smb2_next_header,
+ 	.ioctl_query_info = smb2_ioctl_query_info,
+ 	.make_node = smb2_make_node,
++	.fiemap = smb3_fiemap,
+ };
+ 
+ struct smb_version_values smb20_values = {
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index a932dccafc5b..634800c0bc06 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -2622,7 +2622,7 @@ SMB2_ioctl(const unsigned int xid, struct cifs_tcon *tcon, u64 persistent_fid,
+ 		trace_smb3_fsctl_err(xid, persistent_fid, tcon->tid,
+ 				ses->Suid, 0, opcode, rc);
+ 
+-	if ((rc != 0) && (rc != -EINVAL)) {
++	if ((rc != 0) && (rc != -EINVAL) && (rc != -E2BIG)) {
+ 		cifs_stats_fail_inc(tcon, SMB2_IOCTL_HE);
+ 		goto ioctl_exit;
+ 	} else if (rc == -EINVAL) {
+@@ -2631,6 +2631,11 @@ SMB2_ioctl(const unsigned int xid, struct cifs_tcon *tcon, u64 persistent_fid,
+ 			cifs_stats_fail_inc(tcon, SMB2_IOCTL_HE);
+ 			goto ioctl_exit;
+ 		}
++	} else if (rc == -E2BIG) {
++		if (opcode != FSCTL_QUERY_ALLOCATED_RANGES) {
++			cifs_stats_fail_inc(tcon, SMB2_IOCTL_HE);
++			goto ioctl_exit;
++		}
+ 	}
+ 
+ 	/* check if caller wants to look at return data or just return rc */
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index 58158e91b9d1..82686e9d9e05 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -868,6 +868,11 @@ struct fsctl_get_integrity_information_rsp {
+ 	__le32	ClusterSizeInBytes;
+ } __packed;
+ 
++struct file_allocated_range_buffer {
++	__le64	file_offset;
++	__le64	length;
++} __packed;
++
+ /* Integrity ChecksumAlgorithm choices for above */
+ #define	CHECKSUM_TYPE_NONE	0x0000
+ #define	CHECKSUM_TYPE_CRC64	0x0002
+diff --git a/fs/cifs/smbfsctl.h b/fs/cifs/smbfsctl.h
+index 9b3459b9a5ce..08628e6a42ac 100644
+--- a/fs/cifs/smbfsctl.h
++++ b/fs/cifs/smbfsctl.h
+@@ -103,7 +103,7 @@
+ #define FSCTL_SET_ZERO_ON_DEALLOC    0x00090194 /* BB add struct */
+ #define FSCTL_SET_SHORT_NAME_BEHAVIOR 0x000901B4 /* BB add struct */
+ #define FSCTL_GET_INTEGRITY_INFORMATION 0x0009027C
+-#define FSCTL_QUERY_ALLOCATED_RANGES 0x000940CF /* BB add struct */
++#define FSCTL_QUERY_ALLOCATED_RANGES 0x000940CF
+ #define FSCTL_SET_DEFECT_MANAGEMENT  0x00098134 /* BB add struct */
+ #define FSCTL_FILE_LEVEL_TRIM        0x00098208 /* BB add struct */
+ #define FSCTL_DUPLICATE_EXTENTS_TO_FILE 0x00098344
+-- 
+2.22.0
+

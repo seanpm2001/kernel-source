@@ -1,0 +1,77 @@
+From: Aurelien Aptel <aaptel@suse.com>
+Date: Mon, 4 Jun 2018 22:29:35 +0200
+Subject: [PATCH] CIFS: Fix NULL ptr deref
+Git-commit: 8ddecf5fd728d3c6373394fa647d28e7c27f93a7
+Patch-mainline: v4.18-rc1
+References: bsc#1144333
+
+cifs->master_tlink is NULL against Win Server 2016 (which is
+strange.. not sure why) and is dereferenced in cifs_sb_master_tcon().
+
+move master_tlink getter to cifsglob.h so it can be used from
+smb2misc.c
+
+Signed-off-by: Aurelien Aptel <aaptel@suse.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsglob.h | 6 ++++++
+ fs/cifs/connect.c  | 6 ------
+ fs/cifs/smb2misc.c | 4 +++-
+ 3 files changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 08d1cdd96701..1efa2e65bc1a 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -1019,6 +1019,12 @@ tlink_tcon(struct tcon_link *tlink)
+ 	return tlink->tl_tcon;
+ }
+ 
++static inline struct tcon_link *
++cifs_sb_master_tlink(struct cifs_sb_info *cifs_sb)
++{
++	return cifs_sb->master_tlink;
++}
++
+ extern void cifs_put_tlink(struct tcon_link *tlink);
+ 
+ static inline struct tcon_link *
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index e5a2fe7f0dd4..9089b73809de 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -3116,12 +3116,6 @@ cifs_put_tlink(struct tcon_link *tlink)
+ 	return;
+ }
+ 
+-static inline struct tcon_link *
+-cifs_sb_master_tlink(struct cifs_sb_info *cifs_sb)
+-{
+-	return cifs_sb->master_tlink;
+-}
+-
+ static int
+ compare_mount_options(struct super_block *sb, struct cifs_mnt_data *mnt_data)
+ {
+diff --git a/fs/cifs/smb2misc.c b/fs/cifs/smb2misc.c
+index cb5728e3d87d..e2bec47c6845 100644
+--- a/fs/cifs/smb2misc.c
++++ b/fs/cifs/smb2misc.c
+@@ -453,8 +453,10 @@ cifs_convert_path_to_utf16(const char *from, struct cifs_sb_info *cifs_sb)
+ 		start_of_path = from + 1;
+ #ifdef CONFIG_CIFS_SMB311
+ 	/* SMB311 POSIX extensions paths do not include leading slash */
+-	else if (cifs_sb_master_tcon(cifs_sb)->posix_extensions)
++	else if (cifs_sb_master_tlink(cifs_sb) &&
++		 cifs_sb_master_tcon(cifs_sb)->posix_extensions) {
+ 		start_of_path = from + 1;
++	}
+ #endif /* 311 */
+ 	else
+ 		start_of_path = from;
+-- 
+2.16.4
+

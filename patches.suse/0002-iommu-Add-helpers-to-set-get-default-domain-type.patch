@@ -1,0 +1,81 @@
+From: Joerg Roedel <jroedel@suse.de>
+Date: Wed, 14 Aug 2019 14:01:30 +0200
+Subject: [PATCH 02/11] iommu: Add helpers to set/get default domain type
+Patch-mainline: v5.4-rc1
+Git-commit: 8a69961c7f7583742ab9064feab5ea533a6b1b97
+References: bsc#1136039
+
+Add a couple of functions to allow changing the default
+domain type from architecture code and a function for iommu
+drivers to request whether the default domain is
+passthrough.
+
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+---
+ drivers/iommu/iommu.c | 22 ++++++++++++++++++++++
+ include/linux/iommu.h | 16 ++++++++++++++++
+ 2 files changed, 38 insertions(+)
+
+--- a/drivers/iommu/iommu.c
++++ b/drivers/iommu/iommu.c
+@@ -1973,6 +1973,28 @@ out:
+ 	return ret;
+ }
+ 
++void iommu_set_default_passthrough(bool cmd_line)
++{
++	if (cmd_line)
++		iommu_set_cmd_line_dma_api();
++
++	iommu_def_domain_type = IOMMU_DOMAIN_IDENTITY;
++}
++
++void iommu_set_default_translated(bool cmd_line)
++{
++	if (cmd_line)
++		iommu_set_cmd_line_dma_api();
++
++	iommu_def_domain_type = IOMMU_DOMAIN_DMA;
++}
++
++bool iommu_default_passthrough(void)
++{
++	return iommu_def_domain_type == IOMMU_DOMAIN_IDENTITY;
++}
++EXPORT_SYMBOL_GPL(iommu_default_passthrough);
++
+ const struct iommu_ops *iommu_ops_from_fwnode(struct fwnode_handle *fwnode)
+ {
+ 	const struct iommu_ops *ops = NULL;
+--- a/include/linux/iommu.h
++++ b/include/linux/iommu.h
+@@ -317,6 +317,9 @@ extern void iommu_set_fault_handler(stru
+ extern void iommu_get_resv_regions(struct device *dev, struct list_head *list);
+ extern void iommu_put_resv_regions(struct device *dev, struct list_head *list);
+ extern int iommu_request_dm_for_dev(struct device *dev);
++extern void iommu_set_default_passthrough(bool cmd_line);
++extern void iommu_set_default_translated(bool cmd_line);
++extern bool iommu_default_passthrough(void);
+ extern struct iommu_resv_region *
+ iommu_alloc_resv_region(phys_addr_t start, size_t length, int prot,
+ 			enum iommu_resv_type type);
+@@ -546,6 +549,19 @@ static inline int iommu_request_dm_for_d
+ 	return -ENODEV;
+ }
+ 
++static inline void iommu_set_default_passthrough(bool cmd_line)
++{
++}
++
++static inline void iommu_set_default_translated(bool cmd_line)
++{
++}
++
++static inline bool iommu_default_passthrough(void)
++{
++	return true;
++}
++
+ static inline int iommu_attach_group(struct iommu_domain *domain,
+ 				     struct iommu_group *group)
+ {

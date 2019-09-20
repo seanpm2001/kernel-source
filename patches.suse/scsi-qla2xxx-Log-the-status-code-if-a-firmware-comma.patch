@@ -1,0 +1,51 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Wed, 17 Apr 2019 14:44:20 -0700
+Subject: scsi: qla2xxx: Log the status code if a firmware command fails
+Patch-mainline: v5.2-rc1
+Git-commit: 3f918ffae8e788d70e6488598d00e0bf717d7737
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+It is important to know why a firmware command failed. Hence log 'rval'
+together with the values of the mailbox registers if a firwmare command
+fails.
+
+Cc: Himanshu Madhani <hmadhani@marvell.com>
+Cc: Giridhar Malavali <gmalavali@marvell.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Acked-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_mbx.c |    4 ++--
+ drivers/scsi/qla2xxx/qla_mr.c  |    6 +++---
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_mbx.c
++++ b/drivers/scsi/qla2xxx/qla_mbx.c
+@@ -567,9 +567,9 @@ mbx_done:
+ 		    mcp->mb[0]);
+ 	} else if (rval) {
+ 		if (ql2xextended_error_logging & (ql_dbg_disc|ql_dbg_mbx)) {
+-			pr_warn("%s [%s]-%04x:%ld: **** Failed", QL_MSGHDR,
++			pr_warn("%s [%s]-%04x:%ld: **** Failed=%x", QL_MSGHDR,
+ 			    dev_name(&ha->pdev->dev), 0x1020+0x800,
+-			    vha->host_no);
++			    vha->host_no, rval);
+ 			mboxes = mcp->in_mb;
+ 			cnt = 4;
+ 			for (i = 0; i < ha->mbx_count && cnt; i++, mboxes >>= 1)
+--- a/drivers/scsi/qla2xxx/qla_mr.c
++++ b/drivers/scsi/qla2xxx/qla_mr.c
+@@ -273,9 +273,9 @@ premature_exit:
+ 
+ 	if (rval) {
+ 		ql_log(ql_log_warn, base_vha, 0x1163,
+-		    "**** Failed mbx[0]=%x, mb[1]=%x, mb[2]=%x, "
+-		    "mb[3]=%x, cmd=%x ****.\n",
+-		    mcp->mb[0], mcp->mb[1], mcp->mb[2], mcp->mb[3], command);
++		       "**** Failed=%x mbx[0]=%x, mb[1]=%x, mb[2]=%x, mb[3]=%x, cmd=%x ****.\n",
++		       rval, mcp->mb[0], mcp->mb[1], mcp->mb[2], mcp->mb[3],
++		       command);
+ 	} else {
+ 		ql_dbg(ql_dbg_mbx, base_vha, 0x1164, "Done %s.\n", __func__);
+ 	}

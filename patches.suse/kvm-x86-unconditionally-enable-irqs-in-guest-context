@@ -1,0 +1,66 @@
+From: Sean Christopherson <sean.j.christopherson@intel.com>
+Date: Wed, 10 Jul 2019 09:07:34 -0700
+Subject: KVM: x86: Unconditionally enable irqs in guest context
+Git-commit: d7a08882a0a4b4e176691331ee3f492996579534
+Patch-mainline: v5.3-rc1
+References: bsc#1145396
+
+On VMX, KVM currently does not re-enable irqs until after it has exited
+the guest context.  As a result, a tick that fires in the window between
+VM-Exit and guest_exit_irqoff() will be accounted as system time.  While
+said window is relatively small, it's large enough to be problematic in
+some configurations, e.g. if VM-Exits are consistently occurring a hair
+earlier than the tick irq.
+
+Intentionally toggle irqs back off so that guest_exit_irqoff() can be
+used in lieu of guest_exit() in order to avoid the save/restore of flags
+in guest_exit().  On my Haswell system, "nop; cli; sti" is ~6 cycles,
+versus ~28 cycles for "pushf; pop <reg>; cli; push <reg>; popf".
+
+Fixes: f2485b3e0c6c0 ("KVM: x86: use guest_exit_irqoff")
+Reported-by: Wei Yang <w90p710@gmail.com>
+Signed-off-by: Sean Christopherson <sean.j.christopherson@intel.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Joerg Roedel <jroedel@suse.de>
+---
+ arch/x86/kvm/svm.c | 10 +---------
+ arch/x86/kvm/x86.c | 11 +++++++++++
+ 2 files changed, 12 insertions(+), 9 deletions(-)
+
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -6060,13 +6060,7 @@ out:
+ 
+ static void svm_handle_external_intr(struct kvm_vcpu *vcpu)
+ {
+-	local_irq_enable();
+-	/*
+-	 * We must have an instruction with interrupts enabled, so
+-	 * the timer interrupt isn't delayed by the interrupt shadow.
+-	 */
+-	asm("nop");
+-	local_irq_disable();
++
+ }
+ 
+ static void svm_sched_in(struct kvm_vcpu *vcpu, int cpu)
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -7273,7 +7273,16 @@ static int vcpu_enter_guest(struct kvm_v
+ 
+ 	kvm_x86_ops->handle_external_intr(vcpu);
+ 
++	/*
++	 * Consume any pending interrupts, including the possible source of
++	 * VM-Exit on SVM and any ticks that occur between VM-Exit and now.
++	 * An instruction is required after local_irq_enable() to fully unblock
++	 * interrupts on processors that implement an interrupt shadow, the
++	 * stat.exits increment will do nicely.
++	 */
++	local_irq_enable();
+ 	++vcpu->stat.exits;
++	local_irq_disable();
+ 
+ 	guest_exit_irqoff();
+ 
+

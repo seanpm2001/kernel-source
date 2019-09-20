@@ -1,0 +1,59 @@
+From: Eric Farman <farman@linux.ibm.com>
+Date: Wed, 17 Apr 2019 02:54:14 +0200
+Subject: KVM: s390: Fix potential spectre warnings
+Git-commit: 58616e6a37842740349b7a42dc442ec50fc1d457
+Patch-mainline: v5.2-rc1
+References: jsc#SLE-6412
+
+Fix some warnings from smatch:
+
+arch/s390/kvm/interrupt.c:2310 get_io_adapter() warn: potential spectre issue 'kvm->arch.adapters' [r] (local cap)
+arch/s390/kvm/interrupt.c:2341 register_io_adapter() warn: potential spectre issue 'dev->kvm->arch.adapters' [w]
+
+Signed-off-by: Eric Farman <farman@linux.ibm.com>
+Message-Id: <20190417005414.47801-1-farman@linux.ibm.com>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Signed-off-by: Bruce Rogers <brogers@suse.com>
+---
+ arch/s390/kvm/interrupt.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/arch/s390/kvm/interrupt.c b/arch/s390/kvm/interrupt.c
+index 2a270958a1dd..6d58180cb1e7 100644
+--- a/arch/s390/kvm/interrupt.c
++++ b/arch/s390/kvm/interrupt.c
+@@ -11,6 +11,7 @@
+ #include <linux/kvm_host.h>
+ #include <linux/hrtimer.h>
+ #include <linux/mmu_context.h>
++#include <linux/nospec.h>
+ #include <linux/signal.h>
+ #include <linux/slab.h>
+ #include <linux/bitmap.h>
+@@ -2213,6 +2214,7 @@ static struct s390_io_adapter *get_io_adapter(struct kvm *kvm, unsigned int id)
+ {
+ 	if (id >= MAX_S390_IO_ADAPTERS)
+ 		return NULL;
++	id = array_index_nospec(id, MAX_S390_IO_ADAPTERS);
+ 	return kvm->arch.adapters[id];
+ }
+ 
+@@ -2226,8 +2228,13 @@ static int register_io_adapter(struct kvm_device *dev,
+ 			   (void __user *)attr->addr, sizeof(adapter_info)))
+ 		return -EFAULT;
+ 
+-	if ((adapter_info.id >= MAX_S390_IO_ADAPTERS) ||
+-	    (dev->kvm->arch.adapters[adapter_info.id] != NULL))
++	if (adapter_info.id >= MAX_S390_IO_ADAPTERS)
++		return -EINVAL;
++
++	adapter_info.id = array_index_nospec(adapter_info.id,
++					     MAX_S390_IO_ADAPTERS);
++
++	if (dev->kvm->arch.adapters[adapter_info.id] != NULL)
+ 		return -EINVAL;
+ 
+ 	adapter = kzalloc(sizeof(*adapter), GFP_KERNEL);
+

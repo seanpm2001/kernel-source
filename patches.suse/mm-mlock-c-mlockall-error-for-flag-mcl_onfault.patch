@@ -1,0 +1,45 @@
+From: "Potyra, Stefan" <Stefan.Potyra@elektrobit.com>
+Date: Thu, 13 Jun 2019 15:55:55 -0700
+Subject: mm/mlock.c: mlockall error for flag MCL_ONFAULT
+Git-commit: dedca63504a204dc8410d98883fdc16dffa8cb80
+Patch-mainline: v5.2-rc5
+References: bsc#1148527, VM Functionality
+
+If mlockall() is called with only MCL_ONFAULT as flag, it removes any
+previously applied lockings and does nothing else.
+
+This behavior is counter-intuitive and doesn't match the Linux man page.
+
+  For mlockall():
+
+  EINVAL Unknown flags were specified or MCL_ONFAULT was specified
+  without either MCL_FUTURE or MCL_CURRENT.
+
+Consequently, return the error EINVAL, if only MCL_ONFAULT is passed.
+That way, applications will at least detect that they are calling
+mlockall() incorrectly.
+
+Link: http://lkml.kernel.org/r/20190527075333.GA6339@er01809n.ebgroup.elektrobit.com
+Fixes: b0f205c2a308 ("mm: mlock: add mlock flags to enable VM_LOCKONFAULT usage")
+Signed-off-by: Stefan Potyra <Stefan.Potyra@elektrobit.com>
+Reviewed-by: Daniel Jordan <daniel.m.jordan@oracle.com>
+Acked-by: Michal Hocko <mhocko@suse.com>
+Acked-by: Vlastimil Babka <vbabka@suse.cz>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+---
+ mm/mlock.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/mm/mlock.c
++++ b/mm/mlock.c
+@@ -794,7 +794,8 @@ SYSCALL_DEFINE1(mlockall, int, flags)
+ 	unsigned long lock_limit;
+ 	int ret;
+ 
+-	if (!flags || (flags & ~(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT)))
++	if (!flags || (flags & ~(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT)) ||
++	    flags == MCL_ONFAULT)
+ 		return -EINVAL;
+ 
+ 	if (!can_do_mlock())

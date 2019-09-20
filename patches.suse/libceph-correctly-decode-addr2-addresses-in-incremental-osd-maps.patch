@@ -1,0 +1,58 @@
+From: Jeff Layton <jlayton@kernel.org>
+Date: Tue, 4 Jun 2019 15:10:44 -0400
+Subject: libceph: correctly decode ADDR2 addresses in incremental OSD maps
+Git-commit: 8cb5f2b4fcf4b8a4043e26c232b435e83e2abe87
+Patch-mainline: v5.3-rc1
+References: bsc#1148133 bsc#1136682
+
+Given the new format, we have to decode the addresses twice. Once to
+skip past the new_up_client field, and a second time to collect the
+addresses.
+
+Signed-off-by: Jeff Layton <jlayton@kernel.org>
+Reviewed-by: "Yan, Zheng" <zyan@redhat.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+
+---
+ net/ceph/osdmap.c | 15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/net/ceph/osdmap.c b/net/ceph/osdmap.c
+index 95e98ae59a54..90437906b7bc 100644
+--- a/net/ceph/osdmap.c
++++ b/net/ceph/osdmap.c
+@@ -1618,12 +1618,17 @@ static int decode_new_up_state_weight(void **p, void *end, u8 struct_v,
+ 	void *new_state;
+ 	void *new_weight_end;
+ 	u32 len;
++	int i;
+ 
+ 	new_up_client = *p;
+ 	ceph_decode_32_safe(p, end, len, e_inval);
+-	len *= sizeof(u32) + sizeof(struct ceph_entity_addr);
+-	ceph_decode_need(p, end, len, e_inval);
+-	*p += len;
++	for (i = 0; i < len; ++i) {
++		struct ceph_entity_addr addr;
++
++		ceph_decode_skip_32(p, end, e_inval);
++		if (ceph_decode_entity_addr(p, end, &addr))
++			goto e_inval;
++	}
+ 
+ 	new_state = *p;
+ 	ceph_decode_32_safe(p, end, len, e_inval);
+@@ -1699,9 +1704,9 @@ static int decode_new_up_state_weight(void **p, void *end, u8 struct_v,
+ 		struct ceph_entity_addr addr;
+ 
+ 		osd = ceph_decode_32(p);
+-		ceph_decode_copy(p, &addr, sizeof(addr));
+-		ceph_decode_addr(&addr);
+ 		BUG_ON(osd >= map->max_osd);
++		if (ceph_decode_entity_addr(p, end, &addr))
++			goto e_inval;
+ 		pr_info("osd%d up\n", osd);
+ 		map->osd_state[osd] |= CEPH_OSD_EXISTS | CEPH_OSD_UP;
+ 		map->osd_addr[osd] = addr;
+

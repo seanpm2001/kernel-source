@@ -1,0 +1,192 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Tue, 18 Dec 2018 17:49:05 -0600
+Subject: [PATCH] smb3: Fix rmdir compounding regression to strict servers
+Git-commit: 271b9c0c80076bb1dd868dc384ef3aac87ec7dec
+Patch-mainline: v4.20
+References: bsc#1144333
+
+Some servers require that the setinfo matches the exact size,
+and in this case compounding changes introduced by
+commit c2e0fe3f5aae ("cifs: make rmdir() use compounding")
+caused us to send 8 bytes (padded length) instead of 1 byte
+(the size of the structure).  See MS-FSCC section 2.4.11.
+
+Fixing this when we send a SET_INFO command for delete file
+disposition, then ends up as an iov of a single byte but this
+causes problems with SMB3 and encryption.
+
+To avoid this, instead of creating a one byte iov for the disposition value
+and then appending an additional iov with a 7 byte padding we now handle
+this as a single 8 byte iov containing both the disposition byte as well as
+the padding in one single buffer.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2inode.c | 16 ++++++++--------
+ fs/cifs/smb2ops.c   | 23 +++++++++++++++--------
+ fs/cifs/smb2proto.h |  3 ++-
+ 3 files changed, 25 insertions(+), 17 deletions(-)
+
+diff --git a/fs/cifs/smb2inode.c b/fs/cifs/smb2inode.c
+index 9e7ef7ec2d70..a8999f930b22 100644
+--- a/fs/cifs/smb2inode.c
++++ b/fs/cifs/smb2inode.c
+@@ -97,7 +97,7 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 	if (rc)
+ 		goto finished;
+ 
+-	smb2_set_next_command(server, &rqst[num_rqst++]);
++	smb2_set_next_command(server, &rqst[num_rqst++], 0);
+ 
+ 	/* Operation */
+ 	switch (command) {
+@@ -111,7 +111,7 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 				SMB2_O_INFO_FILE, 0,
+ 				sizeof(struct smb2_file_all_info) +
+ 					  PATH_MAX * 2, 0, NULL);
+-		smb2_set_next_command(server, &rqst[num_rqst]);
++		smb2_set_next_command(server, &rqst[num_rqst], 0);
+ 		smb2_set_related(&rqst[num_rqst++]);
+ 		break;
+ 	case SMB2_OP_DELETE:
+@@ -127,14 +127,14 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 		rqst[num_rqst].rq_iov = si_iov;
+ 		rqst[num_rqst].rq_nvec = 1;
+ 
+-		size[0] = 8;
++		size[0] = 1; /* sizeof __u8 See MS-FSCC section 2.4.11 */
+ 		data[0] = &delete_pending[0];
+ 
+ 		rc = SMB2_set_info_init(tcon, &rqst[num_rqst], COMPOUND_FID,
+ 					COMPOUND_FID, current->tgid,
+ 					FILE_DISPOSITION_INFORMATION,
+ 					SMB2_O_INFO_FILE, 0, data, size);
+-		smb2_set_next_command(server, &rqst[num_rqst]);
++		smb2_set_next_command(server, &rqst[num_rqst], 1);
+ 		smb2_set_related(&rqst[num_rqst++]);
+ 		break;
+ 	case SMB2_OP_SET_EOF:
+@@ -149,7 +149,7 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 					COMPOUND_FID, current->tgid,
+ 					FILE_END_OF_FILE_INFORMATION,
+ 					SMB2_O_INFO_FILE, 0, data, size);
+-		smb2_set_next_command(server, &rqst[num_rqst]);
++		smb2_set_next_command(server, &rqst[num_rqst], 0);
+ 		smb2_set_related(&rqst[num_rqst++]);
+ 		break;
+ 	case SMB2_OP_SET_INFO:
+@@ -165,7 +165,7 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 					COMPOUND_FID, current->tgid,
+ 					FILE_BASIC_INFORMATION,
+ 					SMB2_O_INFO_FILE, 0, data, size);
+-		smb2_set_next_command(server, &rqst[num_rqst]);
++		smb2_set_next_command(server, &rqst[num_rqst], 0);
+ 		smb2_set_related(&rqst[num_rqst++]);
+ 		break;
+ 	case SMB2_OP_RENAME:
+@@ -189,7 +189,7 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 					COMPOUND_FID, current->tgid,
+ 					FILE_RENAME_INFORMATION,
+ 					SMB2_O_INFO_FILE, 0, data, size);
+-		smb2_set_next_command(server, &rqst[num_rqst]);
++		smb2_set_next_command(server, &rqst[num_rqst], 0);
+ 		smb2_set_related(&rqst[num_rqst++]);
+ 		break;
+ 	case SMB2_OP_HARDLINK:
+@@ -213,7 +213,7 @@ smb2_compound_op(const unsigned int xid, struct cifs_tcon *tcon,
+ 					COMPOUND_FID, current->tgid,
+ 					FILE_LINK_INFORMATION,
+ 					SMB2_O_INFO_FILE, 0, data, size);
+-		smb2_set_next_command(server, &rqst[num_rqst]);
++		smb2_set_next_command(server, &rqst[num_rqst], 0);
+ 		smb2_set_related(&rqst[num_rqst++]);
+ 		break;
+ 	default:
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 225fec1cfa67..e25c7aade98a 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1194,7 +1194,7 @@ smb2_ioctl_query_info(const unsigned int xid,
+ 	rc = SMB2_open_init(tcon, &rqst[0], &oplock, &oparms, path);
+ 	if (rc)
+ 		goto iqinf_exit;
+-	smb2_set_next_command(ses->server, &rqst[0]);
++	smb2_set_next_command(ses->server, &rqst[0], 0);
+ 
+ 	/* Query */
+ 	memset(&qi_iov, 0, sizeof(qi_iov));
+@@ -1208,7 +1208,7 @@ smb2_ioctl_query_info(const unsigned int xid,
+ 				  qi.output_buffer_length, buffer);
+ 	if (rc)
+ 		goto iqinf_exit;
+-	smb2_set_next_command(ses->server, &rqst[1]);
++	smb2_set_next_command(ses->server, &rqst[1], 0);
+ 	smb2_set_related(&rqst[1]);
+ 
+ 	/* Close */
+@@ -1761,16 +1761,23 @@ smb2_set_related(struct smb_rqst *rqst)
+ char smb2_padding[7] = {0, 0, 0, 0, 0, 0, 0};
+ 
+ void
+-smb2_set_next_command(struct TCP_Server_Info *server, struct smb_rqst *rqst)
++smb2_set_next_command(struct TCP_Server_Info *server, struct smb_rqst *rqst,
++		      bool has_space_for_padding)
+ {
+ 	struct smb2_sync_hdr *shdr;
+ 	unsigned long len = smb_rqst_len(server, rqst);
+ 
+ 	/* SMB headers in a compound are 8 byte aligned. */
+ 	if (len & 7) {
+-		rqst->rq_iov[rqst->rq_nvec].iov_base = smb2_padding;
+-		rqst->rq_iov[rqst->rq_nvec].iov_len = 8 - (len & 7);
+-		rqst->rq_nvec++;
++		if (has_space_for_padding) {
++			len = rqst->rq_iov[rqst->rq_nvec - 1].iov_len;
++			rqst->rq_iov[rqst->rq_nvec - 1].iov_len =
++				(len + 7) & ~7;
++		} else {
++			rqst->rq_iov[rqst->rq_nvec].iov_base = smb2_padding;
++			rqst->rq_iov[rqst->rq_nvec].iov_len = 8 - (len & 7);
++			rqst->rq_nvec++;
++		}
+ 		len = smb_rqst_len(server, rqst);
+ 	}
+ 
+@@ -1820,7 +1827,7 @@ smb2_queryfs(const unsigned int xid, struct cifs_tcon *tcon,
+ 	rc = SMB2_open_init(tcon, &rqst[0], &oplock, &oparms, &srch_path);
+ 	if (rc)
+ 		goto qfs_exit;
+-	smb2_set_next_command(server, &rqst[0]);
++	smb2_set_next_command(server, &rqst[0], 0);
+ 
+ 	memset(&qi_iov, 0, sizeof(qi_iov));
+ 	rqst[1].rq_iov = qi_iov;
+@@ -1833,7 +1840,7 @@ smb2_queryfs(const unsigned int xid, struct cifs_tcon *tcon,
+ 				  NULL);
+ 	if (rc)
+ 		goto qfs_exit;
+-	smb2_set_next_command(server, &rqst[1]);
++	smb2_set_next_command(server, &rqst[1], 0);
+ 	smb2_set_related(&rqst[1]);
+ 
+ 	memset(&close_iov, 0, sizeof(close_iov));
+diff --git a/fs/cifs/smb2proto.h b/fs/cifs/smb2proto.h
+index 9f4e9ed9ce53..2fe78acd7d0c 100644
+--- a/fs/cifs/smb2proto.h
++++ b/fs/cifs/smb2proto.h
+@@ -117,7 +117,8 @@ extern int smb3_crypto_aead_allocate(struct TCP_Server_Info *server);
+ extern unsigned long smb_rqst_len(struct TCP_Server_Info *server,
+ 				  struct smb_rqst *rqst);
+ extern void smb2_set_next_command(struct TCP_Server_Info *server,
+-				  struct smb_rqst *rqst);
++				  struct smb_rqst *rqst,
++				  bool has_space_for_padding);
+ extern void smb2_set_related(struct smb_rqst *rqst);
+ 
+ /*
+-- 
+2.16.4
+

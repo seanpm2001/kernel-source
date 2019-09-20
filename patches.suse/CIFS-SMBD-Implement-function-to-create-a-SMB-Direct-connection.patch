@@ -1,0 +1,68 @@
+From: Long Li <longli@microsoft.com>
+Date: Fri, 17 Nov 2017 17:26:52 -0800
+Subject: [PATCH] CIFS: SMBD: Implement function to create a SMB Direct
+ connection
+Git-commit: 399f9539d951adf26a1078e38c1b0f10cf6c3e71
+Patch-mainline: v4.15
+References: bsc#1144333
+
+The upper layer calls this function to connect to peer through SMB Direct.
+Each SMB Direct connection is based on a RDMA RC Queue Pair.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smbdirect.c | 17 +++++++++++++++++
+ fs/cifs/smbdirect.h |  6 ++++++
+ 2 files changed, 23 insertions(+)
+
+diff --git a/fs/cifs/smbdirect.c b/fs/cifs/smbdirect.c
+index 2ecd5c19d313..862cdf9424cb 100644
+--- a/fs/cifs/smbdirect.c
++++ b/fs/cifs/smbdirect.c
+@@ -1646,3 +1646,20 @@ struct smbd_connection *_smbd_get_connection(
+ 	kfree(info);
+ 	return NULL;
+ }
++
++struct smbd_connection *smbd_get_connection(
++	struct TCP_Server_Info *server, struct sockaddr *dstaddr)
++{
++	struct smbd_connection *ret;
++	int port = SMBD_PORT;
++
++try_again:
++	ret = _smbd_get_connection(server, dstaddr, port);
++
++	/* Try SMB_PORT if SMBD_PORT doesn't work */
++	if (!ret && port == SMBD_PORT) {
++		port = SMB_PORT;
++		goto try_again;
++	}
++	return ret;
++}
+diff --git a/fs/cifs/smbdirect.h b/fs/cifs/smbdirect.h
+index e4e65d3c6de8..25b3782cc692 100644
+--- a/fs/cifs/smbdirect.h
++++ b/fs/cifs/smbdirect.h
+@@ -243,9 +243,15 @@ struct smbd_response {
+ 	u8 packet[];
+ };
+ 
++/* Create a SMBDirect session */
++struct smbd_connection *smbd_get_connection(
++	struct TCP_Server_Info *server, struct sockaddr *dstaddr);
++
+ #else
+ #define cifs_rdma_enabled(server)	0
+ struct smbd_connection {};
++static inline void *smbd_get_connection(
++	struct TCP_Server_Info *server, struct sockaddr *dstaddr) {return NULL;}
+ #endif
+ 
+ #endif
+-- 
+2.16.4
+

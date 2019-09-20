@@ -1,0 +1,79 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Thu, 30 Aug 2018 10:12:59 +1000
+Subject: [PATCH] cifs: add a warning if we try to to dequeue a deleted mid
+Git-commit: ddf83afb9f60ee58cdec30bb615eff65d00ba05e
+Patch-mainline: v4.19-rc7
+References: bsc#1144333
+
+cifs_delete_mid() is called once we are finished handling a mid and we
+expect no more work done on this mid.
+
+Needed to fix recent commit:
+commit 730928c8f4be88e9d6a027a16b1e8fa9c59fc077
+("cifs: update smb2_queryfs() to use compounding")
+
+Add a warning if someone tries to dequeue a mid that has already been
+flagged to be deleted.
+Also change list_del() to list_del_init() so that if we have similar bugs
+resurface in the future we will not oops.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsglob.h  |  1 +
+ fs/cifs/connect.c   | 10 +++++++++-
+ fs/cifs/transport.c |  3 ++-
+ 3 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 0c9ab62c3df4..9dcaed031843 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -1553,6 +1553,7 @@ static inline void free_dfs_info_array(struct dfs_info3_param *param,
+ 
+ /* Flags */
+ #define   MID_WAIT_CANCELLED	 1 /* Cancelled while waiting for response */
++#define   MID_DELETED            2 /* Mid has been dequeued/deleted */
+ 
+ /* Types of response buffer returned from SendReceive2 */
+ #define   CIFS_NO_BUFFER        0    /* Response buffer not returned */
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 7aa08dba4719..e9d64c92b8da 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -659,7 +659,15 @@ dequeue_mid(struct mid_q_entry *mid, bool malformed)
+ 		mid->mid_state = MID_RESPONSE_RECEIVED;
+ 	else
+ 		mid->mid_state = MID_RESPONSE_MALFORMED;
+-	list_del_init(&mid->qhead);
++	/*
++	 * Trying to handle/dequeue a mid after the send_recv()
++	 * function has finished processing it is a bug.
++	 */
++	if (mid->mid_flags & MID_DELETED)
++		printk_once(KERN_WARNING
++			    "trying to dequeue a deleted mid\n");
++	else
++		list_del_init(&mid->qhead);
+ 	spin_unlock(&GlobalMid_Lock);
+ }
+ 
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 78f96fa3d7d9..9cc9a127749e 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -142,7 +142,8 @@ void
+ cifs_delete_mid(struct mid_q_entry *mid)
+ {
+ 	spin_lock(&GlobalMid_Lock);
+-	list_del(&mid->qhead);
++	list_del_init(&mid->qhead);
++	mid->mid_flags |= MID_DELETED;
+ 	spin_unlock(&GlobalMid_Lock);
+ 
+ 	DeleteMidQEntry(mid);
+-- 
+2.16.4
+

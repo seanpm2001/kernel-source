@@ -1,0 +1,212 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Tue, 31 Jul 2018 01:21:37 -0500
+Subject: [PATCH] cifs: simple stats should always be enabled
+Git-commit: fcabb89299d79010eb923afdd26de04afcc0527f
+Patch-mainline: v4.18
+References: bsc#1144333
+
+CONFIG_CIFS_STATS should always be enabled as Pavel recently
+noted.  Simple statistics are not a significant performance hit,
+and removing the ifdef simplifies the code slightly.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/Kconfig      |    9 +--------
+ fs/cifs/cifs_debug.c |    6 ------
+ fs/cifs/cifsglob.h   |   10 ----------
+ fs/cifs/misc.c       |    2 --
+ fs/cifs/smb1ops.c    |    4 ----
+ fs/cifs/smb2ops.c    |    4 ----
+ fs/cifs/smb2pdu.c    |    2 --
+ 7 files changed, 1 insertion(+), 36 deletions(-)
+
+--- a/fs/cifs/Kconfig
++++ b/fs/cifs/Kconfig
+@@ -49,16 +49,9 @@ config CIFS
+ 
+ 	  If you need to mount to Samba, Azure, Macs or Windows from this machine, say Y.
+ 
+-config CIFS_STATS
+-        bool "CIFS statistics"
+-        depends on CIFS
+-        help
+-          Enabling this option will cause statistics for each server share
+-	  mounted by the cifs client to be displayed in /proc/fs/cifs/Stats
+-
+ config CIFS_STATS2
+ 	bool "Extended statistics"
+-	depends on CIFS_STATS
++	depends on CIFS
+ 	help
+ 	  Enabling this option will allow more detailed statistics on SMB
+ 	  request timing to be displayed in /proc/fs/cifs/DebugData and also
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -377,7 +377,6 @@ static const struct file_operations cifs
+ 	.release	= single_release,
+ };
+ 
+-#ifdef CONFIG_CIFS_STATS
+ static ssize_t cifs_stats_proc_write(struct file *file,
+ 		const char __user *buffer, size_t count, loff_t *ppos)
+ {
+@@ -493,7 +492,6 @@ static const struct file_operations cifs
+ 	.release	= single_release,
+ 	.write		= cifs_stats_proc_write,
+ };
+-#endif /* STATS */
+ 
+ #ifdef CONFIG_CIFS_SMB_DIRECT
+ #define PROC_FILE_DEFINE(name) \
+@@ -550,9 +548,7 @@ cifs_proc_init(void)
+ 
+ 	proc_create("DebugData", 0, proc_fs_cifs, &cifs_debug_data_proc_fops);
+ 
+-#ifdef CONFIG_CIFS_STATS
+ 	proc_create("Stats", 0644, proc_fs_cifs, &cifs_stats_proc_fops);
+-#endif /* STATS */
+ 	proc_create("cifsFYI", 0644, proc_fs_cifs, &cifsFYI_proc_fops);
+ 	proc_create("traceSMB", 0644, proc_fs_cifs, &traceSMB_proc_fops);
+ 	proc_create("LinuxExtensionsEnabled", 0644, proc_fs_cifs,
+@@ -590,9 +586,7 @@ cifs_proc_clean(void)
+ 	remove_proc_entry("DebugData", proc_fs_cifs);
+ 	remove_proc_entry("cifsFYI", proc_fs_cifs);
+ 	remove_proc_entry("traceSMB", proc_fs_cifs);
+-#ifdef CONFIG_CIFS_STATS
+ 	remove_proc_entry("Stats", proc_fs_cifs);
+-#endif
+ 	remove_proc_entry("SecurityFlags", proc_fs_cifs);
+ 	remove_proc_entry("LinuxExtensionsEnabled", proc_fs_cifs);
+ 	remove_proc_entry("LookupCacheEnabled", proc_fs_cifs);
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -931,7 +931,6 @@ struct cifs_tcon {
+ 	__u32 tid;		/* The 4 byte tree id */
+ 	__u16 Flags;		/* optional support bits */
+ 	enum statusEnum tidStatus;
+-#ifdef CONFIG_CIFS_STATS
+ 	atomic_t num_smbs_sent;
+ 	union {
+ 		struct {
+@@ -965,7 +964,6 @@ struct cifs_tcon {
+ 	__u64    bytes_read;
+ 	__u64    bytes_written;
+ 	spinlock_t stat_lock;  /* protects the two fields above */
+-#endif /* CONFIG_CIFS_STATS */
+ 	FILE_SYSTEM_DEVICE_INFO fsDevInfo;
+ 	FILE_SYSTEM_ATTRIBUTE_INFO fsAttrInfo; /* ok if fs name truncated */
+ 	FILE_SYSTEM_UNIX_INFO fsUnixInfo;
+@@ -1331,7 +1329,6 @@ convert_delimiter(char *path, char delim
+ 		*pos = delim;
+ }
+ 
+-#ifdef CONFIG_CIFS_STATS
+ #define cifs_stats_inc atomic_inc
+ 
+ static inline void cifs_stats_bytes_written(struct cifs_tcon *tcon,
+@@ -1351,13 +1348,6 @@ static inline void cifs_stats_bytes_read
+ 	tcon->bytes_read += bytes;
+ 	spin_unlock(&tcon->stat_lock);
+ }
+-#else
+-
+-#define  cifs_stats_inc(field) do {} while (0)
+-#define  cifs_stats_bytes_written(tcon, bytes) do {} while (0)
+-#define  cifs_stats_bytes_read(tcon, bytes) do {} while (0)
+-
+-#endif
+ 
+ 
+ /*
+--- a/fs/cifs/misc.c
++++ b/fs/cifs/misc.c
+@@ -122,9 +122,7 @@ tconInfoAlloc(void)
+ 		mutex_init(&ret_buf->crfid.fid_mutex);
+ 		ret_buf->crfid.fid = kzalloc(sizeof(struct cifs_fid),
+ 					     GFP_KERNEL);
+-#ifdef CONFIG_CIFS_STATS
+ 		spin_lock_init(&ret_buf->stat_lock);
+-#endif
+ 	}
+ 	return ret_buf;
+ }
+--- a/fs/cifs/smb1ops.c
++++ b/fs/cifs/smb1ops.c
+@@ -624,7 +624,6 @@ cifs_query_file_info(const unsigned int
+ static void
+ cifs_clear_stats(struct cifs_tcon *tcon)
+ {
+-#ifdef CONFIG_CIFS_STATS
+ 	atomic_set(&tcon->stats.cifs_stats.num_writes, 0);
+ 	atomic_set(&tcon->stats.cifs_stats.num_reads, 0);
+ 	atomic_set(&tcon->stats.cifs_stats.num_flushes, 0);
+@@ -646,13 +645,11 @@ cifs_clear_stats(struct cifs_tcon *tcon)
+ 	atomic_set(&tcon->stats.cifs_stats.num_locks, 0);
+ 	atomic_set(&tcon->stats.cifs_stats.num_acl_get, 0);
+ 	atomic_set(&tcon->stats.cifs_stats.num_acl_set, 0);
+-#endif
+ }
+ 
+ static void
+ cifs_print_stats(struct seq_file *m, struct cifs_tcon *tcon)
+ {
+-#ifdef CONFIG_CIFS_STATS
+ 	seq_printf(m, " Oplocks breaks: %d",
+ 		   atomic_read(&tcon->stats.cifs_stats.num_oplock_brks));
+ 	seq_printf(m, "\nReads:  %d Bytes: %llu",
+@@ -684,7 +681,6 @@ cifs_print_stats(struct seq_file *m, str
+ 		   atomic_read(&tcon->stats.cifs_stats.num_ffirst),
+ 		   atomic_read(&tcon->stats.cifs_stats.num_fnext),
+ 		   atomic_read(&tcon->stats.cifs_stats.num_fclose));
+-#endif
+ }
+ 
+ static void
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -900,13 +900,11 @@ smb2_can_echo(struct TCP_Server_Info *se
+ static void
+ smb2_clear_stats(struct cifs_tcon *tcon)
+ {
+-#ifdef CONFIG_CIFS_STATS
+ 	int i;
+ 	for (i = 0; i < NUMBER_OF_SMB2_COMMANDS; i++) {
+ 		atomic_set(&tcon->stats.smb2_stats.smb2_com_sent[i], 0);
+ 		atomic_set(&tcon->stats.smb2_stats.smb2_com_failed[i], 0);
+ 	}
+-#endif
+ }
+ 
+ static void
+@@ -945,7 +943,6 @@ smb2_dump_share_caps(struct seq_file *m,
+ static void
+ smb2_print_stats(struct seq_file *m, struct cifs_tcon *tcon)
+ {
+-#ifdef CONFIG_CIFS_STATS
+ 	atomic_t *sent = tcon->stats.smb2_stats.smb2_com_sent;
+ 	atomic_t *failed = tcon->stats.smb2_stats.smb2_com_failed;
+ 
+@@ -995,7 +992,6 @@ smb2_print_stats(struct seq_file *m, str
+ 	seq_printf(m, "\nOplockBreaks: %d sent %d failed",
+ 		   atomic_read(&sent[SMB2_OPLOCK_BREAK_HE]),
+ 		   atomic_read(&failed[SMB2_OPLOCK_BREAK_HE]));
+-#endif
+ }
+ 
+ static void
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -360,10 +360,8 @@ smb2_plain_req_init(__le16 smb2_command,
+ 		       total_len);
+ 
+ 	if (tcon != NULL) {
+-#ifdef CONFIG_CIFS_STATS
+ 		uint16_t com_code = le16_to_cpu(smb2_command);
+ 		cifs_stats_inc(&tcon->stats.smb2_stats.smb2_com_sent[com_code]);
+-#endif
+ 		cifs_stats_inc(&tcon->num_smbs_sent);
+ 	}
+ 

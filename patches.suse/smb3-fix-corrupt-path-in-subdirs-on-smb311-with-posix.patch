@@ -1,0 +1,30 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Thu, 14 Jun 2018 22:30:56 -0500
+Subject: [PATCH] smb3: fix corrupt path in subdirs on smb311 with posix
+Git-commit: d819d298c7258849d56eb400be436aff3ba2aae2
+Patch-mainline: v4.18-rc1
+References: bsc#1144333
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2misc.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2misc.c b/fs/cifs/smb2misc.c
+index 0de87ca33e2e..3ff7cec2da81 100644
+--- a/fs/cifs/smb2misc.c
++++ b/fs/cifs/smb2misc.c
+@@ -454,7 +454,8 @@ cifs_convert_path_to_utf16(const char *from, struct cifs_sb_info *cifs_sb)
+ #ifdef CONFIG_CIFS_SMB311
+ 	/* SMB311 POSIX extensions paths do not include leading slash */
+ 	else if (cifs_sb_master_tlink(cifs_sb) &&
+-		 cifs_sb_master_tcon(cifs_sb)->posix_extensions) {
++		 cifs_sb_master_tcon(cifs_sb)->posix_extensions &&
++		 (from[0] == '/')) {
+ 		start_of_path = from + 1;
+ 	}
+ #endif /* 311 */
+-- 
+2.16.4
+

@@ -1,0 +1,60 @@
+From: Sebastian Ott <sebott@linux.vnet.ibm.com>
+Date: Mon, 29 Jan 2018 16:12:30 +0100
+Subject: KVM: s390: fix fallthrough annotation
+Git-commit: 4ed8773b5055363f1666345dd5ae5af12c7c6268
+Patch-mainline: v4.17-rc1
+References: jsc#SLE-6412
+
+A case statement in kvm_s390_shadow_tables uses fallthrough annotations
+which are not recognized by gcc because they are hidden within a block.
+Move these annotations out of the block to fix (W=1) warnings like below:
+
+arch/s390/kvm/gaccess.c: In function 'kvm_s390_shadow_tables':
+arch/s390/kvm/gaccess.c:1029:26: warning: this statement may fall through [-Wimplicit-fallthrough=]
+  case ASCE_TYPE_REGION1: {
+                          ^
+
+Signed-off-by: Sebastian Ott <sebott@linux.vnet.ibm.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Signed-off-by: Bruce Rogers <brogers@suse.com>
+---
+ arch/s390/kvm/gaccess.c | 9 +++------
+ 1 file changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/arch/s390/kvm/gaccess.c b/arch/s390/kvm/gaccess.c
+index 653cae5e1ee1..b47732a58124 100644
+--- a/arch/s390/kvm/gaccess.c
++++ b/arch/s390/kvm/gaccess.c
+@@ -1049,8 +1049,7 @@ static int kvm_s390_shadow_tables(struct gmap *sg, unsigned long saddr,
+ 		rc = gmap_shadow_r2t(sg, saddr, rfte.val, *fake);
+ 		if (rc)
+ 			return rc;
+-		/* fallthrough */
+-	}
++	} /* fallthrough */
+ 	case ASCE_TYPE_REGION2: {
+ 		union region2_table_entry rste;
+ 
+@@ -1076,8 +1075,7 @@ static int kvm_s390_shadow_tables(struct gmap *sg, unsigned long saddr,
+ 		rc = gmap_shadow_r3t(sg, saddr, rste.val, *fake);
+ 		if (rc)
+ 			return rc;
+-		/* fallthrough */
+-	}
++	} /* fallthrough */
+ 	case ASCE_TYPE_REGION3: {
+ 		union region3_table_entry rtte;
+ 
+@@ -1112,8 +1110,7 @@ static int kvm_s390_shadow_tables(struct gmap *sg, unsigned long saddr,
+ 		rc = gmap_shadow_sgt(sg, saddr, rtte.val, *fake);
+ 		if (rc)
+ 			return rc;
+-		/* fallthrough */
+-	}
++	} /* fallthrough */
+ 	case ASCE_TYPE_SEGMENT: {
+ 		union segment_table_entry ste;
+ 
+

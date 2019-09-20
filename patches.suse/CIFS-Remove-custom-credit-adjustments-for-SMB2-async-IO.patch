@@ -1,0 +1,65 @@
+From: Pavel Shilovsky <pshilov@microsoft.com>
+Date: Fri, 25 Jan 2019 11:10:00 -0800
+Subject: [PATCH] CIFS: Remove custom credit adjustments for SMB2 async IO
+Git-commit: f0b93cb9d10789381c2c8c3bcab2315c3dcb3311
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Currently we do proper accounting for credits in regards to
+reconnects and error handling, thus we do not need custom
+credit adjustments when reconnect is detected developed
+previously.
+
+Signed-off-by: Pavel Shilovsky <pshilov@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c | 24 +++---------------------
+ 1 file changed, 3 insertions(+), 21 deletions(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 7d1e069cdcb8..49c2843b1bcf 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -3297,17 +3297,8 @@ smb2_async_readv(struct cifs_readdata *rdata)
+ 
+ 	rc = smb2_new_read_req(
+ 		(void **) &buf, &total_len, &io_parms, rdata, 0, 0);
+-	if (rc) {
+-		if (rc == -EAGAIN && rdata->credits.value) {
+-			/* credits was reset by reconnect */
+-			rdata->credits.value = 0;
+-			/* reduce in_flight value since we won't send the req */
+-			spin_lock(&server->req_lock);
+-			server->in_flight--;
+-			spin_unlock(&server->req_lock);
+-		}
++	if (rc)
+ 		return rc;
+-	}
+ 
+ 	if (smb3_encryption_required(io_parms.tcon))
+ 		flags |= CIFS_TRANSFORM_REQ;
+@@ -3515,17 +3506,8 @@ smb2_async_writev(struct cifs_writedata *wdata,
+ 	unsigned int total_len;
+ 
+ 	rc = smb2_plain_req_init(SMB2_WRITE, tcon, (void **) &req, &total_len);
+-	if (rc) {
+-		if (rc == -EAGAIN && wdata->credits.value) {
+-			/* credits was reset by reconnect */
+-			wdata->credits.value = 0;
+-			/* reduce in_flight value since we won't send the req */
+-			spin_lock(&server->req_lock);
+-			server->in_flight--;
+-			spin_unlock(&server->req_lock);
+-		}
+-		goto async_writev_out;
+-	}
++	if (rc)
++		return rc;
+ 
+ 	if (smb3_encryption_required(tcon))
+ 		flags |= CIFS_TRANSFORM_REQ;
+-- 
+2.16.4
+

@@ -1,0 +1,40 @@
+From: YueHaibing <yuehaibing@huawei.com>
+Date: Mon, 10 Sep 2018 01:33:06 +0000
+Subject: [PATCH] cifs: Use kmemdup rather than duplicating its implementation
+ in smb311_posix_mkdir()
+Git-commit: d034feeb44b8a8fb473f1ba805db97787f54bf3a
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+Use kmemdup rather than duplicating its implementation
+
+Signed-off-by: YueHaibing <yuehaibing@huawei.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index f54d07bda067..d7a41141ed38 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -2474,13 +2474,13 @@ SMB2_ioctl(const unsigned int xid, struct cifs_tcon *tcon, u64 persistent_fid,
+ 		goto ioctl_exit;
+ 	}
+ 
+-	*out_data = kmalloc(*plen, GFP_KERNEL);
++	*out_data = kmemdup((char *)rsp + le32_to_cpu(rsp->OutputOffset),
++			    *plen, GFP_KERNEL);
+ 	if (*out_data == NULL) {
+ 		rc = -ENOMEM;
+ 		goto ioctl_exit;
+ 	}
+ 
+-	memcpy(*out_data, (char *)rsp + le32_to_cpu(rsp->OutputOffset), *plen);
+ ioctl_exit:
+ 	free_rsp_buf(resp_buftype, rsp);
+ 	return rc;
+-- 
+2.16.4
+

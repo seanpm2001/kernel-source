@@ -1,0 +1,165 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Wed, 17 Apr 2019 14:44:29 -0700
+Subject: scsi: qla2xxx: target: Fix offline port handling and host reset
+ handling
+Patch-mainline: v5.2-rc1
+Git-commit: aefed3e5548f28e5fecafda6604fcbc65484dbaa
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+Remove the function qlt_abort_cmd_on_host_reset() because it can do the
+following, all of which can cause a kernel crash:
+
+- DMA unmapping while DMA is in progress.
+- Call target_execute_cmd() while DMA is in progress.
+- Call transport_generic_free_cmd() while the LIO core owns a command.
+
+Instead of trying to abort a command asynchronously, set the 'aborted' flag
+and handle the abort after the hardware has passed control back to the
+tcm_qla2xxx driver.
+
+Cc: Arun Easi <arun.easi@qlogic.com>
+Cc: Himanshu Madhani <hmadhani@marvell.com>
+Cc: Giridhar Malavali <gmalavali@marvell.com>
+Fixes: c0cb44967b4a ("qla2xxx: Add Host reset handling in target mode.") # v3.18.
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Acked-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_os.c      |    9 +-------
+ drivers/scsi/qla2xxx/qla_target.c  |   41 +++----------------------------------
+ drivers/scsi/qla2xxx/qla_target.h  |   11 +++++++--
+ drivers/scsi/qla2xxx/tcm_qla2xxx.c |    3 +-
+ 4 files changed, 16 insertions(+), 48 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_os.c
++++ b/drivers/scsi/qla2xxx/qla_os.c
+@@ -1852,15 +1852,10 @@ __qla2x00_abort_all_cmds(struct qla_qpai
+ 					continue;
+ 				}
+ 				cmd = (struct qla_tgt_cmd *)sp;
+-				qlt_abort_cmd_on_host_reset(cmd->vha, cmd);
++				cmd->aborted = 1;
+ 				break;
+ 			case TYPE_TGT_TMCMD:
+-				/*
+-				 * Currently, only ABTS response gets on the
+-				 * outstanding_cmds[]
+-				 */
+-				ha->tgt.tgt_ops->free_mcmd(
+-				   (struct qla_tgt_mgmt_cmd *)sp);
++				/* Skip task management functions. */
+ 				break;
+ 			default:
+ 				break;
+--- a/drivers/scsi/qla2xxx/qla_target.c
++++ b/drivers/scsi/qla2xxx/qla_target.c
+@@ -3273,7 +3273,6 @@ int qlt_xmit_response(struct qla_tgt_cmd
+ 	if (!qpair->fw_started || (cmd->reset_count != qpair->chip_reset) ||
+ 	    (cmd->sess && cmd->sess->deleted)) {
+ 		cmd->state = QLA_TGT_STATE_PROCESSED;
+-		qlt_abort_cmd_on_host_reset(cmd->vha, cmd);
+ 		return 0;
+ 	}
+ 
+@@ -3302,7 +3301,6 @@ int qlt_xmit_response(struct qla_tgt_cmd
+ 		 * previous life, just abort the processing.
+ 		 */
+ 		cmd->state = QLA_TGT_STATE_PROCESSED;
+-		qlt_abort_cmd_on_host_reset(cmd->vha, cmd);
+ 		ql_dbg_qp(ql_dbg_async, qpair, 0xe101,
+ 			"RESET-RSP online/active/old-count/new-count = %d/%d/%d/%d.\n",
+ 			vha->flags.online, qla2x00_reset_active(vha),
+@@ -3443,8 +3441,10 @@ int qlt_rdy_to_xfer(struct qla_tgt_cmd *
+ 		 * Either the port is not online or this request was from
+ 		 * previous life, just abort the processing.
+ 		 */
+-		cmd->state = QLA_TGT_STATE_NEED_DATA;
+-		qlt_abort_cmd_on_host_reset(cmd->vha, cmd);
++		cmd->aborted = 1;
++		cmd->write_data_transferred = 0;
++		cmd->state = QLA_TGT_STATE_DATA_IN;
++		vha->hw->tgt.tgt_ops->handle_data(cmd);
+ 		ql_dbg_qp(ql_dbg_async, qpair, 0xe102,
+ 			"RESET-XFR online/active/old-count/new-count = %d/%d/%d/%d.\n",
+ 			vha->flags.online, qla2x00_reset_active(vha),
+@@ -3966,39 +3966,6 @@ static void *qlt_ctio_to_cmd(struct scsi
+ 	return cmd;
+ }
+ 
+-/* hardware_lock should be held by caller. */
+-void
+-qlt_abort_cmd_on_host_reset(struct scsi_qla_host *vha, struct qla_tgt_cmd *cmd)
+-{
+-	struct qla_hw_data *ha = vha->hw;
+-
+-	if (cmd->sg_mapped)
+-		qlt_unmap_sg(vha, cmd);
+-
+-	/* TODO: fix debug message type and ids. */
+-	if (cmd->state == QLA_TGT_STATE_PROCESSED) {
+-		ql_dbg(ql_dbg_io, vha, 0xff00,
+-		    "HOST-ABORT: state=PROCESSED.\n");
+-	} else if (cmd->state == QLA_TGT_STATE_NEED_DATA) {
+-		cmd->write_data_transferred = 0;
+-		cmd->state = QLA_TGT_STATE_DATA_IN;
+-
+-		ql_dbg(ql_dbg_io, vha, 0xff01,
+-		    "HOST-ABORT: state=DATA_IN.\n");
+-
+-		ha->tgt.tgt_ops->handle_data(cmd);
+-		return;
+-	} else {
+-		ql_dbg(ql_dbg_io, vha, 0xff03,
+-		    "HOST-ABORT: state=BAD(%d).\n",
+-		    cmd->state);
+-		dump_stack();
+-	}
+-
+-	cmd->trc_flags |= TRC_FLUSH;
+-	ha->tgt.tgt_ops->free_cmd(cmd);
+-}
+-
+ /*
+  * ha->hardware_lock supposed to be held on entry. Might drop it, then reaquire
+  */
+--- a/drivers/scsi/qla2xxx/qla_target.h
++++ b/drivers/scsi/qla2xxx/qla_target.h
+@@ -889,9 +889,16 @@ struct qla_tgt_cmd {
+ 	unsigned int term_exchg:1;
+ 	unsigned int cmd_sent_to_fw:1;
+ 	unsigned int cmd_in_wq:1;
+-	unsigned int aborted:1;
+ 	unsigned int released:1;
+ 
++	/*
++	 * This variable may be set from outside the LIO and I/O completion
++	 * callback functions. Do not declare this member variable as a
++	 * bitfield to avoid a read-modify-write operation when this variable
++	 * is set.
++	 */
++	unsigned int aborted;
++
+ 	struct scatterlist *sg;	/* cmd data buffer SG vector */
+ 	int sg_cnt;		/* SG segments count */
+ 	int bufflen;		/* cmd buffer length */
+@@ -1101,7 +1108,5 @@ extern void qlt_do_generation_tick(struc
+ 
+ void qlt_send_resp_ctio(struct qla_qpair *, struct qla_tgt_cmd *, uint8_t,
+     uint8_t, uint8_t, uint8_t);
+-extern void qlt_abort_cmd_on_host_reset(struct scsi_qla_host *,
+-    struct qla_tgt_cmd *);
+ 
+ #endif /* __QLA_TARGET_H */
+--- a/drivers/scsi/qla2xxx/tcm_qla2xxx.c
++++ b/drivers/scsi/qla2xxx/tcm_qla2xxx.c
+@@ -534,7 +534,8 @@ static void tcm_qla2xxx_handle_data_work
+ 	if (cmd->aborted) {
+ 		spin_unlock_irqrestore(&cmd->cmd_lock, flags);
+ 
+-		tcm_qla2xxx_free_cmd(cmd);
++		transport_generic_request_failure(&cmd->se_cmd,
++			TCM_CHECK_CONDITION_ABORT_CMD);
+ 		return;
+ 	}
+ 	spin_unlock_irqrestore(&cmd->cmd_lock, flags);

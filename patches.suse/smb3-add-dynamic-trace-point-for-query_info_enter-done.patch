@@ -1,0 +1,108 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Tue, 26 Feb 2019 21:58:30 -0600
+Subject: [PATCH] smb3: add dynamic trace point for query_info_enter/done
+Git-commit: d42043a600abfd4d6208c1f1454ee8afa3b5e905
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+Adds dynamic trace points for the query_info_enter
+and query_info_done (no error) case.  We only had one
+existing trace point related to this which was on query_info
+errors.  Note that these two new tracepoints are for the
+non-compounded query_info paths.
+
+Sample output (from: trace-cmd record -e smb3_query_info*)
+
+          ls-24140 [001] .... 27811.866068: smb3_query_info_enter: xid=7 sid=0xd2d00587 tid=0xb5441939 fid=0xcf082bac class=18 type=0x1
+          ls-24140 [001] .... 27811.867656: smb3_query_info_done: xid=7 sid=0xd2d00587 tid=0xb5441939 fid=0xcf082bac class=18 type=0x1
+  getcifsacl-24149 [005] .... 27854.759873: smb3_query_info_enter: xid=15 sid=0xd2d00587 tid=0xb5441939 fid=0x99896e72 class=0 type=0x3
+  getcifsacl-24149 [005] .... 27854.761730: smb3_query_info_done: xid=15 sid=0xd2d00587 tid=0xb5441939 fid=0x99896e72 class=0 type=0x3
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c |  6 ++++++
+ fs/cifs/trace.h   | 42 ++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 48 insertions(+)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 5e34a7b54d1e..733021566356 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -2868,6 +2868,9 @@ query_info(const unsigned int xid, struct cifs_tcon *tcon,
+ 	if (rc)
+ 		goto qinf_exit;
+ 
++	trace_smb3_query_info_enter(xid, persistent_fid, tcon->tid,
++				    ses->Suid, info_class, (__u32)info_type);
++
+ 	rc = cifs_send_recv(xid, ses, &rqst, &resp_buftype, flags, &rsp_iov);
+ 	rsp = (struct smb2_query_info_rsp *)rsp_iov.iov_base;
+ 
+@@ -2878,6 +2881,9 @@ query_info(const unsigned int xid, struct cifs_tcon *tcon,
+ 		goto qinf_exit;
+ 	}
+ 
++	trace_smb3_query_info_done(xid, persistent_fid, tcon->tid,
++				ses->Suid, info_class, (__u32)info_type);
++
+ 	if (dlen) {
+ 		*dlen = le32_to_cpu(rsp->OutputBufferLength);
+ 		if (!*data) {
+diff --git a/fs/cifs/trace.h b/fs/cifs/trace.h
+index 2a0be3e1927f..d8b049afa606 100644
+--- a/fs/cifs/trace.h
++++ b/fs/cifs/trace.h
+@@ -153,6 +153,48 @@ DEFINE_SMB3_FD_ERR_EVENT(close_err);
+ /*
+  * For handle based query/set info calls
+  */
++DECLARE_EVENT_CLASS(smb3_inf_enter_class,
++	TP_PROTO(unsigned int xid,
++		__u64	fid,
++		__u32	tid,
++		__u64	sesid,
++		__u8	infclass,
++		__u32	type),
++	TP_ARGS(xid, fid, tid, sesid, infclass, type),
++	TP_STRUCT__entry(
++		__field(unsigned int, xid)
++		__field(__u64, fid)
++		__field(__u32, tid)
++		__field(__u64, sesid)
++		__field(__u8, infclass)
++		__field(__u32, type)
++	),
++	TP_fast_assign(
++		__entry->xid = xid;
++		__entry->fid = fid;
++		__entry->tid = tid;
++		__entry->sesid = sesid;
++		__entry->infclass = infclass;
++		__entry->type = type;
++	),
++	TP_printk("xid=%u sid=0x%llx tid=0x%x fid=0x%llx class=%u type=0x%x",
++		__entry->xid, __entry->sesid, __entry->tid, __entry->fid,
++		__entry->infclass, __entry->type)
++)
++
++#define DEFINE_SMB3_INF_ENTER_EVENT(name)          \
++DEFINE_EVENT(smb3_inf_enter_class, smb3_##name,    \
++	TP_PROTO(unsigned int xid,		\
++		__u64	fid,			\
++		__u32	tid,			\
++		__u64	sesid,			\
++		__u8	infclass,		\
++		__u32	type),			\
++	TP_ARGS(xid, fid, tid, sesid, infclass, type))
++
++DEFINE_SMB3_INF_ENTER_EVENT(query_info_enter);
++DEFINE_SMB3_INF_ENTER_EVENT(query_info_done);
++
+ DECLARE_EVENT_CLASS(smb3_inf_err_class,
+ 	TP_PROTO(unsigned int xid,
+ 		__u64	fid,
+-- 
+2.16.4
+

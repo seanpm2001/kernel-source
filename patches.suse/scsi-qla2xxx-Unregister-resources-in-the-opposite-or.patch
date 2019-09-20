@@ -1,0 +1,43 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Thu, 4 Apr 2019 12:44:47 -0700
+Subject: scsi: qla2xxx: Unregister resources in the opposite order of the
+ registration order
+Patch-mainline: v5.2-rc1
+Git-commit: 59c209a689a66190e6eba7286e9be18ddb3df85b
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+Make sure that resources are only unregistered after the users of these
+resources have been unregistered. Only unregister the character device if
+registration of it succeeded.
+
+Cc: Himanshu Madhani <hmadhani@marvell.com>
+Cc: Giridhar Malavali <gmalavali@marvell.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_os.c |    9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_os.c
++++ b/drivers/scsi/qla2xxx/qla_os.c
+@@ -7412,14 +7412,15 @@ destroy_cache:
+ static void __exit
+ qla2x00_module_exit(void)
+ {
+-	unregister_chrdev(apidev_major, QLA2XXX_APIDEV);
+ 	pci_unregister_driver(&qla2xxx_pci_driver);
+ 	qla2x00_release_firmware();
+-	kmem_cache_destroy(srb_cachep);
+-	qlt_exit();
+ 	kmem_cache_destroy(ctx_cachep);
+-	fc_release_transport(qla2xxx_transport_template);
+ 	fc_release_transport(qla2xxx_transport_vport_template);
++	if (apidev_major >= 0)
++		unregister_chrdev(apidev_major, QLA2XXX_APIDEV);
++	fc_release_transport(qla2xxx_transport_template);
++	qlt_exit();
++	kmem_cache_destroy(srb_cachep);
+ }
+ 
+ module_init(qla2x00_module_init);

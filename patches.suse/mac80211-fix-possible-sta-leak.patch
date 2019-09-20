@@ -1,0 +1,51 @@
+From 5fd2f91ad483baffdbe798f8a08f1b41442d1e24 Mon Sep 17 00:00:00 2001
+From: Johannes Berg <johannes.berg@intel.com>
+Date: Thu, 1 Aug 2019 09:30:33 +0200
+Subject: [PATCH] mac80211: fix possible sta leak
+Git-commit: 5fd2f91ad483baffdbe798f8a08f1b41442d1e24
+Patch-mainline: v5.3-rc7
+References: bsc#1051510
+
+If TDLS station addition is rejected, the sta memory is leaked.
+Avoid this by moving the check before the allocation.
+
+Cc: stable@vger.kernel.org
+Fixes: 7ed5285396c2 ("mac80211: don't initiate TDLS connection if station is not associated to AP")
+Link: https://lore.kernel.org/r/20190801073033.7892-1-johannes@sipsolutions.net
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ net/mac80211/cfg.c | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/net/mac80211/cfg.c b/net/mac80211/cfg.c
+index 4d458067d80d..111c400199ec 100644
+--- a/net/mac80211/cfg.c
++++ b/net/mac80211/cfg.c
+@@ -1546,6 +1546,11 @@ static int ieee80211_add_station(struct wiphy *wiphy, struct net_device *dev,
+ 	if (is_multicast_ether_addr(mac))
+ 		return -EINVAL;
+ 
++	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_TDLS_PEER) &&
++	    sdata->vif.type == NL80211_IFTYPE_STATION &&
++	    !sdata->u.mgd.associated)
++		return -EINVAL;
++
+ 	sta = sta_info_alloc(sdata, mac, GFP_KERNEL);
+ 	if (!sta)
+ 		return -ENOMEM;
+@@ -1553,10 +1558,6 @@ static int ieee80211_add_station(struct wiphy *wiphy, struct net_device *dev,
+ 	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_TDLS_PEER))
+ 		sta->sta.tdls = true;
+ 
+-	if (sta->sta.tdls && sdata->vif.type == NL80211_IFTYPE_STATION &&
+-	    !sdata->u.mgd.associated)
+-		return -EINVAL;
+-
+ 	err = sta_apply_parameters(local, sta, params);
+ 	if (err) {
+ 		sta_info_free(local, sta);
+-- 
+2.16.4
+

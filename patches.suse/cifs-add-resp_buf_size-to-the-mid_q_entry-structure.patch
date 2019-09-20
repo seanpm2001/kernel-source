@@ -1,0 +1,73 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Mon, 9 Apr 2018 18:06:28 +1000
+Subject: [PATCH] cifs: add resp_buf_size to the mid_q_entry structure
+Git-commit: e19b2bc0790a1c25b226815ce132c06274b1ba87
+Patch-mainline: v4.17-rc1
+References: bsc#1144333
+
+and get rid of some more calls to get_rfc1002_length()
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsglob.h      | 1 +
+ fs/cifs/connect.c       | 1 +
+ fs/cifs/smb2transport.c | 2 +-
+ fs/cifs/transport.c     | 2 +-
+ 4 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 5c1568ccd67d..cb950a5fa078 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -1376,6 +1376,7 @@ struct mid_q_entry {
+ 	mid_handle_t *handle; /* call handle mid callback */
+ 	void *callback_data;	  /* general purpose pointer for callback */
+ 	void *resp_buf;		/* pointer to received SMB header */
++	unsigned int resp_buf_size;
+ 	int mid_state;	/* wish this were enum but can not pass to wait_event */
+ 	unsigned int mid_flags;
+ 	__le16 command;		/* smb command code */
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 48012a0addf1..e8830f076a7f 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -928,6 +928,7 @@ cifs_demultiplex_thread(void *p)
+ 
+ 		server->lstrp = jiffies;
+ 		if (mid_entry != NULL) {
++			mid_entry->resp_buf_size = server->pdu_size;
+ 			if ((mid_entry->mid_flags & MID_WAIT_CANCELLED) &&
+ 			     mid_entry->mid_state == MID_RESPONSE_RECEIVED &&
+ 					server->ops->handle_cancelled_mid)
+diff --git a/fs/cifs/smb2transport.c b/fs/cifs/smb2transport.c
+index bf49cb73b9e6..8806f3f76c1d 100644
+--- a/fs/cifs/smb2transport.c
++++ b/fs/cifs/smb2transport.c
+@@ -604,7 +604,7 @@ int
+ smb2_check_receive(struct mid_q_entry *mid, struct TCP_Server_Info *server,
+ 		   bool log_error)
+ {
+-	unsigned int len = get_rfc1002_length(mid->resp_buf);
++	unsigned int len = mid->resp_buf_size;
+ 	struct kvec iov[2];
+ 	struct smb_rqst rqst = { .rq_iov = iov,
+ 				 .rq_nvec = 2 };
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index 279718dcb2ed..8f6f25918229 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -790,7 +790,7 @@ cifs_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 
+ 	buf = (char *)midQ->resp_buf;
+ 	resp_iov->iov_base = buf;
+-	resp_iov->iov_len = get_rfc1002_length(buf) +
++	resp_iov->iov_len = midQ->resp_buf_size +
+ 		ses->server->vals->header_preamble_size;
+ 	if (midQ->large_buf)
+ 		*resp_buf_type = CIFS_LARGE_BUFFER;
+-- 
+2.16.4
+

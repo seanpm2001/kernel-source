@@ -1,0 +1,55 @@
+From: Aurelien Aptel <aaptel@suse.com>
+Date: Tue, 17 Oct 2017 14:47:17 +0200
+Subject: [PATCH] CIFS: do not send invalid input buffer on QUERY_INFO requests
+Git-commit: 48923d2a9d4f6ca909102061a4240b9896ff8ea2
+Patch-mainline: v4.14-rc7
+References: bsc#1144333
+
+query_info() doesn't use the InputBuffer field of the QUERY_INFO
+request, therefore according to [MS-SMB2] it must:
+
+a) set the InputBufferOffset to 0
+b) send a zero-length InputBuffer
+
+Doing a) is trivial but b) is a bit more tricky.
+
+The packet is allocated according to it's StructureSize, which takes
+into account an extra 1 byte buffer which we don't need
+here. StructureSize fields must have constant values no matter the
+actual length of the whole packet so we can't just edit that constant.
+
+Both the NetBIOS-over-TCP message length ("rfc1002 length") L and the
+iovec length L' have to be updated. Since L' is computed from L we
+just update L by decrementing it by one.
+
+Signed-off-by: Aurelien Aptel <aaptel@suse.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index ba3865b338d8..fa17caa56128 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -2191,9 +2191,13 @@ query_info(const unsigned int xid, struct cifs_tcon *tcon,
+ 	req->PersistentFileId = persistent_fid;
+ 	req->VolatileFileId = volatile_fid;
+ 	req->AdditionalInformation = cpu_to_le32(additional_info);
+-	/* 4 for rfc1002 length field and 1 for Buffer */
+-	req->InputBufferOffset =
+-		cpu_to_le16(sizeof(struct smb2_query_info_req) - 1 - 4);
++
++	/*
++	 * We do not use the input buffer (do not send extra byte)
++	 */
++	req->InputBufferOffset = 0;
++	inc_rfc1001_len(req, -1);
++
+ 	req->OutputBufferLength = cpu_to_le32(output_len);
+ 
+ 	iov[0].iov_base = (char *)req;
+-- 
+2.16.4
+

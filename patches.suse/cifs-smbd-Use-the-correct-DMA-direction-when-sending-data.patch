@@ -1,0 +1,56 @@
+From: Long Li <longli@microsoft.com>
+Date: Mon, 13 May 2019 21:01:29 -0700
+Subject: [PATCH] cifs:smbd Use the correct DMA direction when sending data
+Git-commit: 7f46d23e1b14f0827eb19c60eedcc6525ca2e742
+Patch-mainline: v5.2-rc1
+References: bsc#1144333
+
+When sending data, use the DMA_TO_DEVICE to map buffers. Also log the number
+of requests in a compounding request from upper layer.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smbdirect.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/fs/cifs/smbdirect.c b/fs/cifs/smbdirect.c
+index 251ef1223206..caac37b1de8c 100644
+--- a/fs/cifs/smbdirect.c
++++ b/fs/cifs/smbdirect.c
+@@ -903,7 +903,7 @@ static int smbd_create_header(struct smbd_connection *info,
+ 	request->sge[0].addr = ib_dma_map_single(info->id->device,
+ 						 (void *)packet,
+ 						 header_length,
+-						 DMA_BIDIRECTIONAL);
++						 DMA_TO_DEVICE);
+ 	if (ib_dma_mapping_error(info->id->device, request->sge[0].addr)) {
+ 		mempool_free(request, info->request_mempool);
+ 		rc = -EIO;
+@@ -1005,7 +1005,7 @@ static int smbd_post_send_sgl(struct smbd_connection *info,
+ 	for_each_sg(sgl, sg, num_sgs, i) {
+ 		request->sge[i+1].addr =
+ 			ib_dma_map_page(info->id->device, sg_page(sg),
+-			       sg->offset, sg->length, DMA_BIDIRECTIONAL);
++			       sg->offset, sg->length, DMA_TO_DEVICE);
+ 		if (ib_dma_mapping_error(
+ 				info->id->device, request->sge[i+1].addr)) {
+ 			rc = -EIO;
+@@ -2110,8 +2110,10 @@ int smbd_send(struct TCP_Server_Info *server,
+ 		goto done;
+ 	}
+ 
++	log_write(INFO, "num_rqst=%d total length=%u\n",
++			num_rqst, remaining_data_length);
++
+ 	rqst_idx = 0;
+-
+ next_rqst:
+ 	rqst = &rqst_array[rqst_idx];
+ 	iov = rqst->rq_iov;
+-- 
+2.22.0
+

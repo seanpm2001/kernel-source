@@ -1,0 +1,57 @@
+From: Jeff Layton <jlayton@kernel.org>
+Date: Wed, 5 Jun 2019 17:24:22 -0400
+Subject: iversion: add a routine to update a raw value with a larger one
+Git-commit: 441d367644e2f60b37f36bfc656deee551acba5b
+Patch-mainline: v5.3-rc1
+References: bsc#1148133
+
+Under ceph, clients can be independently updating iversion themselves,
+while working under comprehensive sets of caps on an inode. In that
+situation we always want to prefer the largest value of a change
+attribute. Add a new function that will update a raw value with a larger
+one, but otherwise leave it alone.
+
+Signed-off-by: Jeff Layton <jlayton@kernel.org>
+Reviewed-by: "Yan, Zheng" <zyan@redhat.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+---
+ include/linux/iversion.h | 24 ++++++++++++++++++++++++
+ 1 file changed, 24 insertions(+)
+
+diff --git a/include/linux/iversion.h b/include/linux/iversion.h
+index be50ef7cedab..2917ef990d43 100644
+--- a/include/linux/iversion.h
++++ b/include/linux/iversion.h
+@@ -112,6 +112,30 @@ inode_peek_iversion_raw(const struct inode *inode)
+ 	return atomic64_read(&inode->i_version);
+ }
+ 
++/**
++ * inode_set_max_iversion_raw - update i_version new value is larger
++ * @inode: inode to set
++ * @val: new i_version to set
++ *
++ * Some self-managed filesystems (e.g Ceph) will only update the i_version
++ * value if the new value is larger than the one we already have.
++ */
++static inline void
++inode_set_max_iversion_raw(struct inode *inode, u64 val)
++{
++	u64 cur, old;
++
++	cur = inode_peek_iversion_raw(inode);
++	for (;;) {
++		if (cur > val)
++			break;
++		old = atomic64_cmpxchg(&inode->i_version, cur, val);
++		if (likely(old == cur))
++			break;
++		cur = old;
++	}
++}
++
+ /**
+  * inode_set_iversion - set i_version to a particular value
+  * @inode: inode to set
+

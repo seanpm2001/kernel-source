@@ -1,0 +1,93 @@
+From: Quinn Tran <quinn.tran@cavium.com>
+Date: Tue, 2 Apr 2019 14:24:28 -0700
+Subject: scsi: qla2xxx: Use mutex protection during
+ qla2x00_sysfs_read_fw_dump()
+Patch-mainline: v5.2-rc1
+Git-commit: a6b95d1c71e9adef5ab5ba77c42a50d0b7b409d6
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+Add mutex protection to prevent driver from freeing the FW dump buffer
+while the extraction is in progress.
+
+[mkp: commit desc]
+
+Signed-off-by: Quinn Tran <quinn.tran@cavium.com>
+Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_attr.c |   25 ++++++++++++++-----------
+ drivers/scsi/qla2xxx/qla_init.c |    6 +++++-
+ 2 files changed, 19 insertions(+), 12 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_attr.c
++++ b/drivers/scsi/qla2xxx/qla_attr.c
+@@ -29,24 +29,27 @@ qla2x00_sysfs_read_fw_dump(struct file *
+ 	if (!(ha->fw_dump_reading || ha->mctp_dump_reading))
+ 		return 0;
+ 
++	mutex_lock(&ha->optrom_mutex);
+ 	if (IS_P3P_TYPE(ha)) {
+ 		if (off < ha->md_template_size) {
+ 			rval = memory_read_from_buffer(buf, count,
+ 			    &off, ha->md_tmplt_hdr, ha->md_template_size);
+-			return rval;
++		} else {
++			off -= ha->md_template_size;
++			rval = memory_read_from_buffer(buf, count,
++			    &off, ha->md_dump, ha->md_dump_size);
+ 		}
+-		off -= ha->md_template_size;
+-		rval = memory_read_from_buffer(buf, count,
+-		    &off, ha->md_dump, ha->md_dump_size);
+-		return rval;
+-	} else if (ha->mctp_dumped && ha->mctp_dump_reading)
+-		return memory_read_from_buffer(buf, count, &off, ha->mctp_dump,
++	} else if (ha->mctp_dumped && ha->mctp_dump_reading) {
++		rval = memory_read_from_buffer(buf, count, &off, ha->mctp_dump,
+ 		    MCTP_DUMP_SIZE);
+-	else if (ha->fw_dump_reading)
+-		return memory_read_from_buffer(buf, count, &off, ha->fw_dump,
++	} else if (ha->fw_dump_reading) {
++		rval = memory_read_from_buffer(buf, count, &off, ha->fw_dump,
+ 					ha->fw_dump_len);
+-	else
+-		return 0;
++	} else {
++		rval = 0;
++	}
++	mutex_unlock(&ha->optrom_mutex);
++	return rval;
+ }
+ 
+ static ssize_t
+--- a/drivers/scsi/qla2xxx/qla_init.c
++++ b/drivers/scsi/qla2xxx/qla_init.c
+@@ -3236,6 +3236,7 @@ allocate:
+ 			    "Unable to allocate (%d KB) for firmware dump.\n",
+ 			    dump_size / 1024);
+ 		} else {
++			mutex_lock(&ha->optrom_mutex);
+ 			if (ha->fw_dumped) {
+ 				memcpy(fw_dump, ha->fw_dump, ha->fw_dump_len);
+ 				vfree(ha->fw_dump);
+@@ -3255,8 +3256,10 @@ allocate:
+ 				    "Allocated (%d KB) for firmware dump.\n",
+ 				    dump_size / 1024);
+ 
+-				if (IS_QLA27XX(ha) || IS_QLA28XX(ha))
++				if (IS_QLA27XX(ha) || IS_QLA28XX(ha)) {
++					mutex_unlock(&ha->optrom_mutex);
+ 					return;
++				}
+ 
+ 				ha->fw_dump->signature[0] = 'Q';
+ 				ha->fw_dump->signature[1] = 'L';
+@@ -3279,6 +3282,7 @@ allocate:
+ 					htonl(offsetof
+ 					    (struct qla2xxx_fw_dump, isp));
+ 			}
++			mutex_unlock(&ha->optrom_mutex);
+ 		}
+ 	}
+ }

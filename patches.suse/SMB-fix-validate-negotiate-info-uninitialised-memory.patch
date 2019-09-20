@@ -1,0 +1,39 @@
+From a2d9daad1d2dfbd307ab158044d1c323d7babbde Mon Sep 17 00:00:00 2001
+From: David Disseldorp <ddiss@suse.de>
+Date: Fri, 20 Oct 2017 14:49:38 +0200
+Subject: [PATCH 2/2] SMB: fix validate negotiate info uninitialised memory use
+Git-commit: a2d9daad1d2dfbd307ab158044d1c323d7babbde
+Patch-mainline: v4.14-rc7
+References: bsc#1064597, bsc#1144333
+
+An undersize validate negotiate info server response causes the client
+to use uninitialised memory for struct validate_negotiate_info_rsp
+comparisons of Dialect, SecurityMode and/or Capabilities members.
+
+Link: https://bugzilla.samba.org/show_bug.cgi?id=13092
+Fixes: 7db0a6efdc3e ("SMB3: Work around mount failure when using SMB3 dialect to Macs")
+Signed-off-by: David Disseldorp <ddiss@suse.de>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+
+---
+ fs/cifs/smb2pdu.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 6b03e2d45d8e..ba58af747b43 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -727,7 +727,8 @@ int smb3_validate_negotiate(const unsigned int xid, struct cifs_tcon *tcon)
+ 			 rsplen);
+ 
+ 		/* relax check since Mac returns max bufsize allowed on ioctl */
+-		if (rsplen > CIFSMaxBufSize)
++		if ((rsplen > CIFSMaxBufSize)
++		     || (rsplen < sizeof(struct validate_negotiate_info_rsp)))
+ 			goto err_rsp_free;
+ 	}
+ 
+-- 
+2.16.4
+

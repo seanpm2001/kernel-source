@@ -1,0 +1,77 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Thu, 9 Nov 2017 12:14:17 +1100
+Subject: [PATCH] cifs: remove rfc1002 header from smb2_logoff_req
+Git-commit: 45305eda6bfb5b90624f8cf525eb88d037eafe02
+Patch-mainline: v4.15
+References: bsc#1144333
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c | 17 +++++++++++++----
+ fs/cifs/smb2pdu.h |  2 +-
+ 2 files changed, 14 insertions(+), 5 deletions(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index b1c2cc8ef55f..4295cb535c85 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -1204,6 +1204,10 @@ SMB2_logoff(const unsigned int xid, struct cifs_ses *ses)
+ 	int rc = 0;
+ 	struct TCP_Server_Info *server;
+ 	int flags = 0;
++	unsigned int total_len;
++	struct kvec iov[1];
++	struct kvec rsp_iov;
++	int resp_buf_type;
+ 
+ 	cifs_dbg(FYI, "disconnect session %p\n", ses);
+ 
+@@ -1216,19 +1220,24 @@ SMB2_logoff(const unsigned int xid, struct cifs_ses *ses)
+ 	if (ses->need_reconnect)
+ 		goto smb2_session_already_dead;
+ 
+-	rc = small_smb2_init(SMB2_LOGOFF, NULL, (void **) &req);
++	rc = smb2_plain_req_init(SMB2_LOGOFF, NULL, (void **) &req, &total_len);
+ 	if (rc)
+ 		return rc;
+ 
+ 	 /* since no tcon, smb2_init can not do this, so do here */
+-	req->hdr.sync_hdr.SessionId = ses->Suid;
++	req->sync_hdr.SessionId = ses->Suid;
+ 
+ 	if (ses->session_flags & SMB2_SESSION_FLAG_ENCRYPT_DATA)
+ 		flags |= CIFS_TRANSFORM_REQ;
+ 	else if (server->sign)
+-		req->hdr.sync_hdr.Flags |= SMB2_FLAGS_SIGNED;
++		req->sync_hdr.Flags |= SMB2_FLAGS_SIGNED;
++
++	flags |= CIFS_NO_RESP;
++
++	iov[0].iov_base = (char *)req;
++	iov[0].iov_len = total_len;
+ 
+-	rc = SendReceiveNoRsp(xid, ses, (char *) req, flags);
++	rc = smb2_send_recv(xid, ses, iov, 1, &resp_buf_type, flags, &rsp_iov);
+ 	cifs_small_buf_release(req);
+ 	/*
+ 	 * No tcon so can't do
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index 0fe2382597ad..0799e0957499 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -308,7 +308,7 @@ struct smb2_sess_setup_rsp {
+ } __packed;
+ 
+ struct smb2_logoff_req {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize;	/* Must be 4 */
+ 	__le16 Reserved;
+ } __packed;
+-- 
+2.16.4
+

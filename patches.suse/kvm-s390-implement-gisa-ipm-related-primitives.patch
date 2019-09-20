@@ -1,0 +1,62 @@
+From: Michael Mueller <mimu@linux.vnet.ibm.com>
+Date: Mon, 12 Jun 2017 12:37:57 +0200
+Subject: KVM: s390: implement GISA IPM related primitives
+Git-commit: d77e64141e322a3202de71a4afa7956c98d2a302
+Patch-mainline: v4.16-rc1
+References: jsc#SLE-6412
+
+The patch implements routines to access the GISA to test and modify
+its Interruption Pending Mask (IPM) from the host side.
+
+Signed-off-by: Michael Mueller <mimu@linux.vnet.ibm.com>
+Reviewed-by: Pierre Morel <pmorel@linux.vnet.ibm.com>
+Reviewed-by: Halil Pasic <pasic@linux.vnet.ibm.com>
+Reviewed-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Signed-off-by: Bruce Rogers <brogers@suse.com>
+---
+ arch/s390/kvm/interrupt.c | 28 ++++++++++++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+
+diff --git a/arch/s390/kvm/interrupt.c b/arch/s390/kvm/interrupt.c
+index ae11d893215a..37e8d450d2f7 100644
+--- a/arch/s390/kvm/interrupt.c
++++ b/arch/s390/kvm/interrupt.c
+@@ -210,6 +210,34 @@ static inline u8 int_word_to_isc(u32 int_word)
+ 	return (int_word & 0x38000000) >> 27;
+ }
+ 
++/*
++ * To use atomic bitmap functions, we have to provide a bitmap address
++ * that is u64 aligned. However, the ipm might be u32 aligned.
++ * Therefore, we logically start the bitmap at the very beginning of the
++ * struct and fixup the bit number.
++ */
++#define IPM_BIT_OFFSET (offsetof(struct kvm_s390_gisa, ipm) * BITS_PER_BYTE)
++
++static inline void kvm_s390_gisa_set_ipm_gisc(struct kvm_s390_gisa *gisa, u32 gisc)
++{
++	set_bit_inv(IPM_BIT_OFFSET + gisc, (unsigned long *) gisa);
++}
++
++static inline u8 kvm_s390_gisa_get_ipm(struct kvm_s390_gisa *gisa)
++{
++	return READ_ONCE(gisa->ipm);
++}
++
++static inline void kvm_s390_gisa_clear_ipm_gisc(struct kvm_s390_gisa *gisa, u32 gisc)
++{
++	clear_bit_inv(IPM_BIT_OFFSET + gisc, (unsigned long *) gisa);
++}
++
++static inline int kvm_s390_gisa_tac_ipm_gisc(struct kvm_s390_gisa *gisa, u32 gisc)
++{
++	return test_and_clear_bit_inv(IPM_BIT_OFFSET + gisc, (unsigned long *) gisa);
++}
++
+ static inline unsigned long pending_irqs(struct kvm_vcpu *vcpu)
+ {
+ 	return vcpu->kvm->arch.float_int.pending_irqs |
+

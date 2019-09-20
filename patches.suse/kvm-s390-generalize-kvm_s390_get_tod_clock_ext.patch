@@ -1,0 +1,74 @@
+From: David Hildenbrand <david@redhat.com>
+Date: Fri, 27 Apr 2018 14:36:13 +0200
+Subject: KVM: s390: generalize kvm_s390_get_tod_clock_ext()
+Git-commit: 33d1b2729e409e8327dec2d13a9144dfa76a947c
+Patch-mainline: v4.18-rc1
+References: jsc#SLE-6412
+
+Move the Multiple-epoch facility handling into it and rename it to
+kvm_s390_get_tod_clock().
+
+This leaves us with:
+- kvm_s390_set_tod_clock()
+- kvm_s390_get_tod_clock()
+- kvm_s390_get_tod_clock_fast()
+
+So all Multiple-epoch facility is hidden in these functions.
+
+Signed-off-by: David Hildenbrand <david@redhat.com>
+Reviewed-by: Collin Walling <walling@linux.ibm.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Janosch Frank <frankja@linux.ibm.com>
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Signed-off-by: Bruce Rogers <brogers@suse.com>
+---
+ arch/s390/kvm/kvm-s390.c | 21 +++++++++------------
+ 1 file changed, 9 insertions(+), 12 deletions(-)
+
+diff --git a/arch/s390/kvm/kvm-s390.c b/arch/s390/kvm/kvm-s390.c
+index 43d9bae8d4e0..53b4de7bb350 100644
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -1133,8 +1133,8 @@ static int kvm_s390_set_tod(struct kvm *kvm, struct kvm_device_attr *attr)
+ 	return ret;
+ }
+ 
+-static void kvm_s390_get_tod_clock_ext(struct kvm *kvm,
+-					struct kvm_s390_vm_tod_clock *gtod)
++static void kvm_s390_get_tod_clock(struct kvm *kvm,
++				   struct kvm_s390_vm_tod_clock *gtod)
+ {
+ 	struct kvm_s390_tod_clock_ext htod;
+ 
+@@ -1143,10 +1143,12 @@ static void kvm_s390_get_tod_clock_ext(struct kvm *kvm,
+ 	get_tod_clock_ext((char *)&htod);
+ 
+ 	gtod->tod = htod.tod + kvm->arch.epoch;
+-	gtod->epoch_idx = htod.epoch_idx + kvm->arch.epdx;
+-
+-	if (gtod->tod < htod.tod)
+-		gtod->epoch_idx += 1;
++	gtod->epoch_idx = 0;
++	if (test_kvm_facility(kvm, 139)) {
++		gtod->epoch_idx = htod.epoch_idx + kvm->arch.epdx;
++		if (gtod->tod < htod.tod)
++			gtod->epoch_idx += 1;
++	}
+ 
+ 	preempt_enable();
+ }
+@@ -1156,12 +1158,7 @@ static int kvm_s390_get_tod_ext(struct kvm *kvm, struct kvm_device_attr *attr)
+ 	struct kvm_s390_vm_tod_clock gtod;
+ 
+ 	memset(&gtod, 0, sizeof(gtod));
+-
+-	if (test_kvm_facility(kvm, 139))
+-		kvm_s390_get_tod_clock_ext(kvm, &gtod);
+-	else
+-		gtod.tod = kvm_s390_get_tod_clock_fast(kvm);
+-
++	kvm_s390_get_tod_clock(kvm, &gtod);
+ 	if (copy_to_user((void __user *)attr->addr, &gtod, sizeof(gtod)))
+ 		return -EFAULT;
+ 
+

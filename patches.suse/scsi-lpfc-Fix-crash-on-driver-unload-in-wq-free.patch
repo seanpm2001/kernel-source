@@ -1,0 +1,53 @@
+From: James Smart <jsmart2021@gmail.com>
+Date: Wed, 14 Aug 2019 16:56:34 -0700
+Subject: scsi: lpfc: Fix crash on driver unload in wq free
+Git-commit: 3cee98db2610fb633fcbdd0f85385f60dabbaf75
+Patch-mainline: Queued in subsystem maintainer repository
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/jejb/scsi.git
+References: bsc#1146215
+
+If a timer routine uses workqueues, it could fire before the workqueue is
+allocated.
+
+Fix by allocating the workqueue before the timer routines are setup
+
+Signed-off-by: Dick Kennedy <dick.kennedy@broadcom.com>
+Signed-off-by: James Smart <jsmart2021@gmail.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Hannes Reinecke <hare@suse.com>
+---
+ drivers/scsi/lpfc/lpfc_init.c | 11 +++++------
+ 1 file changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/scsi/lpfc/lpfc_init.c b/drivers/scsi/lpfc/lpfc_init.c
+index a109895bf360..f9986efa0aa3 100644
+--- a/drivers/scsi/lpfc/lpfc_init.c
++++ b/drivers/scsi/lpfc/lpfc_init.c
+@@ -6413,6 +6413,11 @@ lpfc_sli4_driver_resource_setup(struct lpfc_hba *phba)
+ 	if (rc)
+ 		return -ENODEV;
+ 
++	/* Allocate all driver workqueues here */
++
++	/* The lpfc_wq workqueue for deferred irq use */
++	phba->wq = alloc_workqueue("lpfc_wq", WQ_MEM_RECLAIM, 0);
++
+ 	/*
+ 	 * Initialize timers used by driver
+ 	 */
+@@ -6996,12 +7001,6 @@ lpfc_setup_driver_resource_phase2(struct lpfc_hba *phba)
+ 		return error;
+ 	}
+ 
+-	/* The lpfc_wq workqueue for deferred irq use, is only used for SLI4 */
+-	if (phba->sli_rev == LPFC_SLI_REV4)
+-		phba->wq = alloc_workqueue("lpfc_wq", WQ_MEM_RECLAIM, 0);
+-	else
+-		phba->wq = NULL;
+-
+ 	return 0;
+ }
+ 
+-- 
+2.16.4
+

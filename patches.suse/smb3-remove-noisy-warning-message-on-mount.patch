@@ -1,0 +1,42 @@
+From c3ed44026cd07fda5976ecb79225759901a160b4 Mon Sep 17 00:00:00 2001
+From: Steve French <stfrench@microsoft.com>
+Date: Thu, 28 Jun 2018 22:53:39 -0500
+Subject: [PATCH] smb3: remove noisy warning message on mount
+Git-commit: c3ed44026cd07fda5976ecb79225759901a160b4
+Patch-mainline: v4.19-rc1
+References: bsc#1129664, bsc#1144333
+
+Some servers, like Samba, don't support the fsctl for
+query_network_interface_info so don't log a noisy warning
+message on mount for this by default unless the error is more serious.
+Lower the error to an FYI level so it does not get logged by
+default.
+
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smb2ops.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 27b69977809d..4ce72055ca0a 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -444,7 +444,11 @@ SMB3_request_interfaces(const unsigned int xid, struct cifs_tcon *tcon)
+ 			FSCTL_QUERY_NETWORK_INTERFACE_INFO, true /* is_fsctl */,
+ 			NULL /* no data input */, 0 /* no data input */,
+ 			(char **)&out_buf, &ret_data_len);
+-	if (rc != 0) {
++	if (rc == -EOPNOTSUPP) {
++		cifs_dbg(FYI,
++			 "server does not support query network interfaces\n");
++		goto out;
++	} else if (rc != 0) {
+ 		cifs_dbg(VFS, "error %d on ioctl to get interface list\n", rc);
+ 		goto out;
+ 	}
+-- 
+2.16.4
+

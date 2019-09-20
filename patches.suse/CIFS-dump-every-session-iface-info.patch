@@ -1,0 +1,62 @@
+From: Aurelien Aptel <aaptel@suse.com>
+Date: Thu, 14 Jun 2018 15:43:20 +0200
+Subject: [PATCH] CIFS: dump every session iface info
+Git-commit: bc0fe8b207a14a6d7ecf8812edb92c8bdd5c9b2d
+Patch-mainline: v4.18-rc1
+References: bsc#1144333
+
+Signed-off-by: Aurelien Aptel <aaptel@suse.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifs_debug.c | 27 +++++++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/fs/cifs/cifs_debug.c b/fs/cifs/cifs_debug.c
+index 116146022aa1..e8db245194e7 100644
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -126,6 +126,25 @@ static void cifs_debug_tcon(struct seq_file *m, struct cifs_tcon *tcon)
+ 	seq_putc(m, '\n');
+ }
+ 
++static void
++cifs_dump_iface(struct seq_file *m, struct cifs_server_iface *iface)
++{
++	struct sockaddr_in *ipv4 = (struct sockaddr_in *)&iface->sockaddr;
++	struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)&iface->sockaddr;
++
++	seq_printf(m, "\t\tSpeed: %zu bps\n", iface->speed);
++	seq_puts(m, "\t\tCapabilities: ");
++	if (iface->rdma_capable)
++		seq_puts(m, "rdma ");
++	if (iface->rss_capable)
++		seq_puts(m, "rss ");
++	seq_putc(m, '\n');
++	if (iface->sockaddr.ss_family == AF_INET)
++		seq_printf(m, "\t\tIPv4: %pI4\n", &ipv4->sin_addr);
++	else if (iface->sockaddr.ss_family == AF_INET6)
++		seq_printf(m, "\t\tIPv6: %pI6\n", &ipv6->sin6_addr);
++}
++
+ static int cifs_debug_data_proc_show(struct seq_file *m, void *v)
+ {
+ 	struct list_head *tmp1, *tmp2, *tmp3;
+@@ -312,6 +331,14 @@ static int cifs_debug_data_proc_show(struct seq_file *m, void *v)
+ 					      mid_entry->mid);
+ 			}
+ 			spin_unlock(&GlobalMid_Lock);
++
++			spin_lock(&ses->iface_lock);
++			seq_printf(m, "\n\tServer interfaces: %zu\n", ses->iface_count);
++			for (j = 0; j < ses->iface_count; j++) {
++				seq_printf(m, "\t%d)\n", j);
++				cifs_dump_iface(m, &ses->iface_list[j]);
++			}
++			spin_unlock(&ses->iface_lock);
+ 		}
+ 	}
+ 	spin_unlock(&cifs_tcp_ses_lock);
+-- 
+2.16.4
+

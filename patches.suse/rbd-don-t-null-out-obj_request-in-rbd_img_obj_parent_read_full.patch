@@ -1,0 +1,34 @@
+From: Ilya Dryomov <idryomov@gmail.com>
+Date: Thu, 18 Jan 2018 16:32:00 +0100
+Subject: rbd: don't NULL out ->obj_request in rbd_img_obj_parent_read_full()
+Git-commit: d98f153f1a116f79e636edd34b4fec07e49ae9b2
+Patch-mainline: v4.16-rc1
+References: FATE#324714 bsc#1141450
+
+If rbd_img_request_submit() fails, parent_request->obj_request is
+NULLed out, triggering an assert in rbd_obj_request_put():
+
+  rbd_img_request_put(parent_request)
+    rbd_parent_request_destroy
+      rbd_obj_request_put(NULL)
+
+Just remove it -- parent_request->obj_request will be put in
+rbd_parent_request_destroy().
+
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+---
+ drivers/block/rbd.c |    2 --
+ 1 file changed, 2 deletions(-)
+
+--- a/drivers/block/rbd.c
++++ b/drivers/block/rbd.c
+@@ -2719,8 +2719,6 @@ static int rbd_img_obj_parent_read_full(
+ 
+ 	parent_request->copyup_pages = NULL;
+ 	parent_request->copyup_page_count = 0;
+-	parent_request->obj_request = NULL;
+-	rbd_obj_request_put(obj_request);
+ out_err:
+ 	if (pages)
+ 		ceph_release_page_vector(pages, page_count);

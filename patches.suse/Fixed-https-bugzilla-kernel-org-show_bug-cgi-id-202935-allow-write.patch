@@ -1,0 +1,37 @@
+From: Kovtunenko Oleksandr <alexander198961@gmail.com>
+Date: Tue, 14 May 2019 05:52:34 +0000
+Subject: [PATCH] Fixed https://bugzilla.kernel.org/show_bug.cgi?id=202935
+ allow write on the same file
+Git-commit: 9ab70ca653307771589e1414102c552d8dbdbbef
+Patch-mainline: v5.2-rc1
+References: bsc#1144333
+
+Copychunk allows source and target to be on the same file.
+For details on restrictions see MS-SMB2 3.3.5.15.6
+
+Signed-off-by: Kovtunenko Oleksandr <alexander198961@gmail.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/cifsfs.c | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/fs/cifs/cifsfs.c b/fs/cifs/cifsfs.c
+index b1a5fcfa3ce1..d0cb042732cb 100644
+--- a/fs/cifs/cifsfs.c
++++ b/fs/cifs/cifsfs.c
+@@ -1070,11 +1070,6 @@ ssize_t cifs_file_copychunk_range(unsigned int xid,
+ 
+ 	cifs_dbg(FYI, "copychunk range\n");
+ 
+-	if (src_inode == target_inode) {
+-		rc = -EINVAL;
+-		goto out;
+-	}
+-
+ 	if (!src_file->private_data || !dst_file->private_data) {
+ 		rc = -EBADF;
+ 		cifs_dbg(VFS, "missing cifsFileInfo on copy range src file\n");
+-- 
+2.22.0
+

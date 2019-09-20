@@ -1,0 +1,36 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Mon, 17 Jun 2019 17:34:57 -0500
+Subject: [PATCH] smb3: if max_credits is specified then display it in
+ /proc/mounts
+Git-commit: dc179268cde43e0fb17e03507f09a3485625e52f
+Patch-mainline: v5.3-rc1
+References: bsc#1144333
+
+If "max_credits" is overridden from its default by specifying
+it on the smb3 mount then display it in /proc/mounts
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/cifsfs.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/fs/cifs/cifsfs.c b/fs/cifs/cifsfs.c
+index d06edebf3a73..786e07754107 100644
+--- a/fs/cifs/cifsfs.c
++++ b/fs/cifs/cifsfs.c
+@@ -554,6 +554,11 @@ cifs_show_options(struct seq_file *s, struct dentry *root)
+ 	seq_printf(s, ",bsize=%u", cifs_sb->bsize);
+ 	seq_printf(s, ",echo_interval=%lu",
+ 			tcon->ses->server->echo_interval / HZ);
++
++	/* Only display max_credits if it was overridden on mount */
++	if (tcon->ses->server->max_credits != SMB2_MAX_CREDITS_AVAILABLE)
++		seq_printf(s, ",max_credits=%u", tcon->ses->server->max_credits);
++
+ 	if (tcon->snapshot_time)
+ 		seq_printf(s, ",snapshot=%llu", tcon->snapshot_time);
+ 	if (tcon->handle_timeout)
+-- 
+2.22.0
+

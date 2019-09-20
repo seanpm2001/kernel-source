@@ -1,10 +1,9 @@
-From 56c762eb9bee330bb4e6d11c589434f2904d3ab6 Mon Sep 17 00:00:00 2001
 From: Paulo Alcantara <palcantara@suse.de>
 Date: Wed, 14 Nov 2018 13:03:14 -0200
 Subject: [PATCH] cifs: Refactor out cifs_mount()
 Git-commit: 56c762eb9bee330bb4e6d11c589434f2904d3ab6
 Patch-mainline: v5.0-rc1
-References: FATE#325270
+References: bsc#1144333
 
 * Split and refactor the very large function cifs_mount() in multiple
   functions:
@@ -23,24 +22,25 @@ Signed-off-by: Paulo Alcantara <palcantara@suse.de>
 Reviewed-by: Aurelien Aptel <aaptel@suse.com>
 Signed-off-by: Steve French <stfrench@microsoft.com>
 Acked-by: Aurelien Aptel <aaptel@suse.com>
-Acked-by: Paulo Alcantara <palcantara@suse.de>
 ---
- fs/cifs/cifsproto.h |    4 
- fs/cifs/connect.c   |  434 ++++++++++++++++++++++++++++++----------------------
- 2 files changed, 258 insertions(+), 180 deletions(-)
+ fs/cifs/cifsproto.h |   4 +-
+ fs/cifs/connect.c   | 441 ++++++++++++++++++++++++++++++----------------------
+ 2 files changed, 262 insertions(+), 183 deletions(-)
 
+diff --git a/fs/cifs/cifsproto.h b/fs/cifs/cifsproto.h
+index fa361bc00602..f4dd2a3795dd 100644
 --- a/fs/cifs/cifsproto.h
 +++ b/fs/cifs/cifsproto.h
-@@ -201,7 +201,7 @@ extern int cifs_match_super(struct super
+@@ -213,7 +213,7 @@ extern int cifs_match_super(struct super_block *, void *);
  extern void cifs_cleanup_volume_info(struct smb_vol *pvolume_info);
  extern struct smb_vol *cifs_get_volume_info(char *mount_data,
- 					    const char *devname);
+ 					    const char *devname, bool is_smb3);
 -extern int cifs_mount(struct cifs_sb_info *, struct smb_vol *);
 +extern int cifs_mount(struct cifs_sb_info *cifs_sb, struct smb_vol *vol);
  extern void cifs_umount(struct cifs_sb_info *);
  extern void cifs_mark_open_files_invalid(struct cifs_tcon *tcon);
  extern void cifs_reopen_persistent_handles(struct cifs_tcon *tcon);
-@@ -512,6 +512,8 @@ extern int E_md4hash(const unsigned char
+@@ -524,6 +524,8 @@ extern int E_md4hash(const unsigned char *passwd, unsigned char *p16,
  			const struct nls_table *codepage);
  extern int SMBencrypt(unsigned char *passwd, const unsigned char *c8,
  			unsigned char *p24);
@@ -49,9 +49,11 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  
  void cifs_readdata_release(struct kref *refcount);
  int cifs_async_readv(struct cifs_readdata *rdata);
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index e4a924ba6325..944188d6200c 100644
 --- a/fs/cifs/connect.c
 +++ b/fs/cifs/connect.c
-@@ -3553,8 +3553,8 @@ int cifs_setup_cifs_sb(struct smb_vol *p
+@@ -3747,8 +3747,8 @@ int cifs_setup_cifs_sb(struct smb_vol *pvolume_info,
  	return 0;
  }
  
@@ -62,7 +64,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  {
  	kfree(volume_info->username);
  	kzfree(volume_info->password);
-@@ -3569,10 +3569,132 @@ cifs_cleanup_volume_info(struct smb_vol
+@@ -3763,10 +3763,136 @@ cifs_cleanup_volume_info(struct smb_vol *volume_info)
  {
  	if (!volume_info)
  		return;
@@ -144,6 +146,10 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 +
 +	*ntcon = tcon;
 +
++	/* if new SMB3.11 POSIX extensions are supported do not remap / and \ */
++	if (tcon->posix_extensions)
++		cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_POSIX_PATHS;
++
 +	/* tell server which Unix caps we support */
 +	if (cap_unix(tcon->ses)) {
 +		/*
@@ -196,16 +202,16 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  
  #ifdef CONFIG_CIFS_DFS_UPCALL
  /*
-@@ -3649,7 +3771,7 @@ expand_dfs_referral(const unsigned int x
+@@ -3846,7 +3972,7 @@ expand_dfs_referral(const unsigned int xid, struct cifs_ses *ses,
  			rc = PTR_ERR(mdata);
  			mdata = NULL;
  		} else {
 -			cleanup_volume_info_contents(volume_info);
 +			cifs_cleanup_volume_info_contents(volume_info);
  			rc = cifs_setup_volume_info(volume_info, mdata,
- 							fake_devname);
+ 							fake_devname, false);
  		}
-@@ -3758,103 +3880,76 @@ cifs_are_all_path_components_accessible(
+@@ -3955,107 +4081,77 @@ cifs_are_all_path_components_accessible(struct TCP_Server_Info *server,
  	return rc;
  }
  
@@ -230,8 +236,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 -#ifdef CONFIG_CIFS_DFS_UPCALL
 -	int referral_walks_count = 0;
 -#endif
-+	char *full_path;
- 
+-
 -#ifdef CONFIG_CIFS_DFS_UPCALL
 -try_mount_again:
 -	/* cleanup activities if we're chasing a referral */
@@ -240,7 +245,8 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 -			cifs_put_tcon(tcon);
 -		else if (ses)
 -			cifs_put_smb_ses(ses);
--
++	char *full_path;
+ 
 -		cifs_sb->mnt_cifs_flags &= ~CIFS_MOUNT_POSIX_PATHS;
 +	if (!server->ops->is_path_accessible)
 +		return -EOPNOTSUPP;
@@ -254,8 +260,6 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 -	server = NULL;
 -	full_path = NULL;
 -	tlink = NULL;
--
--	xid = get_xid();
 +	/*
 +	 * cifs_build_path_to_root works only when we have a valid tcon
 +	 */
@@ -263,6 +267,9 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 +					    tcon->Flags & SMB_SHARE_IS_IN_DFS);
 +	if (full_path == NULL)
 +		return -ENOMEM;
+ 
+-	xid = get_xid();
++	cifs_dbg(FYI, "%s: full_path: %s\n", __func__, full_path);
  
 -	/* get a reference to a tcp session */
 -	server = cifs_get_tcp_session(volume_info);
@@ -282,8 +289,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 -		ses = NULL;
 -		goto mount_fail_check;
 -	}
-+	cifs_dbg(FYI, "%s: full_path: %s\n", __func__, full_path);
- 
+-
 -	if ((volume_info->persistent == true) && ((ses->server->capabilities &
 -		SMB2_GLOBAL_CAP_PERSISTENT_HANDLES) == 0)) {
 -		cifs_dbg(VFS, "persistent handles not supported by server\n");
@@ -317,6 +323,13 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 +		}
  	}
  
+-	/* if new SMB3.11 POSIX extensions are supported do not remap / and \ */
+-	if (tcon->posix_extensions)
+-		cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_POSIX_PATHS;
++	kfree(full_path);
++	return rc;
++}
+ 
 -	/* tell server which Unix caps we support */
 -	if (cap_unix(tcon->ses)) {
 -		/* reset of caps checks mount to see if unix extensions
@@ -330,13 +343,6 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 -		}
 -	} else
 -		tcon->unix_ext = 0; /* server does not support them */
-+	kfree(full_path);
-+	return rc;
-+}
- 
--	/* do not care if a following call succeed - informational */
--	if (!tcon->pipe && server->ops->qfs_tcon)
--		server->ops->qfs_tcon(xid, tcon);
 +#ifdef CONFIG_CIFS_DFS_UPCALL
 +int cifs_mount(struct cifs_sb_info *cifs_sb, struct smb_vol *vol)
 +{
@@ -348,8 +354,9 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 +	char *old_mountdata;
 +	int count;
  
--	cifs_sb->wsize = server->ops->negotiate_wsize(tcon, volume_info);
--	cifs_sb->rsize = server->ops->negotiate_rsize(tcon, volume_info);
+-	/* do not care if a following call succeed - informational */
+-	if (!tcon->pipe && server->ops->qfs_tcon)
+-		server->ops->qfs_tcon(xid, tcon);
 +	rc = mount_get_conns(vol, cifs_sb, &xid, &server, &ses, &tcon);
 +	if (!rc && tcon) {
 +		rc = is_path_remote(cifs_sb, vol, xid, server, tcon);
@@ -361,12 +368,15 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 +	if ((rc == -EACCES) || (rc == -EOPNOTSUPP) || (ses == NULL) || (server == NULL))
 +		goto error;
  
+-	cifs_sb->wsize = server->ops->negotiate_wsize(tcon, volume_info);
+-	cifs_sb->rsize = server->ops->negotiate_rsize(tcon, volume_info);
+ 
 -remote_path_check:
 -#ifdef CONFIG_CIFS_DFS_UPCALL
  	/*
  	 * Perform an unconditional check for whether there are DFS
  	 * referrals for this path without prefix, to provide support
-@@ -3862,119 +3957,100 @@ remote_path_check:
+@@ -4063,119 +4159,100 @@ cifs_mount(struct cifs_sb_info *cifs_sb, struct smb_vol *volume_info)
  	 * with PATH_NOT_COVERED to requests that include the prefix.
  	 * Chase the referral if found, otherwise continue normally.
  	 */
@@ -558,3 +568,6 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  
  /*
   * Issue a TREE_CONNECT request.
+-- 
+2.16.4
+

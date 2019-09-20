@@ -1,0 +1,44 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Wed, 17 Apr 2019 14:44:19 -0700
+Subject: scsi: qla2xxx: Avoid that Coverity complains about dereferencing a
+ NULL rport pointer
+Patch-mainline: v5.2-rc1
+Git-commit: 2dbb02fd495c9b2e41ba37d6fec2aa713d328788
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+Since Coverity cannot know that rport != NULL in qla2xxx_queuecommand() and
+since there is code in that function that dereferences the rport pointer,
+modify qla2xxx_queuecommand() such that it fails SCSI commands if rport ==
+NULL.
+
+Cc: Himanshu Madhani <hmadhani@marvell.com>
+Cc: Giridhar Malavali <gmalavali@marvell.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Acked-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_os.c |    5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_os.c
++++ b/drivers/scsi/qla2xxx/qla_os.c
+@@ -878,7 +878,8 @@ qla2xxx_queuecommand(struct Scsi_Host *h
+ 	uint32_t tag;
+ 	uint16_t hwq;
+ 
+-	if (unlikely(test_bit(UNLOADING, &base_vha->dpc_flags))) {
++	if (unlikely(test_bit(UNLOADING, &base_vha->dpc_flags)) ||
++	    WARN_ON_ONCE(!rport)) {
+ 		cmd->result = DID_NO_CONNECT << 16;
+ 		goto qc24_fail_command;
+ 	}
+@@ -1005,7 +1006,7 @@ qla2xxx_mqueuecommand(struct Scsi_Host *
+ 	srb_t *sp;
+ 	int rval;
+ 
+-	rval = fc_remote_port_chkready(rport);
++	rval = rport ? fc_remote_port_chkready(rport) : FC_PORTSTATE_OFFLINE;
+ 	if (rval) {
+ 		cmd->result = rval;
+ 		ql_dbg(ql_dbg_io + ql_dbg_verbose, vha, 0x3076,

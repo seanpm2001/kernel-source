@@ -1,0 +1,43 @@
+From: Steve French <smfrench@gmail.com>
+Date: Wed, 20 Sep 2017 16:46:49 -0500
+Subject: [PATCH] [SMB3] Update session and share information displayed for
+ debugging SMB2/SMB3
+Git-commit: 1fa089ec6d68849bfe60abd141375dc9b21b0ee8
+Patch-mainline: v4.14-rc2
+References: bsc#1144333
+
+We were not displaying some key fields (session status and capabilities and
+whether guest authenticated) for SMB2/SMB3 session in /proc/fs/cifs/DebugData.
+
+This is needed for real world triage of problems with the (now much more
+common) SMB3 mounts.
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifs_debug.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/fs/cifs/cifs_debug.c b/fs/cifs/cifs_debug.c
+index 9727e1dcacd5..cbb9534b89b4 100644
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -160,8 +160,13 @@ static int cifs_debug_data_proc_show(struct seq_file *m, void *v)
+ 			if ((ses->serverDomain == NULL) ||
+ 				(ses->serverOS == NULL) ||
+ 				(ses->serverNOS == NULL)) {
+-				seq_printf(m, "\n%d) entry for %s not fully "
+-					   "displayed\n\t", i, ses->serverName);
++				seq_printf(m, "\n%d) Name: %s Uses: %d Capability: 0x%x\tSession Status: %d\t",
++					i, ses->serverName, ses->ses_count,
++					ses->capabilities, ses->status);
++				if (ses->session_flags & SMB2_SESSION_FLAG_IS_GUEST)
++					seq_printf(m, "Guest\t");
++				else if (ses->session_flags & SMB2_SESSION_FLAG_IS_NULL)
++					seq_printf(m, "Anonymous\t");
+ 			} else {
+ 				seq_printf(m,
+ 				    "\n%d) Name: %s  Domain: %s Uses: %d OS:"
+-- 
+2.16.4
+

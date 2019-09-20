@@ -1,0 +1,48 @@
+From: Ilya Dryomov <idryomov@gmail.com>
+Date: Mon, 22 Jan 2018 16:03:06 +0100
+Subject: rbd: use kmem_cache_zalloc() in rbd_img_request_create()
+Git-commit: a0c5895b27f6bbf8aa20a2c640845fc261740051
+Patch-mainline: v4.16-rc1
+References: FATE#324714 bsc#1141450
+
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+---
+ drivers/block/rbd.c | 9 ++-------
+ 1 file changed, 2 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/block/rbd.c b/drivers/block/rbd.c
+index 89d00038b7ce..7646a2d3119c 100644
+--- a/drivers/block/rbd.c
++++ b/drivers/block/rbd.c
+@@ -2124,15 +2124,13 @@ static struct rbd_img_request *rbd_img_request_create(
+ {
+ 	struct rbd_img_request *img_request;
+ 
+-	img_request = kmem_cache_alloc(rbd_img_request_cache, GFP_NOIO);
++	img_request = kmem_cache_zalloc(rbd_img_request_cache, GFP_NOIO);
+ 	if (!img_request)
+ 		return NULL;
+ 
+-	img_request->rq = NULL;
+ 	img_request->rbd_dev = rbd_dev;
+ 	img_request->offset = offset;
+ 	img_request->length = length;
+-	img_request->flags = 0;
+ 	if (op_type == OBJ_OP_DISCARD) {
+ 		img_request_discard_set(img_request);
+ 		img_request->snapc = snapc;
+@@ -2144,11 +2142,8 @@ static struct rbd_img_request *rbd_img_request_create(
+ 	}
+ 	if (rbd_dev_parent_get(rbd_dev))
+ 		img_request_layered_set(img_request);
++
+ 	spin_lock_init(&img_request->completion_lock);
+-	img_request->next_completion = 0;
+-	img_request->callback = NULL;
+-	img_request->result = 0;
+-	img_request->obj_request_count = 0;
+ 	INIT_LIST_HEAD(&img_request->obj_requests);
+ 	kref_init(&img_request->kref);
+ 
+

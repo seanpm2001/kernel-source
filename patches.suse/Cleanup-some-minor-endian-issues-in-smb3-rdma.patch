@@ -1,0 +1,132 @@
+From: Steve French <smfrench@gmail.com>
+Date: Wed, 24 Jan 2018 23:07:41 -0600
+Subject: [PATCH] Cleanup some minor endian issues in smb3 rdma
+Git-commit: 2026b06e9ce8521dae1a71654dc5a39e7ce3b871
+Patch-mainline: v4.15
+References: bsc#1144333
+
+Minor cleanup of some sparse warnings (including a few misc
+endian fixes for the new smb3 rdma code)
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c   | 22 +++++++++++-----------
+ fs/cifs/smb2pdu.h   | 14 +++++++-------
+ fs/cifs/smbdirect.c |  5 +++--
+ 3 files changed, 21 insertions(+), 20 deletions(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 17b7f3aed195..63778ac22fd9 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -2463,13 +2463,13 @@ smb2_new_read_req(void **buf, unsigned int *total_len,
+ 		if (need_invalidate)
+ 			req->Channel = SMB2_CHANNEL_RDMA_V1;
+ 		req->ReadChannelInfoOffset =
+-			offsetof(struct smb2_read_plain_req, Buffer);
++			cpu_to_le16(offsetof(struct smb2_read_plain_req, Buffer));
+ 		req->ReadChannelInfoLength =
+-			sizeof(struct smbd_buffer_descriptor_v1);
++			cpu_to_le16(sizeof(struct smbd_buffer_descriptor_v1));
+ 		v1 = (struct smbd_buffer_descriptor_v1 *) &req->Buffer[0];
+-		v1->offset = rdata->mr->mr->iova;
+-		v1->token = rdata->mr->mr->rkey;
+-		v1->length = rdata->mr->mr->length;
++		v1->offset = cpu_to_le64(rdata->mr->mr->iova);
++		v1->token = cpu_to_le32(rdata->mr->mr->rkey);
++		v1->length = cpu_to_le32(rdata->mr->mr->length);
+ 
+ 		*total_len += sizeof(*v1) - 1;
+ 	}
+@@ -2840,18 +2840,18 @@ smb2_async_writev(struct cifs_writedata *wdata,
+ 		req->Length = 0;
+ 		req->DataOffset = 0;
+ 		req->RemainingBytes =
+-			(wdata->nr_pages-1)*PAGE_SIZE + wdata->tailsz;
++			cpu_to_le32((wdata->nr_pages-1)*PAGE_SIZE + wdata->tailsz);
+ 		req->Channel = SMB2_CHANNEL_RDMA_V1_INVALIDATE;
+ 		if (need_invalidate)
+ 			req->Channel = SMB2_CHANNEL_RDMA_V1;
+ 		req->WriteChannelInfoOffset =
+-			offsetof(struct smb2_write_req, Buffer);
++			cpu_to_le16(offsetof(struct smb2_write_req, Buffer));
+ 		req->WriteChannelInfoLength =
+-			sizeof(struct smbd_buffer_descriptor_v1);
++			cpu_to_le16(sizeof(struct smbd_buffer_descriptor_v1));
+ 		v1 = (struct smbd_buffer_descriptor_v1 *) &req->Buffer[0];
+-		v1->offset = wdata->mr->mr->iova;
+-		v1->token = wdata->mr->mr->rkey;
+-		v1->length = wdata->mr->mr->length;
++		v1->offset = cpu_to_le64(wdata->mr->mr->iova);
++		v1->token = cpu_to_le32(wdata->mr->mr->rkey);
++		v1->length = cpu_to_le32(wdata->mr->mr->length);
+ 	}
+ #endif
+ 	/* 4 for rfc1002 length field and 1 for Buffer */
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index 19d34881815f..6eb9f9691ed4 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -830,9 +830,9 @@ struct smb2_flush_rsp {
+ #define SMB2_READFLAG_READ_UNBUFFERED	0x01
+ 
+ /* Channel field for read and write: exactly one of following flags can be set*/
+-#define SMB2_CHANNEL_NONE		0x00000000
+-#define SMB2_CHANNEL_RDMA_V1		0x00000001 /* SMB3 or later */
+-#define SMB2_CHANNEL_RDMA_V1_INVALIDATE 0x00000002 /* SMB3.02 or later */
++#define SMB2_CHANNEL_NONE	cpu_to_le32(0x00000000)
++#define SMB2_CHANNEL_RDMA_V1	cpu_to_le32(0x00000001) /* SMB3 or later */
++#define SMB2_CHANNEL_RDMA_V1_INVALIDATE cpu_to_le32(0x00000002) /* >= SMB3.02 */
+ 
+ /* SMB2 read request without RFC1001 length at the beginning */
+ struct smb2_read_plain_req {
+@@ -847,8 +847,8 @@ struct smb2_read_plain_req {
+ 	__le32 MinimumCount;
+ 	__le32 Channel; /* MBZ except for SMB3 or later */
+ 	__le32 RemainingBytes;
+-	__le16 ReadChannelInfoOffset; /* Reserved MBZ */
+-	__le16 ReadChannelInfoLength; /* Reserved MBZ */
++	__le16 ReadChannelInfoOffset;
++	__le16 ReadChannelInfoLength;
+ 	__u8   Buffer[1];
+ } __packed;
+ 
+@@ -877,8 +877,8 @@ struct smb2_write_req {
+ 	__u64  VolatileFileId; /* opaque endianness */
+ 	__le32 Channel; /* Reserved MBZ */
+ 	__le32 RemainingBytes;
+-	__le16 WriteChannelInfoOffset; /* Reserved MBZ */
+-	__le16 WriteChannelInfoLength; /* Reserved MBZ */
++	__le16 WriteChannelInfoOffset;
++	__le16 WriteChannelInfoLength;
+ 	__le32 Flags;
+ 	__u8   Buffer[1];
+ } __packed;
+diff --git a/fs/cifs/smbdirect.c b/fs/cifs/smbdirect.c
+index f9234ed83a60..5130492847eb 100644
+--- a/fs/cifs/smbdirect.c
++++ b/fs/cifs/smbdirect.c
+@@ -1855,7 +1855,8 @@ struct smbd_connection *smbd_get_connection(
+  * consumed. But this will require more changes to upper layer code, and also
+  * need to consider packet boundaries while they still being reassembled.
+  */
+-int smbd_recv_buf(struct smbd_connection *info, char *buf, unsigned int size)
++static int smbd_recv_buf(struct smbd_connection *info, char *buf,
++		unsigned int size)
+ {
+ 	struct smbd_response *response;
+ 	struct smbd_data_transfer *data_transfer;
+@@ -1992,7 +1993,7 @@ int smbd_recv_buf(struct smbd_connection *info, char *buf, unsigned int size)
+  * to_read: the length of data to read
+  * return value: actual data read
+  */
+-int smbd_recv_page(struct smbd_connection *info,
++static int smbd_recv_page(struct smbd_connection *info,
+ 		struct page *page, unsigned int to_read)
+ {
+ 	int ret;
+-- 
+2.16.4
+

@@ -1,10 +1,12 @@
+From fe5908bccc565f85cab025695627678cf257f91e Mon Sep 17 00:00:00 2001
 From: Thomas Richter <tmricht@linux.ibm.com>
 Date: Mon, 29 Oct 2018 13:16:38 +0000
-Subject: s390/cpum_cf_diag: Add support for s390 counter facility diagnostic
- trace
-Git-commit: fe5908bccc565f85cab025695627678cf257f91e
-Patch-mainline: v5.1-rc1
+Subject: [PATCH] s390/cpum_cf_diag: Add support for s390 counter facility
+ diagnostic trace
+
 References: jsc#SLE-6904 FATE#327581
+Patch-mainline: v5.1-rc1
+Git-commit: fe5908bccc565f85cab025695627678cf257f91e
 
 Introduce a PMU device named cpum_cf_diag. It extracts the
 values of all counters in all authorized counter sets and stores
@@ -25,10 +27,6 @@ was stopped. This data is part of a trailer entry which
 describes the time frame, counter set version numbers,
 CPU speed, and machine type for later analysis.
 
-[ ptesarik: Use sched_clock_base_cc instead of &tod_clock_base[1],
-  because SLE15-SP1 does not contain a backport of upstream commit
-  6e2ef5e4f6cc57344762932d70d38ba4ec65fa8b ]
-
 Signed-off-by: Thomas Richter <tmricht@linux.ibm.com>
 Reviewed-by: Hendrik Brueckner <brueckner@linux.ibm.com>
 Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
@@ -39,10 +37,13 @@ Acked-by: Petr Tesarik <ptesarik@suse.com>
  arch/s390/kernel/Makefile            |    1 
  arch/s390/kernel/perf_cpum_cf_diag.c |  693 +++++++++++++++++++++++++++++++++++
  4 files changed, 721 insertions(+)
+ create mode 100644 arch/s390/kernel/perf_cpum_cf_diag.c
 
+diff --git a/arch/s390/include/asm/cpu_mcf.h b/arch/s390/include/asm/cpu_mcf.h
+index 0c236d1a7aee..649b9fc60685 100644
 --- a/arch/s390/include/asm/cpu_mcf.h
 +++ b/arch/s390/include/asm/cpu_mcf.h
-@@ -49,6 +49,26 @@ static inline void ctr_set_stop(u64 *sta
+@@ -49,6 +49,26 @@ static inline void ctr_set_stop(u64 *state, int ctr_set)
  	*state &= ~(cpumf_ctr_ctl[ctr_set] << CPUMF_LCCTL_ACTCTL_SHIFT);
  }
  
@@ -69,7 +70,7 @@ Acked-by: Petr Tesarik <ptesarik@suse.com>
  static inline int ctr_stcctm(enum cpumf_ctr_set set, u64 range, u64 *dest)
  {
  	switch (set) {
-@@ -97,4 +117,10 @@ static inline void kernel_cpumcf_end(voi
+@@ -97,4 +117,10 @@ static inline void kernel_cpumcf_end(void)
  	preempt_enable();
  }
  
@@ -80,9 +81,11 @@ Acked-by: Petr Tesarik <ptesarik@suse.com>
 +}
 +
  #endif /* _ASM_S390_CPU_MCF_H */
+diff --git a/arch/s390/include/asm/perf_event.h b/arch/s390/include/asm/perf_event.h
+index 70240961df74..560d8f766ddf 100644
 --- a/arch/s390/include/asm/perf_event.h
 +++ b/arch/s390/include/asm/perf_event.h
-@@ -52,6 +52,7 @@ struct perf_sf_sde_regs {
+@@ -54,6 +54,7 @@ struct perf_sf_sde_regs {
  #define PERF_CPUM_SF_MAX_CTR		2
  #define PERF_EVENT_CPUM_SF		0xB0000UL /* Event: Basic-sampling */
  #define PERF_EVENT_CPUM_SF_DIAG		0xBD000UL /* Event: Combined-sampling */
@@ -100,6 +103,9 @@ Acked-by: Petr Tesarik <ptesarik@suse.com>
  
  obj-$(CONFIG_TRACEPOINTS)	+= trace.o
  
+diff --git a/arch/s390/kernel/perf_cpum_cf_diag.c b/arch/s390/kernel/perf_cpum_cf_diag.c
+new file mode 100644
+index 000000000000..c6fad208c2fa
 --- /dev/null
 +++ b/arch/s390/kernel/perf_cpum_cf_diag.c
 @@ -0,0 +1,693 @@
@@ -223,7 +229,7 @@ Acked-by: Petr Tesarik <ptesarik@suse.com>
 +	if (te->cpu_speed)
 +		te->speed = 1;
 +	te->clock_base = 1;			/* Save clock base */
-+	te->tod_base = sched_clock_base_cc;
++	memcpy(&te->tod_base, &tod_clock_base[1], 8);
 +	store_tod_clock((__u64 *)&te->timestamp);
 +}
 +
@@ -796,3 +802,6 @@ Acked-by: Petr Tesarik <ptesarik@suse.com>
 +	return rc;
 +}
 +arch_initcall(cf_diag_init);
+-- 
+2.22.0
+

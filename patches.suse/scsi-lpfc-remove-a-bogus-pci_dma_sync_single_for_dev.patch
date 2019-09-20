@@ -1,0 +1,37 @@
+From: Christoph Hellwig <hch@lst.de>
+Date: Thu, 11 Oct 2018 09:16:13 +0200
+Subject: [PATCH] scsi: lpfc: remove a bogus pci_dma_sync_single_for_device
+ call
+Git-commit: 416c461372b3fe635e5f9a8fbf32f629d3b22c13
+Patch-Mainline: v4.20-rc1
+References: bsc#1148308
+
+dma_alloc_coherent allocates memory that can be used by the cpu and the
+device at the same time, calls to pci_dma_sync_* are not required, and in
+fact actively harmful on some architectures like arm.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Johannes Thumshirn <jthumshirn@suse.de>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Hannes Reinecke <hare@suse.com>
+---
+ drivers/scsi/lpfc/lpfc_bsg.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/drivers/scsi/lpfc/lpfc_bsg.c b/drivers/scsi/lpfc/lpfc_bsg.c
+index d53a704c66d1..7bd7ae86bed5 100644
+--- a/drivers/scsi/lpfc/lpfc_bsg.c
++++ b/drivers/scsi/lpfc/lpfc_bsg.c
+@@ -2844,9 +2844,6 @@ diag_cmd_data_alloc(struct lpfc_hba *phba,
+ 
+ 		if (nocopydata) {
+ 			bpl->tus.f.bdeFlags = 0;
+-			pci_dma_sync_single_for_device(phba->pcidev,
+-				dmp->dma.phys, LPFC_BPL_SIZE, PCI_DMA_TODEVICE);
+-
+ 		} else {
+ 			memset((uint8_t *)dmp->dma.virt, 0, cnt);
+ 			bpl->tus.f.bdeFlags = BUFF_TYPE_BDE_64I;
+-- 
+2.16.4
+

@@ -1,0 +1,440 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Fri, 1 Jun 2018 10:53:06 +1000
+Subject: [PATCH] cifs: remove struct smb2_hdr
+Git-commit: 49f466bdbdf39543599185d8dac23dda8e5b0730
+Patch-mainline: v4.17
+References: bsc#1144333
+
+struct smb2_hdr is now just a wrapper for smb2_sync_hdr.
+We can thus get rid of smb2_hdr completely and access the sync header directly.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/misc.c         |  2 +-
+ fs/cifs/smb2glob.h     |  5 -----
+ fs/cifs/smb2maperror.c |  2 +-
+ fs/cifs/smb2misc.c     |  2 +-
+ fs/cifs/smb2ops.c      | 12 ++++++------
+ fs/cifs/smb2pdu.c      | 28 ++++++++++++++--------------
+ fs/cifs/smb2pdu.h      | 45 ++++++++++++++++++---------------------------
+ 7 files changed, 41 insertions(+), 55 deletions(-)
+
+diff --git a/fs/cifs/misc.c b/fs/cifs/misc.c
+index 96849b530e32..aba3fc3058da 100644
+--- a/fs/cifs/misc.c
++++ b/fs/cifs/misc.c
+@@ -148,7 +148,7 @@ cifs_buf_get(void)
+ 	 * SMB2 header is bigger than CIFS one - no problems to clean some
+ 	 * more bytes for CIFS.
+ 	 */
+-	size_t buf_size = sizeof(struct smb2_hdr);
++	size_t buf_size = sizeof(struct smb2_sync_hdr);
+ 
+ 	/*
+ 	 * We could use negotiated size instead of max_msgsize -
+diff --git a/fs/cifs/smb2glob.h b/fs/cifs/smb2glob.h
+index 401a5d856636..0ffa18094335 100644
+--- a/fs/cifs/smb2glob.h
++++ b/fs/cifs/smb2glob.h
+@@ -61,9 +61,4 @@
+ /* Maximum buffer size value we can send with 1 credit */
+ #define SMB2_MAX_BUFFER_SIZE 65536
+ 
+-static inline struct smb2_sync_hdr *get_sync_hdr(void *buf)
+-{
+-	return &(((struct smb2_hdr *)buf)->sync_hdr);
+-}
+-
+ #endif	/* _SMB2_GLOB_H */
+diff --git a/fs/cifs/smb2maperror.c b/fs/cifs/smb2maperror.c
+index 86f1acaa759b..20a2d304c603 100644
+--- a/fs/cifs/smb2maperror.c
++++ b/fs/cifs/smb2maperror.c
+@@ -2451,7 +2451,7 @@ smb2_print_status(__le32 status)
+ int
+ map_smb2_to_linux_error(char *buf, bool log_err)
+ {
+-	struct smb2_sync_hdr *shdr = get_sync_hdr(buf);
++	struct smb2_sync_hdr *shdr = (struct smb2_sync_hdr *)buf;
+ 	unsigned int i;
+ 	int rc = -EIO;
+ 	__le32 smb2err = shdr->Status;
+diff --git a/fs/cifs/smb2misc.c b/fs/cifs/smb2misc.c
+index 2f1db5af7a65..d587a090292a 100644
+--- a/fs/cifs/smb2misc.c
++++ b/fs/cifs/smb2misc.c
+@@ -716,7 +716,7 @@ smb2_cancelled_close_fid(struct work_struct *work)
+ int
+ smb2_handle_cancelled_mid(char *buffer, struct TCP_Server_Info *server)
+ {
+-	struct smb2_sync_hdr *sync_hdr = get_sync_hdr(buffer);
++	struct smb2_sync_hdr *sync_hdr = (struct smb2_sync_hdr *)buffer;
+ 	struct smb2_create_rsp *rsp = (struct smb2_create_rsp *)buffer;
+ 	struct cifs_tcon *tcon;
+ 	struct close_cancelled_open *cancelled;
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index f2bce73e23a0..b0f3bf9b32f9 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -123,7 +123,7 @@ smb2_get_credits_field(struct TCP_Server_Info *server, const int optype)
+ static unsigned int
+ smb2_get_credits(struct mid_q_entry *mid)
+ {
+-	struct smb2_sync_hdr *shdr = get_sync_hdr(mid->resp_buf);
++	struct smb2_sync_hdr *shdr = (struct smb2_sync_hdr *)mid->resp_buf;
+ 
+ 	return le16_to_cpu(shdr->CreditRequest);
+ }
+@@ -190,7 +190,7 @@ static struct mid_q_entry *
+ smb2_find_mid(struct TCP_Server_Info *server, char *buf)
+ {
+ 	struct mid_q_entry *mid;
+-	struct smb2_sync_hdr *shdr = get_sync_hdr(buf);
++	struct smb2_sync_hdr *shdr = (struct smb2_sync_hdr *)buf;
+ 	__u64 wire_mid = le64_to_cpu(shdr->MessageId);
+ 
+ 	if (shdr->ProtocolId == SMB2_TRANSFORM_PROTO_NUM) {
+@@ -215,7 +215,7 @@ static void
+ smb2_dump_detail(void *buf, struct TCP_Server_Info *server)
+ {
+ #ifdef CONFIG_CIFS_DEBUG2
+-	struct smb2_sync_hdr *shdr = get_sync_hdr(buf);
++	struct smb2_sync_hdr *shdr = (struct smb2_sync_hdr *)buf;
+ 
+ 	cifs_dbg(VFS, "Cmd: %d Err: 0x%x Flags: 0x%x Mid: %llu Pid: %d\n",
+ 		 shdr->Command, shdr->Status, shdr->Flags, shdr->MessageId,
+@@ -1303,7 +1303,7 @@ smb2_close_dir(const unsigned int xid, struct cifs_tcon *tcon,
+ static bool
+ smb2_is_status_pending(char *buf, struct TCP_Server_Info *server, int length)
+ {
+-	struct smb2_sync_hdr *shdr = get_sync_hdr(buf);
++	struct smb2_sync_hdr *shdr = (struct smb2_sync_hdr *)buf;
+ 
+ 	if (shdr->Status != STATUS_PENDING)
+ 		return false;
+@@ -1321,7 +1321,7 @@ smb2_is_status_pending(char *buf, struct TCP_Server_Info *server, int length)
+ static bool
+ smb2_is_session_expired(char *buf)
+ {
+-	struct smb2_sync_hdr *shdr = get_sync_hdr(buf);
++	struct smb2_sync_hdr *shdr = (struct smb2_sync_hdr *)buf;
+ 
+ 	if (shdr->Status != STATUS_NETWORK_SESSION_EXPIRED &&
+ 	    shdr->Status != STATUS_USER_SESSION_DELETED)
+@@ -2534,7 +2534,7 @@ handle_read_data(struct TCP_Server_Info *server, struct mid_q_entry *mid,
+ 	unsigned int cur_page_idx;
+ 	unsigned int pad_len;
+ 	struct cifs_readdata *rdata = mid->callback_data;
+-	struct smb2_sync_hdr *shdr = get_sync_hdr(buf);
++	struct smb2_sync_hdr *shdr = (struct smb2_sync_hdr *)buf;
+ 	struct bio_vec *bvec = NULL;
+ 	struct iov_iter iter;
+ 	struct kvec iov;
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 21b69badcd31..134bb19b22aa 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -767,7 +767,7 @@ SMB2_negotiate(const unsigned int xid, struct cifs_ses *ses)
+ 	server->capabilities |= SMB2_NT_FIND | SMB2_LARGE_FILES;
+ 
+ 	security_blob = smb2_get_data_area_len(&blob_offset, &blob_length,
+-					       &rsp->hdr.sync_hdr);
++					       (struct smb2_sync_hdr *)rsp);
+ 	/*
+ 	 * See MS-SMB2 section 2.2.4: if no blob, client picks default which
+ 	 * for us will be
+@@ -1131,7 +1131,7 @@ SMB2_auth_kerberos(struct SMB2_sess_data *sess_data)
+ 		goto out_put_spnego_key;
+ 
+ 	rsp = (struct smb2_sess_setup_rsp *)sess_data->iov[0].iov_base;
+-	ses->Suid = rsp->hdr.sync_hdr.SessionId;
++	ses->Suid = rsp->sync_hdr.SessionId;
+ 
+ 	ses->session_flags = le16_to_cpu(rsp->SessionFlags);
+ 
+@@ -1207,7 +1207,7 @@ SMB2_sess_auth_rawntlmssp_negotiate(struct SMB2_sess_data *sess_data)
+ 
+ 	/* If true, rc here is expected and not an error */
+ 	if (sess_data->buf0_type != CIFS_NO_BUFFER &&
+-		rsp->hdr.sync_hdr.Status == STATUS_MORE_PROCESSING_REQUIRED)
++		rsp->sync_hdr.Status == STATUS_MORE_PROCESSING_REQUIRED)
+ 		rc = 0;
+ 
+ 	if (rc)
+@@ -1228,7 +1228,7 @@ SMB2_sess_auth_rawntlmssp_negotiate(struct SMB2_sess_data *sess_data)
+ 	cifs_dbg(FYI, "rawntlmssp session setup challenge phase\n");
+ 
+ 
+-	ses->Suid = rsp->hdr.sync_hdr.SessionId;
++	ses->Suid = rsp->sync_hdr.SessionId;
+ 	ses->session_flags = le16_to_cpu(rsp->SessionFlags);
+ 
+ out:
+@@ -1286,7 +1286,7 @@ SMB2_sess_auth_rawntlmssp_authenticate(struct SMB2_sess_data *sess_data)
+ 
+ 	rsp = (struct smb2_sess_setup_rsp *)sess_data->iov[0].iov_base;
+ 
+-	ses->Suid = rsp->hdr.sync_hdr.SessionId;
++	ses->Suid = rsp->sync_hdr.SessionId;
+ 	ses->session_flags = le16_to_cpu(rsp->SessionFlags);
+ 
+ 	rc = SMB2_sess_establish_session(sess_data);
+@@ -1535,7 +1535,7 @@ SMB2_tcon(const unsigned int xid, struct cifs_ses *ses, const char *tree,
+ 	tcon->maximal_access = le32_to_cpu(rsp->MaximalAccess);
+ 	tcon->tidStatus = CifsGood;
+ 	tcon->need_reconnect = false;
+-	tcon->tid = rsp->hdr.sync_hdr.TreeId;
++	tcon->tid = rsp->sync_hdr.TreeId;
+ 	strlcpy(tcon->treeName, tree, sizeof(tcon->treeName));
+ 
+ 	if ((rsp->Capabilities & SMB2_SHARE_CAP_DFS) &&
+@@ -1555,7 +1555,7 @@ SMB2_tcon(const unsigned int xid, struct cifs_ses *ses, const char *tree,
+ 	return rc;
+ 
+ tcon_error_exit:
+-	if (rsp && rsp->hdr.sync_hdr.Status == STATUS_BAD_NETWORK_NAME) {
++	if (rsp && rsp->sync_hdr.Status == STATUS_BAD_NETWORK_NAME) {
+ 		cifs_dbg(VFS, "BAD_NETWORK_NAME: %s\n", tree);
+ 	}
+ 	goto tcon_exit;
+@@ -2526,7 +2526,7 @@ smb2_echo_callback(struct mid_q_entry *mid)
+ 	unsigned int credits_received = 1;
+ 
+ 	if (mid->mid_state == MID_RESPONSE_RECEIVED)
+-		credits_received = le16_to_cpu(rsp->hdr.sync_hdr.CreditRequest);
++		credits_received = le16_to_cpu(rsp->sync_hdr.CreditRequest);
+ 
+ 	DeleteMidQEntry(mid);
+ 	add_credits(server, credits_received, CIFS_ECHO_OP);
+@@ -3006,7 +3006,7 @@ smb2_writev_callback(struct mid_q_entry *mid)
+ 
+ 	switch (mid->mid_state) {
+ 	case MID_RESPONSE_RECEIVED:
+-		credits_received = le16_to_cpu(rsp->hdr.sync_hdr.CreditRequest);
++		credits_received = le16_to_cpu(rsp->sync_hdr.CreditRequest);
+ 		wdata->result = smb2_check_receive(mid, tcon->ses->server, 0);
+ 		if (wdata->result != 0)
+ 			break;
+@@ -3398,7 +3398,7 @@ SMB2_query_directory(const unsigned int xid, struct cifs_tcon *tcon,
+ 
+ 	if (rc) {
+ 		if (rc == -ENODATA &&
+-		    rsp->hdr.sync_hdr.Status == STATUS_NO_MORE_FILES) {
++		    rsp->sync_hdr.Status == STATUS_NO_MORE_FILES) {
+ 			srch_inf->endOfSearch = true;
+ 			rc = 0;
+ 		}
+@@ -3781,7 +3781,7 @@ SMB2_QFS_info(const unsigned int xid, struct cifs_tcon *tcon,
+ 	rsp = (struct smb2_query_info_rsp *)rsp_iov.iov_base;
+ 
+ 	info = (struct smb2_fs_full_size_info *)(server->vals->header_preamble_size +
+-		le16_to_cpu(rsp->OutputBufferOffset) + (char *)&rsp->hdr);
++		le16_to_cpu(rsp->OutputBufferOffset) + (char *)rsp);
+ 	rc = validate_iov(server,
+ 			  le16_to_cpu(rsp->OutputBufferOffset),
+ 			  le32_to_cpu(rsp->OutputBufferLength), &rsp_iov,
+@@ -3846,14 +3846,14 @@ SMB2_QFS_attr(const unsigned int xid, struct cifs_tcon *tcon,
+ 
+ 	if (level == FS_ATTRIBUTE_INFORMATION)
+ 		memcpy(&tcon->fsAttrInfo, server->vals->header_preamble_size + offset
+-			+ (char *)&rsp->hdr, min_t(unsigned int,
++			+ (char *)rsp, min_t(unsigned int,
+ 			rsp_len, max_len));
+ 	else if (level == FS_DEVICE_INFORMATION)
+ 		memcpy(&tcon->fsDevInfo, server->vals->header_preamble_size + offset
+-			+ (char *)&rsp->hdr, sizeof(FILE_SYSTEM_DEVICE_INFO));
++			+ (char *)rsp, sizeof(FILE_SYSTEM_DEVICE_INFO));
+ 	else if (level == FS_SECTOR_SIZE_INFORMATION) {
+ 		struct smb3_fs_ss_info *ss_info = (struct smb3_fs_ss_info *)
+-			(server->vals->header_preamble_size + offset + (char *)&rsp->hdr);
++			(server->vals->header_preamble_size + offset + (char *)rsp);
+ 		tcon->ss_flags = le32_to_cpu(ss_info->Flags);
+ 		tcon->perf_sector_size =
+ 			le32_to_cpu(ss_info->PhysicalBytesPerSectorForPerf);
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index 3448a5d33b67..a345560001ce 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -122,15 +122,6 @@ struct smb2_sync_pdu {
+ 	__le16 StructureSize2; /* size of wct area (varies, request specific) */
+ } __packed;
+ 
+-struct smb2_hdr {
+-	struct smb2_sync_hdr sync_hdr;
+-} __packed;
+-
+-struct smb2_pdu {
+-	struct smb2_hdr hdr;
+-	__le16 StructureSize2; /* size of wct area (varies, request specific) */
+-} __packed;
+-
+ #define SMB3_AES128CMM_NONCE 11
+ #define SMB3_AES128GCM_NONCE 12
+ 
+@@ -165,7 +156,7 @@ struct smb2_transform_hdr {
+ #define SMB2_ERROR_STRUCTURE_SIZE2 cpu_to_le16(9)
+ 
+ struct smb2_err_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize;
+ 	__le16 Reserved; /* MBZ */
+ 	__le32 ByteCount;  /* even if zero, at least one byte follows */
+@@ -303,7 +294,7 @@ struct smb2_posix_neg_context {
+ } __packed;
+ 
+ struct smb2_negotiate_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize;	/* Must be 65 */
+ 	__le16 SecurityMode;
+ 	__le16 DialectRevision;
+@@ -343,7 +334,7 @@ struct smb2_sess_setup_req {
+ #define SMB2_SESSION_FLAG_IS_NULL	0x0002
+ #define SMB2_SESSION_FLAG_ENCRYPT_DATA	0x0004
+ struct smb2_sess_setup_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize; /* Must be 9 */
+ 	__le16 SessionFlags;
+ 	__le16 SecurityBufferOffset;
+@@ -358,7 +349,7 @@ struct smb2_logoff_req {
+ } __packed;
+ 
+ struct smb2_logoff_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize;	/* Must be 4 */
+ 	__le16 Reserved;
+ } __packed;
+@@ -454,7 +445,7 @@ struct smb2_tree_connect_req_extension {
+ } __packed;
+ 
+ struct smb2_tree_connect_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize;	/* Must be 16 */
+ 	__u8   ShareType;  /* see below */
+ 	__u8   Reserved;
+@@ -505,7 +496,7 @@ struct smb2_tree_disconnect_req {
+ } __packed;
+ 
+ struct smb2_tree_disconnect_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize;	/* Must be 4 */
+ 	__le16 Reserved;
+ } __packed;
+@@ -642,7 +633,7 @@ struct smb2_create_req {
+ } __packed;
+ 
+ struct smb2_create_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize;	/* Must be 89 */
+ 	__u8   OplockLevel;
+ 	__u8   Reserved;
+@@ -905,7 +896,7 @@ struct smb2_ioctl_req {
+ } __packed;
+ 
+ struct smb2_ioctl_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize;	/* Must be 57 */
+ 	__u16 Reserved;
+ 	__le32 CtlCode;
+@@ -932,7 +923,7 @@ struct smb2_close_req {
+ } __packed;
+ 
+ struct smb2_close_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize; /* 60 */
+ 	__le16 Flags;
+ 	__le32 Reserved;
+@@ -955,7 +946,7 @@ struct smb2_flush_req {
+ } __packed;
+ 
+ struct smb2_flush_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize;
+ 	__le16 Reserved;
+ } __packed;
+@@ -987,7 +978,7 @@ struct smb2_read_plain_req {
+ } __packed;
+ 
+ struct smb2_read_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize; /* Must be 17 */
+ 	__u8   DataOffset;
+ 	__u8   Reserved;
+@@ -1018,7 +1009,7 @@ struct smb2_write_req {
+ } __packed;
+ 
+ struct smb2_write_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize; /* Must be 17 */
+ 	__u8   DataOffset;
+ 	__u8   Reserved;
+@@ -1052,7 +1043,7 @@ struct smb2_lock_req {
+ } __packed;
+ 
+ struct smb2_lock_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize; /* Must be 4 */
+ 	__le16 Reserved;
+ } __packed;
+@@ -1064,7 +1055,7 @@ struct smb2_echo_req {
+ } __packed;
+ 
+ struct smb2_echo_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize;	/* Must be 4 */
+ 	__u16  Reserved;
+ } __packed;
+@@ -1090,7 +1081,7 @@ struct smb2_query_directory_req {
+ } __packed;
+ 
+ struct smb2_query_directory_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize; /* Must be 9 */
+ 	__le16 OutputBufferOffset;
+ 	__le32 OutputBufferLength;
+@@ -1139,7 +1130,7 @@ struct smb2_query_info_req {
+ } __packed;
+ 
+ struct smb2_query_info_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize; /* Must be 9 */
+ 	__le16 OutputBufferOffset;
+ 	__le32 OutputBufferLength;
+@@ -1161,7 +1152,7 @@ struct smb2_set_info_req {
+ } __packed;
+ 
+ struct smb2_set_info_rsp {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize; /* Must be 2 */
+ } __packed;
+ 
+@@ -1178,7 +1169,7 @@ struct smb2_oplock_break {
+ #define SMB2_NOTIFY_BREAK_LEASE_FLAG_ACK_REQUIRED cpu_to_le32(0x01)
+ 
+ struct smb2_lease_break {
+-	struct smb2_hdr hdr;
++	struct smb2_sync_hdr sync_hdr;
+ 	__le16 StructureSize; /* Must be 44 */
+ 	__le16 Reserved;
+ 	__le32 Flags;
+-- 
+2.16.4
+

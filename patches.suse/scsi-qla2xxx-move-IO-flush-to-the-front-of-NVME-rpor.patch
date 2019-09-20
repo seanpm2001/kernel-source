@@ -1,0 +1,125 @@
+From: Quinn Tran <qutran@marvell.com>
+Date: Sun, 16 Jun 2019 08:05:53 -0700
+Subject: scsi: qla2xxx: move IO flush to the front of NVME rport
+ unregistration
+Patch-mainline: v5.3-rc1
+Git-commit: baf23eddbf2a4ba9bf2bdb342686c71a8042e39b
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+On session deletion, current qla code would unregister an NVMe session
+before flushing IOs. This patch would move the unregistration of NVMe
+session after IO flush. This way FC-NVMe layer would not have to wait for
+stuck IOs. In addition, qla2xxx would stop accepting new IOs during session
+deletion.
+
+Signed-off-by: Quinn Tran <qutran@marvell.com>
+Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_def.h    |    1 -
+ drivers/scsi/qla2xxx/qla_gbl.h    |    2 ++
+ drivers/scsi/qla2xxx/qla_nvme.c   |   14 ++------------
+ drivers/scsi/qla2xxx/qla_target.c |   16 ++++++++--------
+ 4 files changed, 12 insertions(+), 21 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_def.h
++++ b/drivers/scsi/qla2xxx/qla_def.h
+@@ -2371,7 +2371,6 @@ typedef struct fc_port {
+ 	unsigned int id_changed:1;
+ 	unsigned int scan_needed:1;
+ 
+-	struct work_struct nvme_del_work;
+ 	struct completion nvme_del_done;
+ 	uint32_t nvme_prli_service_param;
+ #define NVME_PRLI_SP_CONF       BIT_7
+--- a/drivers/scsi/qla2xxx/qla_gbl.h
++++ b/drivers/scsi/qla2xxx/qla_gbl.h
+@@ -908,4 +908,6 @@ void qlt_clr_qp_table(struct scsi_qla_ho
+ void qlt_set_mode(struct scsi_qla_host *);
+ int qla2x00_set_data_rate(scsi_qla_host_t *vha, uint16_t mode);
+ 
++/* nvme.c */
++void qla_nvme_unregister_remote_port(struct fc_port *fcport);
+ #endif /* _QLA_GBL_H */
+--- a/drivers/scsi/qla2xxx/qla_nvme.c
++++ b/drivers/scsi/qla2xxx/qla_nvme.c
+@@ -12,8 +12,6 @@
+ 
+ static struct nvme_fc_port_template qla_nvme_fc_transport;
+ 
+-static void qla_nvme_unregister_remote_port(struct work_struct *);
+-
+ int qla_nvme_register_remote(struct scsi_qla_host *vha, struct fc_port *fcport)
+ {
+ 	struct qla_nvme_rport *rport;
+@@ -38,7 +36,6 @@ int qla_nvme_register_remote(struct scsi
+ 		(fcport->nvme_flag & NVME_FLAG_REGISTERED))
+ 		return 0;
+ 
+-	INIT_WORK(&fcport->nvme_del_work, qla_nvme_unregister_remote_port);
+ 	fcport->nvme_flag &= ~NVME_FLAG_RESETTING;
+ 
+ 	memset(&req, 0, sizeof(struct nvme_fc_port_info));
+@@ -636,16 +633,11 @@ static void qla_nvme_remoteport_delete(s
+ 	fcport = qla_rport->fcport;
+ 	fcport->nvme_remote_port = NULL;
+ 	fcport->nvme_flag &= ~NVME_FLAG_REGISTERED;
+-
+-	complete(&fcport->nvme_del_done);
+-
+-	INIT_WORK(&fcport->free_work, qlt_free_session_done);
+-	schedule_work(&fcport->free_work);
+-
+ 	fcport->nvme_flag &= ~NVME_FLAG_DELETING;
+ 	ql_log(ql_log_info, fcport->vha, 0x2110,
+ 	    "remoteport_delete of %p %8phN completed.\n",
+ 	    fcport, fcport->port_name);
++	complete(&fcport->nvme_del_done);
+ }
+ 
+ static struct nvme_fc_port_template qla_nvme_fc_transport = {
+@@ -668,10 +660,8 @@ static struct nvme_fc_port_template qla_
+ 	.fcprqst_priv_sz = sizeof(struct nvme_private),
+ };
+ 
+-static void qla_nvme_unregister_remote_port(struct work_struct *work)
++void qla_nvme_unregister_remote_port(struct fc_port *fcport)
+ {
+-	struct fc_port *fcport = container_of(work, struct fc_port,
+-	    nvme_del_work);
+ 	int ret;
+ 
+ 	if (!IS_ENABLED(CONFIG_NVME_FC))
+--- a/drivers/scsi/qla2xxx/qla_target.c
++++ b/drivers/scsi/qla2xxx/qla_target.c
+@@ -1013,6 +1013,12 @@ void qlt_free_session_done(struct work_s
+ 				else
+ 					logout_started = true;
+ 			}
++		} /* if sess->logout_on_delete */
++
++		if (sess->nvme_flag & NVME_FLAG_REGISTERED &&
++		    !(sess->nvme_flag & NVME_FLAG_DELETING)) {
++			sess->nvme_flag |= NVME_FLAG_DELETING;
++			qla_nvme_unregister_remote_port(sess);
+ 		}
+ 	}
+ 
+@@ -1164,14 +1170,8 @@ void qlt_unreg_sess(struct fc_port *sess
+ 	sess->last_rscn_gen = sess->rscn_gen;
+ 	sess->last_login_gen = sess->login_gen;
+ 
+-	if (sess->nvme_flag & NVME_FLAG_REGISTERED &&
+-	    !(sess->nvme_flag & NVME_FLAG_DELETING)) {
+-		sess->nvme_flag |= NVME_FLAG_DELETING;
+-		schedule_work(&sess->nvme_del_work);
+-	} else {
+-		INIT_WORK(&sess->free_work, qlt_free_session_done);
+-		schedule_work(&sess->free_work);
+-	}
++	INIT_WORK(&sess->free_work, qlt_free_session_done);
++	schedule_work(&sess->free_work);
+ }
+ EXPORT_SYMBOL(qlt_unreg_sess);
+ 

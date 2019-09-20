@@ -1,0 +1,36 @@
+From: Long Li <longli@microsoft.com>
+Date: Wed, 15 May 2019 14:09:04 -0700
+Subject: [PATCH] cifs: Don't match port on SMBDirect transport
+Git-commit: 3b249115719ba2cb56d3f92ee7492e033059d3f3
+Patch-mainline: v5.2-rc1
+References: bsc#1144333
+
+SMBDirect manages its own ports in the transport layer, there is no need to
+check the port to find a connection.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie sahlberg <lsahlber@redhat.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/connect.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 0b3ac8b76d18..8c4121da624e 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -2446,6 +2446,10 @@ match_port(struct TCP_Server_Info *server, struct sockaddr *addr)
+ {
+ 	__be16 port, *sport;
+ 
++	/* SMBDirect manages its own ports, don't match it here */
++	if (server->rdma)
++		return true;
++
+ 	switch (addr->sa_family) {
+ 	case AF_INET:
+ 		sport = &((struct sockaddr_in *) &server->dstaddr)->sin_port;
+-- 
+2.22.0
+

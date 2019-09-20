@@ -14,15 +14,32 @@ entropy.
 Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
 Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 ---
- drivers/char/random.c   |   11 +++++------
- drivers/hv/hv.c         |    4 +++-
- drivers/hv/vmbus_drv.c  |    4 +++-
- include/linux/irqdesc.h |    1 +
- include/linux/random.h  |    2 +-
- kernel/irq/handle.c     |    8 +++++++-
- kernel/irq/manage.c     |    6 ++++++
- 7 files changed, 26 insertions(+), 10 deletions(-)
+ arch/x86/kernel/cpu/mshyperv.c |    3 ++-
+ drivers/char/random.c          |   11 +++++------
+ drivers/hv/vmbus_drv.c         |    4 +++-
+ include/linux/irqdesc.h        |    1 +
+ include/linux/random.h         |    2 +-
+ kernel/irq/handle.c            |    8 +++++++-
+ kernel/irq/manage.c            |    6 ++++++
+ 7 files changed, 25 insertions(+), 10 deletions(-)
 
+--- a/arch/x86/kernel/cpu/mshyperv.c
++++ b/arch/x86/kernel/cpu/mshyperv.c
+@@ -80,12 +80,13 @@ EXPORT_SYMBOL_GPL(hv_remove_vmbus_irq);
+ __visible void __irq_entry hv_stimer0_vector_handler(struct pt_regs *regs)
+ {
+ 	struct pt_regs *old_regs = set_irq_regs(regs);
++	u64 ip = regs ? instruction_pointer(regs) : 0;
+ 
+ 	entering_irq();
+ 	inc_irq_stat(hyperv_stimer0_count);
+ 	if (hv_stimer0_handler)
+ 		hv_stimer0_handler();
+-	add_interrupt_randomness(HYPERV_STIMER0_VECTOR, 0);
++	add_interrupt_randomness(HYPERV_STIMER0_VECTOR, 0, ip);
+ 	ack_APIC_irq();
+ 
+ 	exiting_irq();
 --- a/drivers/char/random.c
 +++ b/drivers/char/random.c
 @@ -1212,28 +1212,27 @@ static __u32 get_reg(struct fast_pool *f
@@ -59,25 +76,9 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	fast_mix(fast_pool);
  	add_interrupt_bench(cycles);
---- a/drivers/hv/hv.c
-+++ b/drivers/hv/hv.c
-@@ -110,10 +110,12 @@ int hv_post_message(union hv_connection_
- static void hv_stimer0_isr(void)
- {
- 	struct hv_per_cpu_context *hv_cpu;
-+	struct pt_regs *regs = get_irq_regs();
-+	u64 ip = regs ? instruction_pointer(regs) : 0;
- 
- 	hv_cpu = this_cpu_ptr(hv_context.cpu_context);
- 	hv_cpu->clk_evt->event_handler(hv_cpu->clk_evt);
--	add_interrupt_randomness(stimer0_vector, 0);
-+	add_interrupt_randomness(stimer0_vector, 0, ip);
- }
- 
- static int hv_ce_set_next_event(unsigned long delta,
 --- a/drivers/hv/vmbus_drv.c
 +++ b/drivers/hv/vmbus_drv.c
-@@ -1118,6 +1118,8 @@ static void vmbus_isr(void)
+@@ -1137,6 +1137,8 @@ static void vmbus_isr(void)
  	void *page_addr = hv_cpu->synic_event_page;
  	struct hv_message *msg;
  	union hv_synic_event_flags *event;
@@ -86,7 +87,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	bool handled = false;
  
  	if (unlikely(page_addr == NULL))
-@@ -1161,7 +1163,7 @@ static void vmbus_isr(void)
+@@ -1181,7 +1183,7 @@ static void vmbus_isr(void)
  			tasklet_schedule(&hv_cpu->msg_dpc);
  	}
  

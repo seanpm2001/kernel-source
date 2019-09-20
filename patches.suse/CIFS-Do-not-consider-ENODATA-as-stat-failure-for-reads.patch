@@ -1,0 +1,36 @@
+From: Pavel Shilovsky <pshilov@microsoft.com>
+Date: Fri, 18 Jan 2019 15:54:34 -0800
+Subject: [PATCH] CIFS: Do not consider -ENODATA as stat failure for reads
+Git-commit: 082aaa8700415f6471ec9c5ef0c8307ca214989a
+Patch-mainline: v5.0-rc5
+References: bsc#1144333
+
+When doing reads beyound the end of a file the server returns
+error STATUS_END_OF_FILE error which is mapped to -ENODATA.
+Currently we report it as a failure which confuses read stats.
+Change it to not consider -ENODATA as failure for stat purposes.
+
+Signed-off-by: Pavel Shilovsky <pshilov@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+CC: Stable <stable@vger.kernel.org>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index d858dc04fdc3..ef52d6642431 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -3241,7 +3241,7 @@ smb2_readv_callback(struct mid_q_entry *mid)
+ 		rdata->mr = NULL;
+ 	}
+ #endif
+-	if (rdata->result) {
++	if (rdata->result && rdata->result != -ENODATA) {
+ 		cifs_stats_fail_inc(tcon, SMB2_READ_HE);
+ 		trace_smb3_read_err(0 /* xid */,
+ 				    rdata->cfile->fid.persistent_fid,
+-- 
+2.16.4
+

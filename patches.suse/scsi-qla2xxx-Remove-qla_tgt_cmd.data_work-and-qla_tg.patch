@@ -1,0 +1,47 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Thu, 11 Apr 2019 14:53:23 -0700
+Subject: scsi: qla2xxx: Remove qla_tgt_cmd.data_work and
+ qla_tgt_cmd.data_work_free
+Patch-mainline: v5.2-rc1
+Git-commit: bb63e47b6f6832f1eb5be4207c65a6f268e01059
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+The 'data_work' and 'data_work_free' member variables are set but never
+used. Hence remove both member variables. See also commit 6bcbb3174caa
+("qla2xxx: Fix incorrect tcm_qla2xxx_free_cmd use during TMR ABORT (v2)").
+
+Cc: Himanshu Madhani <hmadhani@marvell.com>
+Cc: Giridhar Malavali <gmalavali@marvell.com>
+Reviewed-by: Johannes Thumshirn <jthumshirn@suse.de>
+Acked-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_target.h  |    2 --
+ drivers/scsi/qla2xxx/tcm_qla2xxx.c |    2 --
+ 2 files changed, 4 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_target.h
++++ b/drivers/scsi/qla2xxx/qla_target.h
+@@ -890,8 +890,6 @@ struct qla_tgt_cmd {
+ 	unsigned int cmd_sent_to_fw:1;
+ 	unsigned int cmd_in_wq:1;
+ 	unsigned int aborted:1;
+-	unsigned int data_work:1;
+-	unsigned int data_work_free:1;
+ 	unsigned int released:1;
+ 
+ 	struct scatterlist *sg;	/* cmd data buffer SG vector */
+--- a/drivers/scsi/qla2xxx/tcm_qla2xxx.c
++++ b/drivers/scsi/qla2xxx/tcm_qla2xxx.c
+@@ -529,9 +529,7 @@ static void tcm_qla2xxx_handle_data_work
+ 		return;
+ 	}
+ 
+-	cmd->data_work = 1;
+ 	if (cmd->aborted) {
+-		cmd->data_work_free = 1;
+ 		spin_unlock_irqrestore(&cmd->cmd_lock, flags);
+ 
+ 		tcm_qla2xxx_free_cmd(cmd);

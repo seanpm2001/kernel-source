@@ -1,0 +1,60 @@
+From: Long Li <longli@microsoft.com>
+Date: Wed, 22 Nov 2017 17:38:49 -0700
+Subject: [PATCH] CIFS: SMBD: Disable signing on SMB direct transport
+Git-commit: 8801e902337151039a87d87789d1408c4eccc3e7
+Patch-mainline: v4.15
+References: bsc#1144333
+
+Currently the CIFS SMB Direct implementation (experimental) doesn't properly
+support signing. Disable it when SMB Direct is in use for transport.
+
+Signing will be enabled in future after it is implemented.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/connect.c | 8 ++++++++
+ fs/cifs/smb2pdu.c | 5 +++++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 1677401660d0..0efd22e75ac7 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -1968,6 +1968,14 @@ cifs_parse_mount_options(const char *mountdata, const char *devname,
+ 		goto cifs_parse_mount_err;
+ 	}
+ 
++#ifdef CONFIG_CIFS_SMB_DIRECT
++	if (vol->rdma && vol->sign) {
++		cifs_dbg(VFS, "Currently SMB direct doesn't support signing."
++			" This is being fixed\n");
++		goto cifs_parse_mount_err;
++	}
++#endif
++
+ #ifndef CONFIG_KEYS
+ 	/* Muliuser mounts require CONFIG_KEYS support */
+ 	if (vol->multiuser) {
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index bee0871d6dda..a3e67beb73e2 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -616,6 +616,11 @@ int smb3_validate_negotiate(const unsigned int xid, struct cifs_tcon *tcon)
+ 
+ 	cifs_dbg(FYI, "validate negotiate\n");
+ 
++#ifdef CONFIG_CIFS_SMB_DIRECT
++	if (tcon->ses->server->rdma)
++		return 0;
++#endif
++
+ 	/*
+ 	 * validation ioctl must be signed, so no point sending this if we
+ 	 * can not sign it (ie are not known user).  Even if signing is not
+-- 
+2.16.4
+

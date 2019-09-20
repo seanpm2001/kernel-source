@@ -1,0 +1,79 @@
+From: Giridhar Malavali <gmalavali@marvell.com>
+Date: Tue, 2 Apr 2019 14:24:32 -0700
+Subject: scsi: qla2xxx: Fix driver unload when FC-NVMe LUNs are connected
+Patch-mainline: v5.2-rc1
+Git-commit: b2d1453a45aa8477b1d33ee94a7694146bb8b340
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+This patch allows driver to unload using "modprobe -r" when FC-NVMe LUNs
+are connected.
+
+Signed-off-by: Giridhar Malavali <gmalavali@marvell.com>
+Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_nvme.c |   29 +++++++++++++++++++++++------
+ drivers/scsi/qla2xxx/qla_os.c   |    6 ++++--
+ 2 files changed, 27 insertions(+), 8 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_nvme.c
++++ b/drivers/scsi/qla2xxx/qla_nvme.c
+@@ -164,12 +164,13 @@ static void qla_nvme_sp_done(void *ptr,
+ 	if (!atomic_dec_and_test(&sp->ref_count))
+ 		return;
+ 
+-	if (res == QLA_SUCCESS)
+-		fd->status = 0;
+-	else
+-		fd->status = NVME_SC_INTERNAL;
+-
+-	fd->rcv_rsplen = nvme->u.nvme.rsp_pyld_len;
++	if (res == QLA_SUCCESS) {
++		fd->rcv_rsplen = nvme->u.nvme.rsp_pyld_len;
++	} else {
++		fd->rcv_rsplen = 0;
++		fd->transferred_length = 0;
++	}
++	fd->status = 0;
+ 	fd->done(fd);
+ 	qla2xxx_rel_qpair_sp(sp->qpair, sp);
+ 
+@@ -193,6 +194,22 @@ static void qla_nvme_abort_work(struct w
+ 	if (!ha->flags.fw_started && (fcport && fcport->deleted))
+ 		return;
+ 
++	if (ha->flags.host_shutting_down) {
++		ql_log(ql_log_info, sp->fcport->vha, 0xffff,
++		    "%s Calling done on sp: %p, type: 0x%x, sp->ref_count: 0x%x\n",
++		    __func__, sp, sp->type, atomic_read(&sp->ref_count));
++		sp->done(sp, 0);
++		return;
++	}
++
++	if (atomic_read(&sp->ref_count) == 0) {
++		WARN_ON(1);
++		ql_log(ql_log_info, fcport->vha, 0xffff,
++			"%s: command alredy aborted on sp: %p\n",
++			__func__, sp);
++		return;
++	}
++
+ 	rval = ha->isp_ops->abort_command(sp);
+ 
+ 	ql_dbg(ql_dbg_io, fcport->vha, 0x212b,
+--- a/drivers/scsi/qla2xxx/qla_os.c
++++ b/drivers/scsi/qla2xxx/qla_os.c
+@@ -6746,8 +6746,10 @@ qla2x00_timer(scsi_qla_host_t *vha)
+ 	 * FC-NVME
+ 	 * see if the active AEN count has changed from what was last reported.
+ 	 */
+-	if (!vha->vp_idx && (atomic_read(&ha->nvme_active_aen_cnt) !=
+-	    ha->nvme_last_rptd_aen) && ha->zio_mode == QLA_ZIO_MODE_6) {
++	if (!vha->vp_idx &&
++	    (atomic_read(&ha->nvme_active_aen_cnt) != ha->nvme_last_rptd_aen) &&
++	    ha->zio_mode == QLA_ZIO_MODE_6 &&
++	    !ha->flags.host_shutting_down) {
+ 		ql_log(ql_log_info, vha, 0x3002,
+ 		    "nvme: Sched: Set ZIO exchange threshold to %d.\n",
+ 		    ha->nvme_last_rptd_aen);

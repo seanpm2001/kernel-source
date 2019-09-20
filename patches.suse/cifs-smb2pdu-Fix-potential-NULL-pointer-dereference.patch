@@ -1,0 +1,48 @@
+From: "Gustavo A. R. Silva" <garsilva@embeddedor.com>
+Date: Tue, 3 Apr 2018 16:00:40 -0500
+Subject: [PATCH] cifs: smb2pdu: Fix potential NULL pointer dereference
+Git-commit: c0953f2ed510c31a375193e9dbca9774e77fb4b7
+Patch-mainline: v4.17-rc1
+References: bsc#1144333
+
+tcon->ses is being dereferenced before it is null checked, hence
+there is a potential null pointer dereference.
+
+Fix this by moving the pointer dereference after tcon->ses has
+been properly null checked.
+
+Addresses-Coverity-ID: 1467426 ("Dereference before null check")
+Fixes: 93012bf98416 ("cifs: add server->vals->header_preamble_size")
+Signed-off-by: Gustavo A. R. Silva <garsilva@embeddedor.com>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2pdu.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index f7741cee2a4c..e5ac474d5d87 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -3454,7 +3454,7 @@ static int
+ build_qfs_info_req(struct kvec *iov, struct cifs_tcon *tcon, int level,
+ 		   int outbuf_len, u64 persistent_fid, u64 volatile_fid)
+ {
+-	struct TCP_Server_Info *server = tcon->ses->server;
++	struct TCP_Server_Info *server;
+ 	int rc;
+ 	struct smb2_query_info_req *req;
+ 	unsigned int total_len;
+@@ -3464,6 +3464,8 @@ build_qfs_info_req(struct kvec *iov, struct cifs_tcon *tcon, int level,
+ 	if ((tcon->ses == NULL) || (tcon->ses->server == NULL))
+ 		return -EIO;
+ 
++	server = tcon->ses->server;
++
+ 	rc = smb2_plain_req_init(SMB2_QUERY_INFO, tcon, (void **) &req,
+ 			     &total_len);
+ 	if (rc)
+-- 
+2.16.4
+

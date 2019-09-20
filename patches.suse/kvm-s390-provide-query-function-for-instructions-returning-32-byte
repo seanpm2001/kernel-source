@@ -1,0 +1,42 @@
+From: Christian Borntraeger <borntraeger@de.ibm.com>
+Date: Wed, 20 Feb 2019 03:04:07 -0500
+Subject: KVM: s390: provide query function for instructions returning 32 byte
+Git-commit: d668139718a9e2260702777bd8d86d71c30b6539
+Patch-mainline: v5.2-rc1
+References: jsc#SLE-6240 FATE#327380
+
+Some of the new features have a 32byte response for the query function.
+Provide a new wrapper similar to __cpacf_query. We might want to factor
+this out if other users come up, as of today there is none. So let us
+keep the function within KVM.
+
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Reviewed-by: Collin Walling <walling@linux.ibm.com>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Acked-by: Petr Tesarik <ptesarik@suse.com>
+---
+ arch/s390/kvm/kvm-s390.c |   13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -302,6 +302,19 @@ static inline int plo_test_bit(unsigned
+ 	return cc == 0;
+ }
+ 
++static inline void __insn32_query(unsigned int opcode, u8 query[32])
++{
++	register unsigned long r0 asm("0") = 0;	/* query function */
++	register unsigned long r1 asm("1") = (unsigned long) query;
++
++	asm volatile(
++		/* Parameter regs are ignored */
++		"	.insn	rrf,%[opc] << 16,2,4,6,0\n"
++		: "=m" (*query)
++		: "d" (r0), "a" (r1), [opc] "i" (opcode)
++		: "cc");
++}
++
+ static void kvm_s390_cpu_feat_init(void)
+ {
+ 	int i;

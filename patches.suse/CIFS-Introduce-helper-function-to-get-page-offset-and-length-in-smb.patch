@@ -1,0 +1,60 @@
+From: Long Li <longli@microsoft.com>
+Date: Wed, 30 May 2018 12:47:58 -0700
+Subject: [PATCH] CIFS: Introduce helper function to get page offset and length
+ in smb_rqst
+Git-commit: 7b7f2bdf829ecf21845c0a571847ea18c6934970
+Patch-mainline: v4.18-rc1
+References: bsc#1144333
+
+Introduce a function rqst_page_get_length to return the page offset and
+length for a given page in smb_rqst. This function is to be used by
+following patches.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsproto.h |  3 +++
+ fs/cifs/misc.c      | 17 +++++++++++++++++
+ 2 files changed, 20 insertions(+)
+
+diff --git a/fs/cifs/cifsproto.h b/fs/cifs/cifsproto.h
+index 7f0c773d5f6b..84765c8764bf 100644
+--- a/fs/cifs/cifsproto.h
++++ b/fs/cifs/cifsproto.h
+@@ -557,4 +557,7 @@ int cifs_alloc_hash(const char *name, struct crypto_shash **shash,
+ 		    struct sdesc **sdesc);
+ void cifs_free_hash(struct crypto_shash **shash, struct sdesc **sdesc);
+ 
++extern void rqst_page_get_length(struct smb_rqst *rqst, unsigned int page,
++				unsigned int *len, unsigned int *offset);
++
+ #endif			/* _CIFSPROTO_H */
+diff --git a/fs/cifs/misc.c b/fs/cifs/misc.c
+index aba3fc3058da..f90d4ad6624c 100644
+--- a/fs/cifs/misc.c
++++ b/fs/cifs/misc.c
+@@ -905,3 +905,20 @@ cifs_free_hash(struct crypto_shash **shash, struct sdesc **sdesc)
+ 		crypto_free_shash(*shash);
+ 	*shash = NULL;
+ }
++
++/**
++ * rqst_page_get_length - obtain the length and offset for a page in smb_rqst
++ * Input: rqst - a smb_rqst, page - a page index for rqst
++ * Output: *len - the length for this page, *offset - the offset for this page
++ */
++void rqst_page_get_length(struct smb_rqst *rqst, unsigned int page,
++				unsigned int *len, unsigned int *offset)
++{
++	*len = rqst->rq_pagesz;
++	*offset = (page == 0) ? rqst->rq_offset : 0;
++
++	if (rqst->rq_npages == 1 || page == rqst->rq_npages-1)
++		*len = rqst->rq_tailsz;
++	else if (page == 0)
++		*len = rqst->rq_pagesz - rqst->rq_offset;
++}
+-- 
+2.16.4
+

@@ -1,0 +1,33 @@
+From: Long Li <longli@microsoft.com>
+Date: Fri, 5 Apr 2019 21:36:32 +0000
+Subject: [PATCH] cifs: smbd: Return EINTR when interrupted
+Git-commit: 98e0d40888458e6abf60227ac85c675ed07cffc2
+Patch-mainline: v5.2-rc1
+References: bsc#1144333
+
+When packets are waiting for outbound I/O and interrupted, return the
+proper error code to user process.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smbdirect.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smbdirect.c b/fs/cifs/smbdirect.c
+index 72594277f800..df95c7568445 100644
+--- a/fs/cifs/smbdirect.c
++++ b/fs/cifs/smbdirect.c
+@@ -1972,7 +1972,7 @@ static int smbd_recv_buf(struct smbd_connection *info, char *buf,
+ 			info->transport_status != SMBD_CONNECTED);
+ 	/* Don't return any data if interrupted */
+ 	if (rc)
+-		return -ENODEV;
++		return rc;
+ 
+ 	if (info->transport_status != SMBD_CONNECTED) {
+ 		log_read(ERR, "disconnected\n");
+-- 
+2.22.0
+

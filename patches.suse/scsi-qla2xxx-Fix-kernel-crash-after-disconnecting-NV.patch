@@ -1,0 +1,141 @@
+From: Arun Easi <aeasi@marvell.com>
+Date: Fri, 21 Jun 2019 09:50:22 -0700
+Subject: scsi: qla2xxx: Fix kernel crash after disconnecting NVMe devices
+Patch-mainline: v5.3-rc1
+Git-commit: 6a81533d616fe581b0d421ee6db3319eeac9486d
+References: bsc#1082635 bsc#1141340 bsc#1143706
+
+BUG: unable to handle kernel NULL pointer dereference at           (null)
+IP: [<ffffffffc050d10c>] qla_nvme_unregister_remote_port+0x6c/0xf0 [qla2xxx]
+PGD 800000084cf41067 PUD 84d288067 PMD 0
+Oops: 0000 [#1] SMP
+Call Trace:
+ [<ffffffff98abcfdf>] process_one_work+0x17f/0x440
+ [<ffffffff98abdca6>] worker_thread+0x126/0x3c0
+ [<ffffffff98abdb80>] ? manage_workers.isra.26+0x2a0/0x2a0
+ [<ffffffff98ac4f81>] kthread+0xd1/0xe0
+ [<ffffffff98ac4eb0>] ? insert_kthread_work+0x40/0x40
+ [<ffffffff9918ad37>] ret_from_fork_nospec_begin+0x21/0x21
+ [<ffffffff98ac4eb0>] ? insert_kthread_work+0x40/0x40
+RIP  [<ffffffffc050d10c>] qla_nvme_unregister_remote_port+0x6c/0xf0 [qla2xxx]
+
+The crash is due to a bad entry in the nvme_rport_list. This list is not
+protected, and when a remoteport_delete callback is called, driver
+traverses the list and crashes.
+
+Actually, the list could be removed and driver could traverse the main
+fcport list instead. Fix does exactly that.
+
+Signed-off-by: Arun Easi <aeasi@marvell.com>
+Signed-off-by: Himanshu Madhani <hmadhani@redhat.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_def.h  |    1 -
+ drivers/scsi/qla2xxx/qla_nvme.c |   37 ++++++++++---------------------------
+ drivers/scsi/qla2xxx/qla_nvme.h |    1 -
+ drivers/scsi/qla2xxx/qla_os.c   |    1 -
+ 4 files changed, 10 insertions(+), 30 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_def.h
++++ b/drivers/scsi/qla2xxx/qla_def.h
+@@ -4408,7 +4408,6 @@ typedef struct scsi_qla_host {
+ 
+ 	struct		nvme_fc_local_port *nvme_local_port;
+ 	struct completion nvme_del_done;
+-	struct list_head nvme_rport_list;
+ 
+ 	uint16_t	fcoe_vlan_id;
+ 	uint16_t	fcoe_fcf_idx;
+--- a/drivers/scsi/qla2xxx/qla_nvme.c
++++ b/drivers/scsi/qla2xxx/qla_nvme.c
+@@ -74,7 +74,6 @@ int qla_nvme_register_remote(struct scsi
+ 
+ 	rport = fcport->nvme_remote_port->private;
+ 	rport->fcport = fcport;
+-	list_add_tail(&rport->list, &vha->nvme_rport_list);
+ 
+ 	fcport->nvme_flag |= NVME_FLAG_REGISTERED;
+ 	return 0;
+@@ -559,19 +558,12 @@ static void qla_nvme_localport_delete(st
+ static void qla_nvme_remoteport_delete(struct nvme_fc_remote_port *rport)
+ {
+ 	fc_port_t *fcport;
+-	struct qla_nvme_rport *qla_rport = rport->private, *trport;
++	struct qla_nvme_rport *qla_rport = rport->private;
+ 
+ 	fcport = qla_rport->fcport;
+ 	fcport->nvme_remote_port = NULL;
+ 	fcport->nvme_flag &= ~NVME_FLAG_REGISTERED;
+ 
+-	list_for_each_entry_safe(qla_rport, trport,
+-	    &fcport->vha->nvme_rport_list, list) {
+-		if (qla_rport->fcport == fcport) {
+-			list_del(&qla_rport->list);
+-			break;
+-		}
+-	}
+ 	complete(&fcport->nvme_del_done);
+ 
+ 	if (!test_bit(UNLOADING, &fcport->vha->dpc_flags)) {
+@@ -608,7 +600,7 @@ static void qla_nvme_unregister_remote_p
+ {
+ 	struct fc_port *fcport = container_of(work, struct fc_port,
+ 	    nvme_del_work);
+-	struct qla_nvme_rport *qla_rport, *trport;
++	int ret;
+ 
+ 	if (!IS_ENABLED(CONFIG_NVME_FC))
+ 		return;
+@@ -616,23 +608,14 @@ static void qla_nvme_unregister_remote_p
+ 	ql_log(ql_log_warn, NULL, 0x2112,
+ 	    "%s: unregister remoteport on %p\n",__func__, fcport);
+ 
+-	list_for_each_entry_safe(qla_rport, trport,
+-	    &fcport->vha->nvme_rport_list, list) {
+-		if (qla_rport->fcport == fcport) {
+-			ql_log(ql_log_info, fcport->vha, 0x2113,
+-			    "%s: fcport=%p\n", __func__, fcport);
+-			nvme_fc_set_remoteport_devloss
+-				(fcport->nvme_remote_port, 0);
+-			init_completion(&fcport->nvme_del_done);
+-			if (nvme_fc_unregister_remoteport
+-			    (fcport->nvme_remote_port))
+-				ql_log(ql_log_info, fcport->vha, 0x2114,
+-				    "%s: Failed to unregister nvme_remote_port\n",
+-				    __func__);
+-			wait_for_completion(&fcport->nvme_del_done);
+-			break;
+-		}
+-	}
++	nvme_fc_set_remoteport_devloss(fcport->nvme_remote_port, 0);
++	init_completion(&fcport->nvme_del_done);
++	ret = nvme_fc_unregister_remoteport(fcport->nvme_remote_port);
++	if (ret)
++		ql_log(ql_log_info, fcport->vha, 0x2114,
++			"%s: Failed to unregister nvme_remote_port (%d)\n",
++			    __func__, ret);
++	wait_for_completion(&fcport->nvme_del_done);
+ }
+ 
+ void qla_nvme_delete(struct scsi_qla_host *vha)
+--- a/drivers/scsi/qla2xxx/qla_nvme.h
++++ b/drivers/scsi/qla2xxx/qla_nvme.h
+@@ -36,7 +36,6 @@ struct nvme_private {
+ };
+ 
+ struct qla_nvme_rport {
+-	struct list_head list;
+ 	struct fc_port *fcport;
+ };
+ 
+--- a/drivers/scsi/qla2xxx/qla_os.c
++++ b/drivers/scsi/qla2xxx/qla_os.c
+@@ -4802,7 +4802,6 @@ struct scsi_qla_host *qla2x00_create_hos
+ 	INIT_LIST_HEAD(&vha->plogi_ack_list);
+ 	INIT_LIST_HEAD(&vha->qp_list);
+ 	INIT_LIST_HEAD(&vha->gnl.fcports);
+-	INIT_LIST_HEAD(&vha->nvme_rport_list);
+ 	INIT_LIST_HEAD(&vha->gpnid_list);
+ 	INIT_WORK(&vha->iocb_work, qla2x00_iocb_work_fn);
+ 

@@ -1,0 +1,193 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Sun, 24 Jun 2018 23:28:12 -0500
+Subject: [PATCH] smb3: add support for statfs for smb3.1.1 posix extensions
+Git-commit: 2d304217832ea720337e7a6aa012aa828a77f9d4
+Patch-mainline: v4.18
+References: bsc#1144333
+
+Output now matches expected stat -f output for all fields
+except for Namelen and ID which were addressed in a companion
+patch (which retrieves them from existing SMB3 mechanisms
+and works whether POSIX enabled or not)
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c   | 35 +++++++++++++++++++++++++-
+ fs/cifs/smb2pdu.c   | 71 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ fs/cifs/smb2pdu.h   |  1 +
+ fs/cifs/smb2proto.h |  3 +++
+ 4 files changed, 109 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 09506d918ecb..e2a8b9d90ad8 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1533,6 +1533,39 @@ smb2_queryfs(const unsigned int xid, struct cifs_tcon *tcon,
+ 	return rc;
+ }
+ 
++#ifdef CONFIG_CIFS_SMB311
++static int
++smb311_queryfs(const unsigned int xid, struct cifs_tcon *tcon,
++	     struct kstatfs *buf)
++{
++	int rc;
++	__le16 srch_path = 0; /* Null - open root of share */
++	u8 oplock = SMB2_OPLOCK_LEVEL_NONE;
++	struct cifs_open_parms oparms;
++	struct cifs_fid fid;
++
++	if (!tcon->posix_extensions)
++		return smb2_queryfs(xid, tcon, buf);
++
++	oparms.tcon = tcon;
++	oparms.desired_access = FILE_READ_ATTRIBUTES;
++	oparms.disposition = FILE_OPEN;
++	oparms.create_options = 0;
++	oparms.fid = &fid;
++	oparms.reconnect = false;
++
++	rc = SMB2_open(xid, &oparms, &srch_path, &oplock, NULL, NULL, NULL);
++	if (rc)
++		return rc;
++
++	rc = SMB311_posix_qfs_info(xid, tcon, fid.persistent_fid,
++				   fid.volatile_fid, buf);
++	buf->f_type = SMB2_MAGIC_NUMBER;
++	SMB2_close(xid, tcon, fid.persistent_fid, fid.volatile_fid);
++	return rc;
++}
++#endif /* SMB311 */
++
+ static bool
+ smb2_compare_fids(struct cifsFileInfo *ob1, struct cifsFileInfo *ob2)
+ {
+@@ -3338,7 +3371,7 @@ struct smb_version_operations smb311_operations = {
+ 	.is_status_pending = smb2_is_status_pending,
+ 	.is_session_expired = smb2_is_session_expired,
+ 	.oplock_response = smb2_oplock_response,
+-	.queryfs = smb2_queryfs,
++	.queryfs = smb311_queryfs,
+ 	.mand_lock = smb2_mand_lock,
+ 	.mand_unlock_range = smb2_unlock_range,
+ 	.push_mand_locks = smb2_push_mandatory_locks,
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 6852ff5f06be..fa9fc3fab60e 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -3938,6 +3938,27 @@ copy_fs_info_to_kstatfs(struct smb2_fs_full_size_info *pfs_inf,
+ 	return;
+ }
+ 
++#ifdef CONFIG_CIFS_SMB311
++static void
++copy_posix_fs_info_to_kstatfs(FILE_SYSTEM_POSIX_INFO *response_data,
++			struct kstatfs *kst)
++{
++	kst->f_bsize = le32_to_cpu(response_data->BlockSize);
++	kst->f_blocks = le64_to_cpu(response_data->TotalBlocks);
++	kst->f_bfree =  le64_to_cpu(response_data->BlocksAvail);
++	if (response_data->UserBlocksAvail == cpu_to_le64(-1))
++		kst->f_bavail = kst->f_bfree;
++	else
++		kst->f_bavail = le64_to_cpu(response_data->UserBlocksAvail);
++	if (response_data->TotalFileNodes != cpu_to_le64(-1))
++		kst->f_files = le64_to_cpu(response_data->TotalFileNodes);
++	if (response_data->FreeFileNodes != cpu_to_le64(-1))
++		kst->f_ffree = le64_to_cpu(response_data->FreeFileNodes);
++
++	return;
++}
++#endif /* SMB311 */
++
+ static int
+ build_qfs_info_req(struct kvec *iov, struct cifs_tcon *tcon, int level,
+ 		   int outbuf_len, u64 persistent_fid, u64 volatile_fid)
+@@ -3974,6 +3995,56 @@ build_qfs_info_req(struct kvec *iov, struct cifs_tcon *tcon, int level,
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_CIFS_SMB311
++int
++SMB311_posix_qfs_info(const unsigned int xid, struct cifs_tcon *tcon,
++	      u64 persistent_fid, u64 volatile_fid, struct kstatfs *fsdata)
++{
++	struct smb_rqst rqst;
++	struct smb2_query_info_rsp *rsp = NULL;
++	struct kvec iov;
++	struct kvec rsp_iov;
++	int rc = 0;
++	int resp_buftype;
++	struct cifs_ses *ses = tcon->ses;
++	FILE_SYSTEM_POSIX_INFO *info = NULL;
++	int flags = 0;
++
++	rc = build_qfs_info_req(&iov, tcon, FS_POSIX_INFORMATION,
++				sizeof(FILE_SYSTEM_POSIX_INFO),
++				persistent_fid, volatile_fid);
++	if (rc)
++		return rc;
++
++	if (smb3_encryption_required(tcon))
++		flags |= CIFS_TRANSFORM_REQ;
++
++	memset(&rqst, 0, sizeof(struct smb_rqst));
++	rqst.rq_iov = &iov;
++	rqst.rq_nvec = 1;
++
++	rc = cifs_send_recv(xid, ses, &rqst, &resp_buftype, flags, &rsp_iov);
++	cifs_small_buf_release(iov.iov_base);
++	if (rc) {
++		cifs_stats_fail_inc(tcon, SMB2_QUERY_INFO_HE);
++		goto posix_qfsinf_exit;
++	}
++	rsp = (struct smb2_query_info_rsp *)rsp_iov.iov_base;
++
++	info = (FILE_SYSTEM_POSIX_INFO *)(
++		le16_to_cpu(rsp->OutputBufferOffset) + (char *)rsp);
++	rc = validate_iov(le16_to_cpu(rsp->OutputBufferOffset),
++			  le32_to_cpu(rsp->OutputBufferLength), &rsp_iov,
++			  sizeof(FILE_SYSTEM_POSIX_INFO));
++	if (!rc)
++		copy_posix_fs_info_to_kstatfs(info, fsdata);
++
++posix_qfsinf_exit:
++	free_rsp_buf(resp_buftype, rsp_iov.iov_base);
++	return rc;
++}
++#endif /* SMB311 */
++
+ int
+ SMB2_QFS_info(const unsigned int xid, struct cifs_tcon *tcon,
+ 	      u64 persistent_fid, u64 volatile_fid, struct kstatfs *fsdata)
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index c2a4526512b5..ecb0feeac844 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -1223,6 +1223,7 @@ struct smb2_lease_ack {
+ #define FS_DRIVER_PATH_INFORMATION	9 /* Local only */
+ #define FS_VOLUME_FLAGS_INFORMATION	10 /* Local only */
+ #define FS_SECTOR_SIZE_INFORMATION	11 /* SMB3 or later. Query */
++#define FS_POSIX_INFORMATION		100 /* SMB3.1.1 POSIX. Query */
+ 
+ struct smb2_fs_full_size_info {
+ 	__le64 TotalAllocationUnits;
+diff --git a/fs/cifs/smb2proto.h b/fs/cifs/smb2proto.h
+index 6e6a4f2ec890..7019459c5748 100644
+--- a/fs/cifs/smb2proto.h
++++ b/fs/cifs/smb2proto.h
+@@ -197,6 +197,9 @@ void smb2_cancelled_close_fid(struct work_struct *work);
+ extern int SMB2_QFS_info(const unsigned int xid, struct cifs_tcon *tcon,
+ 			 u64 persistent_file_id, u64 volatile_file_id,
+ 			 struct kstatfs *FSData);
++extern int SMB311_posix_qfs_info(const unsigned int xid, struct cifs_tcon *tcon,
++			 u64 persistent_file_id, u64 volatile_file_id,
++			 struct kstatfs *FSData);
+ extern int SMB2_QFS_attr(const unsigned int xid, struct cifs_tcon *tcon,
+ 			 u64 persistent_file_id, u64 volatile_file_id, int lvl);
+ extern int SMB2_lock(const unsigned int xid, struct cifs_tcon *tcon,
+-- 
+2.16.4
+

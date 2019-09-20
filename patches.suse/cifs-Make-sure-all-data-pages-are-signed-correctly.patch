@@ -1,0 +1,39 @@
+From: Paulo Alcantara <paulo@paulo.ac>
+Date: Sat, 23 Jun 2018 14:52:25 -0300
+Subject: [PATCH] cifs: Make sure all data pages are signed correctly
+Git-commit: a12d0c590cc7ae01892f06c5ad6d19580ecdd0de
+Patch-mainline: v4.18
+References: bsc#1144333
+
+Check if every data page is signed correctly in sigining helper.
+
+Signed-off-by: Paulo Alcantara <palcantara@suse.de>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsencrypt.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/cifsencrypt.c b/fs/cifs/cifsencrypt.c
+index b4672eafc5bf..85b31cfa2f3c 100644
+--- a/fs/cifs/cifsencrypt.c
++++ b/fs/cifs/cifsencrypt.c
+@@ -83,7 +83,13 @@ int __cifs_calc_signature(struct smb_rqst *rqst,
+ 
+ 		kaddr = (char *) kmap(rqst->rq_pages[i]) + offset;
+ 
+-		crypto_shash_update(shash, kaddr, len);
++		rc = crypto_shash_update(shash, kaddr, len);
++		if (rc) {
++			cifs_dbg(VFS, "%s: Could not update with payload\n",
++				 __func__);
++			kunmap(rqst->rq_pages[i]);
++			return rc;
++		}
+ 
+ 		kunmap(rqst->rq_pages[i]);
+ 	}
+-- 
+2.16.4
+

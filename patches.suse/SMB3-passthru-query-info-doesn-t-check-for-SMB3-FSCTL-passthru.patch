@@ -1,0 +1,77 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Wed, 13 Mar 2019 02:40:07 -0500
+Subject: [PATCH] SMB3: passthru query info doesn't check for SMB3 FSCTL
+ passthru
+Git-commit: 31ba4331d571f501fb32ae072478787e77baf52a
+Patch-mainline: v5.1-rc1
+References: bsc#1144333
+
+The passthrough queries from user space tools like smbinfo can be either
+SMB3 QUERY_INFO or SMB3 FSCTL, but we are not checking for the latter.
+Temporarily we return EOPNOTSUPP for SMB3 FSCTL passthrough requests
+but once compounding fsctls is fixed can enable.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifs_ioctl.h |  3 +++
+ fs/cifs/smb2ops.c    | 26 +++++++++++++++++++-------
+ 2 files changed, 22 insertions(+), 7 deletions(-)
+
+diff --git a/fs/cifs/cifs_ioctl.h b/fs/cifs/cifs_ioctl.h
+index d8bce2f862de..086ddc5108af 100644
+--- a/fs/cifs/cifs_ioctl.h
++++ b/fs/cifs/cifs_ioctl.h
+@@ -43,6 +43,9 @@ struct smb_snapshot_array {
+ 	/*	snapshots[]; */
+ } __packed;
+ 
++/* query_info flags */
++#define PASSTHRU_QUERY_INFO	0x00000000
++#define PASSTHRU_FSCTL		0x00000001
+ struct smb_query_info {
+ 	__u32   info_type;
+ 	__u32   file_info_class;
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 823a58550dfd..32dde87feaa9 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1390,15 +1390,27 @@ smb2_ioctl_query_info(const unsigned int xid,
+ 	smb2_set_next_command(tcon, &rqst[0]);
+ 
+ 	/* Query */
+-	memset(&qi_iov, 0, sizeof(qi_iov));
+-	rqst[1].rq_iov = qi_iov;
+-	rqst[1].rq_nvec = 1;
+-
+-	rc = SMB2_query_info_init(tcon, &rqst[1], COMPOUND_FID, COMPOUND_FID,
+-				  qi.file_info_class, qi.info_type,
+-				  qi.additional_information,
++	if (qi.flags & PASSTHRU_FSCTL) {
++		/* Can eventually relax perm check since server enforces too */
++		if (!capable(CAP_SYS_ADMIN))
++			rc = -EPERM;
++		else  /* TBD: Add code to compound FSCTL */
++			rc = -EOPNOTSUPP;
++	} else if (qi.flags == PASSTHRU_QUERY_INFO) {
++		memset(&qi_iov, 0, sizeof(qi_iov));
++		rqst[1].rq_iov = qi_iov;
++		rqst[1].rq_nvec = 1;
++
++		rc = SMB2_query_info_init(tcon, &rqst[1], COMPOUND_FID,
++				  COMPOUND_FID, qi.file_info_class,
++				  qi.info_type, qi.additional_information,
+ 				  qi.input_buffer_length,
+ 				  qi.output_buffer_length, buffer);
++	} else { /* unknown flags */
++		cifs_dbg(VFS, "invalid passthru query flags: 0x%x\n", qi.flags);
++		rc = -EINVAL;
++	}
++
+ 	if (rc)
+ 		goto iqinf_exit;
+ 	smb2_set_next_command(tcon, &rqst[1]);
+-- 
+2.16.4
+

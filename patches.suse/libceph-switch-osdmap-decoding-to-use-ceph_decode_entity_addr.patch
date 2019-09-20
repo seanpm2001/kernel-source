@@ -1,0 +1,51 @@
+From: Jeff Layton <jlayton@kernel.org>
+Date: Mon, 3 Jun 2019 15:08:13 -0400
+Subject: libceph: switch osdmap decoding to use ceph_decode_entity_addr
+Git-commit: dcbc919a5dc8c2629684a113a90c0b6fe10c3462
+Patch-mainline: v5.3-rc1
+References: bsc#1148133 bsc#1136682
+
+Signed-off-by: Jeff Layton <jlayton@kernel.org>
+Reviewed-by: "Yan, Zheng" <zyan@redhat.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+
+---
+ net/ceph/osdmap.c | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/net/ceph/osdmap.c b/net/ceph/osdmap.c
+index 48a31dc9161c..95e98ae59a54 100644
+--- a/net/ceph/osdmap.c
++++ b/net/ceph/osdmap.c
+@@ -1489,11 +1489,9 @@ static int osdmap_decode(void **p, void *end, struct ceph_osdmap *map)
+ 
+ 	/* osd_state, osd_weight, osd_addrs->client_addr */
+ 	ceph_decode_need(p, end, 3*sizeof(u32) +
+-			 map->max_osd*((struct_v >= 5 ? sizeof(u32) :
+-							sizeof(u8)) +
+-				       sizeof(*map->osd_weight) +
+-				       sizeof(*map->osd_addr)), e_inval);
+-
++			 map->max_osd*(struct_v >= 5 ? sizeof(u32) :
++						       sizeof(u8)) +
++				       sizeof(*map->osd_weight), e_inval);
+ 	if (ceph_decode_32(p) != map->max_osd)
+ 		goto e_inval;
+ 
+@@ -1514,9 +1512,11 @@ static int osdmap_decode(void **p, void *end, struct ceph_osdmap *map)
+ 	if (ceph_decode_32(p) != map->max_osd)
+ 		goto e_inval;
+ 
+-	ceph_decode_copy(p, map->osd_addr, map->max_osd*sizeof(*map->osd_addr));
+-	for (i = 0; i < map->max_osd; i++)
+-		ceph_decode_addr(&map->osd_addr[i]);
++	for (i = 0; i < map->max_osd; i++) {
++		err = ceph_decode_entity_addr(p, end, &map->osd_addr[i]);
++		if (err)
++			goto bad;
++	}
+ 
+ 	/* pg_temp */
+ 	err = decode_pg_temp(p, end, map);
+

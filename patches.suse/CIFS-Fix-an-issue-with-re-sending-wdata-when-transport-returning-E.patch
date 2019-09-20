@@ -1,0 +1,131 @@
+From: Long Li <longli@microsoft.com>
+Date: Fri, 15 Mar 2019 07:54:59 +0000
+Subject: [PATCH] CIFS: Fix an issue with re-sending wdata when transport
+ returning -EAGAIN
+Git-commit: d53e292f0f505783d0219f58f8f8f294f45f4ee6
+Patch-mainline: v5.1-rc2
+References: bsc#1144333
+
+When sending a wdata, transport may return -EAGAIN. In this case
+we should re-obtain credits because the session may have been
+reconnected.
+
+Change in v2: adjust_credits before re-sending
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/file.c | 77 ++++++++++++++++++++++++++++++++++------------------------
+ 1 file changed, 45 insertions(+), 32 deletions(-)
+
+diff --git a/fs/cifs/file.c b/fs/cifs/file.c
+index 2a6d20c0ce02..2aa3e62af764 100644
+--- a/fs/cifs/file.c
++++ b/fs/cifs/file.c
+@@ -2632,43 +2632,56 @@ cifs_resend_wdata(struct cifs_writedata *wdata, struct list_head *wdata_list,
+ 	struct TCP_Server_Info *server =
+ 		tlink_tcon(wdata->cfile->tlink)->ses->server;
+ 
+-	/*
+-	 * Wait for credits to resend this wdata.
+-	 * Note: we are attempting to resend the whole wdata not in segments
+-	 */
+ 	do {
+-		rc = server->ops->wait_mtu_credits(server, wdata->bytes, &wsize,
+-						   &credits);
++		if (wdata->cfile->invalidHandle) {
++			rc = cifs_reopen_file(wdata->cfile, false);
++			if (rc == -EAGAIN)
++				continue;
++			else if (rc)
++				break;
++		}
+ 
+-		if (rc)
+-			goto out;
+ 
+-		if (wsize < wdata->bytes) {
+-			add_credits_and_wake_if(server, &credits, 0);
+-			msleep(1000);
+-		}
+-	} while (wsize < wdata->bytes);
++		/*
++		 * Wait for credits to resend this wdata.
++		 * Note: we are attempting to resend the whole wdata not in
++		 * segments
++		 */
++		do {
++			rc = server->ops->wait_mtu_credits(server, wdata->bytes,
++						&wsize, &credits);
++			if (rc)
++				goto fail;
++
++			if (wsize < wdata->bytes) {
++				add_credits_and_wake_if(server, &credits, 0);
++				msleep(1000);
++			}
++		} while (wsize < wdata->bytes);
++		wdata->credits = credits;
+ 
+-	wdata->credits = credits;
+-	rc = -EAGAIN;
+-	while (rc == -EAGAIN) {
+-		rc = 0;
+-		if (wdata->cfile->invalidHandle)
+-			rc = cifs_reopen_file(wdata->cfile, false);
+-		if (!rc)
+-			rc = server->ops->async_writev(wdata,
++		rc = adjust_credits(server, &wdata->credits, wdata->bytes);
++
++		if (!rc) {
++			if (wdata->cfile->invalidHandle)
++				rc = -EAGAIN;
++			else
++				rc = server->ops->async_writev(wdata,
+ 					cifs_uncached_writedata_release);
+-	}
++		}
+ 
+-	if (!rc) {
+-		list_add_tail(&wdata->list, wdata_list);
+-		return 0;
+-	}
++		/* If the write was successfully sent, we are done */
++		if (!rc) {
++			list_add_tail(&wdata->list, wdata_list);
++			return 0;
++		}
+ 
+-	add_credits_and_wake_if(server, &wdata->credits, 0);
+-out:
+-	kref_put(&wdata->refcount, cifs_uncached_writedata_release);
++		/* Roll back credits and retry if needed */
++		add_credits_and_wake_if(server, &wdata->credits, 0);
++	} while (rc == -EAGAIN);
+ 
++fail:
++	kref_put(&wdata->refcount, cifs_uncached_writedata_release);
+ 	return rc;
+ }
+ 
+@@ -2896,12 +2909,12 @@ static void collect_uncached_write_data(struct cifs_aio_ctx *ctx)
+ 						wdata->bytes, &tmp_from,
+ 						ctx->cfile, cifs_sb, &tmp_list,
+ 						ctx);
++
++					kref_put(&wdata->refcount,
++						cifs_uncached_writedata_release);
+ 				}
+ 
+ 				list_splice(&tmp_list, &ctx->list);
+-
+-				kref_put(&wdata->refcount,
+-					 cifs_uncached_writedata_release);
+ 				goto restart_loop;
+ 			}
+ 		}
+-- 
+2.16.4
+

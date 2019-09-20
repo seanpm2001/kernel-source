@@ -1,0 +1,37 @@
+From 615887d455094dfdb598ca6df7093c6f0626005b Mon Sep 17 00:00:00 2001
+From: Wei Yongjun <weiyongjun1@huawei.com>
+Date: Sat, 27 Oct 2018 06:12:06 +0000
+Subject: [PATCH 2/4] xfrm: Fix error return code in xfrm_output_one()
+
+Patch-mainline: v4.20
+Git-commit: 533555e5cbb6aa2d77598917871ae5b579fe724b
+References: bsc#1143300
+
+xfrm_output_one() does not return a error code when there is
+no dst_entry attached to the skb, it is still possible crash
+with a NULL pointer dereference in xfrm_output_resume(). Fix
+it by return error code -EHOSTUNREACH.
+
+Fixes: 9e1437937807 ("xfrm: Fix NULL pointer dereference when skb_dst_force clears the dst_entry.")
+Signed-off-by: Wei Yongjun <weiyongjun1@huawei.com>
+Signed-off-by: Steffen Klassert <steffen.klassert@secunet.com>
+Signed-off-by: Firo Yang <firo.yang@suse.com>
+---
+ net/xfrm/xfrm_output.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/net/xfrm/xfrm_output.c b/net/xfrm/xfrm_output.c
+index f576b05c4f72..58aaa0aefc5d 100644
+--- a/net/xfrm/xfrm_output.c
++++ b/net/xfrm/xfrm_output.c
+@@ -100,6 +100,7 @@ static int xfrm_output_one(struct sk_buff *skb, int err)
+ 		skb_dst_force(skb);
+ 		if (!skb_dst(skb)) {
+ 			XFRM_INC_STATS(net, LINUX_MIB_XFRMOUTERROR);
++			err = -EHOSTUNREACH;
+ 			goto error_nolock;
+ 		}
+ 
+-- 
+2.16.4
+

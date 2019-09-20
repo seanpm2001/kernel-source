@@ -1,0 +1,57 @@
+From 22fcea6f85f2cc74e61bd8b3640faa8467553c24 Mon Sep 17 00:00:00 2001
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.ibm.com>
+Date: Tue, 16 Jul 2019 16:30:38 -0700
+Subject: [PATCH] mm: move MAP_SYNC to asm-generic/mman-common.h
+Git-commit: 22fcea6f85f2cc74e61bd8b3640faa8467553c24
+Patch-mainline: v5.3-rc1
+References: bsc#1148297, bsc#1130607
+
+This enables support for synchronous DAX fault on powerpc
+
+The generic changes are added as part of b6fb293f2497 ("mm: Define
+MAP_SYNC and VM_SYNC flags")
+
+Without this, mmap returns EOPNOTSUPP for MAP_SYNC with
+MAP_SHARED_VALIDATE
+
+Instead of adding MAP_SYNC with same value to
+arch/powerpc/include/uapi/asm/mman.h, I am moving the #define to
+asm-generic/mman-common.h.  Two architectures using mman-common.h
+directly are sparc and powerpc.  We should be able to consloidate more
+#defines to mman-common.h.  That can be done as a separate patch.
+
+Link: http://lkml.kernel.org/r/20190528091120.13322-1-aneesh.kumar@linux.ibm.com
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.ibm.com>
+Reviewed-by: Jan Kara <jack@suse.cz>
+Cc: Michael Ellerman <mpe@ellerman.id.au>
+Cc: Ross Zwisler <ross.zwisler@linux.intel.com>
+Cc: Dan Williams <dan.j.williams@intel.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Acked-by: Jan Kara <jack@suse.cz>
+
+---
+ include/uapi/asm-generic/mman-common.h |    1 +
+ include/uapi/asm-generic/mman.h        |    1 -
+ 2 files changed, 1 insertion(+), 1 deletion(-)
+
+--- a/include/uapi/asm-generic/mman-common.h
++++ b/include/uapi/asm-generic/mman-common.h
+@@ -20,6 +20,7 @@
+ #define MAP_TYPE	0x0f		/* Mask for type of mapping */
+ #define MAP_FIXED	0x10		/* Interpret addr exactly */
+ #define MAP_ANONYMOUS	0x20		/* don't use a file */
++#define MAP_SYNC	0x080000	/* perform synchronous page faults for the mapping */
+ #ifdef CONFIG_MMAP_ALLOW_UNINITIALIZED
+ # define MAP_UNINITIALIZED 0x4000000	/* For anonymous mmap, memory could be uninitialized */
+ #else
+--- a/include/uapi/asm-generic/mman.h
++++ b/include/uapi/asm-generic/mman.h
+@@ -12,7 +12,6 @@
+ #define MAP_NONBLOCK	0x10000		/* do not block on IO */
+ #define MAP_STACK	0x20000		/* give out an address that is best suited for process/thread stacks */
+ #define MAP_HUGETLB	0x40000		/* create a huge page mapping */
+-#define MAP_SYNC	0x80000		/* perform synchronous page faults for the mapping */
+ 
+ /* Bits [26:31] are reserved, see mman-common.h for MAP_HUGETLB usage */
+ 

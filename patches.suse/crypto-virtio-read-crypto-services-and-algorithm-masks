@@ -1,0 +1,96 @@
+From: Farhan Ali <alifm@linux.ibm.com>
+Date: Tue, 19 Jun 2018 11:41:33 -0400
+Subject: crypto: virtio - Read crypto services and algorithm masks
+Git-commit: b551bac14acab9c601269e2007a6b6cad2250a4c
+Patch-mainline: v4.19-rc1
+References: jsc#SLE-5844 jsc#SLE-6331 FATE#327377 bsc#1145446 LTC#175307
+
+Read the crypto services and algorithm masks which provides
+information about the services and algorithms supported by
+virtio-crypto backend.
+
+Signed-off-by: Farhan Ali <alifm@linux.ibm.com>
+Acked-by: Gonglei <arei.gonglei@huawei.com>
+Acked-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Acked-by: Petr Tesarik <ptesarik@suse.com>
+---
+ drivers/crypto/virtio/virtio_crypto_common.h |   14 +++++++++++++
+ drivers/crypto/virtio/virtio_crypto_core.c   |   29 +++++++++++++++++++++++++++
+ 2 files changed, 43 insertions(+)
+
+--- a/drivers/crypto/virtio/virtio_crypto_common.h
++++ b/drivers/crypto/virtio/virtio_crypto_common.h
+@@ -55,6 +55,20 @@ struct virtio_crypto {
+ 	/* Number of queue currently used by the driver */
+ 	u32 curr_queue;
+ 
++	/*
++	 * Specifies the services mask which the device support,
++	 * see VIRTIO_CRYPTO_SERVICE_*
++	 */
++	u32 crypto_services;
++
++	/* Detailed algorithms mask */
++	u32 cipher_algo_l;
++	u32 cipher_algo_h;
++	u32 hash_algo;
++	u32 mac_algo_l;
++	u32 mac_algo_h;
++	u32 aead_algo;
++
+ 	/* Maximum length of cipher key */
+ 	u32 max_cipher_key_len;
+ 	/* Maximum length of authenticated key */
+--- a/drivers/crypto/virtio/virtio_crypto_core.c
++++ b/drivers/crypto/virtio/virtio_crypto_core.c
+@@ -329,6 +329,13 @@ static int virtcrypto_probe(struct virti
+ 	u32 max_data_queues = 0, max_cipher_key_len = 0;
+ 	u32 max_auth_key_len = 0;
+ 	u64 max_size = 0;
++	u32 cipher_algo_l = 0;
++	u32 cipher_algo_h = 0;
++	u32 hash_algo = 0;
++	u32 mac_algo_l = 0;
++	u32 mac_algo_h = 0;
++	u32 aead_algo = 0;
++	u32 crypto_services = 0;
+ 
+ 	if (!virtio_has_feature(vdev, VIRTIO_F_VERSION_1))
+ 		return -ENODEV;
+@@ -365,6 +372,20 @@ static int virtcrypto_probe(struct virti
+ 		max_auth_key_len, &max_auth_key_len);
+ 	virtio_cread(vdev, struct virtio_crypto_config,
+ 		max_size, &max_size);
++	virtio_cread(vdev, struct virtio_crypto_config,
++		crypto_services, &crypto_services);
++	virtio_cread(vdev, struct virtio_crypto_config,
++		cipher_algo_l, &cipher_algo_l);
++	virtio_cread(vdev, struct virtio_crypto_config,
++		cipher_algo_h, &cipher_algo_h);
++	virtio_cread(vdev, struct virtio_crypto_config,
++		hash_algo, &hash_algo);
++	virtio_cread(vdev, struct virtio_crypto_config,
++		mac_algo_l, &mac_algo_l);
++	virtio_cread(vdev, struct virtio_crypto_config,
++		mac_algo_h, &mac_algo_h);
++	virtio_cread(vdev, struct virtio_crypto_config,
++		aead_algo, &aead_algo);
+ 
+ 	/* Add virtio crypto device to global table */
+ 	err = virtcrypto_devmgr_add_dev(vcrypto);
+@@ -384,6 +405,14 @@ static int virtcrypto_probe(struct virti
+ 	vcrypto->max_cipher_key_len = max_cipher_key_len;
+ 	vcrypto->max_auth_key_len = max_auth_key_len;
+ 	vcrypto->max_size = max_size;
++	vcrypto->crypto_services = crypto_services;
++	vcrypto->cipher_algo_l = cipher_algo_l;
++	vcrypto->cipher_algo_h = cipher_algo_h;
++	vcrypto->mac_algo_l = mac_algo_l;
++	vcrypto->mac_algo_h = mac_algo_h;
++	vcrypto->hash_algo = hash_algo;
++	vcrypto->aead_algo = aead_algo;
++
+ 
+ 	dev_info(&vdev->dev,
+ 		"max_queues: %u, max_cipher_key_len: %u, max_auth_key_len: %u, max_size 0x%llx\n",

@@ -1,0 +1,59 @@
+From: Steve French <smfrench@gmail.com>
+Date: Sat, 3 Feb 2018 19:45:07 -0600
+Subject: [PATCH] address lock imbalance warnings in smbdirect.c
+Git-commit: f9de151bf2b8055563b85ff6896fd86891bbe6c5
+Patch-mainline: v4.16-rc1
+References: bsc#1144333
+
+Although at least one of these was an overly strict sparse warning
+in the new smbdirect code, it is cleaner to fix - so no warnings.
+
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smbdirect.c | 16 +++++++++-------
+ 1 file changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/fs/cifs/smbdirect.c b/fs/cifs/smbdirect.c
+index 5130492847eb..91710eb571fb 100644
+--- a/fs/cifs/smbdirect.c
++++ b/fs/cifs/smbdirect.c
+@@ -217,9 +217,10 @@ static void smbd_destroy_rdma_work(struct work_struct *work)
+ 			spin_unlock_irqrestore(
+ 				&info->reassembly_queue_lock, flags);
+ 			put_receive_buffer(info, response);
+-		}
++		} else
++			spin_unlock_irqrestore(&info->reassembly_queue_lock, flags);
+ 	} while (response);
+-	spin_unlock_irqrestore(&info->reassembly_queue_lock, flags);
++
+ 	info->reassembly_data_length = 0;
+ 
+ 	log_rdma_event(INFO, "free receive buffers\n");
+@@ -1934,15 +1935,16 @@ static int smbd_recv_buf(struct smbd_connection *info, char *buf,
+ 				 * No need to lock if we are not at the
+ 				 * end of the queue
+ 				 */
+-				if (!queue_length)
++				if (queue_length)
++					list_del(&response->list);
++				else {
+ 					spin_lock_irq(
+ 						&info->reassembly_queue_lock);
+-				list_del(&response->list);
+-				queue_removed++;
+-				if (!queue_length)
++					list_del(&response->list);
+ 					spin_unlock_irq(
+ 						&info->reassembly_queue_lock);
+-
++				}
++				queue_removed++;
+ 				info->count_reassembly_queue--;
+ 				info->count_dequeue_reassembly_queue++;
+ 				put_receive_buffer(info, response);
+-- 
+2.16.4
+

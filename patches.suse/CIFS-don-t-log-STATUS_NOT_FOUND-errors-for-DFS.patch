@@ -1,0 +1,37 @@
+From 5702591fc6a3f409f460def104ee149330dac82d Mon Sep 17 00:00:00 2001
+From: Aurelien Aptel <aaptel@suse.com>
+Date: Tue, 21 Nov 2017 14:47:56 +0100
+Subject: [PATCH] CIFS: don't log STATUS_NOT_FOUND errors for DFS
+Git-commit: 5702591fc6a3f409f460def104ee149330dac82d
+Patch-mainline: v4.15-rc4
+References: bsc#1051510, bsc#1144333
+
+cifs.ko makes DFS queries regardless of the type of the server and
+non-DFS servers are common. This often results in superfluous logging of
+non-critical errors.
+
+Signed-off-by: Aurelien Aptel <aaptel@suse.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smb2ops.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index e06740436b92..ed88ab8a4774 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1406,7 +1406,8 @@ smb2_get_dfs_refer(const unsigned int xid, struct cifs_ses *ses,
+ 	} while (rc == -EAGAIN);
+ 
+ 	if (rc) {
+-		cifs_dbg(VFS, "ioctl error in smb2_get_dfs_refer rc=%d\n", rc);
++		if (rc != -ENOENT)
++			cifs_dbg(VFS, "ioctl error in smb2_get_dfs_refer rc=%d\n", rc);
+ 		goto out;
+ 	}
+ 
+-- 
+2.16.4
+

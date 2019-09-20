@@ -1,0 +1,62 @@
+From: Jeff Layton <jlayton@kernel.org>
+Date: Thu, 6 Jun 2019 08:57:27 -0400
+Subject: ceph: increment change_attribute on local changes
+Git-commit: 5c30835690f12e14f88dd2e90c8cbb0ea8eb975f
+Patch-mainline: v5.3-rc1
+References: bsc#1148133 bsc#1136682
+
+We don't set SB_I_VERSION on ceph since we need to manage it ourselves,
+so we must increment it whenever we update the file times.
+
+Signed-off-by: Jeff Layton <jlayton@kernel.org>
+Reviewed-by: "Yan, Zheng" <zyan@redhat.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+[luis: dropped changes to ceph_copy_file_range]
+---
+ fs/ceph/addr.c | 2 ++
+ fs/ceph/file.c | 3 +++
+ 2 files changed, 5 insertions(+)
+
+diff --git a/fs/ceph/addr.c b/fs/ceph/addr.c
+index a47c541f8006..e078cc55b989 100644
+--- a/fs/ceph/addr.c
++++ b/fs/ceph/addr.c
+@@ -9,6 +9,7 @@
+ #include <linux/pagevec.h>
+ #include <linux/task_io_accounting_ops.h>
+ #include <linux/signal.h>
++#include <linux/iversion.h>
+ 
+ #include "super.h"
+ #include "mds_client.h"
+@@ -1592,6 +1593,7 @@ static int ceph_page_mkwrite(struct vm_f
+ 
+ 	/* Update time before taking page lock */
+ 	file_update_time(vma->vm_file);
++	inode_inc_iversion_raw(inode);
+ 
+ 	do {
+ 		lock_page(page);
+diff --git a/fs/ceph/file.c b/fs/ceph/file.c
+index d616e4b50b57..a06090c8281e 100644
+--- a/fs/ceph/file.c
++++ b/fs/ceph/file.c
+@@ -8,6 +8,7 @@
+ #include <linux/namei.h>
+ #include <linux/writeback.h>
+ #include <linux/falloc.h>
++#include <linux/iversion.h>
+ 
+ #include "super.h"
+ #include "mds_client.h"
+@@ -1428,6 +1429,8 @@ retry_snap:
+ 	if (err)
+ 		goto out;
+ 
++	inode_inc_iversion_raw(inode);
++
+ 	if (ci->i_inline_version != CEPH_INLINE_NONE) {
+ 		err = ceph_uninline_data(file, NULL);
+ 		if (err < 0)
+

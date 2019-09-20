@@ -1,0 +1,41 @@
+From: Michael Mueller <mimu@linux.vnet.ibm.com>
+Date: Fri, 23 Jun 2017 14:46:21 +0200
+Subject: KVM: s390: activate GISA for emulated interrupts
+Git-commit: f180bfdae024b34e71e89dcc82b037dd97f74c3a
+Patch-mainline: v4.16-rc1
+References: jsc#SLE-6412
+
+If the AIV facility is available, a GISA will be used to manage emulated
+adapter interrupts.
+
+Signed-off-by: Michael Mueller <mimu@linux.vnet.ibm.com>
+Reviewed-by: Halil Pasic <pasic@linux.vnet.ibm.com>
+Reviewed-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Signed-off-by: Bruce Rogers <brogers@suse.com>
+---
+ arch/s390/kvm/interrupt.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/arch/s390/kvm/interrupt.c b/arch/s390/kvm/interrupt.c
+index 325ea87cd59d..b01be3c6b4fe 100644
+--- a/arch/s390/kvm/interrupt.c
++++ b/arch/s390/kvm/interrupt.c
+@@ -2860,7 +2860,13 @@ void kvm_s390_gisa_clear(struct kvm *kvm)
+ 
+ void kvm_s390_gisa_init(struct kvm *kvm)
+ {
+-	/* not implemented yet */
++	if (!css_general_characteristics.aiv)
++		kvm->arch.gisa = NULL;
++	else {
++		kvm->arch.gisa = &kvm->arch.sie_page2->gisa;
++		VM_EVENT(kvm, 3, "gisa 0x%pK initialized", kvm->arch.gisa);
++		kvm_s390_gisa_clear(kvm);
++	}
+ }
+ 
+ void kvm_s390_gisa_destroy(struct kvm *kvm)
+

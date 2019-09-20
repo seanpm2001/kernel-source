@@ -1,0 +1,47 @@
+From b1092ec9fe1c5f6e8cadb2ee54fc010052e5cd06 Mon Sep 17 00:00:00 2001
+From: root <you@example.com>
+Date: Tue, 20 Aug 2019 03:09:58 -0400
+Subject: [PATCH] libnvdimm/pfn: Store correct value of npfns in namespace
+ superblock
+
+References: bsc#1146381 ltc#180720
+Patch-mainline: no, stable-only
+
+Commit a3619190d62e ("libnvdimm/pfn: stop padding pmem namespaces to
+section alignment") fixed an issue with nd_pfn_init() where the count
+of number of PFNs stored in pfn superblock was calculated assuming
+PAGE_SIZE == SZ_4K.
+
+Without the fix a wrong comparison happens in __nvdimm_setup_pfn()
+between recaulcaulted value of nd_pfn->npfns against one stored in
+superblock via nd_pfn->pfn_sb->npfns. This causes a warning to be
+issued of the form:
+
+   dax_pmem dax1.0: number of pfns truncated from 2093056 to 130816
+
+This warning is harmless but may confuse the user. Hence this patch
+picks the relavent hunk from commit a3619190d62e ("libnvdimm/pfn: stop
+padding pmem namespaces to section alignment") that fixes this issue.
+
+Signed-off-by: Vaibhav Jain <vaibhav@linux.ibm.com>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ drivers/nvdimm/pfn_devs.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/nvdimm/pfn_devs.c b/drivers/nvdimm/pfn_devs.c
+index 6a2685e8fbc6..c22462a277b6 100644
+--- a/drivers/nvdimm/pfn_devs.c
++++ b/drivers/nvdimm/pfn_devs.c
+@@ -757,7 +757,7 @@ static int nd_pfn_init(struct nd_pfn *nd_pfn)
+ 		return -ENXIO;
+ 	}
+ 
+-	npfns = (size - offset - start_pad - end_trunc) / SZ_4K;
++	npfns = PHYS_PFN(size - offset - start_pad - end_trunc);
+ 	pfn_sb->mode = cpu_to_le32(nd_pfn->mode);
+ 	pfn_sb->dataoff = cpu_to_le64(offset);
+ 	pfn_sb->npfns = cpu_to_le64(npfns);
+-- 
+2.16.4
+

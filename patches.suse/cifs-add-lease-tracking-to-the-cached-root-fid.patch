@@ -1,0 +1,226 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Thu, 14 Jun 2018 06:48:35 +1000
+Subject: [PATCH] cifs: add lease tracking to the cached root fid
+Git-commit: a93864d93977b99bda6c348a09b90a3d7ef8db3a
+Patch-mainline: v4.18-rc1
+References: bsc#1144333
+
+Use a read lease for the cached root fid so that we can detect
+when the content of the directory changes (via a break) at which time
+we close the handle. On next access to the root the handle will be reopened
+and cached again.
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/cifsglob.h  | 12 +++++++++---
+ fs/cifs/cifsproto.h |  1 +
+ fs/cifs/cifssmb.c   |  8 ++++----
+ fs/cifs/misc.c      |  7 ++++---
+ fs/cifs/smb2misc.c  | 16 +++++++++++++++-
+ fs/cifs/smb2ops.c   | 34 +++++++++++++++++++++++++---------
+ 6 files changed, 58 insertions(+), 20 deletions(-)
+
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index 1efa2e65bc1a..ff71fbd619bf 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -883,6 +883,14 @@ cap_unix(struct cifs_ses *ses)
+ 	return ses->server->vals->cap_unix & ses->capabilities;
+ }
+ 
++struct cached_fid {
++	bool is_valid:1;	/* Do we have a useable root fid */
++	struct cifs_fid *fid;
++	struct mutex fid_mutex;
++	struct cifs_tcon *tcon;
++	struct work_struct lease_break;
++};
++
+ /*
+  * there is one of these for each connection to a resource on a particular
+  * session
+@@ -987,9 +995,7 @@ struct cifs_tcon {
+ 	struct fscache_cookie *fscache;	/* cookie for share */
+ #endif
+ 	struct list_head pending_opens;	/* list of incomplete opens */
+-	bool valid_root_fid:1;	/* Do we have a useable root fid */
+-	struct mutex prfid_mutex; /* prevents reopen race after dead ses*/
+-	struct cifs_fid *prfid;	/* handle to the directory at top of share */
++	struct cached_fid crfid; /* Cached root fid */
+ 	/* BB add field for back pointer to sb struct(s)? */
+ };
+ 
+diff --git a/fs/cifs/cifsproto.h b/fs/cifs/cifsproto.h
+index 4e0d183c3d10..3a13b44069fe 100644
+--- a/fs/cifs/cifsproto.h
++++ b/fs/cifs/cifsproto.h
+@@ -552,6 +552,7 @@ enum securityEnum cifs_select_sectype(struct TCP_Server_Info *,
+ struct cifs_aio_ctx *cifs_aio_ctx_alloc(void);
+ void cifs_aio_ctx_release(struct kref *refcount);
+ int setup_aio_ctx_iter(struct cifs_aio_ctx *ctx, struct iov_iter *iter, int rw);
++void smb2_cached_lease_break(struct work_struct *work);
+ 
+ int cifs_alloc_hash(const char *name, struct crypto_shash **shash,
+ 		    struct sdesc **sdesc);
+diff --git a/fs/cifs/cifssmb.c b/fs/cifs/cifssmb.c
+index 42329b25877d..d352da325de3 100644
+--- a/fs/cifs/cifssmb.c
++++ b/fs/cifs/cifssmb.c
+@@ -107,10 +107,10 @@ cifs_mark_open_files_invalid(struct cifs_tcon *tcon)
+ 	}
+ 	spin_unlock(&tcon->open_file_lock);
+ 
+-	mutex_lock(&tcon->prfid_mutex);
+-	tcon->valid_root_fid = false;
+-	memset(tcon->prfid, 0, sizeof(struct cifs_fid));
+-	mutex_unlock(&tcon->prfid_mutex);
++	mutex_lock(&tcon->crfid.fid_mutex);
++	tcon->crfid.is_valid = false;
++	memset(tcon->crfid.fid, 0, sizeof(struct cifs_fid));
++	mutex_unlock(&tcon->crfid.fid_mutex);
+ 
+ 	/*
+ 	 * BB Add call to invalidate_inodes(sb) for all superblocks mounted
+diff --git a/fs/cifs/misc.c b/fs/cifs/misc.c
+index af29ade195c0..bb40f3c050f6 100644
+--- a/fs/cifs/misc.c
++++ b/fs/cifs/misc.c
+@@ -117,8 +117,9 @@ tconInfoAlloc(void)
+ 		INIT_LIST_HEAD(&ret_buf->openFileList);
+ 		INIT_LIST_HEAD(&ret_buf->tcon_list);
+ 		spin_lock_init(&ret_buf->open_file_lock);
+-		mutex_init(&ret_buf->prfid_mutex);
+-		ret_buf->prfid = kzalloc(sizeof(struct cifs_fid), GFP_KERNEL);
++		mutex_init(&ret_buf->crfid.fid_mutex);
++		ret_buf->crfid.fid = kzalloc(sizeof(struct cifs_fid),
++					     GFP_KERNEL);
+ #ifdef CONFIG_CIFS_STATS
+ 		spin_lock_init(&ret_buf->stat_lock);
+ #endif
+@@ -136,7 +137,7 @@ tconInfoFree(struct cifs_tcon *buf_to_free)
+ 	atomic_dec(&tconInfoAllocCount);
+ 	kfree(buf_to_free->nativeFileSystem);
+ 	kzfree(buf_to_free->password);
+-	kfree(buf_to_free->prfid);
++	kfree(buf_to_free->crfid.fid);
+ 	kfree(buf_to_free);
+ }
+ 
+diff --git a/fs/cifs/smb2misc.c b/fs/cifs/smb2misc.c
+index e2bec47c6845..0de87ca33e2e 100644
+--- a/fs/cifs/smb2misc.c
++++ b/fs/cifs/smb2misc.c
+@@ -492,10 +492,11 @@ cifs_ses_oplock_break(struct work_struct *work)
+ {
+ 	struct smb2_lease_break_work *lw = container_of(work,
+ 				struct smb2_lease_break_work, lease_break);
+-	int rc;
++	int rc = 0;
+ 
+ 	rc = SMB2_lease_break(0, tlink_tcon(lw->tlink), lw->lease_key,
+ 			      lw->lease_state);
++
+ 	cifs_dbg(FYI, "Lease release rc %d\n", rc);
+ 	cifs_put_tlink(lw->tlink);
+ 	kfree(lw);
+@@ -561,6 +562,7 @@ smb2_tcon_has_lease(struct cifs_tcon *tcon, struct smb2_lease_break *rsp,
+ 
+ 		open->oplock = lease_state;
+ 	}
++
+ 	return found;
+ }
+ 
+@@ -603,6 +605,18 @@ smb2_is_valid_lease_break(char *buffer)
+ 					return true;
+ 				}
+ 				spin_unlock(&tcon->open_file_lock);
++
++				if (tcon->crfid.is_valid &&
++				    !memcmp(rsp->LeaseKey,
++					    tcon->crfid.fid->lease_key,
++					    SMB2_LEASE_KEY_SIZE)) {
++					INIT_WORK(&tcon->crfid.lease_break,
++						  smb2_cached_lease_break);
++					queue_work(cifsiod_wq,
++						   &tcon->crfid.lease_break);
++					spin_unlock(&cifs_tcp_ses_lock);
++					return true;
++				}
+ 			}
+ 		}
+ 	}
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index b15f5957d645..682bcfa246be 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -323,6 +323,21 @@ SMB3_request_interfaces(const unsigned int xid, struct cifs_tcon *tcon)
+ }
+ #endif /* STATS2 */
+ 
++void
++smb2_cached_lease_break(struct work_struct *work)
++{
++	struct cached_fid *cfid = container_of(work,
++				struct cached_fid, lease_break);
++	mutex_lock(&cfid->fid_mutex);
++	if (cfid->is_valid) {
++		cifs_dbg(FYI, "clear cached root file handle\n");
++		SMB2_close(0, cfid->tcon, cfid->fid->persistent_fid,
++			   cfid->fid->volatile_fid);
++		cfid->is_valid = false;
++	}
++	mutex_unlock(&cfid->fid_mutex);
++}
++
+ /*
+  * Open the directory at the root of a share
+  */
+@@ -331,13 +346,13 @@ int open_shroot(unsigned int xid, struct cifs_tcon *tcon, struct cifs_fid *pfid)
+ 	struct cifs_open_parms oparams;
+ 	int rc;
+ 	__le16 srch_path = 0; /* Null - since an open of top of share */
+-	u8 oplock = SMB2_OPLOCK_LEVEL_NONE;
++	u8 oplock = SMB2_OPLOCK_LEVEL_II;
+ 
+-	mutex_lock(&tcon->prfid_mutex);
+-	if (tcon->valid_root_fid) {
++	mutex_lock(&tcon->crfid.fid_mutex);
++	if (tcon->crfid.is_valid) {
+ 		cifs_dbg(FYI, "found a cached root file handle\n");
+-		memcpy(pfid, tcon->prfid, sizeof(struct cifs_fid));
+-		mutex_unlock(&tcon->prfid_mutex);
++		memcpy(pfid, tcon->crfid.fid, sizeof(struct cifs_fid));
++		mutex_unlock(&tcon->crfid.fid_mutex);
+ 		return 0;
+ 	}
+ 
+@@ -350,10 +365,11 @@ int open_shroot(unsigned int xid, struct cifs_tcon *tcon, struct cifs_fid *pfid)
+ 
+ 	rc = SMB2_open(xid, &oparams, &srch_path, &oplock, NULL, NULL, NULL);
+ 	if (rc == 0) {
+-		memcpy(tcon->prfid, pfid, sizeof(struct cifs_fid));
+-		tcon->valid_root_fid = true;
++		memcpy(tcon->crfid.fid, pfid, sizeof(struct cifs_fid));
++		tcon->crfid.tcon = tcon;
++		tcon->crfid.is_valid = true;
+ 	}
+-	mutex_unlock(&tcon->prfid_mutex);
++	mutex_unlock(&tcon->crfid.fid_mutex);
+ 	return rc;
+ }
+ 
+@@ -436,7 +452,7 @@ smb2_is_path_accessible(const unsigned int xid, struct cifs_tcon *tcon,
+ 	struct cifs_open_parms oparms;
+ 	struct cifs_fid fid;
+ 
+-	if ((*full_path == 0) && tcon->valid_root_fid)
++	if ((*full_path == 0) && tcon->crfid.is_valid)
+ 		return 0;
+ 
+ 	utf16_path = cifs_convert_path_to_utf16(full_path, cifs_sb);
+-- 
+2.16.4
+

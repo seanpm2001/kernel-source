@@ -1,0 +1,47 @@
+From: Ronnie Sahlberg <lsahlber@redhat.com>
+Date: Fri, 12 Apr 2019 09:56:23 +1000
+Subject: [PATCH] cifs: zero-range does not require the file is sparse
+Git-commit: c7fe388d76e900e6c49f8df51cfd21903832fdd5
+Patch-mainline: v5.2-rc1
+References: bsc#1144333
+
+Remove the conditional to fail zero-range if the file is not flagged as sparse.
+You can still zero out a range in SMB2 even for non-sparse files.
+
+Tested with stock windows16 server.
+
+Fixes 5 xfstests (033, 149, 155, 180, 349)
+
+Signed-off-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smb2ops.c | 12 ------------
+ 1 file changed, 12 deletions(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index 78bca7d46eac..9b7a2f448591 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -2679,18 +2679,6 @@ static long smb3_zero_range(struct file *file, struct cifs_tcon *tcon,
+ 			return rc;
+ 		}
+ 
+-	/*
+-	 * Must check if file sparse since fallocate -z (zero range) assumes
+-	 * non-sparse allocation
+-	 */
+-	if (!(cifsi->cifsAttrs & FILE_ATTRIBUTE_SPARSE_FILE)) {
+-		rc = -EOPNOTSUPP;
+-		trace_smb3_zero_err(xid, cfile->fid.persistent_fid, tcon->tid,
+-			      ses->Suid, offset, len, rc);
+-		free_xid(xid);
+-		return rc;
+-	}
+-
+ 	cifs_dbg(FYI, "offset %lld len %lld", offset, len);
+ 
+ 	fsctl_buf.FileOffset = cpu_to_le64(offset);
+-- 
+2.22.0
+

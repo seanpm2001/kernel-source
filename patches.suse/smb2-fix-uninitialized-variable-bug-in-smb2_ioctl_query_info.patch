@@ -1,0 +1,40 @@
+From: "Gustavo A. R. Silva" <gustavo@embeddedor.com>
+Date: Wed, 10 Oct 2018 00:02:20 +0200
+Subject: [PATCH] smb2: fix uninitialized variable bug in smb2_ioctl_query_info
+Git-commit: f70556c8cae976e50ba9c27dd4c1a86b57efc17d
+Patch-mainline: v4.20-rc1
+References: bsc#1144333
+
+There is a potential execution path in which variable *resp_buftype*
+is passed as an argument to function free_rsp_buf(), in which it is
+used in a comparison without being properly initialized previously.
+
+Fix this by initializing variable *resp_buftype* to CIFS_NO_BUFFER
+in order to avoid unpredictable or unintended results.
+
+Addresses-Coverity-ID: 1473971 ("Uninitialized scalar variable")
+Fixes: c5d25bdb2967 ("cifs: add IOCTL for QUERY_INFO passthrough to userspace")
+Signed-off-by: Gustavo A. R. Silva <gustavo@embeddedor.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2ops.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index c6c6450d0f38..8472cb0ae06c 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1133,7 +1133,7 @@ smb2_ioctl_query_info(const unsigned int xid,
+ 	struct smb_rqst rqst;
+ 	struct kvec iov[1];
+ 	struct kvec rsp_iov;
+-	int resp_buftype;
++	int resp_buftype = CIFS_NO_BUFFER;
+ 	struct smb2_query_info_rsp *rsp = NULL;
+ 	void *buffer;
+ 
+-- 
+2.16.4
+

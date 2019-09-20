@@ -1,0 +1,152 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Sat, 6 Jul 2019 14:41:38 -0500
+Subject: [PATCH] SMB3: query inode number on open via create context
+Git-commit: ff2a09e9196e2f9d5edc60d1a68bc3d3649d035b
+Patch-mainline: v5.3-rc1
+References: bsc#1144333
+
+We can cut the number of roundtrips on open (may also
+help some rename cases as well) by returning the inode
+number in the SMB2 open request itself instead of
+querying it afterwards via a query FILE_INTERNAL_INFO.
+This should significantly improve the performance of
+posix open.
+
+Add SMB2_CREATE_QUERY_ON_DISK_ID create context request
+on open calls so that when server supports this we
+can save a roundtrip for QUERY_INFO on every open.
+
+Follow on patch will add the response processing for
+SMB2_CREATE_QUERY_ON_DISK_ID context and optimize
+smb2_open_file to avoid the extra network roundtrip
+on every posix open. This patch adds the context on
+SMB2/SMB3 open requests.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/smb2pdu.c | 48 +++++++++++++++++++++++++++++++++++++++++++++++
+ fs/cifs/smb2pdu.h | 17 ++++++++++++-----
+ 2 files changed, 60 insertions(+), 5 deletions(-)
+
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index 34d5397a1989..f58e4dc3987b 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -2118,6 +2118,48 @@ add_twarp_context(struct kvec *iov, unsigned int *num_iovec, __u64 timewarp)
+ 	return 0;
+ }
+ 
++static struct crt_query_id_ctxt *
++create_query_id_buf(void)
++{
++	struct crt_query_id_ctxt *buf;
++
++	buf = kzalloc(sizeof(struct crt_query_id_ctxt), GFP_KERNEL);
++	if (!buf)
++		return NULL;
++
++	buf->ccontext.DataOffset = cpu_to_le16(0);
++	buf->ccontext.DataLength = cpu_to_le32(0);
++	buf->ccontext.NameOffset = cpu_to_le16(offsetof
++				(struct crt_query_id_ctxt, Name));
++	buf->ccontext.NameLength = cpu_to_le16(4);
++	/* SMB2_CREATE_QUERY_ON_DISK_ID is "QFid" */
++	buf->Name[0] = 'Q';
++	buf->Name[1] = 'F';
++	buf->Name[2] = 'i';
++	buf->Name[3] = 'd';
++	return buf;
++}
++
++/* See MS-SMB2 2.2.13.2.9 */
++static int
++add_query_id_context(struct kvec *iov, unsigned int *num_iovec)
++{
++	struct smb2_create_req *req = iov[0].iov_base;
++	unsigned int num = *num_iovec;
++
++	iov[num].iov_base = create_query_id_buf();
++	if (iov[num].iov_base == NULL)
++		return -ENOMEM;
++	iov[num].iov_len = sizeof(struct crt_query_id_ctxt);
++	if (!req->CreateContextsOffset)
++		req->CreateContextsOffset = cpu_to_le32(
++				sizeof(struct smb2_create_req) +
++				iov[num - 1].iov_len);
++	le32_add_cpu(&req->CreateContextsLength, sizeof(struct crt_query_id_ctxt));
++	*num_iovec = num + 1;
++	return 0;
++}
++
+ static int
+ alloc_path_with_tree_prefix(__le16 **out_path, int *out_size, int *out_len,
+ 			    const char *treename, const __le16 *path)
+@@ -2446,6 +2488,12 @@ SMB2_open_init(struct cifs_tcon *tcon, struct smb_rqst *rqst, __u8 *oplock,
+ 			return rc;
+ 	}
+ 
++	if (n_iov > 2) {
++		struct create_context *ccontext =
++			(struct create_context *)iov[n_iov-1].iov_base;
++		ccontext->Next = cpu_to_le32(iov[n_iov-1].iov_len);
++	}
++	add_query_id_context(iov, &n_iov);
+ 
+ 	rqst->rq_nvec = n_iov;
+ 	return 0;
+diff --git a/fs/cifs/smb2pdu.h b/fs/cifs/smb2pdu.h
+index 053ec621e7b9..458bad01ca74 100644
+--- a/fs/cifs/smb2pdu.h
++++ b/fs/cifs/smb2pdu.h
+@@ -662,9 +662,10 @@ struct smb2_tree_disconnect_rsp {
+  * [3] : durable context
+  * [4] : posix context
+  * [5] : time warp context
+- * [6] : compound padding
++ * [6] : query id context
++ * [7] : compound padding
+  */
+-#define SMB2_CREATE_IOV_SIZE 7
++#define SMB2_CREATE_IOV_SIZE 8
+ 
+ struct smb2_create_req {
+ 	struct smb2_sync_hdr sync_hdr;
+@@ -688,10 +689,10 @@ struct smb2_create_req {
+ 
+ /*
+  * Maximum size of a SMB2_CREATE response is 64 (smb2 header) +
+- * 88 (fixed part of create response) + 520 (path) + 150 (contexts) +
++ * 88 (fixed part of create response) + 520 (path) + 208 (contexts) +
+  * 2 bytes of padding.
+  */
+-#define MAX_SMB2_CREATE_RESPONSE_SIZE 824
++#define MAX_SMB2_CREATE_RESPONSE_SIZE 880
+ 
+ struct smb2_create_rsp {
+ 	struct smb2_sync_hdr sync_hdr;
+@@ -818,7 +819,7 @@ struct durable_reconnect_context_v2 {
+ struct on_disk_id {
+ 	__le64 DiskFileId;
+ 	__le64 VolumeId;
+-	__u64  Reserved[4];
++	__u32  Reserved[4];
+ } __packed;
+ 
+ /* See MS-SMB2 2.2.14.2.12 */
+@@ -841,6 +842,12 @@ struct crt_twarp_ctxt {
+ 
+ } __packed;
+ 
++/* See MS-SMB2 2.2.13.2.9 */
++struct crt_query_id_ctxt {
++	struct create_context ccontext;
++	__u8	Name[8];
++} __packed;
++
+ #define COPY_CHUNK_RES_KEY_SIZE	24
+ struct resume_key_req {
+ 	char ResumeKey[COPY_CHUNK_RES_KEY_SIZE];
+-- 
+2.22.0
+

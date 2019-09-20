@@ -1,0 +1,48 @@
+From: Jeff Layton <jlayton@kernel.org>
+Date: Tue, 4 Jun 2019 13:13:48 -0400
+Subject: libceph: fix sa_family just after reading address
+Git-commit: bc07532cc51f4c33cb6136405c9807c5961e468b
+Patch-mainline: v5.3-rc1
+References: bsc#1148133 bsc#1136682
+
+It doesn't make sense to leave it undecoded until later.
+
+Signed-off-by: Jeff Layton <jlayton@kernel.org>
+Reviewed-by: "Yan, Zheng" <zyan@redhat.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+
+---
+ net/ceph/messenger.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/net/ceph/messenger.c b/net/ceph/messenger.c
+index cd0b094468b6..8d0c51dd4666 100644
+--- a/net/ceph/messenger.c
++++ b/net/ceph/messenger.c
+@@ -1732,12 +1732,14 @@ static int read_partial_banner(struct ceph_connection *con)
+ 	ret = read_partial(con, end, size, &con->actual_peer_addr);
+ 	if (ret <= 0)
+ 		goto out;
++	ceph_decode_addr(&con->actual_peer_addr);
+ 
+ 	size = sizeof (con->peer_addr_for_me);
+ 	end += size;
+ 	ret = read_partial(con, end, size, &con->peer_addr_for_me);
+ 	if (ret <= 0)
+ 		goto out;
++	ceph_decode_addr(&con->peer_addr_for_me);
+ 
+ out:
+ 	return ret;
+@@ -2010,9 +2012,6 @@ static int process_banner(struct ceph_connection *con)
+ 	if (verify_hello(con) < 0)
+ 		return -1;
+ 
+-	ceph_decode_addr(&con->actual_peer_addr);
+-	ceph_decode_addr(&con->peer_addr_for_me);
+-
+ 	/*
+ 	 * Make sure the other end is who we wanted.  note that the other
+ 	 * end may not yet know their ip address, so if it's 0.0.0.0, give
+

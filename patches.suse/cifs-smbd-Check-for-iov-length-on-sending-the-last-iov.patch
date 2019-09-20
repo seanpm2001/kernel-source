@@ -1,0 +1,37 @@
+From: Long Li <longli@microsoft.com>
+Date: Tue, 17 Apr 2018 12:17:05 -0700
+Subject: [PATCH] cifs: smbd: Check for iov length on sending the last iov
+Git-commit: ab60ee7bf9a84954f50a66a3d835860e80f99b7f
+Patch-mainline: v4.17-rc2
+References: bsc#1144333
+
+When sending the last iov that breaks into smaller buffers to fit the
+transfer size, it's necessary to check if this is the last iov.
+
+If this is the latest iov, stop and proceed to send pages.
+
+Signed-off-by: Long Li <longli@microsoft.com>
+Cc: stable@vger.kernel.org
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smbdirect.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/cifs/smbdirect.c b/fs/cifs/smbdirect.c
+index 5008af546dd1..d611ed0537fd 100644
+--- a/fs/cifs/smbdirect.c
++++ b/fs/cifs/smbdirect.c
+@@ -2194,6 +2194,8 @@ int smbd_send(struct smbd_connection *info, struct smb_rqst *rqst)
+ 						goto done;
+ 				}
+ 				i++;
++				if (i == rqst->rq_nvec)
++					break;
+ 			}
+ 			start = i;
+ 			buflen = 0;
+-- 
+2.16.4
+

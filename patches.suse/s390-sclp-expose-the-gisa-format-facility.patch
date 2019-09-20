@@ -1,0 +1,53 @@
+From: Michael Mueller <mimu@linux.vnet.ibm.com>
+Date: Mon, 12 Jun 2017 13:49:28 +0200
+Subject: s390/sclp: expose the GISA format facility
+Git-commit: 9e73ea7056bd5f7e1b6e66e3d503478bb5160f07
+Patch-mainline: v4.16-rc1
+References: jsc#SLE-6412
+
+The GISA format facility is required by the host to be able to process
+a format-1 GISA. If not available, the used GISA format will be format-0.
+All format-1 related extension will not be available in this case.
+
+Signed-off-by: Michael Mueller <mimu@linux.vnet.ibm.com>
+Reviewed-by: Pierre Morel <pmorel@linux.vnet.ibm.com>
+Reviewed-by: Halil Pasic <pasic@linux.vnet.ibm.com>
+Reviewed-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Acked-by: David Hildenbrand <david@redhat.com>
+Acked-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Signed-off-by: Bruce Rogers <brogers@suse.com>
+---
+ arch/s390/include/asm/sclp.h   |    1 +
+ drivers/s390/char/sclp_early.c |    3 ++-
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+--- a/arch/s390/include/asm/sclp.h
++++ b/arch/s390/include/asm/sclp.h
+@@ -76,6 +76,7 @@ struct sclp_info {
+ 	unsigned char has_ibs : 1;
+ 	unsigned char has_skey : 1;
+ 	unsigned char has_kss : 1;
++	unsigned char has_gisaf : 1;
+ 	unsigned int ibc;
+ 	unsigned int mtid;
+ 	unsigned int mtid_cp;
+--- a/drivers/s390/char/sclp_early.c
++++ b/drivers/s390/char/sclp_early.c
+@@ -48,7 +48,7 @@ struct read_info_sccb {
+ 	u8	_pad_112[116 - 112];	/* 112-115 */
+ 	u8	fac116;			/* 116 */
+ 	u8	fac117;			/* 117 */
+-	u8	_pad_118;		/* 118 */
++	u8	fac118;			/* 118 */
+ 	u8	fac119;			/* 119 */
+ 	u16	hcpua;			/* 120-121 */
+ 	u8	_pad_122[124 - 122];	/* 122-123 */
+@@ -99,6 +99,7 @@ static void __init sclp_early_facilities
+ 	sclp.has_esca = !!(sccb->fac116 & 0x08);
+ 	sclp.has_pfmfi = !!(sccb->fac117 & 0x40);
+ 	sclp.has_ibs = !!(sccb->fac117 & 0x20);
++	sclp.has_gisaf = !!(sccb->fac118 & 0x08);
+ 	sclp.has_hvs = !!(sccb->fac119 & 0x80);
+ 	sclp.has_kss = !!(sccb->fac98 & 0x01);
+ 	if (sccb->fac85 & 0x02)

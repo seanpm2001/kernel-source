@@ -1,0 +1,42 @@
+From: Jack Morgenstein <jackm@dev.mellanox.co.il>
+Date: Thu, 15 Nov 2018 18:05:13 +0200
+Subject: net/mlx4_core: Zero out lkey field in SW2HW_MPT fw command
+Patch-mainline: v4.20-rc4
+Git-commit: bd85fbc2038a1bbe84990b23ff69b6fc81a32b2c
+References: bsc#1103989 FATE#326004 bsc#1145678
+
+When re-registering a user mr, the mpt information for the
+existing mr when running SRIOV is obtained via the QUERY_MPT
+fw command. The returned information includes the mpt's lkey.
+
+This retrieved mpt information is used to move the mpt back
+to hardware ownership in the rereg flow (via the SW2HW_MPT
+fw command when running SRIOV).
+
+The fw API spec states that for SW2HW_MPT, the lkey field
+must be zero. Any ConnectX-3 PF driver which checks for strict spec
+adherence will return failure for SW2HW_MPT if the lkey field is not
+zero (although the fw in practice ignores this field for SW2HW_MPT).
+
+Thus, in order to conform to the fw API spec, set the lkey field to zero
+before invoking SW2HW_MPT when running SRIOV.
+
+Fixes: e630664c8383 ("mlx4_core: Add helper functions to support MR re-registration")
+Signed-off-by: Jack Morgenstein <jackm@dev.mellanox.co.il>
+Signed-off-by: Tariq Toukan <tariqt@mellanox.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/mellanox/mlx4/mr.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/drivers/net/ethernet/mellanox/mlx4/mr.c
++++ b/drivers/net/ethernet/mellanox/mlx4/mr.c
+@@ -363,6 +363,7 @@ int mlx4_mr_hw_write_mpt(struct mlx4_dev
+ 			container_of((void *)mpt_entry, struct mlx4_cmd_mailbox,
+ 				     buf);
+ 
++		(*mpt_entry)->lkey = 0;
+ 		err = mlx4_SW2HW_MPT(dev, mailbox, key);
+ 	}
+ 

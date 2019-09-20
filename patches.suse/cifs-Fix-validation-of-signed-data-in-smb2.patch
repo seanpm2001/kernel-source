@@ -1,0 +1,86 @@
+From: Paulo Alcantara <paulo@paulo.ac>
+Date: Sat, 23 Jun 2018 14:52:24 -0300
+Subject: [PATCH] cifs: Fix validation of signed data in smb2
+Git-commit: 8de8c4608fe9edc046c31bf82b2b7ebc1daae015
+Patch-mainline: v4.18-rc4
+References: bsc#1144333
+
+Fixes: c713c8770fa5 ("cifs: push rfc1002 generation down the stack")
+
+We failed to validate signed data returned by the server because
+__cifs_calc_signature() now expects to sign the actual data in iov but
+we were also passing down the rfc1002 length.
+
+Fix smb3_calc_signature() to calculate signature of rfc1002 length prior
+to passing only the actual data iov[1-N] to __cifs_calc_signature(). In
+addition, there are a few cases where no rfc1002 length is passed so we
+make sure there's one (iov_len == 4).
+
+Signed-off-by: Paulo Alcantara <palcantara@suse.de>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+---
+ fs/cifs/smb2transport.c | 28 ++++++++++++++++++++++++----
+ 1 file changed, 24 insertions(+), 4 deletions(-)
+
+diff --git a/fs/cifs/smb2transport.c b/fs/cifs/smb2transport.c
+index 1af46ca5a951..719d55e63d88 100644
+--- a/fs/cifs/smb2transport.c
++++ b/fs/cifs/smb2transport.c
+@@ -173,6 +173,8 @@ smb2_calc_signature(struct smb_rqst *rqst, struct TCP_Server_Info *server)
+ 	struct kvec *iov = rqst->rq_iov;
+ 	struct smb2_sync_hdr *shdr = (struct smb2_sync_hdr *)iov[0].iov_base;
+ 	struct cifs_ses *ses;
++	struct shash_desc *shash = &server->secmech.sdeschmacsha256->shash;
++	struct smb_rqst drqst;
+ 
+ 	ses = smb2_find_smb_ses(server, shdr->SessionId);
+ 	if (!ses) {
+@@ -190,21 +192,39 @@ smb2_calc_signature(struct smb_rqst *rqst, struct TCP_Server_Info *server)
+ 	}
+ 
+ 	rc = crypto_shash_setkey(server->secmech.hmacsha256,
+-		ses->auth_key.response, SMB2_NTLMV2_SESSKEY_SIZE);
++				 ses->auth_key.response, SMB2_NTLMV2_SESSKEY_SIZE);
+ 	if (rc) {
+ 		cifs_dbg(VFS, "%s: Could not update with response\n", __func__);
+ 		return rc;
+ 	}
+ 
+-	rc = crypto_shash_init(&server->secmech.sdeschmacsha256->shash);
++	rc = crypto_shash_init(shash);
+ 	if (rc) {
+ 		cifs_dbg(VFS, "%s: Could not init sha256", __func__);
+ 		return rc;
+ 	}
+ 
+-	rc = __cifs_calc_signature(rqst, server, sigptr,
+-		&server->secmech.sdeschmacsha256->shash);
++	/*
++	 * For SMB2+, __cifs_calc_signature() expects to sign only the actual
++	 * data, that is, iov[0] should not contain a rfc1002 length.
++	 *
++	 * Sign the rfc1002 length prior to passing the data (iov[1-N]) down to
++	 * __cifs_calc_signature().
++	 */
++	drqst = *rqst;
++	if (drqst.rq_nvec >= 2 && iov[0].iov_len == 4) {
++		rc = crypto_shash_update(shash, iov[0].iov_base,
++					 iov[0].iov_len);
++		if (rc) {
++			cifs_dbg(VFS, "%s: Could not update with payload\n",
++				 __func__);
++			return rc;
++		}
++		drqst.rq_iov++;
++		drqst.rq_nvec--;
++	}
+ 
++	rc = __cifs_calc_signature(&drqst, server, sigptr, shash);
+ 	if (!rc)
+ 		memcpy(shdr->Signature, sigptr, SMB2_SIGNATURE_SIZE);
+ 
+-- 
+2.16.4
+

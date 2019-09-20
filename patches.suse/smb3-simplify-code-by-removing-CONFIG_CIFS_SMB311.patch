@@ -1,0 +1,641 @@
+From 0fdfef9aa7ee68ddd508aef7c98630cfc054f8d6 Mon Sep 17 00:00:00 2001
+From: Steve French <stfrench@microsoft.com>
+Date: Thu, 28 Jun 2018 19:30:23 -0500
+Subject: [PATCH] smb3: simplify code by removing CONFIG_CIFS_SMB311
+Git-commit: 0fdfef9aa7ee68ddd508aef7c98630cfc054f8d6
+Patch-mainline: v4.19-rc1
+References: bsc#1051510, bsc#1144333
+
+We really, really want to be encouraging use of secure dialects,
+and SMB3.1.1 offers useful security features, and will soon
+be the recommended dialect for many use cases. Simplify the code
+by removing the CONFIG_CIFS_SMB311 ifdef so users don't disable
+it in the build, and create compatibility and/or security issues
+with modern servers - many of which have been supporting this
+dialect for multiple years.
+
+Also clarify some of the Kconfig text for cifs.ko about
+SMB3.1.1 and current supported features in the module.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Aurelien Aptel <aaptel@suse.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/Kconfig         | 33 ++++++++++++++-------------------
+ fs/cifs/cifs_debug.c    |  3 +--
+ fs/cifs/cifsfs.c        |  8 --------
+ fs/cifs/cifsglob.h      |  8 --------
+ fs/cifs/connect.c       | 11 +----------
+ fs/cifs/inode.c         |  2 --
+ fs/cifs/smb2misc.c      | 13 +++----------
+ fs/cifs/smb2ops.c       |  6 ------
+ fs/cifs/smb2pdu.c       | 31 +++----------------------------
+ fs/cifs/smb2proto.h     |  2 --
+ fs/cifs/smb2transport.c |  4 ----
+ fs/cifs/transport.c     |  4 ----
+ 12 files changed, 22 insertions(+), 103 deletions(-)
+
+diff --git a/fs/cifs/Kconfig b/fs/cifs/Kconfig
+index 832eafbf803f..63d0d852998a 100644
+--- a/fs/cifs/Kconfig
++++ b/fs/cifs/Kconfig
+@@ -16,24 +16,28 @@ config CIFS
+ 	select CRYPTO_DES
+ 	help
+ 	  This is the client VFS module for the SMB3 family of NAS protocols,
+-	  as well as for earlier dialects such as SMB2.1, SMB2 and the
++	  (including support for the most recent, most secure dialect SMB3.1.1)
++	  as well as for earlier dialects such as SMB2.1, SMB2 and the older
+ 	  Common Internet File System (CIFS) protocol.  CIFS was the successor
+ 	  to the original dialect, the Server Message Block (SMB) protocol, the
+ 	  native file sharing mechanism for most early PC operating systems.
+ 
+-	  The SMB3 protocol is supported by most modern operating systems and
+-	  NAS appliances (e.g. Samba, Windows 8, Windows 2012, MacOS).
++	  The SMB3 protocol is supported by most modern operating systems
++	  and NAS appliances (e.g. Samba, Windows 10, Windows Server 2016,
++	  MacOS) and even in the cloud (e.g. Microsoft Azure).
+ 	  The older CIFS protocol was included in Windows NT4, 2000 and XP (and
+ 	  later) as well by Samba (which provides excellent CIFS and SMB3
+-	  server support for Linux and many other operating systems). Limited
+-	  support for OS/2 and Windows ME and similar very old servers is
+-	  provided as well.
++	  server support for Linux and many other operating systems). Use of
++	  dialects older than SMB2.1 is often discouraged on public networks.
++	  This module also provides limited support for OS/2 and Windows ME
++	  and similar very old servers.
+ 
+-	  The cifs module provides an advanced network file system client
++	  This module provides an advanced network file system client
+ 	  for mounting to SMB3 (and CIFS) compliant servers.  It includes
+ 	  support for DFS (hierarchical name space), secure per-user
+-	  session establishment via Kerberos or NTLM or NTLMv2,
+-	  safe distributed caching (oplock), optional packet
++	  session establishment via Kerberos or NTLM or NTLMv2, RDMA
++	  (smbdirect), advanced security features, per-share encryption,
++	  directory leases, safe distributed caching (oplock), optional packet
+ 	  signing, Unicode and other internationalization improvements.
+ 
+ 	  In general, the default dialects, SMB3 and later, enable better
+@@ -43,7 +47,7 @@ config CIFS
+ 	  than SMB3 mounts. SMB2/SMB3 mount options are also
+ 	  slightly simpler (compared to CIFS) due to protocol improvements.
+ 
+-	  If you need to mount to Samba, Macs or Windows from this machine, say Y.
++	  If you need to mount to Samba, Azure, Macs or Windows from this machine, say Y.
+ 
+ config CIFS_STATS
+         bool "CIFS statistics"
+@@ -201,15 +205,6 @@ config CIFS_NFSD_EXPORT
+ 	  help
+ 	   Allows NFS server to export a CIFS mounted share (nfsd over cifs)
+ 
+-config CIFS_SMB311
+-	bool "SMB3.1.1 network file system support"
+-	depends on CIFS
+-	select CRYPTO_SHA512
+-
+-	help
+-	  This enables support for the newest, and most secure dialect, SMB3.11.
+-	  If unsure, say Y
+-
+ config CIFS_SMB_DIRECT
+ 	bool "SMB Direct support (Experimental)"
+ 	depends on CIFS=m && INFINIBAND && INFINIBAND_ADDR_TRANS || CIFS=y && INFINIBAND=y && INFINIBAND_ADDR_TRANS=y
+diff --git a/fs/cifs/cifs_debug.c b/fs/cifs/cifs_debug.c
+index 991bfb271908..cb516c950438 100644
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -275,10 +275,9 @@ static int cifs_debug_data_proc_show(struct seq_file *m, void *v)
+ 			server->credits,  server->dialect);
+ 		if (server->sign)
+ 			seq_printf(m, " signed");
+-#ifdef CONFIG_CIFS_SMB311
+ 		if (server->posix_ext_supported)
+ 			seq_printf(m, " posix");
+-#endif /* 3.1.1 */
++
+ 		i++;
+ 		list_for_each(tmp2, &server->smb_ses_list) {
+ 			ses = list_entry(tmp2, struct cifs_ses,
+diff --git a/fs/cifs/cifsfs.c b/fs/cifs/cifsfs.c
+index 69ec5427769c..c162a416ddbf 100644
+--- a/fs/cifs/cifsfs.c
++++ b/fs/cifs/cifsfs.c
+@@ -483,20 +483,12 @@ cifs_show_options(struct seq_file *s, struct dentry *root)
+ 		seq_puts(s, ",persistenthandles");
+ 	else if (tcon->use_resilient)
+ 		seq_puts(s, ",resilienthandles");
+-
+-#ifdef CONFIG_CIFS_SMB311
+ 	if (tcon->posix_extensions)
+ 		seq_puts(s, ",posix");
+ 	else if (tcon->unix_ext)
+ 		seq_puts(s, ",unix");
+ 	else
+ 		seq_puts(s, ",nounix");
+-#else
+-	if (tcon->unix_ext)
+-		seq_puts(s, ",unix");
+-	else
+-		seq_puts(s, ",nounix");
+-#endif /* SMB311 */
+ 	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_POSIX_PATHS)
+ 		seq_puts(s, ",posixpaths");
+ 	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_SET_UID)
+diff --git a/fs/cifs/cifsglob.h b/fs/cifs/cifsglob.h
+index b57d1e22ecb5..3ec7e3063865 100644
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -191,9 +191,7 @@ enum smb_version {
+ 	Smb_21,
+ 	Smb_30,
+ 	Smb_302,
+-#ifdef CONFIG_CIFS_SMB311
+ 	Smb_311,
+-#endif /* SMB311 */
+ 	Smb_3any,
+ 	Smb_default,
+ 	Smb_version_err
+@@ -687,12 +685,10 @@ struct TCP_Server_Info {
+ #endif
+ 	unsigned int	max_read;
+ 	unsigned int	max_write;
+-#ifdef CONFIG_CIFS_SMB311
+ 	__le16	cipher_type;
+ 	 /* save initital negprot hash */
+ 	__u8	preauth_sha_hash[SMB2_PREAUTH_HASH_SIZE];
+ 	bool	posix_ext_supported;
+-#endif /* 3.1.1 */
+ 	struct delayed_work reconnect; /* reconnect workqueue job */
+ 	struct mutex reconnect_mutex; /* prevent simultaneous reconnects */
+ 	unsigned long echo_interval;
+@@ -886,9 +882,7 @@ struct cifs_ses {
+ 	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
+ 	__u8 smb3encryptionkey[SMB3_SIGN_KEY_SIZE];
+ 	__u8 smb3decryptionkey[SMB3_SIGN_KEY_SIZE];
+-#ifdef CONFIG_CIFS_SMB311
+ 	__u8 preauth_sha_hash[SMB2_PREAUTH_HASH_SIZE];
+-#endif /* 3.1.1 */
+ 
+ 	/*
+ 	 * Network interfaces available on the server this session is
+@@ -997,9 +991,7 @@ struct cifs_tcon {
+ 	bool seal:1;      /* transport encryption for this mounted share */
+ 	bool unix_ext:1;  /* if false disable Linux extensions to CIFS protocol
+ 				for this mount even if server would support */
+-#ifdef CONFIG_CIFS_SMB311
+ 	bool posix_extensions; /* if true SMB3.11 posix extensions enabled */
+-#endif /* CIFS_311 */
+ 	bool local_lease:1; /* check leases (only) on local system not remote */
+ 	bool broken_posix_open; /* e.g. Samba server versions < 3.3.2, 3.2.9 */
+ 	bool broken_sparse_sup; /* if server or share does not support sparse */
+diff --git a/fs/cifs/connect.c b/fs/cifs/connect.c
+index 842f45859968..67f91a6313a0 100644
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -303,10 +303,8 @@ static const match_table_t cifs_smb_version_tokens = {
+ 	{ Smb_21, SMB21_VERSION_STRING },
+ 	{ Smb_30, SMB30_VERSION_STRING },
+ 	{ Smb_302, SMB302_VERSION_STRING },
+-#ifdef CONFIG_CIFS_SMB311
+ 	{ Smb_311, SMB311_VERSION_STRING },
+ 	{ Smb_311, ALT_SMB311_VERSION_STRING },
+-#endif /* SMB311 */
+ 	{ Smb_3any, SMB3ANY_VERSION_STRING },
+ 	{ Smb_default, SMBDEFAULT_VERSION_STRING },
+ 	{ Smb_version_err, NULL }
+@@ -1219,12 +1217,10 @@ cifs_parse_smb_version(char *value, struct smb_vol *vol, bool is_smb3)
+ 		vol->ops = &smb30_operations; /* currently identical with 3.0 */
+ 		vol->vals = &smb302_values;
+ 		break;
+-#ifdef CONFIG_CIFS_SMB311
+ 	case Smb_311:
+ 		vol->ops = &smb311_operations;
+ 		vol->vals = &smb311_values;
+ 		break;
+-#endif /* SMB311 */
+ 	case Smb_3any:
+ 		vol->ops = &smb30_operations; /* currently identical with 3.0 */
+ 		vol->vals = &smb3any_values;
+@@ -3039,7 +3035,6 @@ cifs_get_tcon(struct cifs_ses *ses, struct smb_vol *volume_info)
+ 		}
+ 	}
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ 	if (volume_info->linux_ext) {
+ 		if (ses->server->posix_ext_supported) {
+ 			tcon->posix_extensions = true;
+@@ -3051,7 +3046,6 @@ cifs_get_tcon(struct cifs_ses *ses, struct smb_vol *volume_info)
+ 			goto out_fail;
+ 		}
+ 	}
+-#endif /* 311 */
+ 
+ 	/*
+ 	 * BB Do we need to wrap session_mutex around this TCon call and Unix
+@@ -4005,11 +3999,9 @@ cifs_mount(struct cifs_sb_info *cifs_sb, struct smb_vol *volume_info)
+ 		goto remote_path_check;
+ 	}
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ 	/* if new SMB3.11 POSIX extensions are supported do not remap / and \ */
+ 	if (tcon->posix_extensions)
+ 		cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_POSIX_PATHS;
+-#endif /* SMB3.11 */
+ 
+ 	/* tell server which Unix caps we support */
+ 	if (cap_unix(tcon->ses)) {
+@@ -4472,11 +4464,10 @@ cifs_construct_tcon(struct cifs_sb_info *cifs_sb, kuid_t fsuid)
+ 		goto out;
+ 	}
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ 	/* if new SMB3.11 POSIX extensions are supported do not remap / and \ */
+ 	if (tcon->posix_extensions)
+ 		cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_POSIX_PATHS;
+-#endif /* SMB3.11 */
++
+ 	if (cap_unix(ses))
+ 		reset_cifs_unix_caps(0, tcon, NULL, vol_info);
+ 
+diff --git a/fs/cifs/inode.c b/fs/cifs/inode.c
+index f6abf18ca492..054e880c1dac 100644
+--- a/fs/cifs/inode.c
++++ b/fs/cifs/inode.c
+@@ -1575,14 +1575,12 @@ int cifs_mkdir(struct inode *inode, struct dentry *direntry, umode_t mode)
+ 
+ 	server = tcon->ses->server;
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ 	if ((server->ops->posix_mkdir) && (tcon->posix_extensions)) {
+ 		rc = server->ops->posix_mkdir(xid, inode, mode, tcon, full_path,
+ 					      cifs_sb);
+ 		d_drop(direntry); /* for time being always refresh inode info */
+ 		goto mkdir_out;
+ 	}
+-#endif /* SMB311 */
+ 
+ 	if (cap_unix(tcon->ses) && (CIFS_UNIX_POSIX_PATH_OPS_CAP &
+ 				le64_to_cpu(tcon->fsUnixInfo.Capability))) {
+diff --git a/fs/cifs/smb2misc.c b/fs/cifs/smb2misc.c
+index 3ff7cec2da81..303d4592ebe7 100644
+--- a/fs/cifs/smb2misc.c
++++ b/fs/cifs/smb2misc.c
+@@ -93,7 +93,6 @@ static const __le16 smb2_rsp_struct_sizes[NUMBER_OF_SMB2_COMMANDS] = {
+ 	/* SMB2_OPLOCK_BREAK */ cpu_to_le16(24)
+ };
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ static __u32 get_neg_ctxt_len(struct smb2_sync_hdr *hdr, __u32 len,
+ 			      __u32 non_ctxlen)
+ {
+@@ -127,7 +126,6 @@ static __u32 get_neg_ctxt_len(struct smb2_sync_hdr *hdr, __u32 len,
+ 	/* length of negcontexts including pad from end of sec blob to them */
+ 	return (len - nc_offset) + size_of_pad_before_neg_ctxts;
+ }
+-#endif /* CIFS_SMB311 */
+ 
+ int
+ smb2_check_message(char *buf, unsigned int len, struct TCP_Server_Info *srvr)
+@@ -222,10 +220,9 @@ smb2_check_message(char *buf, unsigned int len, struct TCP_Server_Info *srvr)
+ 
+ 	clc_len = smb2_calc_size(buf, srvr);
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ 	if (shdr->Command == SMB2_NEGOTIATE)
+ 		clc_len += get_neg_ctxt_len(shdr, len, clc_len);
+-#endif /* SMB311 */
++
+ 	if (len != clc_len) {
+ 		cifs_dbg(FYI, "Calculated size %u length %u mismatch mid %llu\n",
+ 			 clc_len, len, mid);
+@@ -451,15 +448,13 @@ cifs_convert_path_to_utf16(const char *from, struct cifs_sb_info *cifs_sb)
+ 	/* Windows doesn't allow paths beginning with \ */
+ 	if (from[0] == '\\')
+ 		start_of_path = from + 1;
+-#ifdef CONFIG_CIFS_SMB311
++
+ 	/* SMB311 POSIX extensions paths do not include leading slash */
+ 	else if (cifs_sb_master_tlink(cifs_sb) &&
+ 		 cifs_sb_master_tcon(cifs_sb)->posix_extensions &&
+ 		 (from[0] == '/')) {
+ 		start_of_path = from + 1;
+-	}
+-#endif /* 311 */
+-	else
++	} else
+ 		start_of_path = from;
+ 
+ 	to = cifs_strndup_to_utf16(start_of_path, PATH_MAX, &len,
+@@ -759,7 +754,6 @@ smb2_handle_cancelled_mid(char *buffer, struct TCP_Server_Info *server)
+ 	return 0;
+ }
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ /**
+  * smb311_update_preauth_hash - update @ses hash with the packet data in @iov
+  *
+@@ -821,4 +815,3 @@ smb311_update_preauth_hash(struct cifs_ses *ses, struct kvec *iov, int nvec)
+ 
+ 	return 0;
+ }
+-#endif
+diff --git a/fs/cifs/smb2ops.c b/fs/cifs/smb2ops.c
+index e2a8b9d90ad8..27b69977809d 100644
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -1533,7 +1533,6 @@ smb2_queryfs(const unsigned int xid, struct cifs_tcon *tcon,
+ 	return rc;
+ }
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ static int
+ smb311_queryfs(const unsigned int xid, struct cifs_tcon *tcon,
+ 	     struct kstatfs *buf)
+@@ -1564,7 +1563,6 @@ smb311_queryfs(const unsigned int xid, struct cifs_tcon *tcon,
+ 	SMB2_close(xid, tcon, fid.persistent_fid, fid.volatile_fid);
+ 	return rc;
+ }
+-#endif /* SMB311 */
+ 
+ static bool
+ smb2_compare_fids(struct cifsFileInfo *ob1, struct cifsFileInfo *ob2)
+@@ -3303,7 +3301,6 @@ struct smb_version_operations smb30_operations = {
+ 	.next_header = smb2_next_header,
+ };
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ struct smb_version_operations smb311_operations = {
+ 	.compare_fids = smb2_compare_fids,
+ 	.setup_request = smb2_setup_request,
+@@ -3404,7 +3401,6 @@ struct smb_version_operations smb311_operations = {
+ #endif /* CIFS_XATTR */
+ 	.next_header = smb2_next_header,
+ };
+-#endif /* CIFS_SMB311 */
+ 
+ struct smb_version_values smb20_values = {
+ 	.version_string = SMB20_VERSION_STRING,
+@@ -3532,7 +3528,6 @@ struct smb_version_values smb302_values = {
+ 	.create_lease_size = sizeof(struct create_lease_v2),
+ };
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ struct smb_version_values smb311_values = {
+ 	.version_string = SMB311_VERSION_STRING,
+ 	.protocol_id = SMB311_PROT_ID,
+@@ -3553,4 +3548,3 @@ struct smb_version_values smb311_values = {
+ 	.signing_required = SMB2_NEGOTIATE_SIGNING_REQUIRED,
+ 	.create_lease_size = sizeof(struct create_lease_v2),
+ };
+-#endif /* SMB311 */
+diff --git a/fs/cifs/smb2pdu.c b/fs/cifs/smb2pdu.c
+index fa9fc3fab60e..4ea5528fc15c 100644
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -370,7 +370,7 @@ smb2_plain_req_init(__le16 smb2_command, struct cifs_tcon *tcon,
+ 	return rc;
+ }
+ 
+-#ifdef CONFIG_CIFS_SMB311
++
+ /* offset is sizeof smb2_negotiate_req but rounded up to 8 bytes */
+ #define OFFSET_OF_NEG_CONTEXT 0x68  /* sizeof(struct smb2_negotiate_req) */
+ 
+@@ -585,13 +585,6 @@ add_posix_context(struct kvec *iov, unsigned int *num_iovec, umode_t mode)
+ 	return 0;
+ }
+ 
+-#else
+-static void assemble_neg_contexts(struct smb2_negotiate_req *req,
+-				  unsigned int *total_len)
+-{
+-	return;
+-}
+-#endif /* SMB311 */
+ 
+ /*
+  *
+@@ -636,10 +629,9 @@ SMB2_negotiate(const unsigned int xid, struct cifs_ses *ses)
+ 		return rc;
+ 
+ 	req->sync_hdr.SessionId = 0;
+-#ifdef CONFIG_CIFS_SMB311
++
+ 	memset(server->preauth_sha_hash, 0, SMB2_PREAUTH_HASH_SIZE);
+ 	memset(ses->preauth_sha_hash, 0, SMB2_PREAUTH_HASH_SIZE);
+-#endif
+ 
+ 	if (strcmp(ses->server->vals->version_string,
+ 		   SMB3ANY_VERSION_STRING) == 0) {
+@@ -741,10 +733,8 @@ SMB2_negotiate(const unsigned int xid, struct cifs_ses *ses)
+ 		cifs_dbg(FYI, "negotiated smb3.0 dialect\n");
+ 	else if (rsp->DialectRevision == cpu_to_le16(SMB302_PROT_ID))
+ 		cifs_dbg(FYI, "negotiated smb3.02 dialect\n");
+-#ifdef CONFIG_CIFS_SMB311
+ 	else if (rsp->DialectRevision == cpu_to_le16(SMB311_PROT_ID))
+ 		cifs_dbg(FYI, "negotiated smb3.1.1 dialect\n");
+-#endif /* SMB311 */
+ 	else {
+ 		cifs_dbg(VFS, "Illegal dialect returned by server 0x%x\n",
+ 			 le16_to_cpu(rsp->DialectRevision));
+@@ -753,9 +743,6 @@ SMB2_negotiate(const unsigned int xid, struct cifs_ses *ses)
+ 	}
+ 	server->dialect = le16_to_cpu(rsp->DialectRevision);
+ 
+-	/* BB: add check that dialect was valid given dialect(s) we asked for */
+-
+-#ifdef CONFIG_CIFS_SMB311
+ 	/*
+ 	 * Keep a copy of the hash after negprot. This hash will be
+ 	 * the starting hash value for all sessions made from this
+@@ -763,7 +750,7 @@ SMB2_negotiate(const unsigned int xid, struct cifs_ses *ses)
+ 	 */
+ 	memcpy(server->preauth_sha_hash, ses->preauth_sha_hash,
+ 	       SMB2_PREAUTH_HASH_SIZE);
+-#endif
++
+ 	/* SMB2 only has an extended negflavor */
+ 	server->negflavor = CIFS_NEGFLAVOR_EXTENDED;
+ 	/* set it to the maximum buffer size value we can send with 1 credit */
+@@ -804,7 +791,6 @@ SMB2_negotiate(const unsigned int xid, struct cifs_ses *ses)
+ 			rc = -EIO;
+ 	}
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ 	if (rsp->DialectRevision == cpu_to_le16(SMB311_PROT_ID)) {
+ 		if (rsp->NegotiateContextCount)
+ 			rc = smb311_decode_neg_context(rsp, server,
+@@ -812,7 +798,6 @@ SMB2_negotiate(const unsigned int xid, struct cifs_ses *ses)
+ 		else
+ 			cifs_dbg(VFS, "Missing expected negotiate contexts\n");
+ 	}
+-#endif /* CONFIG_CIFS_SMB311 */
+ neg_exit:
+ 	free_rsp_buf(resp_buftype, rsp);
+ 	return rc;
+@@ -1373,13 +1358,11 @@ SMB2_sess_setup(const unsigned int xid, struct cifs_ses *ses,
+ 	sess_data->nls_cp = (struct nls_table *) nls_cp;
+ 	sess_data->previous_session = ses->Suid;
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ 	/*
+ 	 * Initialize the session hash with the server one.
+ 	 */
+ 	memcpy(ses->preauth_sha_hash, ses->server->preauth_sha_hash,
+ 	       SMB2_PREAUTH_HASH_SIZE);
+-#endif
+ 
+ 	while (sess_data->func)
+ 		sess_data->func(sess_data);
+@@ -1920,7 +1903,6 @@ alloc_path_with_tree_prefix(__le16 **out_path, int *out_size, int *out_len,
+ 	return 0;
+ }
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ int smb311_posix_mkdir(const unsigned int xid, struct inode *inode,
+ 			       umode_t mode, struct cifs_tcon *tcon,
+ 			       const char *full_path,
+@@ -2070,7 +2052,6 @@ int smb311_posix_mkdir(const unsigned int xid, struct inode *inode,
+ 	kfree(utf16_path);
+ 	return rc;
+ }
+-#endif /* SMB311 */
+ 
+ int
+ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
+@@ -2210,7 +2191,6 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
+ 		dhc_buf = iov[n_iov-1].iov_base;
+ 	}
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ 	if (tcon->posix_extensions) {
+ 		if (n_iov > 2) {
+ 			struct create_context *ccontext =
+@@ -2229,7 +2209,6 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
+ 		}
+ 		pc_buf = iov[n_iov-1].iov_base;
+ 	}
+-#endif /* SMB311 */
+ 
+ 	memset(&rqst, 0, sizeof(struct smb_rqst));
+ 	rqst.rq_iov = iov;
+@@ -3938,7 +3917,6 @@ copy_fs_info_to_kstatfs(struct smb2_fs_full_size_info *pfs_inf,
+ 	return;
+ }
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ static void
+ copy_posix_fs_info_to_kstatfs(FILE_SYSTEM_POSIX_INFO *response_data,
+ 			struct kstatfs *kst)
+@@ -3957,7 +3935,6 @@ copy_posix_fs_info_to_kstatfs(FILE_SYSTEM_POSIX_INFO *response_data,
+ 
+ 	return;
+ }
+-#endif /* SMB311 */
+ 
+ static int
+ build_qfs_info_req(struct kvec *iov, struct cifs_tcon *tcon, int level,
+@@ -3995,7 +3972,6 @@ build_qfs_info_req(struct kvec *iov, struct cifs_tcon *tcon, int level,
+ 	return 0;
+ }
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ int
+ SMB311_posix_qfs_info(const unsigned int xid, struct cifs_tcon *tcon,
+ 	      u64 persistent_fid, u64 volatile_fid, struct kstatfs *fsdata)
+@@ -4043,7 +4019,6 @@ SMB311_posix_qfs_info(const unsigned int xid, struct cifs_tcon *tcon,
+ 	free_rsp_buf(resp_buftype, rsp_iov.iov_base);
+ 	return rc;
+ }
+-#endif /* SMB311 */
+ 
+ int
+ SMB2_QFS_info(const unsigned int xid, struct cifs_tcon *tcon,
+diff --git a/fs/cifs/smb2proto.h b/fs/cifs/smb2proto.h
+index 7019459c5748..98d9b30c16a6 100644
+--- a/fs/cifs/smb2proto.h
++++ b/fs/cifs/smb2proto.h
+@@ -216,9 +216,7 @@ extern int smb3_validate_negotiate(const unsigned int, struct cifs_tcon *);
+ 
+ extern enum securityEnum smb2_select_sectype(struct TCP_Server_Info *,
+ 					enum securityEnum);
+-#ifdef CONFIG_CIFS_SMB311
+ extern int smb311_crypto_shash_allocate(struct TCP_Server_Info *server);
+ extern int smb311_update_preauth_hash(struct cifs_ses *ses,
+ 				      struct kvec *iov, int nvec);
+-#endif
+ #endif			/* _SMB2PROTO_H */
+diff --git a/fs/cifs/smb2transport.c b/fs/cifs/smb2transport.c
+index 719d55e63d88..3f778937c0e2 100644
+--- a/fs/cifs/smb2transport.c
++++ b/fs/cifs/smb2transport.c
+@@ -70,7 +70,6 @@ smb3_crypto_shash_allocate(struct TCP_Server_Info *server)
+ 	return rc;
+ }
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ int
+ smb311_crypto_shash_allocate(struct TCP_Server_Info *server)
+ {
+@@ -98,7 +97,6 @@ smb311_crypto_shash_allocate(struct TCP_Server_Info *server)
+ 	cifs_free_hash(&p->hmacsha256, &p->sdeschmacsha256);
+ 	return rc;
+ }
+-#endif
+ 
+ static struct cifs_ses *
+ smb2_find_smb_ses_unlocked(struct TCP_Server_Info *server, __u64 ses_id)
+@@ -395,7 +393,6 @@ generate_smb30signingkey(struct cifs_ses *ses)
+ 	return generate_smb3signingkey(ses, &triplet);
+ }
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ int
+ generate_smb311signingkey(struct cifs_ses *ses)
+ 
+@@ -423,7 +420,6 @@ generate_smb311signingkey(struct cifs_ses *ses)
+ 
+ 	return generate_smb3signingkey(ses, &triplet);
+ }
+-#endif /* 311 */
+ 
+ int
+ smb3_calc_signature(struct smb_rqst *rqst, struct TCP_Server_Info *server)
+diff --git a/fs/cifs/transport.c b/fs/cifs/transport.c
+index a341ec839c83..0f9156af5eb0 100644
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -807,11 +807,9 @@ cifs_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 	if (rc < 0)
+ 		goto out;
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ 	if ((ses->status == CifsNew) || (optype & CIFS_NEG_OP))
+ 		smb311_update_preauth_hash(ses, rqst->rq_iov,
+ 					   rqst->rq_nvec);
+-#endif
+ 
+ 	if (timeout == CIFS_ASYNC_OP)
+ 		goto out;
+@@ -852,7 +850,6 @@ cifs_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 	else
+ 		*resp_buf_type = CIFS_SMALL_BUFFER;
+ 
+-#ifdef CONFIG_CIFS_SMB311
+ 	if ((ses->status == CifsNew) || (optype & CIFS_NEG_OP)) {
+ 		struct kvec iov = {
+ 			.iov_base = resp_iov->iov_base,
+@@ -860,7 +857,6 @@ cifs_send_recv(const unsigned int xid, struct cifs_ses *ses,
+ 		};
+ 		smb311_update_preauth_hash(ses, &iov, 1);
+ 	}
+-#endif
+ 
+ 	credits = ses->server->ops->get_credits(midQ);
+ 
+-- 
+2.16.4
+
