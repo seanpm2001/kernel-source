@@ -1,0 +1,57 @@
+From: Ming Lei <ming.lei@redhat.com>
+Date: Thu, 6 Jun 2019 16:34:08 +0800
+Subject: [PATCH] scsi: lib/sg_pool.c: clear 'first_chunk' in case of no
+ preallocation
+Git-commit: b79d9a09ae23c7047bdce3a15e284398334198ea
+Patch-Mainline: v5.3-rc1
+References: bsc#1141707,bsc#1150973
+
+If user doesn't ask to preallocate by passing zero 'nents_first_chunk' to
+sg_alloc_table_chained, we need to make sure that 'first_chunk' is cleared.
+Otherwise, __sg_alloc_table() still may think that the 1st SGL should be
+from the preallocation.
+
+Fixes the issue by clearing 'first_chunk' in sg_alloc_table_chained() if
+'nents_first_chunk' is zero.
+
+Cc: Christoph Hellwig <hch@lst.de>
+Cc: Bart Van Assche <bvanassche@acm.org>
+Cc: Ewan D. Milne <emilne@redhat.com>
+Cc: Hannes Reinecke <hare@suse.com>
+Cc: Guenter Roeck <linux@roeck-us.net>
+Reported-by: Guenter Roeck <linux@roeck-us.net>
+Tested-by: Guenter Roeck <linux@roeck-us.net>
+Signed-off-by: Ming Lei <ming.lei@redhat.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Hannes Reinecke <hare@suse.com>
+---
+ lib/sg_pool.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/lib/sg_pool.c b/lib/sg_pool.c
+index b3b8cf62ff49..f1cc8372df67 100644
+--- a/lib/sg_pool.c
++++ b/lib/sg_pool.c
+@@ -102,7 +102,9 @@ EXPORT_SYMBOL_GPL(sg_free_table_chained);
+  *
+  *  Description:
+  *    Allocate and chain SGLs in an sg table. If @nents@ is larger than
+- *    @nents_first_chunk a chained sg table will be setup.
++ *    @nents_first_chunk a chained sg table will be setup. @first_chunk is
++ *    ignored if nents_first_chunk <= 1 because user expects the SGL points
++ *    non-chain SGL.
+  *
+  **/
+ int sg_alloc_table_chained(struct sg_table *table, int nents,
+@@ -121,7 +123,7 @@ int sg_alloc_table_chained(struct sg_table *table, int nents,
+ 	}
+ 
+ 	/* User supposes that the 1st SGL includes real entry */
+-	if (nents_first_chunk == 1) {
++	if (nents_first_chunk <= 1) {
+ 		first_chunk = NULL;
+ 		nents_first_chunk = 0;
+ 	}
+-- 
+2.16.4
+

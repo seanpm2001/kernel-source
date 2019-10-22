@@ -1,0 +1,38 @@
+From: Halil Pasic <pasic@linux.ibm.com>
+Subject: s390/protvirt: fix swiotlb not shared
+Patch-mainline: no, SLES only
+References: FATE#327012,LTC#181829
+
+The backported patch "s390/mm: force swiotlb for protected virt" ommits
+to override swiotlb_set_mem_attributes() which is substantial for I/O
+entablement with under prot. virt. (i.e. memory protection) on the
+targeted code level (but non-existet at the upstream code level).
+
+Let us add override the default no-op implementation with one that
+actually makes the  pages constituting the swiotlb shared.
+
+Signed-off-by: Halil Pasic <pasic@linux.ibm.com>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ arch/s390/mm/init.c |    9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+--- a/arch/s390/mm/init.c
++++ b/arch/s390/mm/init.c
+@@ -201,6 +201,15 @@ static const struct dma_map_ops s390_pv_
+ 	.max_mapping_size	= swiotlb_max_mapping_size,
+ };
+ 
++void swiotlb_set_mem_attributes(void *vaddr, unsigned long size)
++{
++	WARN(PAGE_ALIGN(size) != size,
++	     "size is not page-aligned (%#lx)\n", size);
++
++	/* Make the SWIOTLB buffer area decrypted */
++	set_memory_decrypted((unsigned long)vaddr, size >> PAGE_SHIFT);
++}
++
+ /* protected virtualization */
+ static void pv_init(void)
+ {
+

@@ -1,0 +1,33 @@
+From: Johannes Thumshirn <jthumshirn@suse.de>
+Date: Mon  7 Oct 13:04:57 CEST 2019
+Subject: KABI protect struct vmem_altmap
+References: bsc#1150305
+Patch-mainline: Never, KABI fix
+
+The patch patches.suse/libnvdimm-altmap-track-namespace-boundaries-in-altmap.patch
+introduced a new field 'end_pfn' in struct vmem_altmap.
+
+Move this field to the end of the struct and guard it by __GENKSYMS__.
+
+Signed-off-by: Johannes Thumshirn <jthumshirn@suse.de>
+---
+ include/linux/memremap.h |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+--- a/include/linux/memremap.h
++++ b/include/linux/memremap.h
+@@ -18,11 +18,13 @@ struct device;
+  */
+ struct vmem_altmap {
+ 	const unsigned long base_pfn;
+-	const unsigned long end_pfn;
+ 	const unsigned long reserve;
+ 	unsigned long free;
+ 	unsigned long align;
+ 	unsigned long alloc;
++#ifndef __GENKSYMS__
++	const unsigned long end_pfn;
++#endif
+ };
+ 
+ /*

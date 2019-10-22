@@ -1,0 +1,46 @@
+From: Hannes Reinecke <hare@suse.de>
+Date: Fri, 4 Oct 2019 17:21:01 +0200
+Subject: [PATCH] scsi: release sg list in scsi_release_buffers()
+Patch-Mainline: never, SLE12 SP5 specific
+References: bsc#1150753
+
+Commit 4635873c561ac57b66adfcc2487c38106b1c916c did update
+the call in sg_free_table_chained() incorrectly; for the legacy
+I/O path requests are not preallocated, and hence we need to
+free up all sg entries.
+
+Signed-off-by: Hannes Reinecke <hare@suse.com>
+---
+ drivers/scsi/scsi_lib.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/scsi/scsi_lib.c b/drivers/scsi/scsi_lib.c
+index bde74502cdc5..6b4fcdcc8886 100644
+--- a/drivers/scsi/scsi_lib.c
++++ b/drivers/scsi/scsi_lib.c
+@@ -644,19 +644,19 @@ static void scsi_mq_uninit_cmd(struct scsi_cmnd *cmd)
+ static void scsi_release_buffers(struct scsi_cmnd *cmd)
+ {
+ 	if (cmd->sdb.table.nents)
+-		sg_free_table_chained(&cmd->sdb.table, SG_CHUNK_SIZE);
++		sg_free_table_chained(&cmd->sdb.table, 0);
+ 
+ 	memset(&cmd->sdb, 0, sizeof(cmd->sdb));
+ 
+ 	if (scsi_prot_sg_count(cmd))
+-		sg_free_table_chained(&cmd->prot_sdb->table, SG_CHUNK_SIZE);
++		sg_free_table_chained(&cmd->prot_sdb->table, 0);
+ }
+ 
+ static void scsi_release_bidi_buffers(struct scsi_cmnd *cmd)
+ {
+ 	struct scsi_data_buffer *bidi_sdb = cmd->request->next_rq->special;
+ 
+-	sg_free_table_chained(&bidi_sdb->table, SG_CHUNK_SIZE);
++	sg_free_table_chained(&bidi_sdb->table, 0);
+ 	kmem_cache_free(scsi_sdb_cache, bidi_sdb);
+ 	cmd->request->next_rq->special = NULL;
+ }
+-- 
+2.16.4
+

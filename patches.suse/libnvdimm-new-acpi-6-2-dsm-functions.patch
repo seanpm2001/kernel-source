@@ -1,0 +1,76 @@
+From: Jerry Hoemann <jerry.hoemann@hpe.com>
+Date: Fri, 30 Jun 2017 20:41:29 -0700
+Subject: libnvdimm: New ACPI 6.2 DSM functions
+Git-commit: 759d6a9641d7f52f9311aae4f2d90058adad3ac2
+Patch-mainline: v4.13-rc1
+References: jsc#SLE-5606
+
+ACPI 6.2 added new NVDIMM root DSM functions.  Define their
+data structures.
+
+Signed-off-by: Jerry Hoemann <jerry.hoemann@hpe.com>
+Signed-off-by: Dan Williams <dan.j.williams@intel.com>
+Acked-by: Johannes Thumshirn <jthumshirn@suse.de>
+---
+ include/uapi/linux/ndctl.h | 40 +++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 39 insertions(+), 1 deletion(-)
+
+diff --git a/include/uapi/linux/ndctl.h b/include/uapi/linux/ndctl.h
+index e23c37fedade..e15768fb4b99 100644
+--- a/include/uapi/linux/ndctl.h
++++ b/include/uapi/linux/ndctl.h
+@@ -105,7 +105,8 @@ struct nd_cmd_ars_cap {
+ 	__u32 status;
+ 	__u32 max_ars_out;
+ 	__u32 clear_err_unit;
+-	__u32 reserved;
++	__u16 flags;
++	__u16 reserved;
+ } __packed;
+ 
+ struct nd_cmd_ars_start {
+@@ -144,6 +145,43 @@ struct nd_cmd_clear_error {
+ 	__u64 cleared;
+ } __packed;
+ 
++struct nd_cmd_trans_spa {
++	__u64 spa;
++	__u32 status;
++	__u8  flags;
++	__u8  _reserved[3];
++	__u64 trans_length;
++	__u32 num_nvdimms;
++	struct nd_nvdimm_device {
++		__u32 nfit_device_handle;
++		__u32 _reserved;
++		__u64 dpa;
++	} __packed devices[0];
++
++} __packed;
++
++struct nd_cmd_ars_err_inj {
++	__u64 err_inj_spa_range_base;
++	__u64 err_inj_spa_range_length;
++	__u8  err_inj_options;
++	__u32 status;
++} __packed;
++
++struct nd_cmd_ars_err_inj_clr {
++	__u64 err_inj_clr_spa_range_base;
++	__u64 err_inj_clr_spa_range_length;
++	__u32 status;
++} __packed;
++
++struct nd_cmd_ars_err_inj_stat {
++	__u32 status;
++	__u32 inj_err_rec_count;
++	struct nd_error_stat_query_record {
++		__u64 err_inj_stat_spa_range_base;
++		__u64 err_inj_stat_spa_range_length;
++	} __packed record[0];
++} __packed;
++
+ enum {
+ 	ND_CMD_IMPLEMENTED = 0,
+ 
+

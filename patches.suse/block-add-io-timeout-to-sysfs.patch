@@ -1,0 +1,73 @@
+From 65cd1d13b880920054d6c750679baa80b7f9c072 Mon Sep 17 00:00:00 2001
+From: Weiping Zhang <zhangweiping@didiglobal.com>
+Date: Thu, 29 Nov 2018 00:04:39 +0800
+Subject: [PATCH] block: add io timeout to sysfs
+References: bsc#1148410
+Git-commit: 65cd1d13b880920054d6c750679baa80b7f9c072
+Patch-mainline: v5.0-rc1
+
+Give a interface to adjust io timeout(ms) by device.
+
+Signed-off-by: Weiping Zhang <zhangweiping@didiglobal.com>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Signed-off-by: Thomas Abraham <tabraham@suse.com>
+[tabraham@suse.com: handled backport. modified for context]
+---
+ block/blk-sysfs.c | 27 +++++++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/block/blk-sysfs.c b/block/blk-sysfs.c
+index 80eef48fddc8..9f0cb370b39b 100644
+--- a/block/blk-sysfs.c
++++ b/block/blk-sysfs.c
+@@ -417,6 +417,26 @@ static ssize_t queue_poll_store(struct request_queue *q, const char *page,
+ 	return ret;
+ }
+ 
++static ssize_t queue_io_timeout_show(struct request_queue *q, char *page)
++{
++	return sprintf(page, "%u\n", jiffies_to_msecs(q->rq_timeout));
++}
++
++static ssize_t queue_io_timeout_store(struct request_queue *q, const char *page,
++				  size_t count)
++{
++	unsigned int val;
++	int err;
++
++	err = kstrtou32(page, 10, &val);
++	if (err || val == 0)
++		return -EINVAL;
++
++	blk_queue_rq_timeout(q, msecs_to_jiffies(val));
++
++	return count;
++}
++
+ static ssize_t queue_wb_lat_show(struct request_queue *q, char *page)
+ {
+ 	if (!q->rq_wb)
+@@ -685,6 +705,12 @@ static struct queue_sysfs_entry queue_dax_entry = {
+ 	.show = queue_dax_show,
+ };
+ 
++static struct queue_sysfs_entry queue_io_timeout_entry = {
++	.attr = {.name = "io_timeout", .mode = 0644 },
++	.show = queue_io_timeout_show,
++	.store = queue_io_timeout_store,
++};
++
+ static struct queue_sysfs_entry queue_wb_lat_entry = {
+ 	.attr = {.name = "wbt_lat_usec", .mode = 0644 },
+ 	.show = queue_wb_lat_show,
+@@ -734,6 +760,7 @@ static struct attribute *default_attrs[] = {
+ 	&queue_dax_entry.attr,
+ 	&queue_wb_lat_entry.attr,
+ 	&queue_poll_delay_entry.attr,
++	&queue_io_timeout_entry.attr,
+ #ifdef CONFIG_BLK_DEV_THROTTLING_LOW
+ 	&throtl_sample_time_entry.attr,
+ #endif
+-- 
+2.16.4
+

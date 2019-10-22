@@ -1,0 +1,85 @@
+From 4d25339e32a1b6e1f490bb78b1e5b0fa9eb3e073 Mon Sep 17 00:00:00 2001
+From: Weiping Zhang <zhangweiping@didiglobal.com>
+Date: Tue, 2 Apr 2019 21:14:30 +0800
+Subject: [PATCH] block: don't show io_timeout if driver has no timeout handler
+References: bsc#1148410
+Git-commit: 4d25339e32a1b6e1f490bb78b1e5b0fa9eb3e073
+Patch-mainline: v5.2-rc1
+
+If the low level driver has no timeout handler, the
+/sys/block/<disk>/queue/io_timeout will not be displayed.
+
+Reviewed-by: Bart Van Assche <bvanassche@acm.org>
+Signed-off-by: Weiping Zhang <zhangweiping@didiglobal.com>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Signed-off-by: Thomas Abraham <tabraham@suse.com>
+[tabraham@suse.com: handled backport. modified for context]
+---
+ block/blk-sysfs.c | 30 ++++++++++++++++++++++++++++--
+ 1 file changed, 28 insertions(+), 2 deletions(-)
+
+diff --git a/block/blk-sysfs.c b/block/blk-sysfs.c
+index 422327089e0f..a16a02c52a85 100644
+--- a/block/blk-sysfs.c
++++ b/block/blk-sysfs.c
+@@ -728,7 +728,7 @@ static struct queue_sysfs_entry throtl_sample_time_entry = {
+ };
+ #endif
+ 
+-static struct attribute *default_attrs[] = {
++static struct attribute *queue_attrs[] = {
+ 	&queue_requests_entry.attr,
+ 	&queue_ra_entry.attr,
+ 	&queue_max_hw_sectors_entry.attr,
+@@ -770,6 +770,25 @@ static struct attribute *default_attrs[] = {
+ 	NULL,
+ };
+ 
++static umode_t queue_attr_visible(struct kobject *kobj, struct attribute *attr,
++				int n)
++{
++	struct request_queue *q =
++		container_of(kobj, struct request_queue, kobj);
++
++	if (attr == &queue_io_timeout_entry.attr &&
++		(!q->mq_ops || !q->mq_ops->timeout))
++			return 0;
++
++	return attr->mode;
++}
++
++static struct attribute_group queue_attr_group = {
++	.attrs = queue_attrs,
++	.is_visible = queue_attr_visible,
++};
++
++
+ #define to_queue(atr) container_of((atr), struct queue_sysfs_entry, attr)
+ 
+ static ssize_t
+@@ -890,7 +909,6 @@ static const struct sysfs_ops queue_sysfs_ops = {
+ 
+ struct kobj_type blk_queue_ktype = {
+ 	.sysfs_ops	= &queue_sysfs_ops,
+-	.default_attrs	= default_attrs,
+ 	.release	= blk_release_queue,
+ };
+ 
+@@ -939,6 +957,14 @@ int blk_register_queue(struct gendisk *disk)
+ 		goto unlock;
+ 	}
+ 
++	ret = sysfs_create_group(&q->kobj, &queue_attr_group);
++	if (ret) {
++		blk_trace_remove_sysfs(dev);
++		kobject_del(&q->kobj);
++		kobject_put(&dev->kobj);
++		goto unlock;
++	}
++
+ 	if (q->mq_ops) {
+ 		__blk_mq_register_dev(dev, q);
+ 		blk_mq_debugfs_register(q);
+-- 
+2.16.4
+
