@@ -1,0 +1,58 @@
+From: Joerg Roedel <jroedel@suse.de>
+Date: Wed, 16 Oct 2019 13:46:24 +0200
+Subject: [PATCH] Fix KVM kABI after x86 mmu backports
+References: bsc#1117665
+Patch-mainline: Never, kABI fix only
+
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+---
+ arch/x86/include/asm/kvm_host.h | 4 ++--
+ include/linux/kvm_host.h        | 6 +++++-
+ 2 files changed, 7 insertions(+), 3 deletions(-)
+
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -278,18 +278,17 @@ struct kvm_mmu_page {
+ 	struct hlist_node hash_link;
+ 	struct list_head lpage_disallowed_link;
+ 
+-	bool unsync;
+-
+ 	/*
+ 	 * The following two entries are used to key the shadow page in the
+ 	 * hash table.
+ 	 */
+-	union kvm_mmu_page_role role;
+ 	gfn_t gfn;
++	union kvm_mmu_page_role role;
+ 
+ 	u64 *spt;
+ 	/* hold the gfn of each spte inside spt */
+ 	gfn_t *gfns;
++	bool unsync;
+ 	int root_count;          /* Currently serving as active root */
+ 	unsigned int unsync_children;
+ 	struct kvm_rmap_head parent_ptes; /* rmap pointers to parent sptes */
+--- a/include/linux/kvm_host.h
++++ b/include/linux/kvm_host.h
+@@ -1016,15 +1016,19 @@ enum kvm_stat_kind {
+ 
+ struct kvm_stat_data {
+ 	int offset;
+-	int mode;
+ 	struct kvm *kvm;
++#ifndef __GENKSYMS__
++	int mode;
++#endif
+ };
+ 
+ struct kvm_stats_debugfs_item {
+ 	const char *name;
+ 	int offset;
+ 	enum kvm_stat_kind kind;
++#ifndef __GENKSYMS__
+ 	int mode;
++#endif
+ };
+ extern struct kvm_stats_debugfs_item debugfs_entries[];
+ extern struct dentry *kvm_debugfs_dir;
