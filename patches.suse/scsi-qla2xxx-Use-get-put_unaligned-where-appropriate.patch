@@ -3,7 +3,7 @@ Date: Thu, 4 Apr 2019 12:44:45 -0700
 Subject: scsi: qla2xxx: Use get/put_unaligned where appropriate
 Patch-mainline: v5.2-rc1
 Git-commit: 2c26348c4d090caeb308530ea893b37897e4a58d
-References: bsc#1082635 bsc#1141340 bsc#1143706
+References: bsc#1082635 bsc#1123034 bsc#1131304 bsc#1127988 bsc#1141340 bsc#1143706
 
 This patch makes the code easier to read but does not change any
 functionality.
@@ -28,8 +28,8 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
 -	fw_ver = le32_to_cpu(*((uint32_t *)((uint32_t *)fw_buf + 2)));
 +	fw_ver = get_unaligned_le32((uint32_t *)fw_buf + 2);
  
- 	memset(mn, 0, sizeof(struct access_chip_84xx));
  	mn->entry_type = VERIFY_CHIP_IOCB_TYPE;
+ 	mn->entry_count = 1;
 --- a/drivers/scsi/qla2xxx/qla_iocb.c
 +++ b/drivers/scsi/qla2xxx/qla_iocb.c
 @@ -107,7 +107,7 @@ qla2x00_prep_cont_type0_iocb(struct scsi
@@ -90,7 +90,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  
  	/* No data transfer */
  	if (!scsi_bufflen(cmd) || cmd->sc_data_direction == DMA_NONE) {
-@@ -1428,7 +1426,7 @@ qla24xx_build_scsi_crc_2_iocbs(srb_t *sp
+@@ -1427,7 +1425,7 @@ qla24xx_build_scsi_crc_2_iocbs(srb_t *sp
  	cmd = GET_CMD_SP(sp);
  
  	/* Update entry type to indicate Command Type CRC_2 IOCB */
@@ -99,7 +99,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  
  	vha = sp->vha;
  	ha = vha->hw;
-@@ -3755,8 +3753,7 @@ qla25xx_build_bidir_iocb(srb_t *sp, stru
+@@ -3747,8 +3745,7 @@ qla25xx_build_bidir_iocb(srb_t *sp, stru
  	struct bsg_job *bsg_job = sp->u.bsg_job;
  
  	/*Update entry type to indicate bidir command */

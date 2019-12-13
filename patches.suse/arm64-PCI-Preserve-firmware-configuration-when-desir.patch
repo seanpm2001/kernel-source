@@ -1,0 +1,111 @@
+From 798740ac41231cfd3a1f18952a6ec15c2cde0416 Mon Sep 17 00:00:00 2001
+From: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+Date: Sat, 15 Jun 2019 10:23:59 +1000
+Subject: [PATCH] arm64: PCI: Preserve firmware configuration when desired
+
+Git-commit: 85dc04136e86680378546afb808357a58c06061c (Partial, Amazon Specific)
+Patch-mainline: v5.3-rc1
+References: SLE-9332 
+
+If we must preserve the firmware resource assignments, claim the existing
+resources rather than reassigning everything.
+
+Link: https://lore.kernel.org/r/20190615002359.29577-4-benh@kernel.crashing.org
+Signed-off-by: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+[bhelgaas: commit log]
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Acked-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
+Acked-by: Ard Biesheuvel <ard.biesheuvel@linaro.org>
+
+[Yousaf]: Whole series is folded in here
+Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
+---
+ arch/arm64/kernel/pci.c  | 52 ++++++++++++++++++++++++++++++++++++++++++++++--
+ include/linux/pci-acpi.h |  1 +
+ 2 files changed, 51 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/kernel/pci.c b/arch/arm64/kernel/pci.c
+index e2b7e4f9cc31..ed5e5809bb43 100644
+--- a/arch/arm64/kernel/pci.c
++++ b/arch/arm64/kernel/pci.c
+@@ -179,6 +179,27 @@ static void pci_acpi_generic_release_info(struct acpi_pci_root_info *ci)
+ 	kfree(ri);
+ }
+ 
++static bool is_amazon_graviton(void)
++{
++	static struct acpi_table_madt *madt;
++	acpi_status status;
++	bool ret = false;
++
++	status = acpi_get_table(ACPI_SIG_MADT, 0,
++			(struct acpi_table_header **)&madt);
++
++	if (ACPI_FAILURE(status) || !madt)
++               return ret;
++
++	ret = (!memcmp(madt->header.oem_id, "AMAZON", ACPI_OEM_ID_SIZE) &&
++		!memcmp(madt->header.oem_table_id, "GRAVITON",
++						ACPI_OEM_TABLE_ID_SIZE));
++
++	acpi_put_table((struct acpi_table_header *)madt);
++
++	return ret;
++}
++
+ /* Interface called from ACPI code to setup PCI host controller */
+ struct pci_bus *pci_acpi_scan_root(struct acpi_pci_root *root)
+ {
+@@ -211,8 +232,35 @@ struct pci_bus *pci_acpi_scan_root(struct acpi_pci_root *root)
+ 	if (!bus)
+ 		return NULL;
+ 
+-	pci_bus_size_bridges(bus);
+-	pci_bus_assign_resources(bus);
++	/* Only Evaluate _DSM Function #5 (PCI Boot Configuration function) on
++	 * Amazon Graviton.
++	 */
++	if (is_amazon_graviton()) {
++		union acpi_object *obj;
++
++		/*
++		 * Evaluate the "PCI Boot Configuration" _DSM Function.  If it
++		 * exists and returns 0, we must preserve any PCI resource
++		 * assignments made by firmware for this host bridge.
++		 */
++		obj = acpi_evaluate_dsm(ACPI_HANDLE(bus->bridge),
++			&pci_acpi_dsm_guid, 1, IGNORE_PCI_BOOT_CONFIG_DSM, NULL);
++
++		if (obj && obj->type == ACPI_TYPE_INTEGER && obj->integer.value == 0)
++			/* We must preserve the resource configuration, claim now */
++			pci_bus_claim_resources(bus);
++
++		/*
++		 * Assign whatever was left unassigned. If we didn't claim above,
++		 * this will reassign everything.
++		 */
++		pci_assign_unassigned_root_bus_resources(bus);
++
++		ACPI_FREE(obj);
++	} else {
++		pci_bus_size_bridges(bus);
++		pci_bus_assign_resources(bus);
++	}
+ 
+ 	list_for_each_entry(child, &bus->children, node)
+ 		pcie_bus_configure_settings(child);
+diff --git a/include/linux/pci-acpi.h b/include/linux/pci-acpi.h
+index dd86c97f2454..dade015f8baf 100644
+--- a/include/linux/pci-acpi.h
++++ b/include/linux/pci-acpi.h
+@@ -106,6 +106,7 @@ static inline void acpiphp_check_host_bridge(struct acpi_device *adev) { }
+ #endif
+ 
+ extern const guid_t pci_acpi_dsm_guid;
++#define IGNORE_PCI_BOOT_CONFIG_DSM	0x05
+ #define DEVICE_LABEL_DSM	0x07
+ #define RESET_DELAY_DSM		0x08
+ #define FUNCTION_DELAY_DSM	0x09
+-- 
+2.11.0
+

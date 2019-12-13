@@ -1,0 +1,96 @@
+From: Marc Zyngier <marc.zyngier@arm.com>
+Date: Mon, 15 Apr 2019 13:03:51 +0100
+Subject: arm64: Restrict ARM64_ERRATUM_1188873 mitigation to AArch32
+
+Git-commit: 0f80cad3124f986d0e46c14d46b8da06d87a2bf4
+Patch-mainline: v5.2-rc1
+References: jsc#ECO-561
+
+We currently deal with ARM64_ERRATUM_1188873 by always trapping EL0
+accesses for both instruction sets. Although nothing wrong comes out
+of that, people trying to squeeze the last drop of performance from
+buggy HW find this over the top. Oh well.
+
+Let's change the mitigation by flipping the counter enable bit
+on return to userspace. Non-broken HW gets an extra branch on
+the fast path, which is hopefully not the end of the world.
+The arch timer workaround is also removed.
+
+Acked-by: Daniel Lezcano <daniel.lezcano@linaro.org>
+Signed-off-by: Marc Zyngier <marc.zyngier@arm.com>
+Signed-off-by: Will Deacon <will.deacon@arm.com>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ arch/arm64/kernel/entry.S            |   19 +++++++++++++++++--
+ drivers/clocksource/arm_arch_timer.c |   15 ---------------
+ 2 files changed, 17 insertions(+), 17 deletions(-)
+
+--- a/arch/arm64/kernel/entry.S
++++ b/arch/arm64/kernel/entry.S
+@@ -330,6 +330,21 @@ alternative_if ARM64_WORKAROUND_845719
+ alternative_else_nop_endif
+ #endif
+ 3:
++#ifdef CONFIG_ARM64_ERRATUM_1188873
++alternative_if_not ARM64_WORKAROUND_1188873
++	b	4f
++alternative_else_nop_endif
++	/*
++	 * if (x22.mode32 == cntkctl_el1.el0vcten)
++	 *     cntkctl_el1.el0vcten = ~cntkctl_el1.el0vcten
++	 */
++	mrs	x1, cntkctl_el1
++	eon	x0, x1, x22, lsr #3
++	tbz	x0, #1, 4f
++	eor	x1, x1, #2	// ARCH_TIMER_USR_VCT_ACCESS_EN
++	msr	cntkctl_el1, x1
++4:
++#endif
+ 	apply_ssbd 0, 5f, x0, x1
+ 5:
+ 	.endif
+@@ -357,11 +372,11 @@ alternative_else_nop_endif
+ 	.if	\el == 0
+ alternative_insn eret, nop, ARM64_UNMAP_KERNEL_AT_EL0
+ #ifdef CONFIG_UNMAP_KERNEL_AT_EL0
+-	bne	4f
++	bne	5f
+ 	msr	far_el1, x30
+ 	tramp_alias	x30, tramp_exit_native
+ 	br	x30
+-4:
++5:
+ 	tramp_alias	x30, tramp_exit_compat
+ 	br	x30
+ #endif
+--- a/drivers/clocksource/arm_arch_timer.c
++++ b/drivers/clocksource/arm_arch_timer.c
+@@ -318,13 +318,6 @@ static u64 notrace arm64_858921_read_cnt
+ }
+ #endif
+ 
+-#ifdef CONFIG_ARM64_ERRATUM_1188873
+-static u64 notrace arm64_1188873_read_cntvct_el0(void)
+-{
+-	return read_sysreg(cntvct_el0);
+-}
+-#endif
+-
+ #ifdef CONFIG_ARM_ARCH_TIMER_OOL_WORKAROUND
+ DEFINE_PER_CPU(const struct arch_timer_erratum_workaround *,
+ 	       timer_unstable_counter_workaround);
+@@ -415,14 +408,6 @@ static const struct arch_timer_erratum_w
+ 		.read_cntvct_el0 = arm64_858921_read_cntvct_el0,
+ 	},
+ #endif
+-#ifdef CONFIG_ARM64_ERRATUM_1188873
+-	{
+-		.match_type = ate_match_local_cap_id,
+-		.id = (void *)ARM64_WORKAROUND_1188873,
+-		.desc = "ARM erratum 1188873",
+-		.read_cntvct_el0 = arm64_1188873_read_cntvct_el0,
+-	},
+-#endif
+ };
+ 
+ typedef bool (*ate_match_fn_t)(const struct arch_timer_erratum_workaround *,

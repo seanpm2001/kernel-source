@@ -1,0 +1,62 @@
+From 7e316572c9c547d5c8b9d86abb37576e2e5a470c Mon Sep 17 00:00:00 2001
+From: Shahar S Matityahu <shahar.s.matityahu@intel.com>
+Date: Tue, 20 Nov 2018 09:46:33 +0200
+Subject: [PATCH] iwlwifi: fix bad dma handling in page_mem dumping flow
+Git-commit: 7e316572c9c547d5c8b9d86abb37576e2e5a470c
+Patch-mainline: v5.1
+References: bsc#1120902
+
+Prior to gen2 we allocate the paging memory via alloc_pages
+which requires passing ownership on the memory between the
+cpu and the device using dma_sync_single_for_cpu and
+dma_sync_single_for_device.
+
+Add missing dma_sync_single_for_device in iwl_dump_paging
+after copying the memory.
+
+since gen2, we allocate the paging memory using dma_alloc_coherent
+which does not need passing ownership between the cpu and device.
+
+Remove unneeded call to dma_sync_single_for_cpu in
+iwl_trans_pcie_dump_data prior to copying the memory.
+
+Signed-off-by: Shahar S Matityahu <shahar.s.matityahu@intel.com>
+Fixes: 5538409ba393 ("iwlwifi: pcie: support page dumping in wrt in gen2")
+Signed-off-by: Luca Coelho <luciano.coelho@intel.com>
+Acked-by: Simon Schricker <sschricker@suse.de>
+---
+ drivers/net/wireless/intel/iwlwifi/fw/dbg.c     |    3 +++
+ drivers/net/wireless/intel/iwlwifi/pcie/trans.c |    4 ----
+ 2 files changed, 3 insertions(+), 4 deletions(-)
+
+--- a/drivers/net/wireless/intel/iwlwifi/fw/dbg.c
++++ b/drivers/net/wireless/intel/iwlwifi/fw/dbg.c
+@@ -563,6 +563,9 @@ static void iwl_dump_paging(struct iwl_f
+ 				DMA_BIDIRECTIONAL);
+ 		memcpy(paging->data, page_address(pages),
+ 				PAGING_BLOCK_SIZE);
++		dma_sync_single_for_device(fwrt->trans->dev, addr,
++					   PAGING_BLOCK_SIZE,
++					   DMA_BIDIRECTIONAL);
+ 		(*data) = iwl_fw_error_next_data(*data);
+ 	}
+ }
+--- a/drivers/net/wireless/intel/iwlwifi/pcie/trans.c
++++ b/drivers/net/wireless/intel/iwlwifi/pcie/trans.c
+@@ -2872,16 +2872,12 @@ static struct iwl_trans_dump_data
+ 	    trans->dbg_dump_mask & BIT(IWL_FW_ERROR_DUMP_PAGING)) {
+ 		for (i = 0; i < trans_pcie->init_dram.paging_cnt; i++) {
+ 			struct iwl_fw_error_dump_paging *paging;
+-			dma_addr_t addr =
+-				trans_pcie->init_dram.paging[i].physical;
+ 			u32 page_len = trans_pcie->init_dram.paging[i].size;
+ 
+ 			data->type = cpu_to_le32(IWL_FW_ERROR_DUMP_PAGING);
+ 			data->len = cpu_to_le32(sizeof(*paging) + page_len);
+ 			paging = (void *)data->data;
+ 			paging->index = cpu_to_le32(i);
+-			dma_sync_single_for_cpu(trans->dev, addr, page_len,
+-						DMA_BIDIRECTIONAL);
+ 			memcpy(paging->data,
+ 			       trans_pcie->init_dram.paging[i].block, page_len);
+ 			data = iwl_fw_error_next_data(data);

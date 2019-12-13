@@ -1,0 +1,42 @@
+From f65e67c7e3308c0af08080782d79a8cb95c44929 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonathan=20Neusch=C3=A4fer?= <j.neuschaefer@gmx.net>
+Date: Wed, 28 Mar 2018 02:25:41 +0200
+Subject: [PATCH] powerpc/mm: Use memblock API for PPC32 page_is_ram
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+References: bsc#1065729
+Patch-mainline: v4.17-rc1
+Git-commit: f65e67c7e3308c0af08080782d79a8cb95c44929
+
+To support accurate checking for different blocks of memory on PPC32,
+use the same memblock-based approach that's already used on PPC64 also
+on PPC32.
+
+Signed-off-by: Jonathan Neuschäfer <j.neuschaefer@gmx.net>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/mm/mem.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/arch/powerpc/mm/mem.c b/arch/powerpc/mm/mem.c
+index 8f335cf052f8..737f8a4632cc 100644
+--- a/arch/powerpc/mm/mem.c
++++ b/arch/powerpc/mm/mem.c
+@@ -82,11 +82,7 @@ static inline pte_t *virt_to_kpte(unsigned long vaddr)
+ 
+ int page_is_ram(unsigned long pfn)
+ {
+-#ifndef CONFIG_PPC64	/* XXX for now */
+-	return pfn < max_pfn;
+-#else
+ 	return memblock_is_memory(__pfn_to_phys(pfn));
+-#endif
+ }
+ 
+ pgprot_t phys_mem_access_prot(struct file *file, unsigned long pfn,
+-- 
+2.23.0
+

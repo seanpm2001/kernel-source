@@ -4,7 +4,7 @@ Subject: scsi: qedf: Check both the FCF and fabric ID before servicing clear
  virtual link
 Git-commit: fc37ddce937bb245cc3490fbaa98e64f31bb6751
 Patch-mainline: v5.2-rc1
-References: bsc#1136467 jsc#SLE-4694
+References: bsc#1136467 bsc#1149976 jsc#SLE-4694
 
  - Check proper values before servicing CVL.
 
@@ -16,11 +16,9 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  drivers/scsi/qedf/qedf_fip.c | 66 ++++++++++++++++++++++++++++++++------------
  1 file changed, 48 insertions(+), 18 deletions(-)
 
-diff --git a/drivers/scsi/qedf/qedf_fip.c b/drivers/scsi/qedf/qedf_fip.c
-index 53c5eca55061..766da74fa546 100644
 --- a/drivers/scsi/qedf/qedf_fip.c
 +++ b/drivers/scsi/qedf/qedf_fip.c
-@@ -151,6 +151,8 @@ void qedf_fip_send(struct fcoe_ctlr *fip, struct sk_buff *skb)
+@@ -151,6 +151,8 @@ void qedf_fip_send(struct fcoe_ctlr *fip
  	qed_ops->ll2->start_xmit(qedf->cdev, skb, 0);
  }
  
@@ -29,7 +27,7 @@ index 53c5eca55061..766da74fa546 100644
  /* Process incoming FIP frames. */
  void qedf_fip_recv(struct qedf_ctx *qedf, struct sk_buff *skb)
  {
-@@ -163,20 +165,37 @@ void qedf_fip_recv(struct qedf_ctx *qedf, struct sk_buff *skb)
+@@ -163,20 +165,37 @@ void qedf_fip_recv(struct qedf_ctx *qedf
  	size_t rlen, dlen;
  	u16 op;
  	u8 sub;
@@ -71,7 +69,7 @@ index 53c5eca55061..766da74fa546 100644
  	/* Handle FIP VLAN resp in the driver */
  	if (op == FIP_OP_VLAN && sub == FIP_SC_VL_NOTE) {
  		qedf_fcoe_process_vlan_resp(qedf, skb);
-@@ -205,25 +224,36 @@ void qedf_fip_recv(struct qedf_ctx *qedf, struct sk_buff *skb)
+@@ -205,25 +224,36 @@ void qedf_fip_recv(struct qedf_ctx *qedf
  			switch (desc->fip_dtype) {
  			case FIP_DT_MAC:
  				mp = (struct fip_mac_desc *)desc;
@@ -118,7 +116,7 @@ index 53c5eca55061..766da74fa546 100644
  				break;
  			default:
  				/* Ignore anything else */
-@@ -233,11 +263,11 @@ void qedf_fip_recv(struct qedf_ctx *qedf, struct sk_buff *skb)
+@@ -233,11 +263,11 @@ void qedf_fip_recv(struct qedf_ctx *qedf
  			rlen -= dlen;
  		}
  

@@ -1,0 +1,71 @@
+From f18ddc13af981ce3c7b7f26925f099e7c6929aba Mon Sep 17 00:00:00 2001
+From: Thadeu Lima de Souza Cascardo <cascardo@canonical.com>
+Date: Tue, 3 Sep 2019 14:18:02 -0300
+Patch-mainline: v5.4-rc1
+Git-commit: f18ddc13af981ce3c7b7f26925f099e7c6929aba
+References: bsc#1151680
+Subject: [PATCH] alarmtimer: Use EOPNOTSUPP instead of ENOTSUPP
+
+ENOTSUPP is not supposed to be returned to userspace. This was found on an
+OpenPower machine, where the RTC does not support set_alarm.
+
+On that system, a clock_nanosleep(CLOCK_REALTIME_ALARM, ...) results in
+"524 Unknown error 524"
+
+Replace it with EOPNOTSUPP which results in the expected "95 Operation not
+supported" error.
+
+Fixes: 1c6b39ad3f01 (alarmtimers: Return -ENOTSUPP if no RTC device is present)
+Signed-off-by: Thadeu Lima de Souza Cascardo <cascardo@canonical.com>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+[ pvorel: Add also changes from 07abe8c6ecd718d383bc9e405b15a76640516164
+from v4.9.y stable tree (released in v4.9.200): Update backport to
+change ENOTSUPP to EOPNOTSUPP in alarm_timer_{del,set}(), which were
+removed in f2c45807d3992fe0f173f34af9c347d907c31686 in v4.13-rc1. ]
+Signed-off-by: Petr Vorel <pvorel@suse.cz>
+Cc: stable@vger.kernel.org
+Link: https://lkml.kernel.org/r/20190903171802.28314-1-cascardo@canonical.com
+---
+ kernel/time/alarmtimer.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/kernel/time/alarmtimer.c b/kernel/time/alarmtimer.c
+index ae9e7338dc13..ea3f8c52d11a 100644
+--- a/kernel/time/alarmtimer.c
++++ b/kernel/time/alarmtimer.c
+@@ -581,7 +581,7 @@ static int alarm_timer_create(struct k_itimer *new_timer)
+ 	enum  alarmtimer_type type;
+ 
+ 	if (!alarmtimer_get_rtcdev())
+-		return -ENOTSUPP;
++		return -EOPNOTSUPP;
+ 
+ 	if (!capable(CAP_WAKE_ALARM))
+ 		return -EPERM;
+@@ -623,7 +623,7 @@ static void alarm_timer_get(struct k_itimer *timr,
+ static int alarm_timer_del(struct k_itimer *timr)
+ {
+ 	if (!rtcdev)
+-		return -ENOTSUPP;
++		return -EOPNOTSUPP;
+ 
+ 	if (alarm_try_to_cancel(&timr->it.alarm.alarmtimer) < 0)
+ 		return TIMER_RETRY;
+@@ -647,7 +647,7 @@ static int alarm_timer_set(struct k_itimer *timr, int flags,
+ 	ktime_t exp;
+ 
+ 	if (!rtcdev)
+-		return -ENOTSUPP;
++		return -EOPNOTSUPP;
+ 
+ 	if (flags & ~TIMER_ABSTIME)
+ 		return -EINVAL;
+@@ -809,7 +809,7 @@ static int alarm_timer_nsleep(const clockid_t which_clock, int flags,
+ 	int ret = 0;
+ 
+ 	if (!alarmtimer_get_rtcdev())
+-		return -ENOTSUPP;
++		return -EOPNOTSUPP;
+ 
+ 	if (flags & ~TIMER_ABSTIME)
+ 		return -EINVAL;

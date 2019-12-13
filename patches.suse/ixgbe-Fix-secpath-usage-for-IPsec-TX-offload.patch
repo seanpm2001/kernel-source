@@ -1,0 +1,43 @@
+From: Steffen Klassert <steffen.klassert@secunet.com>
+Date: Thu, 12 Sep 2019 13:01:44 +0200
+Subject: ixgbe: Fix secpath usage for IPsec TX offload.
+Patch-mainline: v5.3
+Git-commit: f39b683d35dfa93a58f1b400a8ec0ff81296b37c
+References: bsc#1113994 FATE#326315 FATE#326317 bsc#1151807
+
+The ixgbe driver currently does IPsec TX offloading
+based on an existing secpath. However, the secpath
+can also come from the RX side, in this case it is
+misinterpreted for TX offload and the packets are
+dropped with a "bad sa_idx" error. Fix this by using
+the xfrm_offload() function to test for TX offload.
+
+Fixes: 592594704761 ("ixgbe: process the Tx ipsec offload")
+Reported-by: Michael Marley <michael@michaelmarley.com>
+Signed-off-by: Steffen Klassert <steffen.klassert@secunet.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/intel/ixgbe/ixgbe_main.c |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/ethernet/intel/ixgbe/ixgbe_main.c
++++ b/drivers/net/ethernet/intel/ixgbe/ixgbe_main.c
+@@ -61,6 +61,7 @@
+ #include <net/vxlan.h>
+ #include <net/mpls.h>
+ #include <net/xdp_sock.h>
++#include <net/xfrm.h>
+ 
+ #include "ixgbe.h"
+ #include "ixgbe_common.h"
+@@ -8721,7 +8722,8 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct
+ #endif /* IXGBE_FCOE */
+ 
+ #ifdef CONFIG_IXGBE_IPSEC
+-	if (skb->sp && !ixgbe_ipsec_tx(tx_ring, first, &ipsec_tx))
++	if (xfrm_offload(skb) &&
++	    !ixgbe_ipsec_tx(tx_ring, first, &ipsec_tx))
+ 		goto out_drop;
+ #endif
+ 	tso = ixgbe_tso(tx_ring, first, &hdr_len, &ipsec_tx);

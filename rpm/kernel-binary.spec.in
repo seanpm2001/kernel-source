@@ -21,6 +21,8 @@
 %define patchversion @PATCHVERSION@
 %define variant @VARIANT@%{nil}
 %define vanilla_only @VANILLA_ONLY@
+%define compress_modules @COMPRESS_MODULES@
+%define livepatch @LIVEPATCH@%{nil}
 
 %include %_sourcedir/kernel-spec-macros
 
@@ -329,12 +331,16 @@ if [ -f %_sourcedir/localversion ] ; then
     cat %_sourcedir/localversion > localversion
 fi
 
-vanilla_base="default"
+config_base="default"
 %ifarch %ix86
-vanilla_base="pae"
+config_base="pae"
 %endif
+if ! [ -f %my_builddir/config/%cpu_arch/$config_base ] ; then
+    config_base=%variant
+    config_base=${config_base#-}
+fi
 if ! grep -q CONFIG_MMU= "%my_builddir/config/%cpu_arch_flavor"; then
-cp "%my_builddir/config/%cpu_arch/$vanilla_base" .config
+cp "%my_builddir/config/%cpu_arch/$config_base" .config
 ../scripts/kconfig/merge_config.sh -m .config \
                                    %my_builddir/config/%cpu_arch_flavor
 else
@@ -378,6 +384,9 @@ case %cpu_arch in
         ;;
     armv*)
         MAKE_ARGS="$MAKE_ARGS ARCH=arm"
+        ;;
+    riscv*)
+        MAKE_ARGS="$MAKE_ARGS ARCH=riscv"
         ;;
     *)
         MAKE_ARGS="$MAKE_ARGS ARCH=%cpu_arch"
@@ -531,7 +540,11 @@ add_vmlinux()
 %endif
 %ifarch s390 s390x
     add_vmlinux --compressed
-    cp -p arch/s390/boot/image %buildroot/boot/image-%kernelrelease-%build_flavor
+    image=image
+    if test ! -f arch/s390/boot/$image; then
+        image=bzImage
+    fi
+    cp -p arch/s390/boot/$image %buildroot/boot/image-%kernelrelease-%build_flavor
     image=image
     if test -e arch/s390/boot/kerntypes.o; then
         cp -p arch/s390/boot/kerntypes.o %buildroot/boot/Kerntypes-%kernelrelease-%build_flavor
@@ -553,6 +566,11 @@ add_vmlinux()
     image=Image
     cp -p arch/arm64/boot/$image %buildroot/boot/$image-%kernelrelease-%build_flavor
 %endif
+%ifarch riscv64
+    add_vmlinux --compressed
+    image=Image
+    cp -p arch/riscv/boot/$image %buildroot/boot/$image-%kernelrelease-%build_flavor
+%endif
 
 # sign the modules, firmware and possibly the kernel in the buildservice
 BRP_PESIGN_FILES=""
@@ -568,6 +586,9 @@ BRP_PESIGN_FILES="$BRP_PESIGN_FILES *.ko"
 BRP_PESIGN_FILES=""
 %endif
 export BRP_PESIGN_FILES
+%if %{compress_modules} != "none"
+export BRP_PESIGN_COMPRESS_MODULE=%{compress_modules}
+%endif
 
 if test -x /usr/lib/rpm/pesign/gen-hmac; then
 	$_ -r %buildroot /boot/$image-%kernelrelease-%build_flavor
@@ -803,6 +824,10 @@ if [ %CONFIG_MODULES = y ]; then
 fi
 
 rm -rf %{buildroot}/lib/firmware
+if [ %CONFIG_MODULES = y ]; then
+	# file contains number of CPUs, making builds hard to reproduce
+	find %{buildroot}/usr/src/linux-*-obj/ -name .kernel-binary.spec.buildenv -delete
+fi
 
 add_dirs_to_filelist() {
     sed -rn '
@@ -861,7 +886,8 @@ done | add_dirs_to_filelist >%my_builddir/kernel-devel.files
 	find lib/modules/%kernelrelease-%build_flavor \
 	    -type d -o \
 	    \( -path '*/modules.*' ! -path '*/modules.order' \
-	     ! -path '*/modules.builtin' \) -printf '%%%%ghost /%%p\n' \
+	     ! -path '*/modules.builtin' \
+	     ! -path '*/modules.builtin.modinfo' \) -printf '%%%%ghost /%%p\n' \
 	       -o -name '*.ko' -prune -o -type f -printf '/%%p\n'
 	cat %my_builddir/base-modules
     fi
@@ -1053,38 +1079,48 @@ kernel module packages) against the %build_flavor flavor of the kernel.
 /usr/src/linux-obj/%kmp_target_cpu
 %endif
 
-%if %CONFIG_SUSE_KERNEL_SUPPORTED == "y" && "%variant" == ""
-%package kgraft
-Summary:        Metapackage to pull in matching kgraft-patch package
+%if "%livepatch" != "" && %CONFIG_SUSE_KERNEL_SUPPORTED == "y" && "%variant" == ""
+%if %livepatch == kgraft
+%define patch_package %{livepatch}-patch
+%else
+%define patch_package kernel-%{livepatch}
+%endif
+%package %{livepatch}
+Summary:        Metapackage to pull in matching %patch_package package
 Group:          System/Kernel
-Requires:       kgraft-patch-%(echo %version-%source_rel | sed 'y/\./_/')-%build_flavor
+Requires:       %{patch_package}-%(echo %{version}-%{source_rel} | sed 'y/\./_/')-%{build_flavor}
+Provides:	kernel-default-kgraft = %version
+Provides:	kernel-xen-kgraft = %version
 Provides:       multiversion(kernel)
+%if "%livepatch" != "kgraft"
+Obsoletes:	kernel-default-kgraft < %version
+Obsoletes:	kernel-xen-kgraft < %version
+%endif
 
-%description kgraft
-This is a metapackage that pulls in the matching kgraft-patch package for a
+%description %{livepatch}
+This is a metapackage that pulls in the matching %patch_package package for a
 given kernel version. The advantage of the metapackage is that its name is
-static, unlike the kgraft-patch-<kernel-version>-flavor package names.
+static, unlike the %{patch_package}-<kernel-version>-flavor package names.
 
-%files kgraft
+%files %{livepatch}
 # rpmlint complains about empty packages, so lets own something
 %defattr(-, root, root)
 %dir /lib/modules/%kernelrelease-%build_flavor
 %endif
 
-%if 0%{?klp_symbols}
-
-%package kgraft-devel
+%if 0%{?klp_symbols} && "%livepatch" != ""
+%package %{livepatch}-devel
 Summary:	Kernel symbols file used during kGraft patch development
 Group:		System/Kernel
 Provides:	klp-symbols = %version
 
-%description kgraft-devel
+%description %{livepatch}-devel
 This package brings a file named Symbols.list, which contains a list of all
 kernel symbols and its respective kernel object . This list is to be used by
-the klp-convert tool, which helps kGraft patch developers by enabling automatic
+the klp-convert tool, which helps livepatch developers by enabling automatic
 symbol resolution.
 
-%files kgraft-devel
+%files %{livepatch}-devel
 %defattr(-, root, root)
 %dir %obj_install_dir
 %dir %obj_install_dir/%cpu_arch

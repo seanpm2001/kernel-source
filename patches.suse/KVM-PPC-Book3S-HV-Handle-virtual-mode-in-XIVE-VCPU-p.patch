@@ -1,0 +1,99 @@
+From 7ae9bda7edf3dac56c9abaeec264ac08d399a1ff Mon Sep 17 00:00:00 2001
+From: Suraj Jitindar Singh <sjitindarsingh@gmail.com>
+Date: Mon, 29 Apr 2019 18:57:45 +1000
+Subject: [PATCH] KVM: PPC: Book3S HV: Handle virtual mode in XIVE VCPU push
+ code
+
+References: bsc#1061840
+Patch-mainline: v5.2-rc1
+Git-commit: 7ae9bda7edf3dac56c9abaeec264ac08d399a1ff
+
+The code in book3s_hv_rmhandlers.S that pushes the XIVE virtual CPU
+context to the hardware currently assumes it is being called in real
+mode, which is usually true.  There is however a path by which it can
+be executed in virtual mode, in the case where indep_threads_mode = N.
+A virtual CPU executing on an offline secondary thread can take a
+hypervisor interrupt in virtual mode and return from the
+kvmppc_hv_entry() call after the kvm_secondary_got_guest label.
+It is possible for it to be given another vcpu to execute before it
+gets to execute the stop instruction.  In that case it will call
+kvmppc_hv_entry() for the second VCPU in virtual mode, and the XIVE
+vCPU push code will be executed in virtual mode.  The result in that
+case will be a host crash due to an unexpected data storage interrupt
+caused by executing the stdcix instruction in virtual mode.
+
+This fixes it by adding a code path for virtual mode, which uses the
+virtual TIMA pointer and normal load/store instructions.
+
+[paulus@ozlabs.org - wrote patch description]
+
+Signed-off-by: Suraj Jitindar Singh <sjitindarsingh@gmail.com>
+Signed-off-by: Paul Mackerras <paulus@ozlabs.org>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kvm/book3s_hv_rmhandlers.S | 36 +++++++++++++++++--------
+ 1 file changed, 25 insertions(+), 11 deletions(-)
+
+diff --git a/arch/powerpc/kvm/book3s_hv_rmhandlers.S b/arch/powerpc/kvm/book3s_hv_rmhandlers.S
+index 4e8be4d9e114..31f914742fdd 100644
+--- a/arch/powerpc/kvm/book3s_hv_rmhandlers.S
++++ b/arch/powerpc/kvm/book3s_hv_rmhandlers.S
+@@ -969,17 +969,27 @@ ALT_FTR_SECTION_END_IFCLR(CPU_FTR_ARCH_300)
+ 
+ #ifdef CONFIG_KVM_XICS
+ 	/* We are entering the guest on that thread, push VCPU to XIVE */
+-	ld	r10, HSTATE_XIVE_TIMA_PHYS(r13)
+-	cmpldi	cr0, r10, 0
+-	beq	no_xive
+ 	ld	r11, VCPU_XIVE_SAVED_STATE(r4)
+ 	li	r9, TM_QW1_OS
++	lwz	r8, VCPU_XIVE_CAM_WORD(r4)
++	li	r7, TM_QW1_OS + TM_WORD2
++	mfmsr	r0
++	andi.	r0, r0, MSR_DR		/* in real mode? */
++	beq	2f
++	ld	r10, HSTATE_XIVE_TIMA_VIRT(r13)
++	cmpldi	cr1, r10, 0
++	beq     cr1, no_xive
++	eieio
++	stdx	r11,r9,r10
++	stwx	r8,r7,r10
++	b	3f
++2:	ld	r10, HSTATE_XIVE_TIMA_PHYS(r13)
++	cmpldi	cr1, r10, 0
++	beq	cr1, no_xive
+ 	eieio
+ 	stdcix	r11,r9,r10
+-	lwz	r11, VCPU_XIVE_CAM_WORD(r4)
+-	li	r9, TM_QW1_OS + TM_WORD2
+-	stwcix	r11,r9,r10
+-	li	r9, 1
++	stwcix	r8,r7,r10
++3:	li	r9, 1
+ 	stb	r9, VCPU_XIVE_PUSHED(r4)
+ 	eieio
+ 
+@@ -998,12 +1008,16 @@ ALT_FTR_SECTION_END_IFCLR(CPU_FTR_ARCH_300)
+ 	 * on, we mask it.
+ 	 */
+ 	lbz	r0, VCPU_XIVE_ESC_ON(r4)
+-	cmpwi	r0,0
+-	beq	1f
+-	ld	r10, VCPU_XIVE_ESC_RADDR(r4)
++	cmpwi	cr1, r0,0
++	beq	cr1, 1f
+ 	li	r9, XIVE_ESB_SET_PQ_01
++	beq	4f			/* in real mode? */
++	ld	r10, VCPU_XIVE_ESC_VADDR(r4)
++	ldx	r0, r10, r9
++	b	5f
++4:	ld	r10, VCPU_XIVE_ESC_RADDR(r4)
+ 	ldcix	r0, r10, r9
+-	sync
++5:	sync
+ 
+ 	/* We have a possible subtle race here: The escalation interrupt might
+ 	 * have fired and be on its way to the host queue while we mask it,
+-- 
+2.23.0
+

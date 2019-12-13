@@ -1,9 +1,9 @@
 From: Quinn Tran <qtran@marvell.com>
 Date: Fri, 15 Feb 2019 14:37:18 -0800
-Subject: [PATCH] scsi: qla2xxx: Prevent SysFS access when chip is down
-References: bsc#1136215
-Git-commit: b726d99d72fd4b36ae82efb35d0073b0c9441205
+Subject: scsi: qla2xxx: Prevent SysFS access when chip is down
 Patch-mainline: v5.1-rc1
+Git-commit: b726d99d72fd4b36ae82efb35d0073b0c9441205
+References: bsc#1123034 bsc#1131304 bsc#1127988 bsc#1136215
 
 Prevent user from sending commands through sysfs while FW is not running or
 reset is in progress.
@@ -11,16 +11,14 @@ reset is in progress.
 Signed-off-by: Quinn Tran <qtran@marvell.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Signed-off-by: Hannes Reinecke <hare@suse.de>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_attr.c | 3 +++
+ drivers/scsi/qla2xxx/qla_attr.c |    3 +++
  1 file changed, 3 insertions(+)
 
-diff --git a/drivers/scsi/qla2xxx/qla_attr.c b/drivers/scsi/qla2xxx/qla_attr.c
-index ae47337c4b35..79ce21b11565 100644
 --- a/drivers/scsi/qla2xxx/qla_attr.c
 +++ b/drivers/scsi/qla2xxx/qla_attr.c
-@@ -543,6 +543,9 @@ qla2x00_sysfs_write_vpd(struct file *filp, struct kobject *kobj,
+@@ -543,6 +543,9 @@ qla2x00_sysfs_write_vpd(struct file *fil
  	if (unlikely(pci_channel_offline(ha->pdev)))
  		return 0;
  
@@ -30,6 +28,3 @@ index ae47337c4b35..79ce21b11565 100644
  	if (!capable(CAP_SYS_ADMIN) || off != 0 || count != ha->vpd_size ||
  	    !ha->isp_ops->write_nvram)
  		return 0;
--- 
-2.16.4
-

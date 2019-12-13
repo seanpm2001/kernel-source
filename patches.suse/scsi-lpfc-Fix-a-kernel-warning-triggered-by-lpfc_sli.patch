@@ -1,0 +1,46 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Wed, 6 Nov 2019 21:21:56 -0800
+Subject: scsi: lpfc: Fix a kernel warning triggered by lpfc_sli4_enable_intr()
+Patch-mainline: Queued in subsystem maintainer repository
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/jejb/scsi.git
+Git-commit: eea2d396aa57acb3607f79ef04c08c2c5166f3fa
+References: bsc#1154601
+
+Fix the following lockdep warning:
+
+============================================
+WARNING: possible recursive locking detected
+5.4.0-rc6-dbg+ #2 Not tainted
+--------------------------------------------
+systemd-udevd/130 is trying to acquire lock:
+ffffffff826b05d0 (cpu_hotplug_lock.rw_sem){++++}, at: irq_calc_affinity_vectors+0x63/0x90
+
+but task is already holding lock:
+
+ffffffff826b05d0 (cpu_hotplug_lock.rw_sem){++++}, at: lpfc_sli4_enable_intr+0x422/0xd50 [lpfc]
+
+other info that might help us debug this:
+
+ Possible unsafe locking scenario:
+       CPU0
+       ----
+  lock(cpu_hotplug_lock.rw_sem);
+  lock(cpu_hotplug_lock.rw_sem);
+
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/lpfc/lpfc_init.c |    2 --
+ 1 file changed, 2 deletions(-)
+
+--- a/drivers/scsi/lpfc/lpfc_init.c
++++ b/drivers/scsi/lpfc/lpfc_init.c
+@@ -11578,9 +11578,7 @@ lpfc_sli4_enable_intr(struct lpfc_hba *p
+ 		retval = 0;
+ 		if (!retval) {
+ 			/* Now, try to enable MSI-X interrupt mode */
+-			get_online_cpus();
+ 			retval = lpfc_sli4_enable_msix(phba);
+-			put_online_cpus();
+ 			if (!retval) {
+ 				/* Indicate initialization to MSI-X mode */
+ 				phba->intr_type = MSIX;

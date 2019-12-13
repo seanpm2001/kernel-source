@@ -1,0 +1,28 @@
+From: Sebastian Ott <sebott@linux.ibm.com>
+Date: Thu, 27 Jun 2019 15:47:13 +0200
+Subject: s390/pci: correctly handle MIO opt-out
+Git-commit: 6ae3483d411638e471ca0498629b17939f1c20f4
+Patch-mainline: v5.3-rc1
+References: bsc#1152665 LTC#181729
+
+Do not issue CLP_SET_ENABLE_MIO after opting out of MIO instruction
+usage. This should not fix a bug but reduce overhead within firmware.
+
+Signed-off-by: Sebastian Ott <sebott@linux.ibm.com>
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Acked-by: Petr Tesarik <ptesarik@suse.com>
+---
+ arch/s390/pci/pci_clp.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/arch/s390/pci/pci_clp.c
++++ b/arch/s390/pci/pci_clp.c
+@@ -283,7 +283,7 @@ int clp_enable_fh(struct zpci_dev *zdev,
+ 		goto out;
+ 
+ 	zdev->fh = fh;
+-	if (zdev->mio_capable) {
++	if (zpci_use_mio(zdev)) {
+ 		rc = clp_set_pci_fn(&fh, nr_dma_as, CLP_SET_ENABLE_MIO);
+ 		zpci_dbg(3, "ena mio fid:%x, fh:%x, rc:%d\n", zdev->fid, fh, rc);
+ 		if (rc)

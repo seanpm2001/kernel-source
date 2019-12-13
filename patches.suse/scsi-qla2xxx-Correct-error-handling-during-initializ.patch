@@ -3,7 +3,7 @@ Date: Fri, 26 Jul 2019 09:07:35 -0700
 Subject: scsi: qla2xxx: Correct error handling during initialization failures
 Patch-mainline: v5.4-rc1
 Git-commit: 26a77799195f4ff105f877042012c7fb355b3da1
-References: bsc#1082635 bsc#1141340 bsc#1143706
+References: bsc#1082635 bsc#1123034 bsc#1131304 bsc#1127988 bsc#1141340 bsc#1143706
 
 Current code misses or fails to account for proper recovery during early
 initialization failures:
@@ -41,7 +41,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  	if (rval == QLA_SUCCESS && IS_QLA84XX(ha)) {
 --- a/drivers/scsi/qla2xxx/qla_os.c
 +++ b/drivers/scsi/qla2xxx/qla_os.c
-@@ -1811,8 +1811,13 @@ qla2x00_abort_all_cmds(scsi_qla_host_t *
+@@ -1814,8 +1814,13 @@ qla2x00_abort_all_cmds(scsi_qla_host_t *
  	int que;
  	struct qla_hw_data *ha = vha->hw;
  
@@ -55,7 +55,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  	for (que = 0; que < ha->max_qpairs; que++) {
  		if (!ha->queue_pair_map[que])
  			continue;
-@@ -3165,6 +3170,7 @@ qla2x00_probe_one(struct pci_dev *pdev,
+@@ -3168,6 +3173,7 @@ qla2x00_probe_one(struct pci_dev *pdev,
  		ql_log(ql_log_fatal, base_vha, 0x003d,
  		    "Failed to allocate memory for queue pointers..."
  		    "aborting.\n");
@@ -63,7 +63,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  		goto probe_failed;
  	}
  
-@@ -4726,7 +4732,7 @@ qla2x00_mem_free(struct qla_hw_data *ha)
+@@ -4737,7 +4743,7 @@ qla2x00_mem_free(struct qla_hw_data *ha)
  	mempool_destroy(ha->ctx_mempool);
  	ha->ctx_mempool = NULL;
  
@@ -72,7 +72,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  		struct dsd_dma *dsd, *nxt;
  
  		list_for_each_entry_safe(dsd, nxt, &ha->pool.unusable.head,
-@@ -4828,7 +4834,7 @@ struct scsi_qla_host *qla2x00_create_hos
+@@ -4832,7 +4838,7 @@ struct scsi_qla_host *qla2x00_create_hos
  	if (!vha->gnl.l) {
  		ql_log(ql_log_fatal, vha, 0xd04a,
  		    "Alloc failed for name list.\n");
@@ -81,10 +81,10 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  		return NULL;
  	}
  
-@@ -4840,7 +4846,7 @@ struct scsi_qla_host *qla2x00_create_hos
- 		    "Alloc failed for scan database.\n");
+@@ -4845,7 +4851,7 @@ struct scsi_qla_host *qla2x00_create_hos
  		dma_free_coherent(&ha->pdev->dev, vha->gnl.size,
  		    vha->gnl.l, vha->gnl.ldma);
+ 		vha->gnl.l = NULL;
 -		scsi_remove_host(vha->host);
 +		scsi_host_put(vha->host);
  		return NULL;

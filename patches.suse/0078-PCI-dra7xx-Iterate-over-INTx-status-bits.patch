@@ -16,14 +16,12 @@ Signed-off-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
 Acked-by: Kishon Vijay Abraham I <kishon@ti.com>
 Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
 ---
- drivers/pci/dwc/pci-dra7xx.c | 10 +++++++---
+ drivers/pci/dwc/pci-dra7xx.c |   10 +++++++---
  1 file changed, 7 insertions(+), 3 deletions(-)
 
-diff --git a/drivers/pci/dwc/pci-dra7xx.c b/drivers/pci/dwc/pci-dra7xx.c
-index 3321da945f0f..8bf7c2714db6 100644
 --- a/drivers/pci/dwc/pci-dra7xx.c
 +++ b/drivers/pci/dwc/pci-dra7xx.c
-@@ -257,7 +257,8 @@ static irqreturn_t dra7xx_pcie_msi_irq_handler(int irq, void *arg)
+@@ -256,7 +256,8 @@ static irqreturn_t dra7xx_pcie_msi_irq_h
  	struct dra7xx_pcie *dra7xx = arg;
  	struct dw_pcie *pci = dra7xx->pci;
  	struct pcie_port *pp = &pci->pp;
@@ -33,12 +31,12 @@ index 3321da945f0f..8bf7c2714db6 100644
  
  	reg = dra7xx_pcie_readl(dra7xx, PCIECTRL_DRA7XX_CONF_IRQSTATUS_MSI);
  
-@@ -269,8 +270,11 @@ static irqreturn_t dra7xx_pcie_msi_irq_handler(int irq, void *arg)
+@@ -268,8 +269,11 @@ static irqreturn_t dra7xx_pcie_msi_irq_h
  	case INTB:
  	case INTC:
  	case INTD:
 -		generic_handle_irq(irq_find_mapping(dra7xx->irq_domain,
--						    ffs(reg) - 1));
+-						    ffs(reg)));
 +		for_each_set_bit(bit, &reg, PCI_NUM_INTX) {
 +			virq = irq_find_mapping(dra7xx->irq_domain, bit);
 +			if (virq)
@@ -47,6 +45,3 @@ index 3321da945f0f..8bf7c2714db6 100644
  		break;
  	}
  
--- 
-2.11.0
-

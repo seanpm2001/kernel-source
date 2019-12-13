@@ -1,0 +1,43 @@
+From 81dac817786263bb44cd5a200a07eff346f78e31 Mon Sep 17 00:00:00 2001
+From: Michael Ellerman <mpe@ellerman.id.au>
+Date: Tue, 15 Jan 2019 17:37:36 +1100
+Subject: [PATCH] powerpc/64: Make sys_switch_endian() traceable
+
+Patch-mainline: v5.1-rc1
+References: bsc#1065729
+Git-commit: 81dac817786263bb44cd5a200a07eff346f78e31
+
+We weren't using SYSCALL_DEFINE for sys_switch_endian(), which means
+it wasn't able to be traced by CONFIG_FTRACE_SYSCALLS.
+
+By using the macro we create the right metadata and the syscall is
+visible. eg:
+
+  # cd /sys/kernel/debug/tracing
+  # echo 1 | tee events/syscalls/sys_*_switch_endian/enable
+  # ~/switch_endian_test
+  # cat trace
+  ...
+  switch_endian_t-3604  [009] ....   315.175164: sys_switch_endian()
+  switch_endian_t-3604  [009] ....   315.175167: sys_switch_endian -> 0x5555aaaa5555aaaa
+  switch_endian_t-3604  [009] ....   315.175169: sys_switch_endian()
+  switch_endian_t-3604  [009] ....   315.175169: sys_switch_endian -> 0x5555aaaa5555aaaa
+
+Fixes: 529d235a0e19 ("powerpc: Add a proper syscall for switching endianness")
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kernel/syscalls.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/arch/powerpc/kernel/syscalls.c
++++ b/arch/powerpc/kernel/syscalls.c
+@@ -123,7 +123,7 @@ long ppc_fadvise64_64(int fd, int advice
+ 			     (u64)len_high << 32 | len_low, advice);
+ }
+ 
+-long sys_switch_endian(void)
++SYSCALL_DEFINE0(switch_endian)
+ {
+ 	struct thread_info *ti;
+ 

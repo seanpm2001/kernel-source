@@ -1,0 +1,62 @@
+From: Jian Shen <shenjian15@huawei.com>
+Date: Thu, 4 Jul 2019 22:04:21 +0800
+Subject: net: hns3: fix flow control configure issue for fibre port
+Patch-mainline: v5.3-rc1
+Git-commit: fb89629f2ecfa0feb07f9981c1bd66a4b4407f44
+References: bsc#1104353 FATE#326415
+
+Flow control autoneg is unsupported for fibre port. It takes no
+effect for flow control when restart autoneg. This patch fixes
+it, return -EOPNOTSUPP when user tries to enable flow control
+autoneg.
+
+Signed-off-by: Jian Shen <shenjian15@huawei.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c |   17 +++++++++-------
+ 1 file changed, 10 insertions(+), 7 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
+@@ -7853,8 +7853,9 @@ static void hclge_get_pauseparam(struct
+ {
+ 	struct hclge_vport *vport = hclge_get_vport(handle);
+ 	struct hclge_dev *hdev = vport->back;
++	struct phy_device *phydev = hdev->hw.mac.phydev;
+ 
+-	*auto_neg = hclge_get_autoneg(handle);
++	*auto_neg = phydev ? hclge_get_autoneg(handle) : 0;
+ 
+ 	if (hdev->tm_info.fc_mode == HCLGE_FC_PFC) {
+ 		*rx_en = 0;
+@@ -7885,11 +7886,13 @@ static int hclge_set_pauseparam(struct h
+ 	struct phy_device *phydev = hdev->hw.mac.phydev;
+ 	u32 fc_autoneg;
+ 
+-	fc_autoneg = hclge_get_autoneg(handle);
+-	if (auto_neg != fc_autoneg) {
+-		dev_info(&hdev->pdev->dev,
+-			 "To change autoneg please use: ethtool -s <dev> autoneg <on|off>\n");
+-		return -EOPNOTSUPP;
++	if (phydev) {
++		fc_autoneg = hclge_get_autoneg(handle);
++		if (auto_neg != fc_autoneg) {
++			dev_info(&hdev->pdev->dev,
++				 "To change autoneg please use: ethtool -s <dev> autoneg <on|off>\n");
++			return -EOPNOTSUPP;
++		}
+ 	}
+ 
+ 	if (hdev->tm_info.fc_mode == HCLGE_FC_PFC) {
+@@ -7900,7 +7903,7 @@ static int hclge_set_pauseparam(struct h
+ 
+ 	hclge_set_flowctrl_adv(hdev, rx_en, tx_en);
+ 
+-	if (!fc_autoneg)
++	if (!auto_neg)
+ 		return hclge_cfg_pauseparam(hdev, rx_en, tx_en);
+ 
+ 	/* Only support flow control negotiation for netdev with

@@ -1,0 +1,39 @@
+From: Dan Carpenter <dan.carpenter@oracle.com>
+Date: Sat, 8 Jun 2019 12:27:14 +0300
+Subject: RDMA/hns: Fix an error code in hns_roce_set_user_sq_size()
+Patch-mainline: v5.3-rc1
+Git-commit: b417c0879db72f810ca81d88b719e70d20566857
+References: bsc#1104427 FATE#326416
+
+This function is supposed to return negative kernel error codes but here
+it returns CMD_RST_PRC_EBUSY (2).  The error code eventually gets passed
+to IS_ERR() and since it's not an error pointer it leads to an Oops in
+hns_roce_v1_rsv_lp_qp()
+
+Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/infiniband/hw/hns/hns_roce_hw_v2.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/drivers/infiniband/hw/hns/hns_roce_hw_v2.c
++++ b/drivers/infiniband/hw/hns/hns_roce_hw_v2.c
+@@ -1096,7 +1096,7 @@ static int hns_roce_cmq_send(struct hns_
+ 	if (ret == CMD_RST_PRC_SUCCESS)
+ 		return 0;
+ 	if (ret == CMD_RST_PRC_EBUSY)
+-		return ret;
++		return -EBUSY;
+ 
+ 	ret = __hns_roce_cmq_send(hr_dev, desc, num);
+ 	if (ret) {
+@@ -1104,7 +1104,7 @@ static int hns_roce_cmq_send(struct hns_
+ 		if (retval == CMD_RST_PRC_SUCCESS)
+ 			return 0;
+ 		else if (retval == CMD_RST_PRC_EBUSY)
+-			return retval;
++			return -EBUSY;
+ 	}
+ 
+ 	return ret;

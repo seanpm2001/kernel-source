@@ -1,9 +1,9 @@
 From: Joe Carnuccio <joe.carnuccio@cavium.com>
 Date: Tue, 12 Mar 2019 11:08:11 -0700
-Subject: [PATCH] scsi: qla2xxx: Remove FW default template
-Git-commit: 2ff6ae85d5eea54640f10db869302759d5376948
+Subject: scsi: qla2xxx: Remove FW default template
 Patch-mainline: v5.2-rc1
-References: bsc#1136215
+Git-commit: 2ff6ae85d5eea54640f10db869302759d5376948
+References: bsc#1123034 bsc#1131304 bsc#1127988 bsc#1136215
 
 This patch removes FW default template as there will never be case where
 the default template would be invoked.
@@ -11,18 +11,16 @@ the default template would be invoked.
 Signed-off-by: Joe Carnuccio <joe.carnuccio@cavium.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_gbl.h  |   2 -
- drivers/scsi/qla2xxx/qla_init.c |  94 +++++-------------------------------
- drivers/scsi/qla2xxx/qla_tmpl.c | 104 +---------------------------------------
+ drivers/scsi/qla2xxx/qla_gbl.h  |    2 
+ drivers/scsi/qla2xxx/qla_init.c |   94 ++++--------------------------------
+ drivers/scsi/qla2xxx/qla_tmpl.c |  104 ----------------------------------------
  3 files changed, 13 insertions(+), 187 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_gbl.h b/drivers/scsi/qla2xxx/qla_gbl.h
-index 4eefe69ca807..0fa0342f39f8 100644
 --- a/drivers/scsi/qla2xxx/qla_gbl.h
 +++ b/drivers/scsi/qla2xxx/qla_gbl.h
-@@ -613,8 +613,6 @@ extern void qla27xx_fwdump(scsi_qla_host_t *, int);
+@@ -613,8 +613,6 @@ extern void qla27xx_fwdump(scsi_qla_host
  extern ulong qla27xx_fwdt_calculate_dump_size(struct scsi_qla_host *);
  extern int qla27xx_fwdt_template_valid(void *);
  extern ulong qla27xx_fwdt_template_size(void *);
@@ -31,11 +29,9 @@ index 4eefe69ca807..0fa0342f39f8 100644
  
  extern void qla2x00_dump_regs(scsi_qla_host_t *);
  extern void qla2x00_dump_buffer(uint8_t *, uint32_t);
-diff --git a/drivers/scsi/qla2xxx/qla_init.c b/drivers/scsi/qla2xxx/qla_init.c
-index 420045155ba0..4008b97a63d9 100644
 --- a/drivers/scsi/qla2xxx/qla_init.c
 +++ b/drivers/scsi/qla2xxx/qla_init.c
-@@ -7387,7 +7387,7 @@ qla24xx_load_risc_flash(scsi_qla_host_t *vha, uint32_t *srisc_addr,
+@@ -7394,7 +7394,7 @@ qla24xx_load_risc_flash(scsi_qla_host_t
  	ql_dbg(ql_dbg_init, vha, 0x0162,
  	    "-> array size %x dwords\n", risc_size);
  	if (risc_size == 0 || risc_size == ~0)
@@ -44,7 +40,7 @@ index 420045155ba0..4008b97a63d9 100644
  
  	dlen = (risc_size - 8) * sizeof(*dcode);
  	ql_dbg(ql_dbg_init, vha, 0x0163,
-@@ -7396,7 +7396,7 @@ qla24xx_load_risc_flash(scsi_qla_host_t *vha, uint32_t *srisc_addr,
+@@ -7403,7 +7403,7 @@ qla24xx_load_risc_flash(scsi_qla_host_t
  	if (!ha->fw_dump_template) {
  		ql_log(ql_log_warn, vha, 0x0164,
  		    "Failed fwdump template allocate %x bytes.\n", risc_size);
@@ -53,7 +49,7 @@ index 420045155ba0..4008b97a63d9 100644
  	}
  
  	faddr += 7;
-@@ -7409,7 +7409,7 @@ qla24xx_load_risc_flash(scsi_qla_host_t *vha, uint32_t *srisc_addr,
+@@ -7416,7 +7416,7 @@ qla24xx_load_risc_flash(scsi_qla_host_t
  	if (!qla27xx_fwdt_template_valid(dcode)) {
  		ql_log(ql_log_warn, vha, 0x0165,
  		    "Failed fwdump template validate\n");
@@ -62,7 +58,7 @@ index 420045155ba0..4008b97a63d9 100644
  	}
  
  	dlen = qla27xx_fwdt_template_size(dcode);
-@@ -7419,48 +7419,13 @@ qla24xx_load_risc_flash(scsi_qla_host_t *vha, uint32_t *srisc_addr,
+@@ -7426,48 +7426,13 @@ qla24xx_load_risc_flash(scsi_qla_host_t
  		ql_log(ql_log_warn, vha, 0x0167,
  		    "Failed fwdump template exceeds array by %zx bytes\n",
  		    (size_t)(dlen - risc_size * sizeof(*dcode)));
@@ -114,7 +110,7 @@ index 420045155ba0..4008b97a63d9 100644
  	if (ha->fw_dump_template)
  		vfree(ha->fw_dump_template);
  	ha->fw_dump_template = NULL;
-@@ -7690,7 +7655,7 @@ qla24xx_load_risc_blob(scsi_qla_host_t *vha, uint32_t *srisc_addr)
+@@ -7697,7 +7662,7 @@ qla24xx_load_risc_blob(scsi_qla_host_t *
  	ql_dbg(ql_dbg_init, vha, 0x172,
  	    "-> array size %x dwords\n", risc_size);
  	if (risc_size == 0 || risc_size == ~0)
@@ -123,7 +119,7 @@ index 420045155ba0..4008b97a63d9 100644
  
  	dlen = (risc_size - 8) * sizeof(*fwcode);
  	ql_dbg(ql_dbg_init, vha, 0x0173,
-@@ -7699,7 +7664,7 @@ qla24xx_load_risc_blob(scsi_qla_host_t *vha, uint32_t *srisc_addr)
+@@ -7706,7 +7671,7 @@ qla24xx_load_risc_blob(scsi_qla_host_t *
  	if (!ha->fw_dump_template) {
  		ql_log(ql_log_warn, vha, 0x0174,
  		    "Failed fwdump template allocate %x bytes.\n", risc_size);
@@ -132,7 +128,7 @@ index 420045155ba0..4008b97a63d9 100644
  	}
  
  	fwcode += 7;
-@@ -7711,7 +7676,7 @@ qla24xx_load_risc_blob(scsi_qla_host_t *vha, uint32_t *srisc_addr)
+@@ -7718,7 +7683,7 @@ qla24xx_load_risc_blob(scsi_qla_host_t *
  	if (!qla27xx_fwdt_template_valid(dcode)) {
  		ql_log(ql_log_warn, vha, 0x0175,
  		    "Failed fwdump template validate\n");
@@ -141,7 +137,7 @@ index 420045155ba0..4008b97a63d9 100644
  	}
  
  	dlen = qla27xx_fwdt_template_size(dcode);
-@@ -7721,48 +7686,13 @@ qla24xx_load_risc_blob(scsi_qla_host_t *vha, uint32_t *srisc_addr)
+@@ -7728,48 +7693,13 @@ qla24xx_load_risc_blob(scsi_qla_host_t *
  		ql_log(ql_log_warn, vha, 0x0177,
  		    "Failed fwdump template exceeds array by %zx bytes\n",
  		    (size_t)(dlen - risc_size * sizeof(*fwcode)));
@@ -193,8 +189,6 @@ index 420045155ba0..4008b97a63d9 100644
  	if (ha->fw_dump_template)
  		vfree(ha->fw_dump_template);
  	ha->fw_dump_template = NULL;
-diff --git a/drivers/scsi/qla2xxx/qla_tmpl.c b/drivers/scsi/qla2xxx/qla_tmpl.c
-index 9e52500caff0..70f227f59050 100644
 --- a/drivers/scsi/qla2xxx/qla_tmpl.c
 +++ b/drivers/scsi/qla2xxx/qla_tmpl.c
 @@ -7,97 +7,7 @@
@@ -315,6 +309,3 @@ index 9e52500caff0..70f227f59050 100644
  int
  qla27xx_fwdt_template_valid(void *p)
  {
--- 
-2.16.4
-

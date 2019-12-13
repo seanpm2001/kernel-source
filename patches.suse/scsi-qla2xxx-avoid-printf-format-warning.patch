@@ -1,9 +1,9 @@
 From: Arnd Bergmann <arnd@arndb.de>
 Date: Mon, 4 Mar 2019 20:39:10 +0100
-Subject: [PATCH] scsi: qla2xxx: avoid printf format warning
-References: bsc#1136215
-Git-commit: 038d710fca5bb149d3af2e0b71f1284f8430a979
+Subject: scsi: qla2xxx: avoid printf format warning
 Patch-mainline: v5.1-rc1
+Git-commit: 038d710fca5bb149d3af2e0b71f1284f8430a979
+References: bsc#1123034 bsc#1131304 bsc#1127988 bsc#1136215
 
 Depending on the target architecture and configuration, both phys_addr_t
 and dma_addr_t may be smaller than 'long long', so we get a warning when
@@ -34,16 +34,14 @@ Fixes: 50b812755e97 ("scsi: qla2xxx: Fix DMA error when the DIF sg buffer crosse
 Signed-off-by: Arnd Bergmann <arnd@arndb.de>
 Acked-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Signed-off-by: Hannes Reinecke <hare@suse.de>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_iocb.c | 4 ++--
+ drivers/scsi/qla2xxx/qla_iocb.c |    4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_iocb.c b/drivers/scsi/qla2xxx/qla_iocb.c
-index ba7712e4f11b..e1015d9482a5 100644
 --- a/drivers/scsi/qla2xxx/qla_iocb.c
 +++ b/drivers/scsi/qla2xxx/qla_iocb.c
-@@ -1132,7 +1132,7 @@ qla24xx_walk_and_build_prot_sglist(struct qla_hw_data *ha, srb_t *sp,
+@@ -1132,7 +1132,7 @@ qla24xx_walk_and_build_prot_sglist(struc
  	/* if initiator doing write or target doing read */
  	if (direction_to_device) {
  		for_each_sg(sgl, sg, tot_dsds, i) {
@@ -52,7 +50,7 @@ index ba7712e4f11b..e1015d9482a5 100644
  
  			/* If SGE addr + len flips bits in upper 32-bits */
  			if (MSD(sle_phys + sg->length) ^ MSD(sle_phys)) {
-@@ -1178,7 +1178,7 @@ qla24xx_walk_and_build_prot_sglist(struct qla_hw_data *ha, srb_t *sp,
+@@ -1178,7 +1178,7 @@ qla24xx_walk_and_build_prot_sglist(struc
  
  			ql_dbg(ql_dbg_tgt + ql_dbg_verbose, vha, 0xe023,
  			    "%s: sg[%x] (phys=%llx sglen=%x) ldma_sg_len: %x dif_bundl_len: %x ldma_needed: %x\n",
@@ -61,6 +59,3 @@ index ba7712e4f11b..e1015d9482a5 100644
  			    difctx->dif_bundl_len, ldma_needed);
  
  			while (sglen) {
--- 
-2.16.4
-

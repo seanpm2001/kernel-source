@@ -1,0 +1,51 @@
+From: Liu Bo <bo.li.liu@oracle.com>
+Date: Mon, 30 Oct 2017 11:14:38 -0600
+Subject: Btrfs: bail out gracefully rather than BUG_ON
+Git-commit: 56a0e706fcf870270878d6d72b71092ae42d229c
+Patch-mainline: v4.15-rc2
+References: bsc#1153646
+
+If a file's DIR_ITEM key is invalid (due to memory errors) and gets
+written to disk, a future lookup_path can end up with kernel panic due
+to BUG_ON().
+
+This gets rid of the BUG_ON(), meanwhile output the corrupted key and
+return ENOENT if it's invalid.
+
+Signed-off-by: Liu Bo <bo.li.liu@oracle.com>
+Reported-by: Guillaume Bouchard <bouchard@mercs-eng.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/inode.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
+index 8525a44a607e..1131db7a0b28 100644
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -5445,6 +5445,14 @@ static int btrfs_inode_by_name(struct inode *dir, struct dentry *dentry,
+ 		goto out_err;
+ 
+ 	btrfs_dir_item_key_to_cpu(path->nodes[0], di, location);
++	if (location->type != BTRFS_INODE_ITEM_KEY &&
++	    location->type != BTRFS_ROOT_ITEM_KEY) {
++		btrfs_warn(root->fs_info,
++"%s gets something invalid in DIR_ITEM (name %s, directory ino %llu, location(%llu %u %llu))",
++			   __func__, name, btrfs_ino(BTRFS_I(dir)),
++			   location->objectid, location->type, location->offset);
++		goto out_err;
++	}
+ out:
+ 	btrfs_free_path(path);
+ 	return ret;
+@@ -5761,8 +5769,6 @@ struct inode *btrfs_lookup_dentry(struct inode *dir, struct dentry *dentry)
+ 		return inode;
+ 	}
+ 
+-	BUG_ON(location.type != BTRFS_ROOT_ITEM_KEY);
+-
+ 	index = srcu_read_lock(&fs_info->subvol_srcu);
+ 	ret = fixup_tree_root_location(fs_info, dir, dentry,
+ 				       &location, &sub_root);
+

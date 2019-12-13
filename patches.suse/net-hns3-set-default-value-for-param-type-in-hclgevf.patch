@@ -1,0 +1,41 @@
+From: Peng Li <lipeng321@huawei.com>
+Date: Thu, 4 Jul 2019 22:04:24 +0800
+Subject: net: hns3: set default value for param "type" in
+ hclgevf_bind_ring_to_vector
+Patch-mainline: v5.3-rc1
+Git-commit: c09ba484563c17f90ec91b46322c31d3440acc42
+References: bsc#1104353 FATE#326415
+
+The value of param type is always not changed in
+hclgevf_bind_ring_to_vector, move the assignment to
+front of "for {}" can reduce the redundant assignment.
+
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c |    5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c
+@@ -993,6 +993,8 @@ static int hclgevf_bind_ring_to_vector(s
+ 	u8 type;
+ 
+ 	req = (struct hclge_mbx_vf_to_pf_cmd *)desc.data;
++	type = en ? HCLGE_MBX_MAP_RING_TO_VECTOR :
++		HCLGE_MBX_UNMAP_RING_TO_VECTOR;
+ 
+ 	for (node = ring_chain; node; node = node->next) {
+ 		int idx_offset = HCLGE_MBX_RING_MAP_BASIC_MSG_NUM +
+@@ -1002,9 +1004,6 @@ static int hclgevf_bind_ring_to_vector(s
+ 			hclgevf_cmd_setup_basic_desc(&desc,
+ 						     HCLGEVF_OPC_MBX_VF_TO_PF,
+ 						     false);
+-			type = en ?
+-				HCLGE_MBX_MAP_RING_TO_VECTOR :
+-				HCLGE_MBX_UNMAP_RING_TO_VECTOR;
+ 			req->msg[0] = type;
+ 			req->msg[1] = vector_id;
+ 		}

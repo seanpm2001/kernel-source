@@ -1,0 +1,47 @@
+From: Paulo Alcantara <palcantara@suse.de>
+Subject: cifs: handle netapp error codes
+Patch-mainline: Not yet, analyzing if other NetApp versions also fail
+References: bsc#1136261
+
+Some NetApp servers seem to return invalid error codes during oplock
+responses. In such cases, if the client acknowledges the oplock
+request and then close the file handle prior to receiving the oplock
+response, the server sets an error code of either
+NT_STATUS_UNSUCCESSFUL for NT codes, or DosError for DOS error codes -
+which are uncomformant to the codes listed in MS-CIFS 2.2.4.32
+SMB_COM_LOCKING_ANDX.
+
+cifs.ko already ignores invalid oplock responses when it is either
+NT_STATUS_INVALID_HANDLE or STATUS_SMB_BAD_FID, possibily due to
+racing between open and close requests, so do the same to those NetApp
+error codes.
+
+Signed-off-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/misc.c |   15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+--- a/fs/cifs/misc.c
++++ b/fs/cifs/misc.c
+@@ -447,6 +447,21 @@ is_valid_oplock_break(char *buffer, stru
+ 		   le16_to_cpu(pSMB->hdr.Status.DosError.Error)) {
+ 			return true;
+ 		} else {
++			/*
++			 * NetApp servers seem to return invalid error codes on
++			 * response.
++			 */
++			if (pSMB->hdr.Flags2 & SMBFLG2_ERR_STATUS) {
++				if (le32_to_cpu(pSMB->hdr.Status.CifsError) == (NT_STATUS_UNSUCCESSFUL))
++					return true;
++				pr_warn_once("VFS: server returned unhandled error code on oplock response: 0x%08x\n",
++					     le32_to_cpu(pSMB->hdr.Status.CifsError));
++			} else {
++				if (le16_to_cpu(pSMB->hdr.Status.DosError.Error) == ERRgeneral)
++					return true;
++				pr_warn_once("VFS: server returned unhandled error code on oplock response: 0x%04x\n",
++					     le16_to_cpu(pSMB->hdr.Status.DosError.Error));
++			}
+ 			return false; /* on valid oplock brk we get "request" */
+ 		}
+ 	}

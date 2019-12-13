@@ -1,0 +1,118 @@
+From: Souptick Joarder <jrdr.linux@gmail.com>
+Date: Thu, 15 Feb 2018 01:40:38 +0530
+Subject: scsi: qla2xxx: Use dma_pool_zalloc()
+Patch-mainline: v4.17-rc1
+Git-commit: 501017f6d4e1feaa9ce3ff49c1190bc0588b3f02
+References: bsc#1123034 bsc#1131304 bsc#1127988
+
+Use dma_pool_zalloc() instead of dma_pool_alloc + memset
+
+Signed-off-by: Souptick Joarder <jrdr.linux@gmail.com>
+Acked-by: Himanshu Madhani <himanshu.madhani@cavium.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Martin Wilck <mwilck@suse.com>
+---
+ drivers/scsi/qla2xxx/qla_bsg.c    |  3 +--
+ drivers/scsi/qla2xxx/qla_iocb.c   | 10 ++--------
+ drivers/scsi/qla2xxx/qla_target.c |  7 +------
+ 3 files changed, 4 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/scsi/qla2xxx/qla_bsg.c b/drivers/scsi/qla2xxx/qla_bsg.c
+index e2d5d3c..c11a89b 100644
+--- a/drivers/scsi/qla2xxx/qla_bsg.c
++++ b/drivers/scsi/qla2xxx/qla_bsg.c
+@@ -1035,7 +1035,7 @@ qla84xx_updatefw(struct bsg_job *bsg_job)
+ 	sg_copy_to_buffer(bsg_job->request_payload.sg_list,
+ 		bsg_job->request_payload.sg_cnt, fw_buf, data_len);
+ 
+-	mn = dma_pool_alloc(ha->s_dma_pool, GFP_KERNEL, &mn_dma);
++	mn = dma_pool_zalloc(ha->s_dma_pool, GFP_KERNEL, &mn_dma);
+ 	if (!mn) {
+ 		ql_log(ql_log_warn, vha, 0x7036,
+ 		    "DMA alloc failed for fw buffer.\n");
+@@ -1046,7 +1046,6 @@ qla84xx_updatefw(struct bsg_job *bsg_job)
+ 	flag = bsg_request->rqst_data.h_vendor.vendor_cmd[1];
+ 	fw_ver = le32_to_cpu(*((uint32_t *)((uint32_t *)fw_buf + 2)));
+ 
+-	memset(mn, 0, sizeof(struct access_chip_84xx));
+ 	mn->entry_type = VERIFY_CHIP_IOCB_TYPE;
+ 	mn->entry_count = 1;
+ 
+diff --git a/drivers/scsi/qla2xxx/qla_iocb.c b/drivers/scsi/qla2xxx/qla_iocb.c
+index e62ccd9..a4edbec 100644
+--- a/drivers/scsi/qla2xxx/qla_iocb.c
++++ b/drivers/scsi/qla2xxx/qla_iocb.c
+@@ -1210,7 +1210,6 @@ qla24xx_build_scsi_crc_2_iocbs(srb_t *sp, struct cmd_type_crc_2 *cmd_pkt,
+ 	uint32_t		dif_bytes;
+ 	uint8_t			bundling = 1;
+ 	uint16_t		blk_size;
+-	uint8_t			*clr_ptr;
+ 	struct crc_context	*crc_ctx_pkt = NULL;
+ 	struct qla_hw_data	*ha;
+ 	uint8_t			additional_fcpcdb_len;
+@@ -1252,15 +1251,11 @@ qla24xx_build_scsi_crc_2_iocbs(srb_t *sp, struct cmd_type_crc_2 *cmd_pkt,
+ 
+ 	/* Allocate CRC context from global pool */
+ 	crc_ctx_pkt = sp->u.scmd.ctx =
+-	    dma_pool_alloc(ha->dl_dma_pool, GFP_ATOMIC, &crc_ctx_dma);
++	    dma_pool_zalloc(ha->dl_dma_pool, GFP_ATOMIC, &crc_ctx_dma);
+ 
+ 	if (!crc_ctx_pkt)
+ 		goto crc_queuing_error;
+ 
+-	/* Zero out CTX area. */
+-	clr_ptr = (uint8_t *)crc_ctx_pkt;
+-	memset(clr_ptr, 0, sizeof(*crc_ctx_pkt));
+-
+ 	crc_ctx_pkt->crc_ctx_dma = crc_ctx_dma;
+ 
+ 	sp->flags |= SRB_CRC_CTX_DMA_VALID;
+@@ -3074,7 +3069,7 @@ qla82xx_start_scsi(srb_t *sp)
+ 		}
+ 
+ 		memset(ctx, 0, sizeof(struct ct6_dsd));
+-		ctx->fcp_cmnd = dma_pool_alloc(ha->fcp_cmnd_dma_pool,
++		ctx->fcp_cmnd = dma_pool_zalloc(ha->fcp_cmnd_dma_pool,
+ 			GFP_ATOMIC, &ctx->fcp_cmnd_dma);
+ 		if (!ctx->fcp_cmnd) {
+ 			ql_log(ql_log_fatal, vha, 0x3011,
+@@ -3127,7 +3122,6 @@ qla82xx_start_scsi(srb_t *sp)
+ 		host_to_fcp_swap((uint8_t *)&cmd_pkt->lun, sizeof(cmd_pkt->lun));
+ 
+ 		/* build FCP_CMND IU */
+-		memset(ctx->fcp_cmnd, 0, sizeof(struct fcp_cmnd));
+ 		int_to_scsilun(cmd->device->lun, &ctx->fcp_cmnd->lun);
+ 		ctx->fcp_cmnd->additional_cdb_len = additional_cdb_len;
+ 
+diff --git a/drivers/scsi/qla2xxx/qla_target.c b/drivers/scsi/qla2xxx/qla_target.c
+index 3735ebd..755d7a2 100644
+--- a/drivers/scsi/qla2xxx/qla_target.c
++++ b/drivers/scsi/qla2xxx/qla_target.c
+@@ -2871,7 +2871,6 @@ qlt_build_ctio_crc2_pkt(struct qla_qpair *qpair, struct qla_tgt_prm *prm)
+ 	uint32_t		data_bytes;
+ 	uint32_t		dif_bytes;
+ 	uint8_t			bundling = 1;
+-	uint8_t			*clr_ptr;
+ 	struct crc_context	*crc_ctx_pkt = NULL;
+ 	struct qla_hw_data	*ha;
+ 	struct ctio_crc2_to_fw	*pkt;
+@@ -3000,15 +2999,11 @@ qlt_build_ctio_crc2_pkt(struct qla_qpair *qpair, struct qla_tgt_prm *prm)
+ 
+ 	/* Allocate CRC context from global pool */
+ 	crc_ctx_pkt = cmd->ctx =
+-	    dma_pool_alloc(ha->dl_dma_pool, GFP_ATOMIC, &crc_ctx_dma);
++	    dma_pool_zalloc(ha->dl_dma_pool, GFP_ATOMIC, &crc_ctx_dma);
+ 
+ 	if (!crc_ctx_pkt)
+ 		goto crc_queuing_error;
+ 
+-	/* Zero out CTX area. */
+-	clr_ptr = (uint8_t *)crc_ctx_pkt;
+-	memset(clr_ptr, 0, sizeof(*crc_ctx_pkt));
+-
+ 	crc_ctx_pkt->crc_ctx_dma = crc_ctx_dma;
+ 	INIT_LIST_HEAD(&crc_ctx_pkt->dsd_list);
+ 
+-- 
+2.23.0
+

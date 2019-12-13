@@ -1,0 +1,38 @@
+From 0fc12c022ad25532b66bf6f6c818ee1c1d63e702 Mon Sep 17 00:00:00 2001
+From: Michael Ellerman <mpe@ellerman.id.au>
+Date: Mon, 8 Jul 2019 16:02:19 +1000
+Subject: [PATCH] powerpc/irq: Don't WARN continuously in
+ arch_local_irq_restore()
+
+References: bsc#1065729
+Patch-mainline: v5.3-rc1
+Git-commit: 0fc12c022ad25532b66bf6f6c818ee1c1d63e702
+
+When CONFIG_PPC_IRQ_SOFT_MASK_DEBUG is enabled (uncommon), we have a
+series of WARN_ON's in arch_local_irq_restore().
+
+These are "should never happen" conditions, but if they do happen they
+can flood the console and render the system unusable. So switch them
+to WARN_ON_ONCE().
+
+Fixes: e2b36d591720 ("powerpc/64: Don't trace code that runs with the soft irq mask unreconciled")
+Fixes: 9b81c0211c24 ("powerpc/64s: make PACA_IRQ_HARD_DIS track MSR[EE] closely")
+Fixes: 7c0482e3d055 ("powerpc/irq: Fix another case of lazy IRQ state getting out of sync")
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Link: https://lore.kernel.org/r/20190708061046.7075-1-mpe@ellerman.id.au
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kernel/irq.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+--- a/arch/powerpc/kernel/irq.c
++++ b/arch/powerpc/kernel/irq.c
+@@ -265,7 +265,7 @@ notrace void arch_local_irq_restore(unsi
+ 		 * warn if we are wrong. Only do that when IRQ tracing
+ 		 * is enabled as mfmsr() can be costly.
+ 		 */
+-		if (WARN_ON(mfmsr() & MSR_EE))
++		if (WARN_ON_ONCE(mfmsr() & MSR_EE))
+ 			__hard_irq_disable();
+ 	}
+ #endif /* CONFIG_TRACE_IRQFLAGS */

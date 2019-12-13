@@ -1,0 +1,35 @@
+From: Joe Perches <joe@perches.com>
+Date: Tue, 9 Jul 2019 22:04:18 -0700
+Subject: irqchip/gic-v3-its: Fix misuse of GENMASK macro
+
+Git-commit: 20faba848752901de23a4d45a1174d64d2069dde
+Patch-mainline: v5.3-rc1
+References: jsc#ECO-561
+
+Arguments are supposed to be ordered high then low.
+
+Signed-off-by: Joe Perches <joe@perches.com>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Acked-by: Marc Zyngier <marc.zyngier@arm.com>
+Link: https://lkml.kernel.org/r/ab5deb4fc3cd604cb620054770b7d00016d736bc.1562734889.git.joe@perches.com
+Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
+---
+ drivers/irqchip/irq-gic-v3-its.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/irqchip/irq-gic-v3-its.c b/drivers/irqchip/irq-gic-v3-its.c
+index 35500801dc2b..730fbe0e2a9d 100644
+--- a/drivers/irqchip/irq-gic-v3-its.c
++++ b/drivers/irqchip/irq-gic-v3-its.c
+@@ -185,7 +185,7 @@ static struct its_collection *dev_event_to_col(struct its_device *its_dev,
+ 
+ static struct its_collection *valid_col(struct its_collection *col)
+ {
+-	if (WARN_ON_ONCE(col->target_address & GENMASK_ULL(0, 15)))
++	if (WARN_ON_ONCE(col->target_address & GENMASK_ULL(15, 0)))
+ 		return NULL;
+ 
+ 	return col;
+-- 
+2.16.4
+

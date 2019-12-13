@@ -1,9 +1,9 @@
 From: Anatoliy Glagolev <glagolig@gmail.com>
 Date: Thu, 6 Dec 2018 16:48:45 -0700
-Subject: [PATCH] scsi: qla2xxx: deadlock by configfs_depend_item
-Git-commit: 17b18eaa6f59044a5172db7d07149e31ede0f920
+Subject: scsi: qla2xxx: deadlock by configfs_depend_item
 Patch-mainline: v5.0-rc1
-References: FATE#325888
+Git-commit: 17b18eaa6f59044a5172db7d07149e31ede0f920
+References: bsc#1123034 bsc#1131304 bsc#1127988 FATE#325888
 
 The intent of invoking configfs_depend_item in commit 7474f52a82d51
 ("tcm_qla2xxx: Perform configfs depend/undepend for base_tpg")
@@ -24,17 +24,15 @@ the deadlock problem.
 Signed-off-by: Anatoliy Glagolev <glagolig@gmail.com>
 Acked-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/tcm_qla2xxx.c | 48 +++++++-------------------------------
- drivers/scsi/qla2xxx/tcm_qla2xxx.h |  3 ---
+ drivers/scsi/qla2xxx/tcm_qla2xxx.c |   48 ++++++-------------------------------
+ drivers/scsi/qla2xxx/tcm_qla2xxx.h |    3 --
  2 files changed, 8 insertions(+), 43 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/tcm_qla2xxx.c b/drivers/scsi/qla2xxx/tcm_qla2xxx.c
-index fc312a5eab75..283e6b80abb5 100644
 --- a/drivers/scsi/qla2xxx/tcm_qla2xxx.c
 +++ b/drivers/scsi/qla2xxx/tcm_qla2xxx.c
-@@ -954,38 +954,14 @@ static ssize_t tcm_qla2xxx_tpg_enable_show(struct config_item *item,
+@@ -964,38 +964,14 @@ static ssize_t tcm_qla2xxx_tpg_enable_sh
  			atomic_read(&tpg->lport_tpg_enabled));
  }
  
@@ -77,7 +75,7 @@ index fc312a5eab75..283e6b80abb5 100644
  	struct tcm_qla2xxx_tpg *tpg = container_of(se_tpg,
  			struct tcm_qla2xxx_tpg, se_tpg);
  	unsigned long op;
-@@ -1004,24 +980,16 @@ static ssize_t tcm_qla2xxx_tpg_enable_store(struct config_item *item,
+@@ -1014,24 +990,16 @@ static ssize_t tcm_qla2xxx_tpg_enable_st
  		if (atomic_read(&tpg->lport_tpg_enabled))
  			return -EEXIST;
  
@@ -106,11 +104,9 @@ index fc312a5eab75..283e6b80abb5 100644
  	return count;
  }
  
-diff --git a/drivers/scsi/qla2xxx/tcm_qla2xxx.h b/drivers/scsi/qla2xxx/tcm_qla2xxx.h
-index 7550ba2831c3..147cf6c90366 100644
 --- a/drivers/scsi/qla2xxx/tcm_qla2xxx.h
 +++ b/drivers/scsi/qla2xxx/tcm_qla2xxx.h
-@@ -48,9 +48,6 @@ struct tcm_qla2xxx_tpg {
+@@ -47,9 +47,6 @@ struct tcm_qla2xxx_tpg {
  	struct tcm_qla2xxx_tpg_attrib tpg_attrib;
  	/* Returned by tcm_qla2xxx_make_tpg() */
  	struct se_portal_group se_tpg;
@@ -120,6 +116,3 @@ index 7550ba2831c3..147cf6c90366 100644
  };
  
  struct tcm_qla2xxx_fc_loopid {
--- 
-2.16.4
-

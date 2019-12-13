@@ -1,9 +1,9 @@
 From: Anil Gurumurthy <agurumurthy@marvell.com>
 Date: Fri, 15 Feb 2019 14:37:17 -0800
-Subject: [PATCH] scsi: qla2xxx: Add support for setting port speed
-References: bsc#1136215
-Git-commit: 4910b524ac9e61b70e35280877361b790a657d48
+Subject: scsi: qla2xxx: Add support for setting port speed
 Patch-mainline: v5.1-rc1
+Git-commit: 4910b524ac9e61b70e35280877361b790a657d48
+References: bsc#1123034 bsc#1131304 bsc#1127988 bsc#1136215
 
 This patch adds sysfs node
 
@@ -17,20 +17,18 @@ Signed-off-by: Anil Gurumurthy <agurumurthy@marvell.com>
 Signed-off-by: Quinn Tran <qtran@marvell.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Signed-off-by: Hannes Reinecke <hare@suse.de>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_attr.c | 89 +++++++++++++++++++++++++++++++++++++++++
- drivers/scsi/qla2xxx/qla_def.h  |  6 +++
- drivers/scsi/qla2xxx/qla_gbl.h  |  1 +
- drivers/scsi/qla2xxx/qla_init.c |  9 +++++
- drivers/scsi/qla2xxx/qla_mbx.c  | 62 +++++++++++++++++++++++++++-
+ drivers/scsi/qla2xxx/qla_attr.c |   89 ++++++++++++++++++++++++++++++++++++++++
+ drivers/scsi/qla2xxx/qla_def.h  |    6 ++
+ drivers/scsi/qla2xxx/qla_gbl.h  |    1 
+ drivers/scsi/qla2xxx/qla_init.c |    9 ++++
+ drivers/scsi/qla2xxx/qla_mbx.c  |   62 +++++++++++++++++++++++++++
  5 files changed, 166 insertions(+), 1 deletion(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_attr.c b/drivers/scsi/qla2xxx/qla_attr.c
-index 1478fa9d62d6..ae47337c4b35 100644
 --- a/drivers/scsi/qla2xxx/qla_attr.c
 +++ b/drivers/scsi/qla2xxx/qla_attr.c
-@@ -1632,6 +1632,92 @@ qla2x00_max_speed_sup_show(struct device *dev, struct device_attribute *attr,
+@@ -1632,6 +1632,92 @@ qla2x00_max_speed_sup_show(struct device
  	    ha->max_speed_sup ? "32Gps" : "16Gps");
  }
  
@@ -132,7 +130,7 @@ index 1478fa9d62d6..ae47337c4b35 100644
  
  
  struct device_attribute *qla2x00_host_attrs[] = {
-@@ -2167,6 +2255,7 @@ struct device_attribute *qla2x00_host_attrs[] = {
+@@ -2167,6 +2255,7 @@ struct device_attribute *qla2x00_host_at
  	&dev_attr_max_speed_sup,
  	&dev_attr_zio_threshold,
  	&dev_attr_dif_bundle_statistics,
@@ -140,8 +138,6 @@ index 1478fa9d62d6..ae47337c4b35 100644
  	NULL, /* reserve for qlini_mode */
  	NULL, /* reserve for ql2xiniexchg */
  	NULL, /* reserve for ql2xexchoffld */
-diff --git a/drivers/scsi/qla2xxx/qla_def.h b/drivers/scsi/qla2xxx/qla_def.h
-index c256ba7fba84..c0f7593666a1 100644
 --- a/drivers/scsi/qla2xxx/qla_def.h
 +++ b/drivers/scsi/qla2xxx/qla_def.h
 @@ -3698,12 +3698,14 @@ struct qla_hw_data {
@@ -170,22 +166,18 @@ index c256ba7fba84..c0f7593666a1 100644
  /*
   * Qlogic scsi host structure
   */
-diff --git a/drivers/scsi/qla2xxx/qla_gbl.h b/drivers/scsi/qla2xxx/qla_gbl.h
-index e672952ad450..283214e73ff9 100644
 --- a/drivers/scsi/qla2xxx/qla_gbl.h
 +++ b/drivers/scsi/qla2xxx/qla_gbl.h
-@@ -899,5 +899,6 @@ void qlt_update_host_map(struct scsi_qla_host *, port_id_t);
+@@ -899,5 +899,6 @@ void qlt_update_host_map(struct scsi_qla
  void qlt_remove_target_resources(struct qla_hw_data *);
  void qlt_clr_qp_table(struct scsi_qla_host *vha);
  void qlt_set_mode(struct scsi_qla_host *);
 +int qla2x00_set_data_rate(scsi_qla_host_t *vha, uint16_t mode);
  
  #endif /* _QLA_GBL_H */
-diff --git a/drivers/scsi/qla2xxx/qla_init.c b/drivers/scsi/qla2xxx/qla_init.c
-index 6ac73d2805c1..bbe0c3c4a1c7 100644
 --- a/drivers/scsi/qla2xxx/qla_init.c
 +++ b/drivers/scsi/qla2xxx/qla_init.c
-@@ -3882,8 +3882,17 @@ qla24xx_config_rings(struct scsi_qla_host *vha)
+@@ -3882,8 +3882,17 @@ qla24xx_config_rings(struct scsi_qla_hos
  		WRT_REG_DWORD(&reg->isp24.rsp_q_in, 0);
  		WRT_REG_DWORD(&reg->isp24.rsp_q_out, 0);
  	}
@@ -203,11 +195,9 @@ index 6ac73d2805c1..bbe0c3c4a1c7 100644
  	/* PCI posting */
  	RD_REG_DWORD(&ioreg->hccr);
  }
-diff --git a/drivers/scsi/qla2xxx/qla_mbx.c b/drivers/scsi/qla2xxx/qla_mbx.c
-index 6c911f2e4cdb..7ca3b762b2e4 100644
 --- a/drivers/scsi/qla2xxx/qla_mbx.c
 +++ b/drivers/scsi/qla2xxx/qla_mbx.c
-@@ -5250,6 +5250,66 @@ qla81xx_write_mpi_register(scsi_qla_host_t *vha, uint16_t *mb)
+@@ -5250,6 +5250,66 @@ qla81xx_write_mpi_register(scsi_qla_host
  	return rval;
  }
  
@@ -274,7 +264,7 @@ index 6c911f2e4cdb..7ca3b762b2e4 100644
  int
  qla2x00_get_data_rate(scsi_qla_host_t *vha)
  {
-@@ -5265,7 +5325,7 @@ qla2x00_get_data_rate(scsi_qla_host_t *vha)
+@@ -5265,7 +5325,7 @@ qla2x00_get_data_rate(scsi_qla_host_t *v
  		return QLA_FUNCTION_FAILED;
  
  	mcp->mb[0] = MBC_DATA_RATE;
@@ -283,6 +273,3 @@ index 6c911f2e4cdb..7ca3b762b2e4 100644
  	mcp->out_mb = MBX_1|MBX_0;
  	mcp->in_mb = MBX_2|MBX_1|MBX_0;
  	if (IS_QLA83XX(ha) || IS_QLA27XX(ha))
--- 
-2.16.4
-

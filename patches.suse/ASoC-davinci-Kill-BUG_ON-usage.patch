@@ -1,0 +1,36 @@
+From befff4fbc27e19b14b343eb4a65d8f75d38b6230 Mon Sep 17 00:00:00 2001
+From: Takashi Iwai <tiwai@suse.de>
+Date: Thu, 7 Sep 2017 10:59:17 +0200
+Subject: [PATCH] ASoC: davinci: Kill BUG_ON() usage
+Git-commit: befff4fbc27e19b14b343eb4a65d8f75d38b6230
+Patch-mainline: v4.15-rc1
+References: stable 4.14.y
+
+Don't use BUG_ON() for a non-critical sanity check on production
+systems.  This patch replaces with a softer WARN_ON() and an error
+path.
+
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+Signed-off-by: Mark Brown <broonie@kernel.org>
+
+---
+ sound/soc/davinci/davinci-mcasp.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/davinci/davinci-mcasp.c b/sound/soc/davinci/davinci-mcasp.c
+index 23b0da7df1f2..40be08cecea4 100644
+--- a/sound/soc/davinci/davinci-mcasp.c
++++ b/sound/soc/davinci/davinci-mcasp.c
+@@ -1721,7 +1721,8 @@ static int davinci_mcasp_get_dma_type(struct davinci_mcasp *mcasp)
+ 				PTR_ERR(chan));
+ 		return PTR_ERR(chan);
+ 	}
+-	BUG_ON(!chan->device || !chan->device->dev);
++	if (WARN_ON(!chan->device || !chan->device->dev))
++		return -EINVAL;
+ 
+ 	if (chan->device->dev->of_node)
+ 		ret = of_property_read_string(chan->device->dev->of_node,
+-- 
+2.16.4
+

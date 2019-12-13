@@ -1,0 +1,39 @@
+From: Weihang Li <liweihang@hisilicon.com>
+Date: Mon, 3 Jun 2019 10:09:18 +0800
+Subject: net: hns3: set ops to null when unregister ad_dev
+Patch-mainline: v5.3-rc1
+Git-commit: 594a81b39525f0a17e92c2e0b167ae1400650380
+References: bsc#1104353 FATE#326415
+
+The hclge/hclgevf and hns3 module can be unloaded independently,
+when hclge/hclgevf unloaded firstly, the ops of ae_dev should
+be set to NULL, otherwise it will cause an use-after-free problem.
+
+Fixes: 38caee9d3ee8 ("net: hns3: Add support of the HNAE3 framework")
+Signed-off-by: Weihang Li <liweihang@hisilicon.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hnae3.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hnae3.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hnae3.c
+@@ -251,6 +251,7 @@ void hnae3_unregister_ae_algo(struct hna
+ 
+ 		ae_algo->ops->uninit_ae_dev(ae_dev);
+ 		hnae3_set_bit(ae_dev->flag, HNAE3_DEV_INITED_B, 0);
++		ae_dev->ops = NULL;
+ 	}
+ 
+ 	list_del(&ae_algo->node);
+@@ -351,6 +352,7 @@ void hnae3_unregister_ae_dev(struct hnae
+ 
+ 		ae_algo->ops->uninit_ae_dev(ae_dev);
+ 		hnae3_set_bit(ae_dev->flag, HNAE3_DEV_INITED_B, 0);
++		ae_dev->ops = NULL;
+ 	}
+ 
+ 	list_del(&ae_dev->node);

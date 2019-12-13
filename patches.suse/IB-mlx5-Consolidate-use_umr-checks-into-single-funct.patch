@@ -1,0 +1,53 @@
+From: Moni Shoua <monis@mellanox.com>
+Date: Thu, 15 Aug 2019 11:38:31 +0300
+Subject: IB/mlx5: Consolidate use_umr checks into single function
+Patch-mainline: v5.3-rc6
+Git-commit: 0e6613b41edd2f55a4b33234c5f31410c1ed3783
+References: bsc#1093205
+
+Introduce helper function to unify various use_umr checks.
+
+Signed-off-by: Moni Shoua <monis@mellanox.com>
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Link: https://lore.kernel.org/r/20190815083834.9245-6-leon@kernel.org
+Signed-off-by: Doug Ledford <dledford@redhat.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/infiniband/hw/mlx5/mlx5_ib.h |   13 +++++++++++++
+ drivers/infiniband/hw/mlx5/mr.c      |    4 +---
+ 2 files changed, 14 insertions(+), 3 deletions(-)
+
+--- a/drivers/infiniband/hw/mlx5/mlx5_ib.h
++++ b/drivers/infiniband/hw/mlx5/mlx5_ib.h
+@@ -1101,4 +1101,18 @@ static inline int get_num_uars(struct ml
+ int bfregn_to_uar_index(struct mlx5_ib_dev *dev,
+ 			struct mlx5_bfreg_info *bfregi, u32 bfregn,
+ 			bool dyn_bfreg);
++
++static inline bool mlx5_ib_can_use_umr(struct mlx5_ib_dev *dev,
++				       bool do_modify_atomic)
++{
++	if (MLX5_CAP_GEN(dev->mdev, umr_modify_entity_size_disabled))
++		return false;
++
++	if (do_modify_atomic &&
++	    MLX5_CAP_GEN(dev->mdev, atomic) &&
++	    MLX5_CAP_GEN(dev->mdev, umr_modify_atomic_disabled))
++		return false;
++
++	return true;
++}
+ #endif /* MLX5_IB_H */
+--- a/drivers/infiniband/hw/mlx5/mr.c
++++ b/drivers/infiniband/hw/mlx5/mr.c
+@@ -1234,9 +1234,7 @@ struct ib_mr *mlx5_ib_reg_user_mr(struct
+ 	if (err < 0)
+ 		return ERR_PTR(err);
+ 
+-	use_umr = !MLX5_CAP_GEN(dev->mdev, umr_modify_entity_size_disabled) &&
+-		  (!MLX5_CAP_GEN(dev->mdev, umr_modify_atomic_disabled) ||
+-		   !MLX5_CAP_GEN(dev->mdev, atomic));
++	use_umr = mlx5_ib_can_use_umr(dev, true);
+ 
+ 	if (order <= mr_cache_max_order(dev) && use_umr) {
+ 		mr = alloc_mr_from_cache(pd, umem, virt_addr, length, ncont,

@@ -49,7 +49,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -727,6 +727,28 @@ struct btrfs_fs_devices;
+@@ -730,6 +730,28 @@ struct btrfs_fs_devices;
  struct btrfs_balance_control;
  struct btrfs_delayed_root;
  
@@ -78,7 +78,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  #define BTRFS_FS_BARRIER			1
  #define BTRFS_FS_CLOSING_START			2
  #define BTRFS_FS_CLOSING_DONE			3
-@@ -1143,6 +1165,10 @@ struct btrfs_fs_info {
+@@ -1158,6 +1180,10 @@ struct btrfs_fs_info {
  	 * Updated while holding fs_info::balance_mutex.
  	 */
  	int send_in_progress;
@@ -89,7 +89,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  };
  
  static inline struct btrfs_fs_info *btrfs_sb(struct super_block *sb)
-@@ -1227,6 +1253,9 @@ struct btrfs_root {
+@@ -1259,6 +1285,9 @@ struct btrfs_root {
  	/* Record pairs of swapped blocks for qgroup */
  	struct btrfs_qgroup_swapped_blocks swapped_blocks;
  
@@ -101,8 +101,8 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	u64 alloc_bytenr;
 --- a/fs/btrfs/dev-replace.c
 +++ b/fs/btrfs/dev-replace.c
-@@ -324,6 +324,16 @@ int btrfs_dev_replace_start(struct btrfs
- 		return ret;
+@@ -333,6 +333,16 @@ int btrfs_dev_replace_start(struct btrfs
+ 		return PTR_ERR(trans);
  	}
  
 +	if (btrfs_pinned_by_swapfile(fs_info, src_device)) {
@@ -117,10 +117,10 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 +
  	ret = btrfs_init_dev_replace_tgtdev(fs_info, tgtdev_name,
  					    src_device, &tgt_device);
- 	mutex_unlock(&fs_info->volume_mutex);
+ 	if (ret)
 --- a/fs/btrfs/disk-io.c
 +++ b/fs/btrfs/disk-io.c
-@@ -1271,6 +1271,7 @@ static void __setup_root(struct btrfs_ro
+@@ -1272,6 +1272,7 @@ static void __setup_root(struct btrfs_ro
  	atomic_set(&root->log_batch, 0);
  	refcount_set(&root->refs, 1);
  	atomic_set(&root->will_be_snapshoted, 0);
@@ -128,7 +128,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	root->log_transid = 0;
  	root->log_transid_committed = -1;
  	root->last_log_commit = 0;
-@@ -2675,6 +2676,9 @@ int open_ctree(struct super_block *sb,
+@@ -2678,6 +2679,9 @@ int open_ctree(struct super_block *sb,
  
  	fs_info->send_in_progress = 0;
  
@@ -152,7 +152,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		ip->flags |= BTRFS_INODE_COMPRESS;
  		ip->flags &= ~BTRFS_INODE_NOCOMPRESS;
  
-@@ -673,6 +678,12 @@ static int create_snapshot(struct btrfs_
+@@ -685,6 +690,12 @@ static int create_snapshot(struct btrfs_
  	if (!test_bit(BTRFS_ROOT_REF_COWS, &root->state))
  		return -EINVAL;
  
@@ -165,7 +165,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	pending_snapshot = kzalloc(sizeof(*pending_snapshot), GFP_KERNEL);
  	if (!pending_snapshot)
  		return -ENOMEM;
-@@ -1409,9 +1420,13 @@ int btrfs_defrag_file(struct inode *inod
+@@ -1421,9 +1432,13 @@ int btrfs_defrag_file(struct inode *inod
  		}
  
  		inode_lock(inode);
@@ -182,7 +182,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		if (ret < 0) {
  			inode_unlock(inode);
  			goto out_ra;
-@@ -3155,6 +3170,11 @@ static int btrfs_extent_same(struct inod
+@@ -3271,6 +3286,11 @@ static int btrfs_extent_same(struct inod
  		goto out_unlock;
  	}
  
@@ -194,7 +194,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	tail_len = olen % BTRFS_MAX_DEDUPE_LEN;
  	chunk_count = div_u64(olen, BTRFS_MAX_DEDUPE_LEN);
  	if (chunk_count == 0)
-@@ -3931,6 +3951,11 @@ static noinline int btrfs_clone_files(st
+@@ -3979,6 +3999,11 @@ static noinline int btrfs_clone_files(st
  		goto out_unlock;
  	}
  
@@ -208,7 +208,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	if (off + len > src->i_size || off + len < off)
 --- a/fs/btrfs/relocation.c
 +++ b/fs/btrfs/relocation.c
-@@ -4338,6 +4338,7 @@ static void describe_relocation(struct b
+@@ -4442,6 +4442,7 @@ static void describe_relocation(struct b
   */
  int btrfs_relocate_block_group(struct btrfs_fs_info *fs_info, u64 group_start)
  {
@@ -216,7 +216,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	struct btrfs_root *extent_root = fs_info->extent_root;
  	struct reloc_control *rc;
  	struct inode *inode;
-@@ -4346,14 +4347,23 @@ int btrfs_relocate_block_group(struct bt
+@@ -4450,14 +4451,23 @@ int btrfs_relocate_block_group(struct bt
  	int rw = 0;
  	int err = 0;
  
@@ -261,7 +261,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	if (device->is_tgtdev_for_dev_replace) {
  		ret = BTRFS_ERROR_DEV_TGT_REPLACE;
  		goto out;
-@@ -3897,10 +3905,15 @@ again:
+@@ -3893,10 +3901,15 @@ again:
  
  		ret = btrfs_relocate_chunk(fs_info, found_key.offset);
  		mutex_unlock(&fs_info->delete_unused_bgs_mutex);
@@ -279,7 +279,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		} else {
  			spin_lock(&fs_info->balance_lock);
  			bctl->stat.completed++;
-@@ -4688,10 +4701,16 @@ again:
+@@ -4694,10 +4707,16 @@ again:
  
  		ret = btrfs_relocate_chunk(fs_info, chunk_offset);
  		mutex_unlock(&fs_info->delete_unused_bgs_mutex);
@@ -299,7 +299,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	} while (key.offset-- > 0);
  
  	if (failed && !retried) {
-@@ -7674,3 +7693,27 @@ out:
+@@ -7682,3 +7701,27 @@ out:
  	btrfs_free_path(path);
  	return ret;
  }

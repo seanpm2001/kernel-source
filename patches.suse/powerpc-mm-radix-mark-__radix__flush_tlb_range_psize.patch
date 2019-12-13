@@ -1,0 +1,66 @@
+From e12d6d7d46a62ccf62f4c60eb6ea6f0f121797c7 Mon Sep 17 00:00:00 2001
+From: Masahiro Yamada <yamada.masahiro@socionext.com>
+Date: Tue, 14 May 2019 15:42:17 -0700
+Subject: [PATCH] powerpc/mm/radix: mark __radix__flush_tlb_range_psize() as
+ __always_inline
+
+References: bsc#1055186
+Patch-mainline: v5.2-rc1
+Git-commit: e12d6d7d46a62ccf62f4c60eb6ea6f0f121797c7
+
+This prepares to move CONFIG_OPTIMIZE_INLINING from x86 to a common
+place.  We need to eliminate potential issues beforehand.
+
+If it is enabled for powerpc, the following error is reported:
+
+  arch/powerpc/mm/tlb-radix.c: In function '__radix__flush_tlb_range_psize':
+  arch/powerpc/mm/tlb-radix.c:104:2: error: asm operand 3 probably doesn't match constraints [-Werror]
+    asm volatile(PPC_TLBIEL(%0, %4, %3, %2, %1)
+    ^~~
+  arch/powerpc/mm/tlb-radix.c:104:2: error: impossible constraint in 'asm'
+
+Link: http://lkml.kernel.org/r/20190423034959.13525-10-yamada.masahiro@socionext.com
+Signed-off-by: Masahiro Yamada <yamada.masahiro@socionext.com>
+Cc: Arnd Bergmann <arnd@arndb.de>
+Cc: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+Cc: Boris Brezillon <bbrezillon@kernel.org>
+Cc: Borislav Petkov <bp@suse.de>
+Cc: Brian Norris <computersforpeace@gmail.com>
+Cc: Christophe Leroy <christophe.leroy@c-s.fr>
+Cc: David Woodhouse <dwmw2@infradead.org>
+Cc: Heiko Carstens <heiko.carstens@de.ibm.com>
+Cc: "H. Peter Anvin" <hpa@zytor.com>
+Cc: Ingo Molnar <mingo@redhat.com>
+Cc: Marek Vasut <marek.vasut@gmail.com>
+Cc: Mark Rutland <mark.rutland@arm.com>
+Cc: Mathieu Malaterre <malat@debian.org>
+Cc: Miquel Raynal <miquel.raynal@bootlin.com>
+Cc: Paul Mackerras <paulus@samba.org>
+Cc: Ralf Baechle <ralf@linux-mips.org>
+Cc: Richard Weinberger <richard@nod.at>
+Cc: Russell King <rmk+kernel@arm.linux.org.uk>
+Cc: Stefan Agner <stefan@agner.ch>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/mm/tlb-radix.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/powerpc/mm/tlb-radix.c b/arch/powerpc/mm/tlb-radix.c
+index 6a23b9ebd2a1..a2b2848f0ae3 100644
+--- a/arch/powerpc/mm/tlb-radix.c
++++ b/arch/powerpc/mm/tlb-radix.c
+@@ -928,7 +928,7 @@ void radix__tlb_flush(struct mmu_gather *tlb)
+ 	tlb->need_flush_all = 0;
+ }
+ 
+-static inline void __radix__flush_tlb_range_psize(struct mm_struct *mm,
++static __always_inline void __radix__flush_tlb_range_psize(struct mm_struct *mm,
+ 				unsigned long start, unsigned long end,
+ 				int psize, bool also_pwc)
+ {
+-- 
+2.23.0
+

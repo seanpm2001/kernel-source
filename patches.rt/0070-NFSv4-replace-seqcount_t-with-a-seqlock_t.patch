@@ -31,13 +31,13 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 
 --- a/fs/nfs/delegation.c
 +++ b/fs/nfs/delegation.c
-@@ -150,11 +150,11 @@ static int nfs_delegation_claim_opens(st
+@@ -151,11 +151,11 @@ again:
  		sp = state->owner;
  		/* Block nfs4_proc_unlck */
  		mutex_lock(&sp->so_delegreturn_mutex);
 -		seq = raw_seqcount_begin(&sp->so_reclaim_seqcount);
 +		seq = read_seqbegin(&sp->so_reclaim_seqlock);
- 		err = nfs4_open_delegation_recall(ctx, state, stateid, type);
+ 		err = nfs4_open_delegation_recall(ctx, state, stateid);
  		if (!err)
  			err = nfs_delegation_claim_locks(ctx, state, stateid);
 -		if (!err && read_seqcount_retry(&sp->so_reclaim_seqcount, seq))
@@ -58,7 +58,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
 --- a/fs/nfs/nfs4proc.c
 +++ b/fs/nfs/nfs4proc.c
-@@ -2609,7 +2609,7 @@ static int _nfs4_open_and_get_state(stru
+@@ -2787,7 +2787,7 @@ static int _nfs4_open_and_get_state(stru
  	unsigned int seq;
  	int ret;
  
@@ -67,7 +67,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	ret = _nfs4_proc_open(opendata);
  	if (ret != 0)
-@@ -2647,7 +2647,7 @@ static int _nfs4_open_and_get_state(stru
+@@ -2825,7 +2825,7 @@ static int _nfs4_open_and_get_state(stru
  
  	if (d_inode(dentry) == state->inode) {
  		nfs_inode_attach_open_context(ctx);
@@ -78,7 +78,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  out:
 --- a/fs/nfs/nfs4state.c
 +++ b/fs/nfs/nfs4state.c
-@@ -488,7 +488,7 @@ nfs4_alloc_state_owner(struct nfs_server
+@@ -492,7 +492,7 @@ nfs4_alloc_state_owner(struct nfs_server
  	nfs4_init_seqid_counter(&sp->so_seqid);
  	atomic_set(&sp->so_count, 1);
  	INIT_LIST_HEAD(&sp->so_lru);
@@ -87,7 +87,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	mutex_init(&sp->so_delegreturn_mutex);
  	return sp;
  }
-@@ -1510,8 +1510,12 @@ static int nfs4_reclaim_open_state(struc
+@@ -1534,8 +1534,12 @@ static int nfs4_reclaim_open_state(struc
  	 * recovering after a network partition or a reboot from a
  	 * server that doesn't support a grace period.
  	 */
@@ -101,7 +101,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  restart:
  	list_for_each_entry(state, &sp->so_states, open_states) {
  		if (!test_and_clear_bit(ops->state_flag_bit, &state->flags))
-@@ -1580,14 +1584,20 @@ static int nfs4_reclaim_open_state(struc
+@@ -1604,14 +1608,20 @@ restart:
  		spin_lock(&sp->so_lock);
  		goto restart;
  	}

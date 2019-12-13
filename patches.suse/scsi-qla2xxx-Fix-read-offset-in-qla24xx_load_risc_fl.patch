@@ -1,9 +1,9 @@
 From: Himanshu Madhani <hmadhani@marvell.com>
 Date: Fri, 12 Apr 2019 14:33:09 -0700
-Subject: [PATCH] scsi: qla2xxx: Fix read offset in qla24xx_load_risc_flash()
+Subject: scsi: qla2xxx: Fix read offset in qla24xx_load_risc_flash()
+Patch-mainline: v5.2-rc1
 Git-commit: 1710ac17547ac8b5c44fbd74de41dee3fe26ee81
-Patch-Mainline: v5.2-rc1
-References: bsc#1136215
+References: bsc#1123034 bsc#1131304 bsc#1127988 bsc#1136215
 
 This patch fixes regression introduced by commit f8f97b0c5b7f ("scsi:
 qla2xxx: Cleanups for NVRAM/Flash read/write path") where flash read/write
@@ -180,16 +180,14 @@ Reported-by: Bart Van Assche <bvanassche@acm.org>
 Tested-by: Bart Van Assche <bvanassche@acm.org>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_init.c | 16 +---------------
+ drivers/scsi/qla2xxx/qla_init.c |   16 +---------------
  1 file changed, 1 insertion(+), 15 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_init.c b/drivers/scsi/qla2xxx/qla_init.c
-index 1ad4fbe76262..948f20805111 100644
 --- a/drivers/scsi/qla2xxx/qla_init.c
 +++ b/drivers/scsi/qla2xxx/qla_init.c
-@@ -7720,8 +7720,6 @@ qla24xx_load_risc_flash(scsi_qla_host_t *vha, uint32_t *srisc_addr,
+@@ -7720,8 +7720,6 @@ qla24xx_load_risc_flash(scsi_qla_host_t
  
  		dcode = fwdt->template;
  		qla24xx_read_flash_data(vha, dcode, faddr, risc_size);
@@ -198,7 +196,7 @@ index 1ad4fbe76262..948f20805111 100644
  
  		if (!qla27xx_fwdt_template_valid(dcode)) {
  			ql_log(ql_log_warn, vha, 0x0165,
-@@ -7887,22 +7885,11 @@ qla24xx_load_risc_blob(scsi_qla_host_t *vha, uint32_t *srisc_addr)
+@@ -7887,22 +7885,11 @@ qla24xx_load_risc_blob(scsi_qla_host_t *
  	}
  
  	fwcode = (void *)blob->fw->data;
@@ -222,7 +220,7 @@ index 1ad4fbe76262..948f20805111 100644
  		ql_log(ql_log_fatal, vha, 0x0095,
  		    "Firmware data: %08x %08x %08x %08x.\n",
  		    dcode[0], dcode[1], dcode[2], dcode[3]);
-@@ -7925,7 +7912,6 @@ qla24xx_load_risc_blob(scsi_qla_host_t *vha, uint32_t *srisc_addr)
+@@ -7925,7 +7912,6 @@ qla24xx_load_risc_blob(scsi_qla_host_t *
  
  		dlen = ha->fw_transfer_size >> 2;
  		for (fragment = 0; risc_size; fragment++) {
@@ -230,6 +228,3 @@ index 1ad4fbe76262..948f20805111 100644
  			if (dlen > risc_size)
  				dlen = risc_size;
  
--- 
-2.16.4
-

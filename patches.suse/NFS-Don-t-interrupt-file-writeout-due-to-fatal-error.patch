@@ -1,0 +1,31 @@
+From: Trond Myklebust <trondmy@gmail.com>
+Date: Sun, 7 Apr 2019 13:59:02 -0400
+Subject: [PATCH] NFS: Don't interrupt file writeout due to fatal errors
+Git-commit: 14bebe3c90b326d2a0df78aed5e9de090c71d878
+Patch-mainline: v5.2
+References: git-fixes
+
+When flushing out dirty pages, the fact that we may hit fatal errors
+is not a reason to stop writeback. Those errors are reported through
+fsync(), not through the flush mechanism.
+
+Fixes: a6598813a4c5b ("NFS: Don't write back further requests if there...")
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/write.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/fs/nfs/write.c
++++ b/fs/nfs/write.c
+@@ -668,7 +668,7 @@ out:
+ 	return ret;
+ out_launder:
+ 	nfs_write_error_remove_page(req);
+-	return ret;
++	return 0;
+ }
+ 
+ static int nfs_do_writepage(struct page *page, struct writeback_control *wbc,

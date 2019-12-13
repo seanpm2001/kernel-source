@@ -1,0 +1,42 @@
+From: Trond Myklebust <trond.myklebust@hammerspace.com>
+Date: Thu, 15 Aug 2019 20:18:48 -0400
+Subject: [PATCH] pNFS/flexfiles: Turn off soft RPC calls
+Git-commit: bf2bf9b80e0cd3568ddc85a241abe0dd8b46ebdc
+Patch-mainline: v5.3
+References: git-fixes
+
+The pNFS/flexfiles I/O requests are sent with the SOFTCONN flag set, so
+they automatically time out if the connection breaks. It should
+therefore not be necessary to have the soft flag set in addition.
+
+Fixes: 5f01d9539496 ("nfs41: create NFSv3 DS connection if specified")
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/pnfs_nfs.c |   14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+--- a/fs/nfs/pnfs_nfs.c
++++ b/fs/nfs/pnfs_nfs.c
+@@ -650,11 +650,15 @@ static int _nfs4_pnfs_v3_ds_connect(stru
+ 			/* Add this address as an alias */
+ 			rpc_clnt_add_xprt(clp->cl_rpcclient, &xprt_args,
+ 					rpc_clnt_test_and_add_xprt, NULL);
+-		} else
+-			clp = get_v3_ds_connect(mds_srv,
+-					(struct sockaddr *)&da->da_addr,
+-					da->da_addrlen, IPPROTO_TCP,
+-					timeo, retrans);
++			continue;
++		}
++		clp = get_v3_ds_connect(mds_srv,
++				(struct sockaddr *)&da->da_addr,
++				da->da_addrlen, IPPROTO_TCP,
++				timeo, retrans);
++		if (IS_ERR(clp))
++			continue;
++		clp->cl_rpcclient->cl_softrtry = 0;
+ 	}
+ 
+ 	if (IS_ERR(clp)) {

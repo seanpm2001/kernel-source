@@ -1,0 +1,115 @@
+From: Weihang Li <liweihang@hisilicon.com>
+Date: Mon, 3 Jun 2019 10:09:21 +0800
+Subject: net: hns3: add opcode about query and clear RAS & MSI-X to special
+ opcode
+Patch-mainline: v5.3-rc1
+Git-commit: 7832f0bd9fa4bd2224be2f8be854315119523df1
+References: bsc#1104353 FATE#326415
+
+There are four commands being used to query and clear RAS and MSI-X
+interrupts status. They should be contained in array of special opcodes
+because these commands have several descriptors, and we need to judge
+return value in the first descriptor rather than the last one as other
+opcodes. In addition, we shouldn't set the NEXT_FLAG of first descriptor.
+
+This patch fixes above issues.
+
+Signed-off-by: Weihang Li <liweihang@hisilicon.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_cmd.c |    6 +++++-
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_err.c |   16 ----------------
+ 2 files changed, 5 insertions(+), 17 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_cmd.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_cmd.c
+@@ -174,7 +174,11 @@ static bool hclge_is_special_opcode(u16
+ 			     HCLGE_OPC_STATS_MAC,
+ 			     HCLGE_OPC_STATS_MAC_ALL,
+ 			     HCLGE_OPC_QUERY_32_BIT_REG,
+-			     HCLGE_OPC_QUERY_64_BIT_REG};
++			     HCLGE_OPC_QUERY_64_BIT_REG,
++			     HCLGE_QUERY_CLEAR_MPF_RAS_INT,
++			     HCLGE_QUERY_CLEAR_PF_RAS_INT,
++			     HCLGE_QUERY_CLEAR_ALL_MPF_MSIX_INT,
++			     HCLGE_QUERY_CLEAR_ALL_PF_MSIX_INT};
+ 	int i;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(spec_opcode); i++) {
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_err.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_err.c
+@@ -1098,8 +1098,6 @@ static int hclge_handle_mpf_ras_error(st
+ 	/* query all main PF RAS errors */
+ 	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_QUERY_CLEAR_MPF_RAS_INT,
+ 				   true);
+-	desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+-
+ 	ret = hclge_cmd_send(&hdev->hw, &desc[0], num);
+ 	if (ret) {
+ 		dev_err(dev, "query all mpf ras int cmd failed (%d)\n", ret);
+@@ -1262,8 +1260,6 @@ static int hclge_handle_mpf_ras_error(st
+ 
+ 	/* clear all main PF RAS errors */
+ 	hclge_cmd_reuse_desc(&desc[0], false);
+-	desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+-
+ 	ret = hclge_cmd_send(&hdev->hw, &desc[0], num);
+ 	if (ret)
+ 		dev_err(dev, "clear all mpf ras int cmd failed (%d)\n", ret);
+@@ -1293,8 +1289,6 @@ static int hclge_handle_pf_ras_error(str
+ 	/* query all PF RAS errors */
+ 	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_QUERY_CLEAR_PF_RAS_INT,
+ 				   true);
+-	desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+-
+ 	ret = hclge_cmd_send(&hdev->hw, &desc[0], num);
+ 	if (ret) {
+ 		dev_err(dev, "query all pf ras int cmd failed (%d)\n", ret);
+@@ -1348,8 +1342,6 @@ static int hclge_handle_pf_ras_error(str
+ 
+ 	/* clear all PF RAS errors */
+ 	hclge_cmd_reuse_desc(&desc[0], false);
+-	desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+-
+ 	ret = hclge_cmd_send(&hdev->hw, &desc[0], num);
+ 	if (ret)
+ 		dev_err(dev, "clear all pf ras int cmd failed (%d)\n", ret);
+@@ -1667,8 +1659,6 @@ int hclge_handle_hw_msix_error(struct hc
+ 	/* query all main PF MSIx errors */
+ 	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_QUERY_CLEAR_ALL_MPF_MSIX_INT,
+ 				   true);
+-	desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+-
+ 	ret = hclge_cmd_send(&hdev->hw, &desc[0], mpf_bd_num);
+ 	if (ret) {
+ 		dev_err(dev, "query all mpf msix int cmd failed (%d)\n",
+@@ -1700,8 +1690,6 @@ int hclge_handle_hw_msix_error(struct hc
+ 
+ 	/* clear all main PF MSIx errors */
+ 	hclge_cmd_reuse_desc(&desc[0], false);
+-	desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+-
+ 	ret = hclge_cmd_send(&hdev->hw, &desc[0], mpf_bd_num);
+ 	if (ret) {
+ 		dev_err(dev, "clear all mpf msix int cmd failed (%d)\n",
+@@ -1713,8 +1701,6 @@ int hclge_handle_hw_msix_error(struct hc
+ 	memset(desc, 0, bd_num * sizeof(struct hclge_desc));
+ 	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_QUERY_CLEAR_ALL_PF_MSIX_INT,
+ 				   true);
+-	desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+-
+ 	ret = hclge_cmd_send(&hdev->hw, &desc[0], pf_bd_num);
+ 	if (ret) {
+ 		dev_err(dev, "query all pf msix int cmd failed (%d)\n",
+@@ -1753,8 +1739,6 @@ int hclge_handle_hw_msix_error(struct hc
+ 
+ 	/* clear all PF MSIx errors */
+ 	hclge_cmd_reuse_desc(&desc[0], false);
+-	desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+-
+ 	ret = hclge_cmd_send(&hdev->hw, &desc[0], pf_bd_num);
+ 	if (ret) {
+ 		dev_err(dev, "clear all pf msix int cmd failed (%d)\n",

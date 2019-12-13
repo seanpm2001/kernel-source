@@ -1,0 +1,42 @@
+From c3cc51032689c6f472ee4da5e6d61379b246a851 Mon Sep 17 00:00:00 2001
+From: Lubomir Rintel <lkundrak@v3.sk>
+Date: Sun, 5 May 2019 10:00:24 -0400
+Subject: [PATCH] media: marvell-ccic: don't generate EOF on parallel bus
+Git-commit: c3cc51032689c6f472ee4da5e6d61379b246a851
+Patch-mainline: v5.3-rc1
+References: bsc#1051510
+
+The commit
+05fed81625bf ("[media] marvell-ccic: add MIPI support for marvell-ccic driver")
+that claimed to add CSI2 turned on C0_EOF_VSYNC for parallel bus
+without a very good explanation.
+
+That broke camera on OLPC XO-1.75 which precisely uses a sensor on a
+parallel bus. Revert that chunk.
+
+Tested on an OLPC XO-1.75.
+
+Fixes: 05fed81625bf ("[media] marvell-ccic: add MIPI support for marvell-ccic driver")
+Signed-off-by: Lubomir Rintel <lkundrak@v3.sk>
+Signed-off-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Signed-off-by: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+Acked-by: Simon Schricker <sschricker@suse.de>
+---
+ drivers/media/platform/marvell-ccic/mcam-core.c |    6 ------
+ 1 file changed, 6 deletions(-)
+
+--- a/drivers/media/platform/marvell-ccic/mcam-core.c
++++ b/drivers/media/platform/marvell-ccic/mcam-core.c
+@@ -790,12 +790,6 @@ static void mcam_ctlr_image(struct mcam_
+ 	 * Make sure it knows we want to use hsync/vsync.
+ 	 */
+ 	mcam_reg_write_mask(cam, REG_CTRL0, C0_SIF_HVSYNC, C0_SIFM_MASK);
+-	/*
+-	 * This field controls the generation of EOF(DVP only)
+-	 */
+-	if (cam->bus_type != V4L2_MBUS_CSI2)
+-		mcam_reg_set_bit(cam, REG_CTRL0,
+-				C0_EOF_VSYNC | C0_VEDGE_CTRL);
+ }
+ 
+ 

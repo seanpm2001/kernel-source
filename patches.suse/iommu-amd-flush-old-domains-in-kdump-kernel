@@ -3,7 +3,7 @@ Date: Thu, 5 Sep 2019 12:09:48 -0500
 Subject: iommu/amd: Flush old domains in kdump kernel
 Git-commit: 36b7200f67dfe75b416b5281ed4ace9927b513bc
 Patch-mainline: v5.3-rc8
-References: bsc#1151698
+References: bsc#1150861
 
 When devices are attached to the amd_iommu in a kdump kernel, the old device
 table entries (DTEs), which were copied from the crashed kernel, will be
@@ -25,11 +25,9 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  drivers/iommu/amd_iommu.c | 24 ++++++++++++++++++++++++
  1 file changed, 24 insertions(+)
 
-diff --git a/drivers/iommu/amd_iommu.c b/drivers/iommu/amd_iommu.c
-index b607a92791d3..f853b96ee547 100644
 --- a/drivers/iommu/amd_iommu.c
 +++ b/drivers/iommu/amd_iommu.c
-@@ -1143,6 +1143,17 @@ static void amd_iommu_flush_tlb_all(struct amd_iommu *iommu)
+@@ -1154,6 +1154,17 @@ static void amd_iommu_flush_tlb_all(stru
  	iommu_completion_wait(iommu);
  }
  
@@ -38,7 +36,7 @@ index b607a92791d3..f853b96ee547 100644
 +	struct iommu_cmd cmd;
 +
 +	build_inv_iommu_pages(&cmd, 0, CMD_INV_IOMMU_ALL_PAGES_ADDRESS,
-+			      dom_id, 1);
++			dom_id, 1);
 +	iommu_queue_command(iommu, &cmd);
 +
 +	iommu_completion_wait(iommu);
@@ -47,7 +45,7 @@ index b607a92791d3..f853b96ee547 100644
  static void amd_iommu_flush_all(struct amd_iommu *iommu)
  {
  	struct iommu_cmd cmd;
-@@ -1873,6 +1884,7 @@ static void set_dte_entry(u16 devid, struct protection_domain *domain,
+@@ -2049,6 +2060,7 @@ static void set_dte_entry(u16 devid, str
  {
  	u64 pte_root = 0;
  	u64 flags = 0;
@@ -55,7 +53,7 @@ index b607a92791d3..f853b96ee547 100644
  
  	if (domain->mode != PAGE_MODE_NONE)
  		pte_root = iommu_virt_to_phys(domain->pt_root);
-@@ -1922,8 +1934,20 @@ static void set_dte_entry(u16 devid, struct protection_domain *domain,
+@@ -2091,8 +2103,20 @@ static void set_dte_entry(u16 devid, str
  	flags &= ~DEV_DOMID_MASK;
  	flags |= domain->id;
  

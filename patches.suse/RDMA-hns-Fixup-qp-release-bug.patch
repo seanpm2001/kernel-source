@@ -1,0 +1,53 @@
+From: chenglang <chenglang@huawei.com>
+Date: Mon, 24 Jun 2019 19:47:46 +0800
+Subject: RDMA/hns: Fixup qp release bug
+Patch-mainline: v5.3-rc1
+Git-commit: 21b97f538765996ac76b3a99adf371d0da5450f9
+References: bsc#1104427 FATE#326416
+
+Hip06 reserve 12 qps, Hip08 reserve 8 qps. When the QP is released, the
+chip model is not judged, and the Hip08 cannot release the qpn 8~12
+
+Signed-off-by: Lang Cheng <chenglang@huawei.com>
+Signed-off-by: Lijun Ou <oulijun@huawei.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/infiniband/hw/hns/hns_roce_hw_v1.c |    1 +
+ drivers/infiniband/hw/hns/hns_roce_qp.c    |    8 ++------
+ 2 files changed, 3 insertions(+), 6 deletions(-)
+
+--- a/drivers/infiniband/hw/hns/hns_roce_hw_v1.c
++++ b/drivers/infiniband/hw/hns/hns_roce_hw_v1.c
+@@ -1583,6 +1583,7 @@ static int hns_roce_v1_profile(struct hn
+ 	caps->reserved_mrws	= 1;
+ 	caps->reserved_uars	= 0;
+ 	caps->reserved_cqs	= 0;
++	caps->reserved_qps	= 12; /* 2 SQP per port, six ports total 12 */
+ 	caps->chunk_sz		= HNS_ROCE_V1_TABLE_CHUNK_SIZE;
+ 
+ 	for (i = 0; i < caps->num_ports; i++)
+--- a/drivers/infiniband/hw/hns/hns_roce_qp.c
++++ b/drivers/infiniband/hw/hns/hns_roce_qp.c
+@@ -283,7 +283,7 @@ void hns_roce_release_range_qp(struct hn
+ {
+ 	struct hns_roce_qp_table *qp_table = &hr_dev->qp_table;
+ 
+-	if (base_qpn < SQP_NUM)
++	if (base_qpn < hr_dev->caps.reserved_qps)
+ 		return;
+ 
+ 	hns_roce_bitmap_free_range(&qp_table->bitmap, base_qpn, cnt, BITMAP_RR);
+@@ -1148,11 +1148,7 @@ int hns_roce_init_qp_table(struct hns_ro
+ 	spin_lock_init(&qp_table->lock);
+ 	INIT_RADIX_TREE(&hr_dev->qp_table_tree, GFP_ATOMIC);
+ 
+-	/* In hw v1, a port include two SQP, six ports total 12 */
+-	if (hr_dev->caps.max_sq_sg <= 2)
+-		reserved_from_bot = SQP_NUM;
+-	else
+-		reserved_from_bot = hr_dev->caps.reserved_qps;
++	reserved_from_bot = hr_dev->caps.reserved_qps;
+ 
+ 	ret = hns_roce_bitmap_init(&qp_table->bitmap, hr_dev->caps.num_qps,
+ 				   hr_dev->caps.num_qps - 1, reserved_from_bot,

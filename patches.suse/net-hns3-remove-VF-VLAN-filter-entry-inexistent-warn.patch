@@ -1,0 +1,42 @@
+From: Jian Shen <shenjian15@huawei.com>
+Date: Thu, 20 Jun 2019 16:52:36 +0800
+Subject: net: hns3: remove VF VLAN filter entry inexistent warning print
+Patch-mainline: v5.3-rc1
+Git-commit: d0c31df22c5770a8cd7560d3c45ae936430e1ebf
+References: bsc#1104353 FATE#326415
+
+For VF VLAN filter is disabled when VF VLAN table is full, then the
+new VLAN ID won't be added into VF VLAN table, it will always print
+fail log when remove these VLAN IDs. If user has added too many
+VLANs, it will cause massive verbose print logs.
+
+Signed-off-by: Jian Shen <shenjian15@huawei.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c |   11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
+@@ -6785,12 +6785,13 @@ static int hclge_set_vf_vlan_common(stru
+ 		if (!req0->resp_code)
+ 			return 0;
+ 
+-		if (req0->resp_code == HCLGE_VF_VLAN_DEL_NO_FOUND) {
+-			dev_warn(&hdev->pdev->dev,
+-				 "vlan %d filter is not in vf vlan table\n",
+-				 vlan);
++		/* vf vlan filter is disabled when vf vlan table is full,
++		 * then new vlan id will not be added into vf vlan table.
++		 * Just return 0 without warning, avoid massive verbose
++		 * print logs when unload.
++		 */
++		if (req0->resp_code == HCLGE_VF_VLAN_DEL_NO_FOUND)
+ 			return 0;
+-		}
+ 
+ 		dev_err(&hdev->pdev->dev,
+ 			"Kill vf vlan filter fail, ret =%d.\n",

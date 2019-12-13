@@ -1,0 +1,41 @@
+From: Weihang Li <liweihang@hisilicon.com>
+Date: Thu, 20 Jun 2019 16:52:45 +0800
+Subject: net: hns3: add exception handling when enable NIC HW error interrupts
+Patch-mainline: v5.3-rc1
+Git-commit: bcf643c51434e1f7930e3b951a406eb63c4c71f6
+References: bsc#1104353 FATE#326415
+
+If we failed to enable NIC HW error interrupts during client
+initialization in some cases, we should do exception handling to clear
+flags and free the resources.
+
+Fixes: 00ea6e5fda9d ("net: hns3: delay and separate enabling of NIC and ROCE HW errors")
+Signed-off-by: Weihang Li <liweihang@hisilicon.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c |    8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
+@@ -7967,13 +7967,15 @@ static int hclge_init_nic_client_instanc
+ 		goto init_nic_err;
+ 	}
+ 
+-	hnae3_set_client_init_flag(client, ae_dev, 1);
+-
+ 	/* Enable nic hw error interrupts */
+ 	ret = hclge_config_nic_hw_error(hdev, true);
+-	if (ret)
++	if (ret) {
+ 		dev_err(&ae_dev->pdev->dev,
+ 			"fail(%d) to enable hw error interrupts\n", ret);
++		goto init_nic_err;
++	}
++
++	hnae3_set_client_init_flag(client, ae_dev, 1);
+ 
+ 	if (netif_msg_drv(&hdev->vport->nic))
+ 		hclge_info_show(hdev);

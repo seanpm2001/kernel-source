@@ -1,0 +1,28 @@
+From: Takashi Iwai <tiwai@suse.de>
+Subject: kABI workaround for mmc_host retune_crc_disable flag addition
+Patch-mainline: Never, kABI fix for SLE15-SP1
+References: bsc#1111666
+
+The patch
+  patches.suse/mmc-core-API-to-temporarily-disable-retuning-for-SDI.patch
+introduced a new bit flag to mmc_host.
+Fix kABI breakge by the standard ifdef.
+
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ include/linux/mmc/host.h |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/include/linux/mmc/host.h
++++ b/include/linux/mmc/host.h
+@@ -395,7 +395,9 @@ struct mmc_host {
+ 	unsigned int		retune_now:1;	/* do re-tuning at next req */
+ 	unsigned int		retune_paused:1; /* re-tuning is temporarily disabled */
+ 	unsigned int		use_blk_mq:1;	/* use blk-mq */
++#ifndef __GENKSYMS__
+ 	unsigned int		retune_crc_disable:1; /* don't trigger retune upon crc */
++#endif
+ 
+ 	int			rescan_disable;	/* disable card detection */
+ 	int			rescan_entered;	/* used with nonremovable devices */

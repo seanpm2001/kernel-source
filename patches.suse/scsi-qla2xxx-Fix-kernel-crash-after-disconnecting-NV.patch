@@ -3,7 +3,7 @@ Date: Fri, 21 Jun 2019 09:50:22 -0700
 Subject: scsi: qla2xxx: Fix kernel crash after disconnecting NVMe devices
 Patch-mainline: v5.3-rc1
 Git-commit: 6a81533d616fe581b0d421ee6db3319eeac9486d
-References: bsc#1082635 bsc#1141340 bsc#1143706
+References: bsc#1082635 bsc#1123034 bsc#1131304 bsc#1127988 bsc#1141340 bsc#1143706
 
 BUG: unable to handle kernel NULL pointer dereference at           (null)
 IP: [<ffffffffc050d10c>] qla_nvme_unregister_remote_port+0x6c/0xf0 [qla2xxx]
@@ -39,7 +39,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
 
 --- a/drivers/scsi/qla2xxx/qla_def.h
 +++ b/drivers/scsi/qla2xxx/qla_def.h
-@@ -4408,7 +4408,6 @@ typedef struct scsi_qla_host {
+@@ -4376,7 +4376,6 @@ typedef struct scsi_qla_host {
  
  	struct		nvme_fc_local_port *nvme_local_port;
  	struct completion nvme_del_done;
@@ -57,7 +57,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  
  	fcport->nvme_flag |= NVME_FLAG_REGISTERED;
  	return 0;
-@@ -559,19 +558,12 @@ static void qla_nvme_localport_delete(st
+@@ -553,19 +552,12 @@ static void qla_nvme_localport_delete(st
  static void qla_nvme_remoteport_delete(struct nvme_fc_remote_port *rport)
  {
  	fc_port_t *fcport;
@@ -78,7 +78,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  	complete(&fcport->nvme_del_done);
  
  	if (!test_bit(UNLOADING, &fcport->vha->dpc_flags)) {
-@@ -608,7 +600,7 @@ static void qla_nvme_unregister_remote_p
+@@ -602,7 +594,7 @@ static void qla_nvme_unregister_remote_p
  {
  	struct fc_port *fcport = container_of(work, struct fc_port,
  	    nvme_del_work);
@@ -87,7 +87,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  
  	if (!IS_ENABLED(CONFIG_NVME_FC))
  		return;
-@@ -616,23 +608,14 @@ static void qla_nvme_unregister_remote_p
+@@ -610,23 +602,14 @@ static void qla_nvme_unregister_remote_p
  	ql_log(ql_log_warn, NULL, 0x2112,
  	    "%s: unregister remoteport on %p\n",__func__, fcport);
  
@@ -121,7 +121,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  void qla_nvme_delete(struct scsi_qla_host *vha)
 --- a/drivers/scsi/qla2xxx/qla_nvme.h
 +++ b/drivers/scsi/qla2xxx/qla_nvme.h
-@@ -36,7 +36,6 @@ struct nvme_private {
+@@ -37,7 +37,6 @@ struct nvme_private {
  };
  
  struct qla_nvme_rport {
@@ -131,7 +131,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  
 --- a/drivers/scsi/qla2xxx/qla_os.c
 +++ b/drivers/scsi/qla2xxx/qla_os.c
-@@ -4802,7 +4802,6 @@ struct scsi_qla_host *qla2x00_create_hos
+@@ -4818,7 +4818,6 @@ struct scsi_qla_host *qla2x00_create_hos
  	INIT_LIST_HEAD(&vha->plogi_ack_list);
  	INIT_LIST_HEAD(&vha->qp_list);
  	INIT_LIST_HEAD(&vha->gnl.fcports);

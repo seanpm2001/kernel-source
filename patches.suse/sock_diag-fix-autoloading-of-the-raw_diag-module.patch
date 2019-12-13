@@ -1,0 +1,37 @@
+From c34c1287778b080ed692c0a46a8e345206cc29e6 Mon Sep 17 00:00:00 2001
+From: Andrei Vagin <avagin@gmail.com>
+Date: Sun, 4 Nov 2018 22:37:15 -0800
+Subject: [PATCH] sock_diag: fix autoloading of the raw_diag module
+References: bsc#1152791
+Git-commit: c34c1287778b080ed692c0a46a8e345206cc29e6
+Patch-mainline: v4.20-rc2
+
+IPPROTO_RAW isn't registred as an inet protocol, so
+inet_protos[protocol] is always NULL for it.
+
+Cc: Cyrill Gorcunov <gorcunov@gmail.com>
+Cc: Xin Long <lucien.xin@gmail.com>
+Fixes: bf2ae2e4bf93 ("sock_diag: request _diag module only when the family or proto has been registered")
+Signed-off-by: Andrei Vagin <avagin@gmail.com>
+Reviewed-by: Cyrill Gorcunov <gorcunov@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Thomas Abraham <tabraham@suse.com>
+---
+ net/core/sock.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/net/core/sock.c b/net/core/sock.c
+index 6fcc4bc07d19..080a880a1761 100644
+--- a/net/core/sock.c
++++ b/net/core/sock.c
+@@ -3279,6 +3279,7 @@ int sock_load_diag_module(int family, int protocol)
+ 
+ #ifdef CONFIG_INET
+ 	if (family == AF_INET &&
++	    protocol != IPPROTO_RAW &&
+ 	    !rcu_access_pointer(inet_protos[protocol]))
+ 		return -ENOENT;
+ #endif
+-- 
+2.16.4
+

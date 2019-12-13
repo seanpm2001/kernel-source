@@ -1,0 +1,75 @@
+From: Trond Myklebust <trondmy@gmail.com>
+Date: Wed, 5 Sep 2018 14:07:15 -0400
+Subject: [PATCH] NFS: Don't open code clearing of delegation state
+Git-commit: 9f0c5124f4a82503ee5d55c60b0b9c6afc3af68b
+Patch-mainline: v4.19
+References: git-fixes
+
+Add a helper for the case when the nfs4 open state has been set to use
+a delegation stateid, and we want to revert to using the open stateid.
+
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/nfs4proc.c |   21 ++++++++++++---------
+ 1 file changed, 12 insertions(+), 9 deletions(-)
+
+--- a/fs/nfs/nfs4proc.c
++++ b/fs/nfs/nfs4proc.c
+@@ -1605,6 +1605,14 @@ static void nfs_state_set_delegation(str
+ 	write_sequnlock(&state->seqlock);
+ }
+ 
++static void nfs_state_clear_delegation(struct nfs4_state *state)
++{
++	write_seqlock(&state->seqlock);
++	nfs4_stateid_copy(&state->stateid, &state->open_stateid);
++	clear_bit(NFS_DELEGATED_STATE, &state->flags);
++	write_sequnlock(&state->seqlock);
++}
++
+ static int update_open_stateid(struct nfs4_state *state,
+ 		const nfs4_stateid *open_stateid,
+ 		const nfs4_stateid *delegation,
+@@ -2076,10 +2084,7 @@ int nfs4_open_delegation_recall(struct n
+ 	if (IS_ERR(opendata))
+ 		return PTR_ERR(opendata);
+ 	nfs4_stateid_copy(&opendata->o_arg.u.delegation, stateid);
+-	write_seqlock(&state->seqlock);
+-	nfs4_stateid_copy(&state->stateid, &state->open_stateid);
+-	write_sequnlock(&state->seqlock);
+-	clear_bit(NFS_DELEGATED_STATE, &state->flags);
++	nfs_state_clear_delegation(state);
+ 	switch (type & (FMODE_READ|FMODE_WRITE)) {
+ 	case FMODE_READ|FMODE_WRITE:
+ 	case FMODE_WRITE:
+@@ -2525,10 +2530,7 @@ static void nfs_finish_clear_delegation_
+ 		const nfs4_stateid *stateid)
+ {
+ 	nfs_remove_bad_delegation(state->inode, stateid);
+-	write_seqlock(&state->seqlock);
+-	nfs4_stateid_copy(&state->stateid, &state->open_stateid);
+-	write_sequnlock(&state->seqlock);
+-	clear_bit(NFS_DELEGATED_STATE, &state->flags);
++	nfs_state_clear_delegation(state);
+ }
+ 
+ static void nfs40_clear_delegation_stateid(struct nfs4_state *state)
+@@ -2596,13 +2598,14 @@ static void nfs41_check_delegation_state
+ 	delegation = rcu_dereference(NFS_I(state->inode)->delegation);
+ 	if (delegation == NULL) {
+ 		rcu_read_unlock();
++		nfs_state_clear_delegation(state);
+ 		return;
+ 	}
+ 
+ 	nfs4_stateid_copy(&stateid, &delegation->stateid);
+ 	if (test_bit(NFS_DELEGATION_REVOKED, &delegation->flags)) {
+ 		rcu_read_unlock();
+-		nfs_finish_clear_delegation_stateid(state, &stateid);
++		nfs_state_clear_delegation(state);
+ 		return;
+ 	}
+ 

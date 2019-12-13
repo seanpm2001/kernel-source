@@ -1,0 +1,64 @@
+From: Marc Zyngier <marc.zyngier@arm.com>
+Date: Thu, 27 Sep 2018 17:15:33 +0100
+Subject: arm64: compat: Add CNTFRQ trap handler
+
+Git-commit: 32a3e635fb0ecc1b197d54f710e76c6481cf19f0
+Patch-mainline: v4.20-rc1
+References: jsc#ECO-561
+
+Just like CNTVCT, we need to handle userspace trapping into the
+kernel if we're decided that the timer wasn't fit for purpose...
+64bit userspace is already dealt with, but we're missing the
+equivalent compat handling.
+
+Reviewed-by: Mark Rutland <mark.rutland@arm.com>
+Signed-off-by: Marc Zyngier <marc.zyngier@arm.com>
+Signed-off-by: Catalin Marinas <catalin.marinas@arm.com>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ arch/arm64/include/asm/esr.h |  3 +++
+ arch/arm64/kernel/traps.c    | 13 +++++++++++++
+ 2 files changed, 16 insertions(+)
+
+diff --git a/arch/arm64/include/asm/esr.h b/arch/arm64/include/asm/esr.h
+index 5548712ce6e5..fb7dfe1b51bb 100644
+--- a/arch/arm64/include/asm/esr.h
++++ b/arch/arm64/include/asm/esr.h
+@@ -318,6 +318,9 @@
+ #define ESR_ELx_CP15_64_ISS_SYS_CNTVCT	(ESR_ELx_CP15_64_ISS_SYS_VAL(1, 14) | \
+ 					 ESR_ELx_CP15_64_ISS_DIR_READ)
+ 
++#define ESR_ELx_CP15_32_ISS_SYS_CNTFRQ	(ESR_ELx_CP15_32_ISS_SYS_VAL(0, 0, 14, 0) |\
++					 ESR_ELx_CP15_32_ISS_DIR_READ)
++
+ #ifndef __ASSEMBLY__
+ #include <asm/types.h>
+ 
+diff --git a/arch/arm64/kernel/traps.c b/arch/arm64/kernel/traps.c
+index 3602b900ff1c..58134a97928f 100644
+--- a/arch/arm64/kernel/traps.c
++++ b/arch/arm64/kernel/traps.c
+@@ -625,7 +625,20 @@ static void arm64_compat_skip_faulting_instruction(struct pt_regs *regs,
+ 	arm64_skip_faulting_instruction(regs, sz);
+ }
+ 
++static void compat_cntfrq_read_handler(unsigned int esr, struct pt_regs *regs)
++{
++	int reg = (esr & ESR_ELx_CP15_32_ISS_RT_MASK) >> ESR_ELx_CP15_32_ISS_RT_SHIFT;
++
++	pt_regs_write_reg(regs, reg, arch_timer_get_rate());
++	arm64_compat_skip_faulting_instruction(regs, 4);
++}
++
+ static struct sys64_hook cp15_32_hooks[] = {
++	{
++		.esr_mask = ESR_ELx_CP15_32_ISS_SYS_MASK,
++		.esr_val = ESR_ELx_CP15_32_ISS_SYS_CNTFRQ,
++		.handler = compat_cntfrq_read_handler,
++	},
+ 	{},
+ };
+ 
+-- 
+2.16.4
+

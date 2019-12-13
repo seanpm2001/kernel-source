@@ -1,0 +1,213 @@
+From: Mauro Carvalho Chehab <mchehab@s-opensource.com>
+Date: Thu, 1 Mar 2018 10:08:42 -0500
+Subject: [PATCH] media: em28xx: stop rewriting device's struct
+Git-commit: aa62980be47e1fe1f40cbaf0a80589193faa7ab9
+Patch-mainline: v4.17-rc1
+References: bsc#1051510
+
+Writing at the device's struct is evil, as two em28xx devices
+may be using it. So, stop abusing it, storing the values
+inside struct em28xx_dev.
+
+Signed-off-by: Mauro Carvalho Chehab <mchehab@s-opensource.com>
+Acked-by: Simon Schricker <sschricker@suse.de>
+---
+ drivers/media/usb/em28xx/em28xx-cards.c |   12 +++++++-----
+ drivers/media/usb/em28xx/em28xx-core.c  |    4 ++--
+ drivers/media/usb/em28xx/em28xx-video.c |   24 ++++++++++++------------
+ drivers/media/usb/em28xx/em28xx.h       |    2 ++
+ 4 files changed, 23 insertions(+), 19 deletions(-)
+
+--- a/drivers/media/usb/em28xx/em28xx-cards.c
++++ b/drivers/media/usb/em28xx/em28xx-cards.c
+@@ -2667,6 +2667,8 @@ EXPORT_SYMBOL_GPL(em28xx_tuner_callback)
+ static inline void em28xx_set_model(struct em28xx *dev)
+ {
+ 	dev->board = em28xx_boards[dev->model];
++	dev->has_msp34xx = dev->board.has_msp34xx;
++	dev->is_webcam = dev->board.is_webcam;
+ 
+ 	/* Those are the default values for the majority of boards
+ 	   Use those values if not specified otherwise at boards entry
+@@ -2838,7 +2840,7 @@ static int em28xx_hint_board(struct em28
+ {
+ 	int i;
+ 
+-	if (dev->board.is_webcam) {
++	if (dev->is_webcam) {
+ 		if (dev->em28xx_sensor == EM28XX_MT9V011) {
+ 			dev->model = EM2820_BOARD_SILVERCREST_WEBCAM;
+ 		} else if (dev->em28xx_sensor == EM28XX_MT9M001 ||
+@@ -2930,11 +2932,11 @@ static void em28xx_card_setup(struct em2
+ 	 * If the device can be a webcam, seek for a sensor.
+ 	 * If sensor is not found, then it isn't a webcam.
+ 	 */
+-	if (dev->board.is_webcam) {
++	if (dev->is_webcam) {
+ 		em28xx_detect_sensor(dev);
+ 		if (dev->em28xx_sensor == EM28XX_NOSENSOR)
+ 			/* NOTE: error/unknown sensor/no sensor */
+-			dev->board.is_webcam = 0;
++			dev->is_webcam = 0;
+ 	}
+ 
+ 	switch (dev->model) {
+@@ -2996,7 +2998,7 @@ static void em28xx_card_setup(struct em2
+ 
+ 		if (tv.audio_processor == TVEEPROM_AUDPROC_MSP) {
+ 			dev->i2s_speed = 2048000;
+-			dev->board.has_msp34xx = 1;
++			dev->has_msp34xx = 1;
+ 		}
+ 		break;
+ 	}
+@@ -3673,7 +3675,7 @@ static int em28xx_usb_probe(struct usb_i
+ 	}
+ 
+ 	if (usb_xfer_mode < 0) {
+-		if (dev->board.is_webcam)
++		if (dev->is_webcam)
+ 			try_bulk = 1;
+ 		else
+ 			try_bulk = 0;
+--- a/drivers/media/usb/em28xx/em28xx-core.c
++++ b/drivers/media/usb/em28xx/em28xx-core.c
+@@ -377,7 +377,7 @@ static int em28xx_set_audio_source(struc
+ 			return ret;
+ 	}
+ 
+-	if (dev->board.has_msp34xx)
++	if (dev->has_msp34xx)
+ 		input = EM28XX_AUDIO_SRC_TUNER;
+ 	else {
+ 		switch (dev->ctl_ainput) {
+@@ -650,7 +650,7 @@ int em28xx_capture_start(struct em28xx *
+ 			return rc;
+ 
+ 		if (start) {
+-			if (dev->board.is_webcam)
++			if (dev->is_webcam)
+ 				rc = em28xx_write_reg(dev, 0x13, 0x0c);
+ 
+ 			/* Enable video capture */
+--- a/drivers/media/usb/em28xx/em28xx-video.c
++++ b/drivers/media/usb/em28xx/em28xx-video.c
+@@ -148,7 +148,7 @@ static inline unsigned int norm_maxw(str
+ {
+ 	struct em28xx_v4l2 *v4l2 = dev->v4l2;
+ 
+-	if (dev->board.is_webcam)
++	if (dev->is_webcam)
+ 		return v4l2->sensor_xres;
+ 
+ 	if (dev->board.max_range_640_480)
+@@ -161,7 +161,7 @@ static inline unsigned int norm_maxh(str
+ {
+ 	struct em28xx_v4l2 *v4l2 = dev->v4l2;
+ 
+-	if (dev->board.is_webcam)
++	if (dev->is_webcam)
+ 		return v4l2->sensor_yres;
+ 
+ 	if (dev->board.max_range_640_480)
+@@ -176,7 +176,7 @@ static int em28xx_vbi_supported(struct e
+ 	if (disable_vbi == 1)
+ 		return 0;
+ 
+-	if (dev->board.is_webcam)
++	if (dev->is_webcam)
+ 		return 0;
+ 
+ 	/* FIXME: check subdevices for VBI support */
+@@ -976,7 +976,7 @@ static void em28xx_v4l2_create_entities(
+ 	}
+ 
+ 	/* Webcams don't have input connectors */
+-	if (dev->board.is_webcam)
++	if (dev->is_webcam)
+ 		return;
+ 
+ 	/* Create entities for each input connector */
+@@ -1277,7 +1277,7 @@ static void video_mux(struct em28xx *dev
+ 	v4l2_device_call_all(v4l2_dev, 0, video, s_routing,
+ 			     INPUT(index)->vmux, 0, 0);
+ 
+-	if (dev->board.has_msp34xx) {
++	if (dev->has_msp34xx) {
+ 		if (dev->i2s_speed) {
+ 			v4l2_device_call_all(v4l2_dev, 0, audio,
+ 					     s_i2s_clock_freq, dev->i2s_speed);
+@@ -1587,7 +1587,7 @@ static int vidioc_g_parm(struct file *fi
+ 	int rc = 0;
+ 
+ 	p->parm.capture.readbuffers = EM28XX_MIN_BUF;
+-	if (dev->board.is_webcam)
++	if (dev->is_webcam)
+ 		rc = v4l2_device_call_until_err(&v4l2->v4l2_dev, 0,
+ 						video, g_parm, p);
+ 	else
+@@ -1629,7 +1629,7 @@ static int vidioc_enum_input(struct file
+ 
+ 	i->std = dev->v4l2->vdev.tvnorms;
+ 	/* webcams do not have the STD API */
+-	if (dev->board.is_webcam)
++	if (dev->is_webcam)
+ 		i->capabilities = 0;
+ 
+ 	return 0;
+@@ -2343,7 +2343,7 @@ static void em28xx_vdev_init(struct em28
+ 	*vfd		= *template;
+ 	vfd->v4l2_dev	= &dev->v4l2->v4l2_dev;
+ 	vfd->lock	= &dev->lock;
+-	if (dev->board.is_webcam)
++	if (dev->is_webcam)
+ 		vfd->tvnorms = 0;
+ 
+ 	snprintf(vfd->name, sizeof(vfd->name), "%s %s",
+@@ -2458,7 +2458,7 @@ static int em28xx_v4l2_init(struct em28x
+ 	v4l2_ctrl_handler_init(hdl, 8);
+ 	v4l2->v4l2_dev.ctrl_handler = hdl;
+ 
+-	if (dev->board.is_webcam)
++	if (dev->is_webcam)
+ 		v4l2->progressive = true;
+ 
+ 	/*
+@@ -2470,7 +2470,7 @@ static int em28xx_v4l2_init(struct em28x
+ 
+ 	/* request some modules */
+ 
+-	if (dev->board.has_msp34xx)
++	if (dev->has_msp34xx)
+ 		v4l2_i2c_new_subdev(&v4l2->v4l2_dev,
+ 				    &dev->i2c_adap[dev->def_i2c_bus],
+ 				    "msp3400", 0, msp3400_addrs);
+@@ -2559,7 +2559,7 @@ static int em28xx_v4l2_init(struct em28x
+ 	INIT_LIST_HEAD(&dev->vidq.active);
+ 	INIT_LIST_HEAD(&dev->vbiq.active);
+ 
+-	if (dev->board.has_msp34xx) {
++	if (dev->has_msp34xx) {
+ 		/* Send a reset to other chips via gpio */
+ 		ret = em28xx_write_reg(dev, EM2820_R08_GPIO_CTRL, 0xf7);
+ 		if (ret < 0) {
+@@ -2653,7 +2653,7 @@ static int em28xx_v4l2_init(struct em28x
+ 	v4l2->vdev.queue->lock = &v4l2->vb_queue_lock;
+ 
+ 	/* disable inapplicable ioctls */
+-	if (dev->board.is_webcam) {
++	if (dev->is_webcam) {
+ 		v4l2_disable_ioctl(&v4l2->vdev, VIDIOC_QUERYSTD);
+ 		v4l2_disable_ioctl(&v4l2->vdev, VIDIOC_G_STD);
+ 		v4l2_disable_ioctl(&v4l2->vdev, VIDIOC_S_STD);
+--- a/drivers/media/usb/em28xx/em28xx.h
++++ b/drivers/media/usb/em28xx/em28xx.h
+@@ -618,6 +618,8 @@ struct em28xx {
+ 	unsigned char disconnected:1;	/* device has been diconnected */
+ 	unsigned int has_video:1;
+ 	unsigned int is_audio_only:1;
++	unsigned int is_webcam:1;
++	unsigned int has_msp34xx:1;
+ 	enum em28xx_int_audio_type int_audio_type;
+ 	enum em28xx_usb_audio_type usb_audio_type;
+ 

@@ -1,9 +1,9 @@
 From: Ming Lei <ming.lei@redhat.com>
 Date: Thu, 2 Nov 2017 23:24:38 +0800
 Subject: [PATCH] blk-mq: don't allocate driver tag upfront for flush rq
+References: bsc#1104967,bsc#1137959,FATE#325924
 Git-commit: 923218f6166a84688973acdc39094f3bee1e9ad4
 Patch-mainline: v4.15-rc1
-References: bsc#1104967,FATE#325924
 
 The idea behind it is simple:
 
@@ -38,7 +38,7 @@ Acked-by: Hannes Reinecke <hare@suse.com>
  3 files changed, 37 insertions(+), 81 deletions(-)
 
 diff --git a/block/blk-flush.c b/block/blk-flush.c
-index a9773d2075ac..f17170675917 100644
+index 6de6f370e7dc..cdd854de7438 100644
 --- a/block/blk-flush.c
 +++ b/block/blk-flush.c
 @@ -231,8 +231,13 @@ static void flush_end_io(struct request *flush_rq, blk_status_t error)
@@ -104,10 +104,10 @@ index a9773d2075ac..f17170675917 100644
  	 * After populating an empty queue, kick it to avoid stall.  Read
  	 * the comment in flush_end_io().
 diff --git a/block/blk-mq-sched.c b/block/blk-mq-sched.c
-index e7094f44afaf..01a43fed6b8c 100644
+index 2847f6bafcc6..7c7e8dcaa298 100644
 --- a/block/blk-mq-sched.c
 +++ b/block/blk-mq-sched.c
-@@ -356,29 +356,12 @@ static bool blk_mq_sched_bypass_insert(struct blk_mq_hw_ctx *hctx,
+@@ -271,29 +271,12 @@ static bool blk_mq_sched_bypass_insert(struct blk_mq_hw_ctx *hctx,
  		return true;
  	}
  
@@ -138,7 +138,7 @@ index e7094f44afaf..01a43fed6b8c 100644
  void blk_mq_sched_insert_request(struct request *rq, bool at_head,
  				 bool run_queue, bool async, bool can_block)
  {
-@@ -389,10 +372,12 @@ void blk_mq_sched_insert_request(struct request *rq, bool at_head,
+@@ -366,10 +349,12 @@ void blk_mq_sched_insert_request(struct request *rq, bool at_head,
  
  	/* flush rq in flush machinery need to be dispatched directly */
  	if (!(rq->rq_flags & RQF_FLUSH_SEQ) && op_is_flush(rq->cmd_flags)) {
@@ -153,7 +153,7 @@ index e7094f44afaf..01a43fed6b8c 100644
  	if (blk_mq_sched_bypass_insert(hctx, !!e, rq))
  		goto run;
  
-@@ -419,23 +404,6 @@ void blk_mq_sched_insert_requests(struct request_queue *q,
+@@ -396,23 +381,6 @@ void blk_mq_sched_insert_requests(struct request_queue *q,
  	struct blk_mq_hw_ctx *hctx = blk_mq_map_queue(q, ctx->cpu);
  	struct elevator_queue *e = hctx->queue->elevator;
  
@@ -178,10 +178,10 @@ index e7094f44afaf..01a43fed6b8c 100644
  		e->type->ops.mq.insert_requests(hctx, list, false);
  	else
 diff --git a/block/blk-mq.c b/block/blk-mq.c
-index 14f6886fbec8..c501cbd0de93 100644
+index 7609adaab78e..581edbfb0d0f 100644
 --- a/block/blk-mq.c
 +++ b/block/blk-mq.c
-@@ -653,6 +653,8 @@ static void __blk_mq_requeue_request(struct request *rq)
+@@ -655,6 +655,8 @@ static void __blk_mq_requeue_request(struct request *rq)
  {
  	struct request_queue *q = rq->q;
  
@@ -190,7 +190,7 @@ index 14f6886fbec8..c501cbd0de93 100644
  	trace_block_rq_requeue(q, rq);
  	wbt_requeue(q->rq_wb, &rq->issue_stat);
  	blk_mq_sched_requeue_request(rq);
-@@ -996,30 +998,6 @@ bool blk_mq_get_driver_tag(struct request *rq, struct blk_mq_hw_ctx **hctx,
+@@ -962,30 +964,6 @@ bool blk_mq_get_driver_tag(struct request *rq, struct blk_mq_hw_ctx **hctx,
  	return rq->tag != -1;
  }
  
@@ -221,7 +221,7 @@ index 14f6886fbec8..c501cbd0de93 100644
  static int blk_mq_dispatch_wake(wait_queue_entry_t *wait, unsigned mode, int flags,
  				void *key)
  {
-@@ -1080,9 +1058,6 @@ bool blk_mq_dispatch_rq_list(struct request_queue *q, struct list_head *list,
+@@ -1043,9 +1021,6 @@ bool blk_mq_dispatch_rq_list(struct request_queue *q, struct list_head *list)
  
  		rq = list_first_entry(list, struct request, queuelist);
  		if (!blk_mq_get_driver_tag(rq, &hctx, false)) {
@@ -231,7 +231,7 @@ index 14f6886fbec8..c501cbd0de93 100644
  			/*
  			 * The initial allocation attempt failed, so we need to
  			 * rerun the hardware queue when a tag is freed.
-@@ -1133,7 +1108,6 @@ bool blk_mq_dispatch_rq_list(struct request_queue *q, struct list_head *list,
+@@ -1087,7 +1062,6 @@ bool blk_mq_dispatch_rq_list(struct request_queue *q, struct list_head *list)
  				nxt = list_first_entry(list, struct request, queuelist);
  				blk_mq_put_driver_tag(nxt);
  			}
@@ -239,7 +239,7 @@ index 14f6886fbec8..c501cbd0de93 100644
  			list_add(&rq->queuelist, list);
  			__blk_mq_requeue_request(rq);
  			break;
-@@ -1698,13 +1672,10 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
+@@ -1670,13 +1644,10 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
  	if (unlikely(is_flush_fua)) {
  		blk_mq_put_ctx(data.ctx);
  		blk_mq_bio_to_request(rq, bio);

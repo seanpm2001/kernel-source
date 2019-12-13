@@ -1,10 +1,9 @@
 From: Bill Kuzeja <William.Kuzeja@stratus.com>
 Date: Tue, 12 Feb 2019 09:29:50 -0500
-Subject: [PATCH] scsi: qla2xxx: Fix panic from use after free in
- qla2x00_async_tm_cmd
-References: bsc#1136215
-Git-commit: 388a49959ee4e4e99f160241d9599efa62cd4299
+Subject: scsi: qla2xxx: Fix panic from use after free in qla2x00_async_tm_cmd
 Patch-mainline: v5.0-rc7
+Git-commit: 388a49959ee4e4e99f160241d9599efa62cd4299
+References: bsc#1123034 bsc#1131304 bsc#1127988 bsc#1136215
 
 In qla2x00_async_tm_cmd, we reference off sp after it has been freed.  This
 caused a panic on a system running a slub debug kernel. Since fcport is
@@ -14,16 +13,14 @@ Signed-off-by: Bill Kuzeja <william.kuzeja@stratus.com>
 Acked-by: Giridhar Malavali <gmalavali@marvell.com>
 Acked-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Signed-off-by: Hannes Reinecke <hare@suse.de>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_init.c | 4 ++--
+ drivers/scsi/qla2xxx/qla_init.c |    4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_init.c b/drivers/scsi/qla2xxx/qla_init.c
-index 6dcc7e9c9001..699b8c540723 100644
 --- a/drivers/scsi/qla2xxx/qla_init.c
 +++ b/drivers/scsi/qla2xxx/qla_init.c
-@@ -1701,13 +1701,13 @@ qla2x00_async_tm_cmd(fc_port_t *fcport, uint32_t flags, uint32_t lun,
+@@ -1787,13 +1787,13 @@ qla2x00_async_tm_cmd(fc_port_t *fcport,
  
  		/* Issue Marker IOCB */
  		qla2x00_marker(vha, vha->hw->req_q_map[0],
@@ -39,6 +36,3 @@ index 6dcc7e9c9001..699b8c540723 100644
  done:
  	return rval;
  }
--- 
-2.16.4
-

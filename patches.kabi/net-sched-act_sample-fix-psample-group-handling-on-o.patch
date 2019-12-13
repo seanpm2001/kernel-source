@@ -1,0 +1,29 @@
+From: Jiri Slaby <jslaby@suse.cz>
+Subject: kabi: net: sched: act_sample: fix psample group handling on overwrite
+Patch-mainline: never, kabi
+References: networking-stable-19_09_05
+
+This is a fix for patch:
+patches.suse/net-sched-act_sample-fix-psample-group-handling-on-o.patch
+
+It added a member to struct psample_group. Given it was added to the end
+and this structure is allocated only by psample_group_create, simply
+hide it by __GENKSYMS__.
+
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ include/net/psample.h |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/include/net/psample.h
++++ b/include/net/psample.h
+@@ -11,7 +11,9 @@ struct psample_group {
+ 	u32 group_num;
+ 	u32 refcount;
+ 	u32 seq;
++#ifndef __GENKSYMS__
+ 	struct rcu_head rcu;
++#endif
+ };
+ 
+ struct psample_group *psample_group_get(struct net *net, u32 group_num);

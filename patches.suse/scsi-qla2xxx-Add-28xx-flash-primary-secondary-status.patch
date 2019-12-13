@@ -1,10 +1,10 @@
 From: Joe Carnuccio <joe.carnuccio@cavium.com>
 Date: Tue, 12 Mar 2019 11:08:21 -0700
-Subject: [PATCH] scsi: qla2xxx: Add 28xx flash primary/secondary status/image
+Subject: scsi: qla2xxx: Add 28xx flash primary/secondary status/image
  mechanism
-Git-commit: 5fa8774c7f38c79f38b672c1a0db0c049da477d6
 Patch-mainline: v5.2-rc1
-References: bsc#1136215
+Git-commit: 5fa8774c7f38c79f38b672c1a0db0c049da477d6
+References: bsc#1123034 bsc#1131304 bsc#1127988 bsc#1136215
 
 Includes the following:
 - correction to 27xx image status struct;
@@ -16,23 +16,21 @@ Signed-off-by: Joe Carnuccio <joe.carnuccio@cavium.com>
 Signed-off-by: Mike Hernandez <mhernandez@marvell.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_attr.c |  34 ++++-
- drivers/scsi/qla2xxx/qla_bsg.c  |  42 +++++
- drivers/scsi/qla2xxx/qla_bsg.h  |  11 ++
- drivers/scsi/qla2xxx/qla_def.h  |  63 +++++---
- drivers/scsi/qla2xxx/qla_fw.h   |  12 ++
- drivers/scsi/qla2xxx/qla_gbl.h  |   6 +-
- drivers/scsi/qla2xxx/qla_init.c | 328 +++++++++++++++++++++++++++++++++-------
- drivers/scsi/qla2xxx/qla_sup.c  |  71 +++++++--
+ drivers/scsi/qla2xxx/qla_attr.c |   34 +++-
+ drivers/scsi/qla2xxx/qla_bsg.c  |   42 +++++
+ drivers/scsi/qla2xxx/qla_bsg.h  |   11 +
+ drivers/scsi/qla2xxx/qla_def.h  |   63 +++++--
+ drivers/scsi/qla2xxx/qla_fw.h   |   12 +
+ drivers/scsi/qla2xxx/qla_gbl.h  |    6 
+ drivers/scsi/qla2xxx/qla_init.c |  328 ++++++++++++++++++++++++++++++++--------
+ drivers/scsi/qla2xxx/qla_sup.c  |   71 ++++++--
  8 files changed, 470 insertions(+), 97 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_attr.c b/drivers/scsi/qla2xxx/qla_attr.c
-index 35f7804682ec..8687090193dc 100644
 --- a/drivers/scsi/qla2xxx/qla_attr.c
 +++ b/drivers/scsi/qla2xxx/qla_attr.c
-@@ -154,6 +154,8 @@ qla2x00_sysfs_read_nvram(struct file *filp, struct kobject *kobj,
+@@ -154,6 +154,8 @@ qla2x00_sysfs_read_nvram(struct file *fi
  	struct scsi_qla_host *vha = shost_priv(dev_to_shost(container_of(kobj,
  	    struct device, kobj)));
  	struct qla_hw_data *ha = vha->hw;
@@ -41,7 +39,7 @@ index 35f7804682ec..8687090193dc 100644
  
  	if (!capable(CAP_SYS_ADMIN))
  		return 0;
-@@ -164,11 +166,21 @@ qla2x00_sysfs_read_nvram(struct file *filp, struct kobject *kobj,
+@@ -164,11 +166,21 @@ qla2x00_sysfs_read_nvram(struct file *fi
  		return -EAGAIN;
  	}
  
@@ -66,7 +64,7 @@ index 35f7804682ec..8687090193dc 100644
  	return memory_read_from_buffer(buf, count, &off, ha->nvram,
  					ha->nvram_size);
  }
-@@ -504,6 +516,7 @@ qla2x00_sysfs_read_vpd(struct file *filp, struct kobject *kobj,
+@@ -504,6 +516,7 @@ qla2x00_sysfs_read_vpd(struct file *filp
  	    struct device, kobj)));
  	struct qla_hw_data *ha = vha->hw;
  	uint32_t faddr;
@@ -74,7 +72,7 @@ index 35f7804682ec..8687090193dc 100644
  
  	if (unlikely(pci_channel_offline(ha->pdev)))
  		return -EAGAIN;
-@@ -516,9 +529,16 @@ qla2x00_sysfs_read_vpd(struct file *filp, struct kobject *kobj,
+@@ -516,9 +529,16 @@ qla2x00_sysfs_read_vpd(struct file *filp
  
  	faddr = ha->flt_region_vpd << 2;
  
@@ -94,7 +92,7 @@ index 35f7804682ec..8687090193dc 100644
  
  	mutex_lock(&ha->optrom_mutex);
  	if (qla2x00_chip_is_down(vha)) {
-@@ -528,6 +548,8 @@ qla2x00_sysfs_read_vpd(struct file *filp, struct kobject *kobj,
+@@ -528,6 +548,8 @@ qla2x00_sysfs_read_vpd(struct file *filp
  
  	ha->isp_ops->read_optrom(vha, ha->vpd, faddr, ha->vpd_size);
  	mutex_unlock(&ha->optrom_mutex);
@@ -103,11 +101,9 @@ index 35f7804682ec..8687090193dc 100644
  skip:
  	return memory_read_from_buffer(buf, count, &off, ha->vpd, ha->vpd_size);
  }
-diff --git a/drivers/scsi/qla2xxx/qla_bsg.c b/drivers/scsi/qla2xxx/qla_bsg.c
-index 4c294bcd100a..95b0ec3c2d40 100644
 --- a/drivers/scsi/qla2xxx/qla_bsg.c
 +++ b/drivers/scsi/qla2xxx/qla_bsg.c
-@@ -2388,6 +2388,45 @@ qla2x00_do_dport_diagnostics(struct bsg_job *bsg_job)
+@@ -2390,6 +2390,45 @@ qla2x00_do_dport_diagnostics(struct bsg_
  	return 0;
  }
  
@@ -153,7 +149,7 @@ index 4c294bcd100a..95b0ec3c2d40 100644
  static int
  qla2x00_process_vendor_specific(struct bsg_job *bsg_job)
  {
-@@ -2461,6 +2500,9 @@ qla2x00_process_vendor_specific(struct bsg_job *bsg_job)
+@@ -2462,6 +2501,9 @@ qla2x00_process_vendor_specific(struct b
  	case QL_VND_DPORT_DIAGNOSTICS:
  		return qla2x00_do_dport_diagnostics(bsg_job);
  
@@ -163,8 +159,6 @@ index 4c294bcd100a..95b0ec3c2d40 100644
  	default:
  		return -ENOSYS;
  	}
-diff --git a/drivers/scsi/qla2xxx/qla_bsg.h b/drivers/scsi/qla2xxx/qla_bsg.h
-index d97dfd521356..7594fad7b5b5 100644
 --- a/drivers/scsi/qla2xxx/qla_bsg.h
 +++ b/drivers/scsi/qla2xxx/qla_bsg.h
 @@ -31,6 +31,7 @@
@@ -190,8 +184,6 @@ index d97dfd521356..7594fad7b5b5 100644
 +} __packed;
 +
  #endif
-diff --git a/drivers/scsi/qla2xxx/qla_def.h b/drivers/scsi/qla2xxx/qla_def.h
-index ac229cf7126b..574797ac7f92 100644
 --- a/drivers/scsi/qla2xxx/qla_def.h
 +++ b/drivers/scsi/qla2xxx/qla_def.h
 @@ -1204,6 +1204,9 @@ struct mbx_cmd_32 {
@@ -270,7 +262,7 @@ index ac229cf7126b..574797ac7f92 100644
  #define FW_ABILITY_MAX_SPEED_MASK	0xFUL
  #define FW_ABILITY_MAX_SPEED_16G	0x0
  #define FW_ABILITY_MAX_SPEED_32G	0x1
-@@ -4469,13 +4489,20 @@ typedef struct scsi_qla_host {
+@@ -4467,13 +4487,20 @@ typedef struct scsi_qla_host {
  struct qla27xx_image_status {
  	uint8_t image_status_mask;
  	uint16_t generation;
@@ -293,8 +285,6 @@ index ac229cf7126b..574797ac7f92 100644
  #define SET_VP_IDX	1
  #define SET_AL_PA	2
  #define RESET_VP_IDX	3
-diff --git a/drivers/scsi/qla2xxx/qla_fw.h b/drivers/scsi/qla2xxx/qla_fw.h
-index b9b1aaaff906..9dbd0dce5a29 100644
 --- a/drivers/scsi/qla2xxx/qla_fw.h
 +++ b/drivers/scsi/qla2xxx/qla_fw.h
 @@ -1515,6 +1515,18 @@ struct qla_flt_header {
@@ -316,11 +306,9 @@ index b9b1aaaff906..9dbd0dce5a29 100644
  struct qla_flt_region {
  	uint16_t code;
  	uint8_t attribute;
-diff --git a/drivers/scsi/qla2xxx/qla_gbl.h b/drivers/scsi/qla2xxx/qla_gbl.h
-index f00f1d213253..d5c27ffb5f41 100644
 --- a/drivers/scsi/qla2xxx/qla_gbl.h
 +++ b/drivers/scsi/qla2xxx/qla_gbl.h
-@@ -93,7 +93,6 @@ extern int qla2xxx_mctp_dump(scsi_qla_host_t *);
+@@ -93,7 +93,6 @@ extern int qla2xxx_mctp_dump(scsi_qla_ho
  extern int
  qla2x00_alloc_outstanding_cmds(struct qla_hw_data *, struct req_que *);
  extern int qla2x00_init_rings(scsi_qla_host_t *);
@@ -328,7 +316,7 @@ index f00f1d213253..d5c27ffb5f41 100644
  extern struct qla_qpair *qla2xxx_create_qpair(struct scsi_qla_host *,
  	int, int, bool);
  extern int qla2xxx_delete_qpair(struct scsi_qla_host *, struct qla_qpair *);
-@@ -108,6 +107,11 @@ int qla24xx_fcport_handle_login(struct scsi_qla_host *, fc_port_t *);
+@@ -108,6 +107,11 @@ int qla24xx_fcport_handle_login(struct s
  int qla24xx_detect_sfp(scsi_qla_host_t *vha);
  int qla24xx_post_gpdb_work(struct scsi_qla_host *, fc_port_t *, u8);
  
@@ -340,11 +328,9 @@ index f00f1d213253..d5c27ffb5f41 100644
  void qla2x00_async_prlo_done(struct scsi_qla_host *, fc_port_t *,
      uint16_t *);
  extern int qla2x00_post_async_prlo_work(struct scsi_qla_host *, fc_port_t *,
-diff --git a/drivers/scsi/qla2xxx/qla_init.c b/drivers/scsi/qla2xxx/qla_init.c
-index 158ec5aa2837..7c5e530a90df 100644
 --- a/drivers/scsi/qla2xxx/qla_init.c
 +++ b/drivers/scsi/qla2xxx/qla_init.c
-@@ -7236,95 +7236,281 @@ qla24xx_nvram_config(scsi_qla_host_t *vha)
+@@ -7243,95 +7243,281 @@ qla24xx_nvram_config(scsi_qla_host_t *vh
  	return (rval);
  }
  
@@ -677,7 +663,7 @@ index 158ec5aa2837..7c5e530a90df 100644
  }
  
  bool qla24xx_risc_firmware_invalid(uint32_t *dword)
-@@ -7714,7 +7900,7 @@ qla24xx_load_risc_blob(scsi_qla_host_t *vha, uint32_t *srisc_addr)
+@@ -7721,7 +7907,7 @@ qla24xx_load_risc_blob(scsi_qla_host_t *
  
  		dcode = fwdt->template;
  		for (i = 0; i < risc_size; i++)
@@ -686,7 +672,7 @@ index 158ec5aa2837..7c5e530a90df 100644
  
  		if (!qla27xx_fwdt_template_valid(dcode)) {
  			ql_log(ql_log_warn, vha, 0x0175,
-@@ -7777,6 +7963,7 @@ qla81xx_load_risc(scsi_qla_host_t *vha, uint32_t *srisc_addr)
+@@ -7784,6 +7970,7 @@ qla81xx_load_risc(scsi_qla_host_t *vha,
  {
  	int rval;
  	struct qla_hw_data *ha = vha->hw;
@@ -694,7 +680,7 @@ index 158ec5aa2837..7c5e530a90df 100644
  
  	if (ql2xfwloadbin == 2)
  		goto try_blob_fw;
-@@ -7787,10 +7974,12 @@ qla81xx_load_risc(scsi_qla_host_t *vha, uint32_t *srisc_addr)
+@@ -7794,10 +7981,12 @@ qla81xx_load_risc(scsi_qla_host_t *vha,
  	 * 3) Golden-Firmware residing in flash -- (limited operation).
  	 */
  
@@ -709,7 +695,7 @@ index 158ec5aa2837..7c5e530a90df 100644
  		goto try_primary_fw;
  
  	ql_dbg(ql_dbg_init, vha, 0x008b,
-@@ -7986,6 +8175,8 @@ qla81xx_nvram_config(scsi_qla_host_t *vha)
+@@ -7993,6 +8182,8 @@ qla81xx_nvram_config(scsi_qla_host_t *vh
  	uint32_t chksum;
  	uint16_t cnt;
  	struct qla_hw_data *ha = vha->hw;
@@ -718,7 +704,7 @@ index 158ec5aa2837..7c5e530a90df 100644
  
  	rval = QLA_SUCCESS;
  	icb = (struct init_cb_81xx *)ha->init_cb;
-@@ -7997,14 +8188,35 @@ qla81xx_nvram_config(scsi_qla_host_t *vha)
+@@ -8004,14 +8195,35 @@ qla81xx_nvram_config(scsi_qla_host_t *vh
  	if (IS_P3P_TYPE(ha) || IS_QLA8031(ha))
  		ha->vpd_size = FA_VPD_SIZE_82XX;
  
@@ -758,11 +744,9 @@ index 158ec5aa2837..7c5e530a90df 100644
  	dptr = (uint32_t *)nv;
  	for (cnt = 0, chksum = 0; cnt < ha->nvram_size >> 2; cnt++, dptr++)
  		chksum += le32_to_cpu(*dptr);
-diff --git a/drivers/scsi/qla2xxx/qla_sup.c b/drivers/scsi/qla2xxx/qla_sup.c
-index eb4514a56640..08c7dca07c90 100644
 --- a/drivers/scsi/qla2xxx/qla_sup.c
 +++ b/drivers/scsi/qla2xxx/qla_sup.c
-@@ -862,21 +862,59 @@ qla2xxx_get_flt_info(scsi_qla_host_t *vha, uint32_t flt_addr)
+@@ -862,21 +862,59 @@ qla2xxx_get_flt_info(scsi_qla_host_t *vh
  			if (IS_QLA27XX(ha) && !IS_QLA28XX(ha))
  				ha->flt_region_boot_sec = start;
  			break;
@@ -830,7 +814,7 @@ index eb4514a56640..08c7dca07c90 100644
  			break;
  		}
  	}
-@@ -3020,6 +3058,7 @@ qla24xx_get_flash_version(scsi_qla_host_t *vha, void *mbuf)
+@@ -3020,6 +3058,7 @@ qla24xx_get_flash_version(scsi_qla_host_
  	int i;
  	struct qla_hw_data *ha = vha->hw;
  	uint32_t faddr = 0;
@@ -838,7 +822,7 @@ index eb4514a56640..08c7dca07c90 100644
  
  	if (IS_P3P_TYPE(ha))
  		return ret;
-@@ -3033,9 +3072,12 @@ qla24xx_get_flash_version(scsi_qla_host_t *vha, void *mbuf)
+@@ -3033,9 +3072,12 @@ qla24xx_get_flash_version(scsi_qla_host_
  	memset(ha->fw_revision, 0, sizeof(ha->fw_revision));
  
  	pcihdr = ha->flt_region_boot << 2;
@@ -854,7 +838,7 @@ index eb4514a56640..08c7dca07c90 100644
  
  	do {
  		/* Verify PCI expansion ROM header. */
-@@ -3108,9 +3150,10 @@ qla24xx_get_flash_version(scsi_qla_host_t *vha, void *mbuf)
+@@ -3108,9 +3150,10 @@ qla24xx_get_flash_version(scsi_qla_host_
  	/* Read firmware image information. */
  	memset(ha->fw_revision, 0, sizeof(ha->fw_revision));
  	faddr = ha->flt_region_fw;
@@ -868,6 +852,3 @@ index eb4514a56640..08c7dca07c90 100644
  
  	qla24xx_read_flash_data(vha, dcode, faddr, 8);
  	if (qla24xx_risc_firmware_invalid(dcode)) {
--- 
-2.16.4
-

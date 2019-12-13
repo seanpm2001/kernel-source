@@ -1,0 +1,77 @@
+From: Huazhong Tan <tanhuazhong@huawei.com>
+Date: Tue, 28 May 2019 17:03:00 +0800
+Subject: net: hns3: stop schedule reset service while unloading driver
+Patch-mainline: v5.3-rc1
+Git-commit: acfc3d55b7326ff280f1aa64b6d93755619071b3
+References: bsc#1104353 FATE#326415
+
+When unloading driver, the reset task should not be scheduled
+anymore. If disable IRQ before cancel ongoing reset task,
+the IRQ may be re-enabled by the reset task.
+
+This patch uses HCLGE_STATE_REMOVING/HCLGEVF_STATE_REMOVING
+flag to indicate that the driver is unloading, and we should
+stop new coming reset service to be scheduled, otherwise,
+reset service will access some resource which has been freed
+by unloading.
+
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c   |    4 +++-
+ drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c |    4 +++-
+ drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.h |    1 +
+ 3 files changed, 7 insertions(+), 2 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
+@@ -2179,7 +2179,8 @@ static void hclge_mbx_task_schedule(stru
+ 
+ static void hclge_reset_task_schedule(struct hclge_dev *hdev)
+ {
+-	if (!test_and_set_bit(HCLGE_STATE_RST_SERVICE_SCHED, &hdev->state))
++	if (!test_bit(HCLGE_STATE_REMOVING, &hdev->state) &&
++	    !test_and_set_bit(HCLGE_STATE_RST_SERVICE_SCHED, &hdev->state))
+ 		schedule_work(&hdev->rst_service_task);
+ }
+ 
+@@ -8075,6 +8076,7 @@ static void hclge_state_init(struct hclg
+ static void hclge_state_uninit(struct hclge_dev *hdev)
+ {
+ 	set_bit(HCLGE_STATE_DOWN, &hdev->state);
++	set_bit(HCLGE_STATE_REMOVING, &hdev->state);
+ 
+ 	if (hdev->service_timer.function)
+ 		del_timer_sync(&hdev->service_timer);
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c
+@@ -1620,7 +1620,8 @@ static void hclgevf_get_misc_vector(stru
+ 
+ void hclgevf_reset_task_schedule(struct hclgevf_dev *hdev)
+ {
+-	if (!test_bit(HCLGEVF_STATE_RST_SERVICE_SCHED, &hdev->state)) {
++	if (!test_bit(HCLGEVF_STATE_RST_SERVICE_SCHED, &hdev->state) &&
++	    !test_bit(HCLGEVF_STATE_REMOVING, &hdev->state)) {
+ 		set_bit(HCLGEVF_STATE_RST_SERVICE_SCHED, &hdev->state);
+ 		schedule_work(&hdev->rst_service_task);
+ 	}
+@@ -2132,6 +2133,7 @@ static void hclgevf_state_init(struct hc
+ static void hclgevf_state_uninit(struct hclgevf_dev *hdev)
+ {
+ 	set_bit(HCLGEVF_STATE_DOWN, &hdev->state);
++	set_bit(HCLGEVF_STATE_REMOVING, &hdev->state);
+ 
+ 	if (hdev->keep_alive_timer.function)
+ 		del_timer_sync(&hdev->keep_alive_timer);
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.h
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.h
+@@ -130,6 +130,7 @@ enum hclgevf_states {
+ 	HCLGEVF_STATE_DOWN,
+ 	HCLGEVF_STATE_DISABLED,
+ 	HCLGEVF_STATE_IRQ_INITED,
++	HCLGEVF_STATE_REMOVING,
+ 	HCLGEVF_STATE_NIC_REGISTERED,
+ 	/* task states */
+ 	HCLGEVF_STATE_SERVICE_SCHED,

@@ -1,0 +1,84 @@
+From: Takashi Iwai <tiwai@suse.de>
+Subject: kABI workaround for snd_hda_pick_pin_fixup() changes
+Patch-mainline: Never, kABI workaround
+References: bsc#1051510
+
+The recent patch
+  patches.suse/ALSA-hda-Expand-pin_match-function-to-match-upcoming.patch
+added an extra argument to the exported snd_hda_pick_pin_fixup() function.
+Keep the old one while rename to a new function for keeping the kABI.
+
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ sound/pci/hda/hda_auto_parser.c |   11 ++++++++++-
+ sound/pci/hda/hda_local.h       |    5 ++++-
+ sound/pci/hda/patch_realtek.c   |    6 +++---
+ 3 files changed, 17 insertions(+), 5 deletions(-)
+
+--- a/sound/pci/hda/hda_auto_parser.c
++++ b/sound/pci/hda/hda_auto_parser.c
+@@ -928,7 +928,7 @@ static bool pin_config_match(struct hda_
+  * @fixlist: the fixup list
+  * @match_all_pins: all valid pins must match with the table entries
+  */
+-void snd_hda_pick_pin_fixup(struct hda_codec *codec,
++void snd_hda_pick_pin_fixup2(struct hda_codec *codec,
+ 			    const struct snd_hda_pin_quirk *pin_quirk,
+ 			    const struct hda_fixup *fixlist,
+ 			    bool match_all_pins)
+@@ -955,6 +955,15 @@ void snd_hda_pick_pin_fixup(struct hda_c
+ 		}
+ 	}
+ }
++EXPORT_SYMBOL_GPL(snd_hda_pick_pin_fixup2);
++
++// XXX FIXME: SLE15 kABI compatibility
++void snd_hda_pick_pin_fixup(struct hda_codec *codec,
++			    const struct snd_hda_pin_quirk *pin_quirk,
++			    const struct hda_fixup *fixlist)
++{
++	snd_hda_pick_pin_fixup2(codec, pin_quirk, fixlist, true);
++}
+ EXPORT_SYMBOL_GPL(snd_hda_pick_pin_fixup);
+ 
+ /**
+--- a/sound/pci/hda/patch_realtek.c
++++ b/sound/pci/hda/patch_realtek.c
+@@ -7648,8 +7648,8 @@ static int patch_alc269(struct hda_codec
+ 
+ 	snd_hda_pick_fixup(codec, alc269_fixup_models,
+ 		       alc269_fixup_tbl, alc269_fixups);
+-	snd_hda_pick_pin_fixup(codec, alc269_pin_fixup_tbl, alc269_fixups, true);
+-	snd_hda_pick_pin_fixup(codec, alc269_fallback_pin_fixup_tbl, alc269_fixups, false);
++	snd_hda_pick_pin_fixup2(codec, alc269_pin_fixup_tbl, alc269_fixups, true);
++	snd_hda_pick_pin_fixup2(codec, alc269_fallback_pin_fixup_tbl, alc269_fixups, false);
+ 	snd_hda_pick_fixup(codec, NULL,	alc269_fixup_vendor_tbl,
+ 			   alc269_fixups);
+ 	snd_hda_apply_fixup(codec, HDA_FIXUP_ACT_PRE_PROBE);
+@@ -8734,7 +8734,7 @@ static int patch_alc662(struct hda_codec
+ 
+ 	snd_hda_pick_fixup(codec, alc662_fixup_models,
+ 		       alc662_fixup_tbl, alc662_fixups);
+-	snd_hda_pick_pin_fixup(codec, alc662_pin_fixup_tbl, alc662_fixups, true);
++	snd_hda_pick_pin_fixup2(codec, alc662_pin_fixup_tbl, alc662_fixups, true);
+ 	snd_hda_apply_fixup(codec, HDA_FIXUP_ACT_PRE_PROBE);
+ 
+ 	alc_auto_parse_customize_define(codec);
+--- a/sound/pci/hda/hda_local.h
++++ b/sound/pci/hda/hda_local.h
+@@ -372,10 +372,13 @@ void snd_hda_pick_fixup(struct hda_codec
+ 			const struct hda_model_fixup *models,
+ 			const struct snd_pci_quirk *quirk,
+ 			const struct hda_fixup *fixlist);
+-void snd_hda_pick_pin_fixup(struct hda_codec *codec,
++void snd_hda_pick_pin_fixup2(struct hda_codec *codec,
+ 			    const struct snd_hda_pin_quirk *pin_quirk,
+ 			    const struct hda_fixup *fixlist,
+ 			    bool match_all_pins);
++void snd_hda_pick_pin_fixup(struct hda_codec *codec,
++			    const struct snd_hda_pin_quirk *pin_quirk,
++			    const struct hda_fixup *fixlist);
+ 
+ /* helper macros to retrieve pin default-config values */
+ #define get_defcfg_connect(cfg) \

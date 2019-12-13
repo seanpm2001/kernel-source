@@ -76,10 +76,10 @@ index 190d69a7f701..4315a92adc37 100644
 +#endif /* CONFIG_PPC_BOOK3S_64 */
  #endif /* __ASM_PPC64_MCE_H__ */
 diff --git a/arch/powerpc/kernel/exceptions-64s.S b/arch/powerpc/kernel/exceptions-64s.S
-index 02c78571198c..f2c070311336 100644
+index ea04dfb8c092..b36e11d73702 100644
 --- a/arch/powerpc/kernel/exceptions-64s.S
 +++ b/arch/powerpc/kernel/exceptions-64s.S
-@@ -276,6 +276,9 @@ TRAMP_REAL_BEGIN(machine_check_pSeries)
+@@ -331,6 +331,9 @@ TRAMP_REAL_BEGIN(machine_check_pSeries)
  machine_check_fwnmi:
  	SET_SCRATCH0(r13)		/* save r13 */
  	EXCEPTION_PROLOG_0(PACA_EXMC)
@@ -89,7 +89,7 @@ index 02c78571198c..f2c070311336 100644
  machine_check_pSeries_0:
  	EXCEPTION_PROLOG_1(PACA_EXMC, KVMTEST_PR, 0x200)
  	/*
-@@ -287,6 +290,103 @@ machine_check_pSeries_0:
+@@ -342,6 +345,103 @@ machine_check_pSeries_0:
  
  TRAMP_KVM_SKIP(PACA_EXMC, 0x200)
  
@@ -193,7 +193,7 @@ index 02c78571198c..f2c070311336 100644
  EXC_COMMON_BEGIN(machine_check_common)
  	/*
  	 * Machine check is different because we use a different
-@@ -480,6 +580,35 @@ EXC_COMMON_BEGIN(unrecover_mce)
+@@ -535,6 +635,35 @@ EXC_COMMON_BEGIN(unrecover_mce)
  	bl	unrecoverable_exception
  	b	1b
  
@@ -230,10 +230,10 @@ index 02c78571198c..f2c070311336 100644
  EXC_REAL(data_access, 0x300, 0x80)
  EXC_VIRT(data_access, 0x4300, 0x80, 0x300)
 diff --git a/arch/powerpc/kernel/mce.c b/arch/powerpc/kernel/mce.c
-index f588951b171d..c5506ced46a0 100644
+index efdd16a79075..bd933a75f0bc 100644
 --- a/arch/powerpc/kernel/mce.c
 +++ b/arch/powerpc/kernel/mce.c
-@@ -459,10 +459,11 @@ long machine_check_early(struct pt_regs *regs)
+@@ -488,10 +488,11 @@ long machine_check_early(struct pt_regs *regs)
  {
  	long handled = 0;
  
@@ -250,10 +250,10 @@ index f588951b171d..c5506ced46a0 100644
  }
  
 diff --git a/arch/powerpc/kernel/mce_power.c b/arch/powerpc/kernel/mce_power.c
-index 10be4c8d3682..8e1e129fe2f1 100644
+index 3497c8329c1d..2016b58d564f 100644
 --- a/arch/powerpc/kernel/mce_power.c
 +++ b/arch/powerpc/kernel/mce_power.c
-@@ -30,7 +30,7 @@
+@@ -60,7 +60,7 @@ static unsigned long addr_to_pfn(struct pt_regs *regs, unsigned long addr)
  
  /* flush SLBs and reload */
  #ifdef CONFIG_PPC_BOOK3S_64
@@ -263,12 +263,12 @@ index 10be4c8d3682..8e1e129fe2f1 100644
  	/* Invalidate all SLBs */
  	slb_flush_all_realmode();
 diff --git a/arch/powerpc/platforms/powernv/opal.c b/arch/powerpc/platforms/powernv/opal.c
-index 3c122d08b6c3..8e6cf5de690f 100644
+index 38fe4087484a..62c291e23dbe 100644
 --- a/arch/powerpc/platforms/powernv/opal.c
 +++ b/arch/powerpc/platforms/powernv/opal.c
-@@ -443,6 +443,8 @@ int opal_machine_check(struct pt_regs *regs)
+@@ -578,6 +578,8 @@ int opal_machine_check(struct pt_regs *regs)
+ {
  	struct machine_check_event evt;
- 	int ret;
  
 +	__this_cpu_inc(irq_stat.mce_exceptions);
 +
@@ -276,10 +276,10 @@ index 3c122d08b6c3..8e6cf5de690f 100644
  		return 0;
  
 diff --git a/arch/powerpc/platforms/powernv/setup.c b/arch/powerpc/platforms/powernv/setup.c
-index f9f67edcefdc..ef88a5b6a222 100644
+index adddde023622..c9cbd11a442e 100644
 --- a/arch/powerpc/platforms/powernv/setup.c
 +++ b/arch/powerpc/platforms/powernv/setup.c
-@@ -443,6 +443,16 @@ static unsigned long pnv_get_proc_freq(unsigned int cpu)
+@@ -437,6 +437,16 @@ static unsigned long pnv_get_proc_freq(unsigned int cpu)
  	return ret_freq;
  }
  
@@ -296,7 +296,7 @@ index f9f67edcefdc..ef88a5b6a222 100644
  define_machine(powernv) {
  	.name			= "PowerNV",
  	.probe			= pnv_probe,
-@@ -454,6 +464,7 @@ define_machine(powernv) {
+@@ -448,6 +458,7 @@ define_machine(powernv) {
  	.machine_shutdown	= pnv_shutdown,
  	.power_save             = NULL,
  	.calibrate_decr		= generic_calibrate_decr,
@@ -305,7 +305,7 @@ index f9f67edcefdc..ef88a5b6a222 100644
  	.kexec_cpu_down		= pnv_kexec_cpu_down,
  #endif
 diff --git a/arch/powerpc/platforms/pseries/pseries.h b/arch/powerpc/platforms/pseries/pseries.h
-index c21ed7a95b65..0db8472264d7 100644
+index 60db2ee511fb..619f8f3fa173 100644
 --- a/arch/powerpc/platforms/pseries/pseries.h
 +++ b/arch/powerpc/platforms/pseries/pseries.h
 @@ -24,6 +24,7 @@ struct pt_regs;
@@ -317,7 +317,7 @@ index c21ed7a95b65..0db8472264d7 100644
  #ifdef CONFIG_SMP
  extern void smp_init_pseries(void);
 diff --git a/arch/powerpc/platforms/pseries/ras.c b/arch/powerpc/platforms/pseries/ras.c
-index a3613020cefb..8cb5eb3c63c2 100644
+index 3500ad982706..0578c243ef01 100644
 --- a/arch/powerpc/platforms/pseries/ras.c
 +++ b/arch/powerpc/platforms/pseries/ras.c
 @@ -27,6 +27,7 @@
@@ -328,7 +328,7 @@ index a3613020cefb..8cb5eb3c63c2 100644
  
  #include "pseries.h"
  
-@@ -507,6 +508,43 @@ int pSeries_system_reset_exception(struct pt_regs *regs)
+@@ -522,6 +523,43 @@ int pSeries_system_reset_exception(struct pt_regs *regs)
  	return 0; /* need to perform reset */
  }
  
@@ -372,7 +372,7 @@ index a3613020cefb..8cb5eb3c63c2 100644
  /*
   * Process MCE rtas errlog event.
   */
-@@ -583,11 +621,31 @@ int pSeries_machine_check_exception(struct pt_regs *regs)
+@@ -598,11 +636,31 @@ int pSeries_machine_check_exception(struct pt_regs *regs)
  	struct rtas_error_log *errp;
  
  	if (fwnmi_active) {
@@ -406,10 +406,10 @@ index a3613020cefb..8cb5eb3c63c2 100644
 +	return 0;
 +}
 diff --git a/arch/powerpc/platforms/pseries/setup.c b/arch/powerpc/platforms/pseries/setup.c
-index ee60f5284e54..97883f332dc0 100644
+index ba1791fd3234..e03f62a78649 100644
 --- a/arch/powerpc/platforms/pseries/setup.c
 +++ b/arch/powerpc/platforms/pseries/setup.c
-@@ -1003,6 +1003,7 @@ define_machine(pseries) {
+@@ -1017,6 +1017,7 @@ define_machine(pseries) {
  	.calibrate_decr		= generic_calibrate_decr,
  	.progress		= rtas_progress,
  	.system_reset_exception = pSeries_system_reset_exception,
@@ -418,5 +418,5 @@ index ee60f5284e54..97883f332dc0 100644
  #ifdef CONFIG_KEXEC_CORE
  	.machine_kexec          = pSeries_machine_kexec,
 -- 
-2.13.7
+2.23.0
 

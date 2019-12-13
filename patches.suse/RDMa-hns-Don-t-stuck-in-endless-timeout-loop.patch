@@ -1,0 +1,48 @@
+From: Leon Romanovsky <leonro@mellanox.com>
+Date: Sun, 16 Jun 2019 15:05:58 +0300
+Subject: RDMa/hns: Don't stuck in endless timeout loop
+Patch-mainline: v5.3-rc1
+Git-commit: da3929218a4481fc12f9eaa30c9edb09aad5ff24
+References: bsc#1104427 FATE#326416
+
+The "end" variable is declared as unsigned and can't be negative, it
+leads to the situation where timeout limit is not honored, so let's
+convert logic to ensure that loop is bounded.
+
+drivers/infiniband/hw/hns/hns_roce_hw_v1.c: In function _hns_roce_v1_clear_hem_:
+drivers/infiniband/hw/hns/hns_roce_hw_v1.c:2471:12: warning: comparison of unsigned expression < 0 is always false [-Wtype-limits]
+ 2471 |    if (end < 0) {
+      |            ^
+
+Fixes: 669cefb654cb ("RDMA/hns: Remove jiffies operation in disable interrupt context")
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: Doug Ledford <dledford@redhat.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/infiniband/hw/hns/hns_roce_hem.h   |    2 +-
+ drivers/infiniband/hw/hns/hns_roce_hw_v1.c |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+--- a/drivers/infiniband/hw/hns/hns_roce_hem.h
++++ b/drivers/infiniband/hw/hns/hns_roce_hem.h
+@@ -34,8 +34,8 @@
+ #ifndef _HNS_ROCE_HEM_H
+ #define _HNS_ROCE_HEM_H
+ 
+-#define HW_SYNC_TIMEOUT_MSECS		500
+ #define HW_SYNC_SLEEP_TIME_INTERVAL	20
++#define HW_SYNC_TIMEOUT_MSECS           (25 * HW_SYNC_SLEEP_TIME_INTERVAL)
+ #define BT_CMD_SYNC_SHIFT		31
+ 
+ enum {
+--- a/drivers/infiniband/hw/hns/hns_roce_hw_v1.c
++++ b/drivers/infiniband/hw/hns/hns_roce_hw_v1.c
+@@ -2505,7 +2505,7 @@ static int hns_roce_v1_clear_hem(struct
+ 	end = HW_SYNC_TIMEOUT_MSECS;
+ 	while (1) {
+ 		if (readl(bt_cmd) >> BT_CMD_SYNC_SHIFT) {
+-			if (end < 0) {
++			if (!end) {
+ 				dev_err(dev, "Write bt_cmd err,hw_sync is not zero.\n");
+ 				spin_unlock_irqrestore(&hr_dev->bt_cmd_lock,
+ 					flags);

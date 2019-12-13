@@ -1,0 +1,131 @@
+From: Huazhong Tan <tanhuazhong@huawei.com>
+Date: Tue, 28 May 2019 17:02:59 +0800
+Subject: net: hns3: add handshake with hardware while doing reset
+Patch-mainline: v5.3-rc1
+Git-commit: ada13ee3db7b8959d7df81265a2633f987a0a13c
+References: bsc#1104353 FATE#326415
+
+When reset happens, the hardware reset should begin after the
+driver has finished its preparatory work, otherwise it may cause
+some hardware error.
+
+Before Hardware's reset, it will wait for the driver to write
+bit HCLGE_NIC_CMQ_ENABLE of register HCLGE_NIC_CSQ_DEPTH_REG
+to 1, while the driver finishes its preparatory work will do that.
+BTW, since some cases this register will be cleared, so it needs
+some sync time before driver's writing.
+
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_cmd.c    |    6 ++----
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c   |   10 ++++++++--
+ drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_cmd.c  |    2 --
+ drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c |    7 ++++++-
+ 4 files changed, 16 insertions(+), 9 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_cmd.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_cmd.c
+@@ -111,8 +111,7 @@ static void hclge_cmd_config_regs(struct
+ 		hclge_write_dev(hw, HCLGE_NIC_CSQ_BASEADDR_H_REG,
+ 				upper_32_bits(dma));
+ 		hclge_write_dev(hw, HCLGE_NIC_CSQ_DEPTH_REG,
+-				(ring->desc_num >> HCLGE_NIC_CMQ_DESC_NUM_S) |
+-				HCLGE_NIC_CMQ_ENABLE);
++				ring->desc_num >> HCLGE_NIC_CMQ_DESC_NUM_S);
+ 		hclge_write_dev(hw, HCLGE_NIC_CSQ_HEAD_REG, 0);
+ 		hclge_write_dev(hw, HCLGE_NIC_CSQ_TAIL_REG, 0);
+ 	} else {
+@@ -121,8 +120,7 @@ static void hclge_cmd_config_regs(struct
+ 		hclge_write_dev(hw, HCLGE_NIC_CRQ_BASEADDR_H_REG,
+ 				upper_32_bits(dma));
+ 		hclge_write_dev(hw, HCLGE_NIC_CRQ_DEPTH_REG,
+-				(ring->desc_num >> HCLGE_NIC_CMQ_DESC_NUM_S) |
+-				HCLGE_NIC_CMQ_ENABLE);
++				ring->desc_num >> HCLGE_NIC_CMQ_DESC_NUM_S);
+ 		hclge_write_dev(hw, HCLGE_NIC_CRQ_HEAD_REG, 0);
+ 		hclge_write_dev(hw, HCLGE_NIC_CRQ_TAIL_REG, 0);
+ 	}
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
+@@ -2881,6 +2881,8 @@ static int hclge_reset_prepare_down(stru
+ 
+ static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
+ {
++#define HCLGE_RESET_SYNC_TIME 100
++
+ 	u32 reg_val;
+ 	int ret = 0;
+ 
+@@ -2889,7 +2891,7 @@ static int hclge_reset_prepare_wait(stru
+ 		/* There is no mechanism for PF to know if VF has stopped IO
+ 		 * for now, just wait 100 ms for VF to stop IO
+ 		 */
+-		msleep(100);
++		msleep(HCLGE_RESET_SYNC_TIME);
+ 		ret = hclge_func_reset_cmd(hdev, 0);
+ 		if (ret) {
+ 			dev_err(&hdev->pdev->dev,
+@@ -2909,7 +2911,7 @@ static int hclge_reset_prepare_wait(stru
+ 		/* There is no mechanism for PF to know if VF has stopped IO
+ 		 * for now, just wait 100 ms for VF to stop IO
+ 		 */
+-		msleep(100);
++		msleep(HCLGE_RESET_SYNC_TIME);
+ 		set_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state);
+ 		set_bit(HNAE3_FLR_DOWN, &hdev->flr_state);
+ 		hdev->rst_stats.flr_rst_cnt++;
+@@ -2923,6 +2925,10 @@ static int hclge_reset_prepare_wait(stru
+ 		break;
+ 	}
+ 
++	/* inform hardware that preparatory work is done */
++	msleep(HCLGE_RESET_SYNC_TIME);
++	hclge_write_dev(&hdev->hw, HCLGE_NIC_CSQ_DEPTH_REG,
++			HCLGE_NIC_CMQ_ENABLE);
+ 	dev_info(&hdev->pdev->dev, "prepare wait ok\n");
+ 
+ 	return ret;
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_cmd.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_cmd.c
+@@ -98,7 +98,6 @@ static void hclgevf_cmd_config_regs(stru
+ 		hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_BASEADDR_H_REG, reg_val);
+ 
+ 		reg_val = (ring->desc_num >> HCLGEVF_NIC_CMQ_DESC_NUM_S);
+-		reg_val |= HCLGEVF_NIC_CMQ_ENABLE;
+ 		hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_DEPTH_REG, reg_val);
+ 
+ 		hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_HEAD_REG, 0);
+@@ -110,7 +109,6 @@ static void hclgevf_cmd_config_regs(stru
+ 		hclgevf_write_dev(hw, HCLGEVF_NIC_CRQ_BASEADDR_H_REG, reg_val);
+ 
+ 		reg_val = (ring->desc_num >> HCLGEVF_NIC_CMQ_DESC_NUM_S);
+-		reg_val |= HCLGEVF_NIC_CMQ_ENABLE;
+ 		hclgevf_write_dev(hw, HCLGEVF_NIC_CRQ_DEPTH_REG, reg_val);
+ 
+ 		hclgevf_write_dev(hw, HCLGEVF_NIC_CRQ_HEAD_REG, 0);
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c
+@@ -1413,6 +1413,8 @@ static int hclgevf_reset_stack(struct hc
+ 
+ static int hclgevf_reset_prepare_wait(struct hclgevf_dev *hdev)
+ {
++#define HCLGEVF_RESET_SYNC_TIME 100
++
+ 	int ret = 0;
+ 
+ 	switch (hdev->reset_type) {
+@@ -1430,7 +1432,10 @@ static int hclgevf_reset_prepare_wait(st
+ 	}
+ 
+ 	set_bit(HCLGEVF_STATE_CMD_DISABLE, &hdev->state);
+-
++	/* inform hardware that preparatory work is done */
++	msleep(HCLGEVF_RESET_SYNC_TIME);
++	hclgevf_write_dev(&hdev->hw, HCLGEVF_NIC_CSQ_DEPTH_REG,
++			  HCLGEVF_NIC_CMQ_ENABLE);
+ 	dev_info(&hdev->pdev->dev, "prepare reset(%d) wait done, ret:%d\n",
+ 		 hdev->reset_type, ret);
+ 

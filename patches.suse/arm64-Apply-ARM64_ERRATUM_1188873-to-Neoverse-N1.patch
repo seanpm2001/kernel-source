@@ -1,0 +1,87 @@
+From: Marc Zyngier <marc.zyngier@arm.com>
+Date: Mon, 15 Apr 2019 13:03:54 +0100
+Subject: arm64: Apply ARM64_ERRATUM_1188873 to Neoverse-N1
+
+Git-commit: 6989303a3b2d864fd8e17d3fa3365d3e9649a598
+Patch-mainline: v5.2-rc1
+References: jsc#ECO-561
+
+Neoverse-N1 is also affected by ARM64_ERRATUM_1188873, so let's
+add it to the list of affected CPUs.
+
+Signed-off-by: Marc Zyngier <marc.zyngier@arm.com>
+[will: Update silicon-errata.txt]
+Signed-off-by: Will Deacon <will.deacon@arm.com>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ Documentation/arm64/silicon-errata.txt |    1 +
+ arch/arm64/Kconfig                     |   11 ++++++-----
+ arch/arm64/kernel/cpu_errata.c         |   13 +++++++++++--
+ 3 files changed, 18 insertions(+), 7 deletions(-)
+
+--- a/Documentation/arm64/silicon-errata.txt
++++ b/Documentation/arm64/silicon-errata.txt
+@@ -57,6 +57,7 @@ stable kernels.
+ | ARM            | Cortex-A73      | #858921         | ARM64_ERRATUM_858921        |
+ | ARM            | Cortex-A55      | #1024718        | ARM64_ERRATUM_1024718       |
+ | ARM            | Cortex-A76      | #1188873        | ARM64_ERRATUM_1188873       |
++| ARM            | Neoverse-N1     | #1188873        | ARM64_ERRATUM_1188873       |
+ | ARM            | MMU-500         | #841119,#826419 | N/A                         |
+ |                |                 |                 |                             |
+ | Cavium         | ThunderX ITS    | #22375, #24313  | CAVIUM_ERRATUM_22375        |
+--- a/arch/arm64/Kconfig
++++ b/arch/arm64/Kconfig
+@@ -455,16 +455,17 @@ config ARM64_ERRATUM_1024718
+ 	  If unsure, say Y.
+ 
+ config ARM64_ERRATUM_1188873
+-	bool "Cortex-A76: MRC read following MRRC read of specific Generic Timer in AArch32 might give incorrect result"
++	bool "Cortex-A76/Neoverse-N1: MRC read following MRRC read of specific Generic Timer in AArch32 might give incorrect result"
+ 	default y
+ 	depends on COMPAT
+ 	select ARM_ARCH_TIMER_OOL_WORKAROUND
+ 	help
+-	  This option adds work arounds for ARM Cortex-A76 erratum 1188873
++	  This option adds work arounds for ARM Cortex-A76/Neoverse-N1
++	  erratum 1188873
+ 
+-	  Affected Cortex-A76 cores (r0p0, r1p0, r2p0) could cause
+-	  register corruption when accessing the timer registers from
+-	  AArch32 userspace.
++	  Affected Cortex-A76/Neoverse-N1 cores (r0p0, r1p0, r2p0) could
++	  cause register corruption when accessing the timer registers
++	  from AArch32 userspace.
+ 
+ 	  If unsure, say Y.
+ 
+--- a/arch/arm64/kernel/cpu_errata.c
++++ b/arch/arm64/kernel/cpu_errata.c
+@@ -535,6 +535,16 @@ static const struct arm64_cpu_capabiliti
+ 
+ #endif
+ 
++#ifdef CONFIG_ARM64_ERRATUM_1188873
++static const struct midr_range erratum_1188873_list[] = {
++	/* Cortex-A76 r0p0 to r2p0 */
++	MIDR_RANGE(MIDR_CORTEX_A76, 0, 0, 2, 0),
++	/* Neoverse-N1 r0p0 to r2p0 */
++	MIDR_RANGE(MIDR_NEOVERSE_N1, 0, 0, 2, 0),
++	{},
++};
++#endif
++
+ const struct arm64_cpu_capabilities arm64_errata[] = {
+ #if	defined(CONFIG_ARM64_ERRATUM_826319) || \
+ 	defined(CONFIG_ARM64_ERRATUM_827319) || \
+@@ -691,10 +701,9 @@ const struct arm64_cpu_capabilities arm6
+ #endif
+ #ifdef CONFIG_ARM64_ERRATUM_1188873
+ 	{
+-		/* Cortex-A76 r0p0 to r2p0 */
+ 		.desc = "ARM erratum 1188873",
+ 		.capability = ARM64_WORKAROUND_1188873,
+-		ERRATA_MIDR_RANGE(MIDR_CORTEX_A76, 0, 0, 2, 0),
++		ERRATA_MIDR_RANGE_LIST(erratum_1188873_list),
+ 	},
+ #endif
+ 	{

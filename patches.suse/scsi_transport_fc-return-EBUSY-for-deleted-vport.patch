@@ -11,14 +11,12 @@ if so there's no need to do anything.
 
 Signed-off-by: Hannes Reinecke <hare@suse.de>
 ---
- drivers/scsi/scsi_transport_fc.c | 7 +++++--
- 1 file changed, 5 insertions(+), 2 deletions(-)
+ drivers/scsi/scsi_transport_fc.c |    6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
 
-diff --git a/drivers/scsi/scsi_transport_fc.c b/drivers/scsi/scsi_transport_fc.c
-index bf28c68..ddbfbf1 100644
 --- a/drivers/scsi/scsi_transport_fc.c
 +++ b/drivers/scsi/scsi_transport_fc.c
-@@ -1284,7 +1284,7 @@ store_fc_vport_delete(struct device *dev, struct device_attribute *attr,
+@@ -1286,7 +1286,7 @@ store_fc_vport_delete(struct device *dev
  	unsigned long flags;
  
  	spin_lock_irqsave(shost->host_lock, flags);
@@ -27,19 +25,15 @@ index bf28c68..ddbfbf1 100644
  		spin_unlock_irqrestore(shost->host_lock, flags);
  		return -EBUSY;
  	}
-@@ -2447,8 +2447,11 @@ fc_remove_host(struct Scsi_Host *shost)
+@@ -2430,8 +2430,10 @@ fc_remove_host(struct Scsi_Host *shost)
  	spin_lock_irqsave(shost->host_lock, flags);
  
  	/* Remove any vports */
 -	list_for_each_entry_safe(vport, next_vport, &fc_host->vports, peers)
 +	list_for_each_entry_safe(vport, next_vport, &fc_host->vports, peers) {
-+		list_del(&vport->peers);
 +		vport->flags |= FC_VPORT_DELETING;
  		fc_queue_work(shost, &vport->vport_delete_work);
 +	}
  
  	/* Remove any remote ports */
  	list_for_each_entry_safe(rport, next_rport,
--- 
-1.8.5.6
-

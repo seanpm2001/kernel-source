@@ -1,0 +1,48 @@
+From e117765a117da3ece15689cb8a759d16c415b08c Mon Sep 17 00:00:00 2001
+From: Stephan Mueller <smueller@chronox.de>
+Date: Wed, 30 Aug 2017 09:17:39 +0200
+Subject: [PATCH] crypto: af_alg - update correct dst SGL entry
+Git-commit: e117765a117da3ece15689cb8a759d16c415b08c
+Patch-mainline: v4.14-rc2
+References: bsc#1051510
+
+When two adjacent TX SGL are processed and parts of both TX SGLs
+are pulled into the per-request TX SGL, the wrong per-request
+TX SGL entries were updated.
+
+This fixes a NULL pointer dereference when a cipher implementation walks
+the TX SGL where some of the SGL entries were NULL.
+
+Fixes: e870456d8e7c ("crypto: algif_skcipher - overhaul memory...")
+Signed-off-by: Stephan Mueller <smueller@chronox.de>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ crypto/af_alg.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/crypto/af_alg.c b/crypto/af_alg.c
+index ffa9f4ccd9b4..337cf382718e 100644
+--- a/crypto/af_alg.c
++++ b/crypto/af_alg.c
+@@ -619,14 +619,14 @@ void af_alg_pull_tsgl(struct sock *sk, size_t used, struct scatterlist *dst,
+ 	struct af_alg_ctx *ctx = ask->private;
+ 	struct af_alg_tsgl *sgl;
+ 	struct scatterlist *sg;
+-	unsigned int i, j;
++	unsigned int i, j = 0;
+ 
+ 	while (!list_empty(&ctx->tsgl_list)) {
+ 		sgl = list_first_entry(&ctx->tsgl_list, struct af_alg_tsgl,
+ 				       list);
+ 		sg = sgl->sg;
+ 
+-		for (i = 0, j = 0; i < sgl->cur; i++) {
++		for (i = 0; i < sgl->cur; i++) {
+ 			size_t plen = min_t(size_t, used, sg[i].length);
+ 			struct page *page = sg_page(sg + i);
+ 
+-- 
+2.16.4
+

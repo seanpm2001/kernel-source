@@ -1,0 +1,30 @@
+From: Yonglong Liu <liuyonglong@huawei.com>
+Date: Thu, 13 Jun 2019 17:12:28 +0800
+Subject: net: hns3: free irq when exit from abnormal branch
+Patch-mainline: v5.3-rc1
+Git-commit: d547ecdc1fc1eb5e9caf678d2f1c02cf3d77cbe7
+References: bsc#1104353 FATE#326415
+
+In hns3_nic_init_irq(), if request irq fail at index i,
+the function return directly without releasing irq resources
+that already requested, and nowhere else will release them.
+
+Signed-off-by: Yonglong Liu <liuyonglong@huawei.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3_enet.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3_enet.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3_enet.c
+@@ -143,6 +143,7 @@ static int hns3_nic_init_irq(struct hns3
+ 		if (ret) {
+ 			netdev_err(priv->netdev, "request irq(%d) fail\n",
+ 				   tqp_vectors->vector_irq);
++			hns3_nic_uninit_irq(priv);
+ 			return ret;
+ 		}
+ 

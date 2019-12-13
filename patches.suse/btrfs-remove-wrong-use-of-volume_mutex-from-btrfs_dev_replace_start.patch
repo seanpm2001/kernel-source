@@ -1,0 +1,59 @@
+From: David Sterba <dsterba@suse.com>
+Date: Tue, 20 Mar 2018 23:44:50 +0100
+Subject: btrfs: remove wrong use of volume_mutex from btrfs_dev_replace_start
+Git-commit: a0fecc23718aa9ef020b8c86173a0b783ed37dcf
+Patch-mainline: v4.18-rc1
+References:bsc#1154651
+
+The volume mutex does not protect against anything in this case, the
+comment about scrub is right but not related to locking and looks
+confusing. The comment in btrfs_find_device_missing_or_by_path is wrong
+and confusing too.
+
+The device_list_mutex is not held here to protect device lookup, but in
+this case device replace cannot run in parallel with device removal (due
+to exclusive op protection), so we don't need further locking here.
+
+Reviewed-by: Anand Jain <anand.jain@oracle.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/dev-replace.c |    7 +------
+ fs/btrfs/volumes.c     |    4 ----
+ 2 files changed, 1 insertion(+), 10 deletions(-)
+
+--- a/fs/btrfs/dev-replace.c
++++ b/fs/btrfs/dev-replace.c
+@@ -315,18 +315,13 @@ int btrfs_dev_replace_start(struct btrfs
+ 	struct btrfs_device *tgt_device = NULL;
+ 	struct btrfs_device *src_device = NULL;
+
+-	/* the disk copy procedure reuses the scrub code */
+-	mutex_lock(&fs_info->volume_mutex);
+ 	ret = btrfs_find_device_by_devspec(fs_info, srcdevid,
+ 					    srcdev_name, &src_device);
+-	if (ret) {
+-		mutex_unlock(&fs_info->volume_mutex);
++	if (ret)
+ 		return ret;
+-	}
+
+ 	ret = btrfs_init_dev_replace_tgtdev(fs_info, tgtdev_name,
+ 					    src_device, &tgt_device);
+-	mutex_unlock(&fs_info->volume_mutex);
+ 	if (ret)
+ 		return ret;
+
+--- a/fs/btrfs/volumes.c
++++ b/fs/btrfs/volumes.c
+@@ -2133,10 +2133,6 @@ int btrfs_find_device_missing_or_by_path
+ 		struct btrfs_device *tmp;
+
+ 		devices = &fs_info->fs_devices->devices;
+-		/*
+-		 * It is safe to read the devices since the volume_mutex
+-		 * is held by the caller.
+-		 */
+ 		list_for_each_entry(tmp, devices, dev_list) {
+ 			if (tmp->in_fs_metadata && !tmp->bdev) {
+ 				*device = tmp;

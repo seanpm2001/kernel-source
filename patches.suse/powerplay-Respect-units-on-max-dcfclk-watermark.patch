@@ -1,0 +1,40 @@
+From f191415b24a3ad3fa22088af7cd7fc328a2f469f Mon Sep 17 00:00:00 2001
+From: David Francis <David.Francis@amd.com>
+Date: Thu, 18 Oct 2018 11:21:15 -0400
+Subject: [PATCH] powerplay: Respect units on max dcfclk watermark
+Git-commit: f191415b24a3ad3fa22088af7cd7fc328a2f469f
+Patch-mainline: v4.20-rc1
+References: bsc#1111666
+
+In a refactor, the watermark clock inputs to
+powerplay from DC were changed from units of 10kHz to
+kHz clocks.
+
+One division by 100 was not converted into a division
+by 1000.
+
+Signed-off-by: David Francis <David.Francis@amd.com>
+Reviewed-by: Harry Wentland <harry.wentland@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/gpu/drm/amd/powerplay/hwmgr/smu_helper.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/amd/powerplay/hwmgr/smu_helper.c b/drivers/gpu/drm/amd/powerplay/hwmgr/smu_helper.c
+index 4714b5b59825..99a33c33a32c 100644
+--- a/drivers/gpu/drm/amd/powerplay/hwmgr/smu_helper.c
++++ b/drivers/gpu/drm/amd/powerplay/hwmgr/smu_helper.c
+@@ -718,7 +718,7 @@ int smu_set_watermarks_for_clocks_ranges(void *wt_table,
+ 		table->WatermarkRow[1][i].MaxClock =
+ 			cpu_to_le16((uint16_t)
+ 			(wm_with_clock_ranges->wm_dmif_clocks_ranges[i].wm_max_dcfclk_clk_in_khz) /
+-			100);
++			1000);
+ 		table->WatermarkRow[1][i].MinUclk =
+ 			cpu_to_le16((uint16_t)
+ 			(wm_with_clock_ranges->wm_dmif_clocks_ranges[i].wm_min_mem_clk_in_khz) /
+-- 
+2.16.4
+

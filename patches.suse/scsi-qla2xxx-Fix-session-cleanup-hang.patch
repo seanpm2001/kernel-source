@@ -1,9 +1,9 @@
 From: Quinn Tran <quinn.tran@cavium.com>
 Date: Thu, 24 Jan 2019 23:23:42 -0800
-Subject: [PATCH] scsi: qla2xxx: Fix session cleanup hang
-Git-commit: 80676d054e5a945f8192802b68093764fbf3c5fc
+Subject: scsi: qla2xxx: Fix session cleanup hang
 Patch-mainline: v5.1-rc1
-References: bsc#1124541
+Git-commit: 80676d054e5a945f8192802b68093764fbf3c5fc
+References: bsc#1124541 bsc#1123034 bsc#1131304 bsc#1127988
 
 On session cleanup, either an implicit LOGO or an implicit PRLO is used to
 flush IOs.  If the flush command hit Queue Full condition, then it is
@@ -12,17 +12,15 @@ dropped.  This patch adds retry code to prevent command drop.
 Signed-off-by: Quinn Tran <quinn.tran@cavium.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_iocb.c |  5 ++---
- drivers/scsi/qla2xxx/qla_os.c   | 17 +++++++++++++----
+ drivers/scsi/qla2xxx/qla_iocb.c |    5 ++---
+ drivers/scsi/qla2xxx/qla_os.c   |   17 +++++++++++++----
  2 files changed, 15 insertions(+), 7 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_iocb.c b/drivers/scsi/qla2xxx/qla_iocb.c
-index 65ba0e36ee60..2c27ae1924c5 100644
 --- a/drivers/scsi/qla2xxx/qla_iocb.c
 +++ b/drivers/scsi/qla2xxx/qla_iocb.c
-@@ -3645,23 +3645,22 @@ qla24xx_prlo_iocb(srb_t *sp, struct logio_entry_24xx *logio)
+@@ -3653,23 +3653,22 @@ qla24xx_prlo_iocb(srb_t *sp, struct logi
  int
  qla2x00_start_sp(srb_t *sp)
  {
@@ -48,11 +46,9 @@ index 65ba0e36ee60..2c27ae1924c5 100644
  	switch (sp->type) {
  	case SRB_LOGIN_CMD:
  		IS_FWI2_CAPABLE(ha) ?
-diff --git a/drivers/scsi/qla2xxx/qla_os.c b/drivers/scsi/qla2xxx/qla_os.c
-index ea58398bfdb1..7bf23943c815 100644
 --- a/drivers/scsi/qla2xxx/qla_os.c
 +++ b/drivers/scsi/qla2xxx/qla_os.c
-@@ -5204,14 +5204,14 @@ qla2x00_do_work(struct scsi_qla_host *vha)
+@@ -5209,14 +5209,14 @@ qla2x00_do_work(struct scsi_qla_host *vh
  	struct qla_work_evt *e, *tmp;
  	unsigned long flags;
  	LIST_HEAD(work);
@@ -69,7 +65,7 @@ index ea58398bfdb1..7bf23943c815 100644
  		switch (e->type) {
  		case QLA_EVT_AEN:
  			fc_host_post_event(vha->host, fc_get_event_number(),
-@@ -5225,7 +5225,7 @@ qla2x00_do_work(struct scsi_qla_host *vha)
+@@ -5230,7 +5230,7 @@ qla2x00_do_work(struct scsi_qla_host *vh
  			    e->u.logio.data);
  			break;
  		case QLA_EVT_ASYNC_LOGOUT:
@@ -78,7 +74,7 @@ index ea58398bfdb1..7bf23943c815 100644
  			break;
  		case QLA_EVT_ASYNC_LOGOUT_DONE:
  			qla2x00_async_logout_done(vha, e->u.logio.fcport,
-@@ -5270,7 +5270,7 @@ qla2x00_do_work(struct scsi_qla_host *vha)
+@@ -5275,7 +5275,7 @@ qla2x00_do_work(struct scsi_qla_host *vh
  			qla24xx_do_nack_work(vha, e);
  			break;
  		case QLA_EVT_ASYNC_PRLO:
@@ -87,7 +83,7 @@ index ea58398bfdb1..7bf23943c815 100644
  			break;
  		case QLA_EVT_ASYNC_PRLO_DONE:
  			qla2x00_async_prlo_done(vha, e->u.logio.fcport,
-@@ -5303,6 +5303,15 @@ qla2x00_do_work(struct scsi_qla_host *vha)
+@@ -5308,6 +5308,15 @@ qla2x00_do_work(struct scsi_qla_host *vh
  			    e->u.fcport.fcport, false);
  			break;
  		}
@@ -103,6 +99,3 @@ index ea58398bfdb1..7bf23943c815 100644
  		if (e->flags & QLA_EVT_FLAG_FREE)
  			kfree(e);
  
--- 
-2.16.4
-

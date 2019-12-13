@@ -1,0 +1,35 @@
+From: James Smart <jsmart2021@gmail.com>
+Date: Mon, 4 Nov 2019 16:57:03 -0800
+Subject: scsi: lpfc: Sync with FC-NVMe-2 SLER change to require Conf with SLER
+Patch-mainline: Queued in subsystem maintainer repository
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/jejb/scsi.git
+Git-commit: 69641627c653464db46f3e3d8c438349be055670
+References: bsc#1154601
+
+Prior to the last FC-NVME-2 draft, SLER and CONF were independent.  SLER
+now requires CONF to be set.
+
+Revise the NVME PRLI checking to look for both inorder to enable SLER.
+
+Link: https://lore.kernel.org/r/20191105005708.7399-7-jsmart2021@gmail.com
+Signed-off-by: Dick Kennedy <dick.kennedy@broadcom.com>
+Signed-off-by: James Smart <jsmart2021@gmail.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/lpfc/lpfc_nportdisc.c |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+--- a/drivers/scsi/lpfc/lpfc_nportdisc.c
++++ b/drivers/scsi/lpfc/lpfc_nportdisc.c
+@@ -2121,7 +2121,9 @@ lpfc_cmpl_prli_prli_issue(struct lpfc_vp
+ 		if (bf_get_be32(prli_init, nvpr))
+ 			ndlp->nlp_type |= NLP_NVME_INITIATOR;
+ 
+-		if (phba->nsler && bf_get_be32(prli_nsler, nvpr))
++		if (phba->nsler && bf_get_be32(prli_nsler, nvpr) &&
++		    bf_get_be32(prli_conf, nvpr))
++
+ 			ndlp->nlp_nvme_info |= NLP_NVME_NSLER;
+ 		else
+ 			ndlp->nlp_nvme_info &= ~NLP_NVME_NSLER;

@@ -1,0 +1,163 @@
+From: Yazen Ghannam <yazen.ghannam@amd.com>
+Date: Thu, 28 Feb 2019 15:36:10 +0000
+Subject: EDAC/amd64: Support more than two Unified Memory Controllers
+Git-commit: bdcee7747f5c490297665af0e1e0fbeb4368804d
+Patch-mainline: v5.2-rc1
+References: bsc#1131489
+
+The first few models of Family 17h all had 2 Unified Memory Controllers
+per Die, so this was treated as a fixed value. However, future systems
+may have more Unified Memory Controllers per Die.
+
+Related to this, the channel number and base address of a Unified Memory
+Controller were found by matching on fixed, known values. However,
+current and future systems follow this pattern for the channel number
+and base address of a Unified Memory Controller: 0xYXXXXX, where Y is
+the channel number. So matching on hardcoded values is not necessary.
+
+Set the number of Unified Memory Controllers at driver init time based
+on the family/model. Also, update the functions that find the channel
+number and base address of a Unified Memory Controller to support more
+than two.
+
+ [ bp: Move num_umcs into the .c file and simplify comment. ]
+
+Signed-off-by: Yazen Ghannam <yazen.ghannam@amd.com>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Tested-by: Kim Phillips <kim.phillips@amd.com>
+Cc: James Morse <james.morse@arm.com>
+Cc: Mauro Carvalho Chehab <mchehab@kernel.org>
+Cc: linux-edac <linux-edac@vger.kernel.org>
+Link: https://lkml.kernel.org/r/20190228153558.127292-3-Yazen.Ghannam@amd.com
+---
+ drivers/edac/amd64_edac.c | 47 ++++++++++++++++++++++++++++++-----------------
+ drivers/edac/amd64_edac.h |  6 ++----
+ 2 files changed, 32 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/edac/amd64_edac.c b/drivers/edac/amd64_edac.c
+index e4fd459d807a..81dca957fce0 100644
+--- a/drivers/edac/amd64_edac.c
++++ b/drivers/edac/amd64_edac.c
+@@ -18,6 +18,9 @@ static struct msr __percpu *msrs;
+ /* Per-node stuff */
+ static struct ecc_settings **ecc_stngs;
+ 
++/* Number of Unified Memory Controllers */
++static u8 num_umcs;
++
+ /*
+  * Valid scrub rates for the K8 hardware memory scrubber. We map the scrubbing
+  * bandwidth to a valid bit pattern. The 'set' operation finds the 'matching-
+@@ -450,7 +453,7 @@ static void get_cs_base_and_mask(struct amd64_pvt *pvt, int csrow, u8 dct,
+ 	for (i = 0; i < pvt->csels[dct].m_cnt; i++)
+ 
+ #define for_each_umc(i) \
+-	for (i = 0; i < NUM_UMCS; i++)
++	for (i = 0; i < num_umcs; i++)
+ 
+ /*
+  * @input_addr is an InputAddr associated with the node given by mci. Return the
+@@ -2476,18 +2479,14 @@ static inline void decode_bus_error(int node_id, struct mce *m)
+  * To find the UMC channel represented by this bank we need to match on its
+  * instance_id. The instance_id of a bank is held in the lower 32 bits of its
+  * IPID.
++ *
++ * Currently, we can derive the channel number by looking at the 6th nibble in
++ * the instance_id. For example, instance_id=0xYXXXXX where Y is the channel
++ * number.
+  */
+-static int find_umc_channel(struct amd64_pvt *pvt, struct mce *m)
++static int find_umc_channel(struct mce *m)
+ {
+-	u32 umc_instance_id[] = {0x50f00, 0x150f00};
+-	u32 instance_id = m->ipid & GENMASK(31, 0);
+-	int i, channel = -1;
+-
+-	for (i = 0; i < ARRAY_SIZE(umc_instance_id); i++)
+-		if (umc_instance_id[i] == instance_id)
+-			channel = i;
+-
+-	return channel;
++	return (m->ipid & GENMASK(31, 0)) >> 20;
+ }
+ 
+ static void decode_umc_error(int node_id, struct mce *m)
+@@ -2509,11 +2508,7 @@ static void decode_umc_error(int node_id, struct mce *m)
+ 	if (m->status & MCI_STATUS_DEFERRED)
+ 		ecc_type = 3;
+ 
+-	err.channel = find_umc_channel(pvt, m);
+-	if (err.channel < 0) {
+-		err.err_code = ERR_CHANNEL;
+-		goto log_error;
+-	}
++	err.channel = find_umc_channel(m);
+ 
+ 	if (umc_normaddr_to_sysaddr(m->addr, pvt->mc_node_id, err.channel, &sys_addr)) {
+ 		err.err_code = ERR_NORM_ADDR;
+@@ -3252,6 +3247,22 @@ static const struct attribute_group *amd64_edac_attr_groups[] = {
+ 	NULL
+ };
+ 
++/* Set the number of Unified Memory Controllers in the system. */
++static void compute_num_umcs(void)
++{
++	u8 model = boot_cpu_data.x86_model;
++
++	if (boot_cpu_data.x86 < 0x17)
++		return;
++
++	if (model >= 0x30 && model <= 0x3f)
++		num_umcs = 8;
++	else
++		num_umcs = 2;
++
++	edac_dbg(1, "Number of UMCs: %x", num_umcs);
++}
++
+ static int init_one_instance(unsigned int nid)
+ {
+ 	struct pci_dev *F3 = node_to_amd_nb(nid)->misc;
+@@ -3276,7 +3287,7 @@ static int init_one_instance(unsigned int nid)
+ 		goto err_free;
+ 
+ 	if (pvt->fam >= 0x17) {
+-		pvt->umc = kcalloc(NUM_UMCS, sizeof(struct amd64_umc), GFP_KERNEL);
++		pvt->umc = kcalloc(num_umcs, sizeof(struct amd64_umc), GFP_KERNEL);
+ 		if (!pvt->umc) {
+ 			ret = -ENOMEM;
+ 			goto err_free;
+@@ -3497,6 +3508,8 @@ static int __init amd64_edac_init(void)
+ 	if (!msrs)
+ 		goto err_free;
+ 
++	compute_num_umcs();
++
+ 	for (i = 0; i < amd_nb_num(); i++) {
+ 		err = probe_one_instance(i);
+ 		if (err) {
+diff --git a/drivers/edac/amd64_edac.h b/drivers/edac/amd64_edac.h
+index de8dbb0b42b5..88ca6dc2d5df 100644
+--- a/drivers/edac/amd64_edac.h
++++ b/drivers/edac/amd64_edac.h
+@@ -274,8 +274,6 @@
+ 
+ #define UMC_SDP_INIT			BIT(31)
+ 
+-#define NUM_UMCS			2
+-
+ enum amd_families {
+ 	K8_CPUS = 0,
+ 	F10_CPUS,
+@@ -399,8 +397,8 @@ struct err_info {
+ 
+ static inline u32 get_umc_base(u8 channel)
+ {
+-	/* ch0: 0x50000, ch1: 0x150000 */
+-	return 0x50000 + (!!channel << 20);
++	/* chY: 0xY50000 */
++	return 0x50000 + (channel << 20);
+ }
+ 
+ static inline u64 get_dram_base(struct amd64_pvt *pvt, u8 i)
+

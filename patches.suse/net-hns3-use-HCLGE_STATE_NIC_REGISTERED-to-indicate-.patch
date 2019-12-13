@@ -1,0 +1,64 @@
+From: Huazhong Tan <tanhuazhong@huawei.com>
+Date: Tue, 28 May 2019 17:02:54 +0800
+Subject: net: hns3: use HCLGE_STATE_NIC_REGISTERED to indicate PF NIC client
+ has registered
+Patch-mainline: v5.3-rc1
+Git-commit: bd9109c9b1f3c34529fe43a4ede46e72d237361b
+References: bsc#1104353 FATE#326415
+
+When PF NIC client's init_instance() succeeds, it means this client
+has been registered successfully, so we use HCLGE_STATE_NIC_REGISTERED
+to indicate that. And before calling PF NIC client's uninit_instance(),
+we clear this state.
+
+So any operation of PF NIC client from HCLGE is not allowed if this
+state is not set.
+
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c |    6 ++++++
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.h |    1 +
+ 2 files changed, 7 insertions(+)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
+@@ -2557,6 +2557,10 @@ int hclge_notify_client(struct hclge_dev
+ 	struct hnae3_client *client = hdev->nic_client;
+ 	u16 i;
+ 
++	if (!test_bit(HCLGE_STATE_NIC_REGISTERED, &hdev->state) ||
++	    !client)
++		return 0;
++
+ 	if (!client->ops->reset_notify)
+ 		return -EOPNOTSUPP;
+ 
+@@ -7874,6 +7878,7 @@ static int hclge_init_client_instance(st
+ 				goto clear_nic;
+ 
+ 			hnae3_set_client_init_flag(client, ae_dev, 1);
++			set_bit(HCLGE_STATE_NIC_REGISTERED, &hdev->state);
+ 
+ 			if (netif_msg_drv(&hdev->vport->nic))
+ 				hclge_info_show(hdev);
+@@ -7960,6 +7965,7 @@ static void hclge_uninit_client_instance
+ 		if (client->type == HNAE3_CLIENT_ROCE)
+ 			return;
+ 		if (hdev->nic_client && client->ops->uninit_instance) {
++			clear_bit(HCLGE_STATE_NIC_REGISTERED, &hdev->state);
+ 			client->ops->uninit_instance(&vport->nic, 0);
+ 			hdev->nic_client = NULL;
+ 			vport->nic.client = NULL;
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.h
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.h
+@@ -199,6 +199,7 @@ enum HCLGE_DEV_STATE {
+ 	HCLGE_STATE_DOWN,
+ 	HCLGE_STATE_DISABLED,
+ 	HCLGE_STATE_REMOVING,
++	HCLGE_STATE_NIC_REGISTERED,
+ 	HCLGE_STATE_SERVICE_INITED,
+ 	HCLGE_STATE_SERVICE_SCHED,
+ 	HCLGE_STATE_RST_SERVICE_SCHED,

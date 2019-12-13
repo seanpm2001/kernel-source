@@ -1,0 +1,39 @@
+From 1574608f5f4204440d6d9f52b971aba967664764 Mon Sep 17 00:00:00 2001
+From: Corey Minyard <cminyard@mvista.com>
+Date: Thu, 21 Jun 2018 15:32:48 -0500
+Subject: [PATCH] ipmi:dmi: Ignore IPMI SMBIOS entries with a zero base address
+Git-commit: 1574608f5f4204440d6d9f52b971aba967664764
+Patch-mainline: v4.20-rc1
+References: bsc#1051510
+
+Looking at logs from systems all over the place, it looks like tons
+of broken systems exist that set the base address to zero.  I can
+only guess that is some sort of non-standard idea to mark the
+interface as not being present.  It can't be zero, anyway, so just
+complain and ignore it.
+
+Signed-off-by: Corey Minyard <cminyard@mvista.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/char/ipmi/ipmi_dmi.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/char/ipmi/ipmi_dmi.c b/drivers/char/ipmi/ipmi_dmi.c
+index 736ebbbc2fcd..8e0c78696c70 100644
+--- a/drivers/char/ipmi/ipmi_dmi.c
++++ b/drivers/char/ipmi/ipmi_dmi.c
+@@ -218,6 +218,10 @@ static void __init dmi_decode_ipmi(const struct dmi_header *dm)
+ 	slave_addr = data[DMI_IPMI_SLAVEADDR];
+ 
+ 	memcpy(&base_addr, data + DMI_IPMI_ADDR, sizeof(unsigned long));
++	if (!base_addr) {
++		pr_err("Base address is zero, assuming no IPMI interface\n");
++		return;
++	}
+ 	if (len >= DMI_IPMI_VER2_LENGTH) {
+ 		if (type == IPMI_DMI_TYPE_SSIF) {
+ 			offset = 0;
+-- 
+2.16.4
+

@@ -1,0 +1,105 @@
+From: Andrea Arcangeli <aarcange@redhat.com>
+Date: Thu, 6 Jul 2017 15:37:08 -0700
+Subject: ksm: optimize refile of stable_node_dup at the head of the chain
+Git-commit: 80b18dfa53bbb03085eba6401f5d29dad49205b7
+Patch-mainline: v4.13-rc1
+References: bnc#1144338
+
+If a candidate stable_node_dup has been found and it can accept further
+merges it can be refiled to the head of the list to speedup next
+searches without altering which dup is found and how the dups accumulate
+in the chain.
+
+We already refiled it back to the head in the prune_stale_stable_nodes
+case, but we didn't refile it if not pruning (which is more common).
+And we also refiled it when it was already at the head which is
+unnecessary (in the prune_stale_stable_nodes case, nr > 1 means there's
+more than one dup in the chain, it doesn't mean it's not already at the
+head of the chain).
+
+The stable_node_chain list is single threaded and there's no SMP locking
+contention so it should be faster to refile it to the head of the list
+also if prune_stale_stable_nodes is false.
+
+Profiling shows the refile happens 1.9% of the time when a dup is found
+with a max_page_sharing limit setting of 3 (with max_page_sharing of 2
+the refile never happens of course as there's never space for one more
+merge) which is reasonably low.  At higher max_page_sharing values it
+should be much less frequent.
+
+This is just an optimization.
+
+Link: http://lkml.kernel.org/r/20170518173721.22316-4-aarcange@redhat.com
+Signed-off-by: Andrea Arcangeli <aarcange@redhat.com>
+Cc: Evgheni Dereveanchin <ederevea@redhat.com>
+Cc: Andrey Ryabinin <aryabinin@virtuozzo.com>
+Cc: Petr Holasek <pholasek@redhat.com>
+Cc: Hugh Dickins <hughd@google.com>
+Cc: Arjan van de Ven <arjan@linux.intel.com>
+Cc: Davidlohr Bueso <dave@stgolabs.net>
+Cc: Gavin Guo <gavin.guo@canonical.com>
+Cc: Jay Vosburgh <jay.vosburgh@canonical.com>
+Cc: Mel Gorman <mgorman@techsingularity.net>
+Cc: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Acked-by: Dario Faggioli <dfaggioli@suse.com>
+---
+ mm/ksm.c | 35 +++++++++++++++++++++++------------
+ 1 file changed, 23 insertions(+), 12 deletions(-)
+
+diff --git a/mm/ksm.c b/mm/ksm.c
+index f4bd1e761e3f..4dc92f138786 100644
+--- a/mm/ksm.c
++++ b/mm/ksm.c
+@@ -1367,13 +1367,14 @@ struct page *stable_node_dup(struct stable_node **_stable_node_dup,
+ 		put_page(_tree_page);
+ 	}
+ 
+-	/*
+-	 * nr is relevant only if prune_stale_stable_nodes is true,
+-	 * otherwise we may break the loop at nr == 1 even if there
+-	 * are multiple entries.
+-	 */
+-	if (prune_stale_stable_nodes && found) {
+-		if (nr == 1) {
++	if (found) {
++		/*
++		 * nr is counting all dups in the chain only if
++		 * prune_stale_stable_nodes is true, otherwise we may
++		 * break the loop at nr == 1 even if there are
++		 * multiple entries.
++		 */
++		if (prune_stale_stable_nodes && nr == 1) {
+ 			/*
+ 			 * If there's not just one entry it would
+ 			 * corrupt memory, better BUG_ON. In KSM
+@@ -1404,12 +1405,22 @@ struct page *stable_node_dup(struct stable_node **_stable_node_dup,
+ 			 * time.
+ 			 */
+ 			stable_node = NULL;
+-		} else if (__is_page_sharing_candidate(found, 1)) {
++		} else if (stable_node->hlist.first != &found->hlist_dup &&
++			   __is_page_sharing_candidate(found, 1)) {
+ 			/*
+-			 * Refile our candidate at the head
+-			 * after the prune if our candidate
+-			 * can accept one more future sharing
+-			 * in addition to the one underway.
++			 * If the found stable_node dup can accept one
++			 * more future merge (in addition to the one
++			 * that is underway) and is not at the head of
++			 * the chain, put it there so next search will
++			 * be quicker in the !prune_stale_stable_nodes
++			 * case.
++			 *
++			 * NOTE: it would be inaccurate to use nr > 1
++			 * instead of checking the hlist.first pointer
++			 * directly, because in the
++			 * prune_stale_stable_nodes case "nr" isn't
++			 * the position of the found dup in the chain,
++			 * but the total number of dups in the chain.
+ 			 */
+ 			hlist_del(&found->hlist_dup);
+ 			hlist_add_head(&found->hlist_dup,
+

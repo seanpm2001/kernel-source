@@ -1,0 +1,58 @@
+From: Takashi Iwai <tiwai@suse.de>
+Subject: kABI workaround for crypto/af_alg changes
+Patch-mainline: Never, kABI workaround for SLE15 & co
+References: bsc#1154737
+
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ crypto/af_alg.c         |    2 ++
+ include/crypto/if_alg.h |   13 ++++++++++++-
+ 2 files changed, 14 insertions(+), 1 deletion(-)
+
+--- a/include/crypto/if_alg.h
++++ b/include/crypto/if_alg.h
+@@ -18,11 +18,15 @@
+ #include <linux/if_alg.h>
+ #include <linux/scatterlist.h>
+ #include <linux/types.h>
++#ifndef __GENKSYMS__
+ #include <linux/atomic.h>
++#endif
+ #include <net/sock.h>
+ 
++#ifndef __GENKSYMS__
+ #include <crypto/aead.h>
+ #include <crypto/skcipher.h>
++#endif
+ 
+ #define ALG_MAX_PAGES			16
+ 
+@@ -156,7 +160,14 @@ struct af_alg_ctx {
+ 	struct af_alg_completion completion;
+ 
+ 	size_t used;
+-	atomic_t rcvused;
++#ifdef __GENKSYMS__
++	size_t rcvused;
++#else
++	union {
++		atomic_t rcvused;
++		size_t rcvused_aligned;
++	};
++#endif
+ 
+ 	bool more;
+ 	bool merge;
+--- a/crypto/af_alg.c
++++ b/crypto/af_alg.c
+@@ -21,7 +21,9 @@
+ #include <linux/module.h>
+ #include <linux/net.h>
+ #include <linux/rwsem.h>
++#ifndef __GENKSYMS__
+ #include <linux/sched/signal.h>
++#endif
+ #include <linux/security.h>
+ 
+ struct alg_type_list {

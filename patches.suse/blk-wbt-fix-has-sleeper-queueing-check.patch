@@ -1,0 +1,51 @@
+From c45e6a037a536530bd25781ac7c989e52deb2a63 Mon Sep 17 00:00:00 2001
+From: Jens Axboe <axboe@kernel.dk>
+Date: Mon, 20 Aug 2018 13:22:27 -0600
+Subject: [PATCH] blk-wbt: fix has-sleeper queueing check
+Git-commit: c45e6a037a536530bd25781ac7c989e52deb2a63
+Patch-mainline: v4.19-rc1
+References: bsc#1135873
+
+We need to do this inside the loop as well, or we can allow new
+IO to supersede previous IO.
+
+Tested-by: Anchal Agarwal <anchalag@amazon.com>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Acked-by: Jan Kara <jack@suse.cz>
+
+---
+ block/blk-wbt.c |    8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+--- a/block/blk-wbt.c
++++ b/block/blk-wbt.c
+@@ -551,8 +551,10 @@ static void __wbt_wait(struct rq_wb *rwb
+ {
+ 	struct rq_wait *rqw = get_rq_wait(rwb, wb_acct);
+ 	DECLARE_WAITQUEUE(wait, current);
++	bool has_sleeper;
+ 
+-	if (!wq_has_sleeper(&rqw->wait) &&
++	has_sleeper = wq_has_sleeper(&rqw->wait);
++	if (!has_sleeper &&
+ 			atomic_inc_below(&rqw->inflight, get_limit(rwb, rw)))
+ 		return;
+ 
+@@ -528,7 +530,8 @@ static void __wbt_wait(struct rq_wb *rwb
+ 	do {
+ 		set_current_state(TASK_UNINTERRUPTIBLE);
+ 
+-		if (atomic_inc_below(&rqw->inflight, get_limit(rwb, rw)))
++		if (!has_sleeper &&
++		    atomic_inc_below(&rqw->inflight, get_limit(rwb, rw)))
+ 			break;
+ 
+ 		if (lock) {
+@@ -537,6 +540,7 @@ static void __wbt_wait(struct rq_wb *rwb
+ 			spin_lock_irq(lock);
+ 		} else
+ 			io_schedule();
++		has_sleeper = false;
+ 	} while (1);
+ 
+ 	__set_current_state(TASK_RUNNING);

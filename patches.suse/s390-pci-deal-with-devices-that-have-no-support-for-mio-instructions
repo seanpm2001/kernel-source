@@ -1,0 +1,82 @@
+From: Sebastian Ott <sebott@linux.ibm.com>
+Date: Thu, 27 Jun 2019 15:13:05 +0200
+Subject: s390/pci: deal with devices that have no support for MIO instructions
+Git-commit: c7ff0e918a7cb39f6bfb2a7bdc30199986ff1571
+Patch-mainline: v5.3-rc1
+References: bsc#1152665 LTC#181729
+
+Unfortunately we have to handle a class of devices that don't support the
+new MIO instructions. Adjust resource assignment and mapping accordingly.
+
+Signed-off-by: Sebastian Ott <sebott@linux.ibm.com>
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Acked-by: Petr Tesarik <ptesarik@suse.com>
+---
+ arch/s390/include/asm/pci.h |    5 +++++
+ arch/s390/pci/pci.c         |   15 ++++++++-------
+ 2 files changed, 13 insertions(+), 7 deletions(-)
+
+--- a/arch/s390/include/asm/pci.h
++++ b/arch/s390/include/asm/pci.h
+@@ -184,6 +184,11 @@ int clp_disable_fh(struct zpci_dev *);
+ int clp_get_state(u32 fid, enum zpci_state *state);
+ 
+ #ifdef CONFIG_PCI
++static inline bool zpci_use_mio(struct zpci_dev *zdev)
++{
++	return static_branch_likely(&have_mio) && zdev->mio_capable;
++}
++
+ /* Error handling and recovery */
+ void zpci_event_error(void *);
+ void zpci_event_availability(void *);
+--- a/arch/s390/pci/pci.c
++++ b/arch/s390/pci/pci.c
+@@ -425,12 +425,12 @@ static void zpci_map_resources(struct pc
+ 		if (!len)
+ 			continue;
+ 
+-		if (static_branch_likely(&have_mio))
++		if (zpci_use_mio(zdev))
+ 			pdev->resource[i].start =
+ 				(resource_size_t __force) zdev->bars[i].mio_wb;
+ 		else
+-			pdev->resource[i].start =
+-				(resource_size_t __force) pci_iomap(pdev, i, 0);
++			pdev->resource[i].start = (resource_size_t __force)
++				pci_iomap_range_fh(pdev, i, 0, 0);
+ 		pdev->resource[i].end = pdev->resource[i].start + len - 1;
+ 	}
+ 
+@@ -448,18 +448,19 @@ static void zpci_map_resources(struct pc
+ 
+ static void zpci_unmap_resources(struct pci_dev *pdev)
+ {
++	struct zpci_dev *zdev = to_zpci(pdev);
+ 	resource_size_t len;
+ 	int i;
+ 
+-	if (static_branch_likely(&have_mio))
++	if (zpci_use_mio(zdev))
+ 		return;
+ 
+ 	for (i = 0; i < PCI_BAR_COUNT; i++) {
+ 		len = pci_resource_len(pdev, i);
+ 		if (!len)
+ 			continue;
+-		pci_iounmap(pdev, (void __iomem __force *)
+-			    pdev->resource[i].start);
++		pci_iounmap_fh(pdev, (void __iomem __force *)
++			       pdev->resource[i].start);
+ 	}
+ }
+ 
+@@ -532,7 +533,7 @@ static int zpci_setup_bus_resources(stru
+ 		if (zdev->bars[i].val & 4)
+ 			flags |= IORESOURCE_MEM_64;
+ 
+-		if (static_branch_likely(&have_mio))
++		if (zpci_use_mio(zdev))
+ 			addr = (unsigned long) zdev->bars[i].mio_wb;
+ 		else
+ 			addr = ZPCI_ADDR(entry);

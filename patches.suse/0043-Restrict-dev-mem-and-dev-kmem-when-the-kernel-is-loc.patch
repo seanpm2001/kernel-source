@@ -1,46 +1,39 @@
-From 104cff827b18e35874153bd8df14eba59e5b411a Mon Sep 17 00:00:00 2001
-From: Matthew Garrett <matthew.garrett@nebula.com>
-Date: Wed, 5 Apr 2017 17:40:30 +0100
-Subject: [PATCH 43/62] Restrict /dev/mem and /dev/kmem when the kernel is
+From: Matthew Garrett <mjg59@srcf.ucam.org>
+Date: Mon, 19 Aug 2019 17:17:41 -0700
+Subject: lockdown: Restrict /dev/{mem,kmem,port} when the kernel is
  locked down
-Patch-mainline: No, submitted https://patchwork.kernel.org/patch/9665599/
+Patch-mainline: No, submitted https://lkml.org/lkml/2019/8/19/1195
 References: fate#314486
 
-Allowing users to write to address space makes it possible for the kernel to
-be subverted, avoiding module loading restrictions.  Prevent this when the
-kernel has been locked down.
+Allowing users to read and write to core kernel memory makes it possible
+for the kernel to be subverted, avoiding module loading restrictions, and
+also to steal cryptographic information.
 
-Signed-off-by: Matthew Garrett <matthew.garrett@nebula.com>
+Disallow /dev/mem and /dev/kmem from being opened this when the kernel has
+been locked down to prevent this.
+
+Also disallow /dev/port from being opened to prevent raw ioport access and
+thus DMA from being used to accomplish the same thing.
+
 Signed-off-by: David Howells <dhowells@redhat.com>
+Signed-off-by: Matthew Garrett <mjg59@google.com>
+Reviewed-by: Kees Cook <keescook@chromium.org>
+Cc: x86@kernel.org
+Signed-off-by: James Morris <jmorris@namei.org>
 Acked-by: Lee, Chun-Yi <jlee@suse.com>
+Acked-by: Jean Delvare <jdelvare@suse.de>
 ---
- drivers/char/mem.c | 6 ++++++
- 1 file changed, 6 insertions(+)
+ drivers/char/mem.c |    2 ++
+ 1 file changed, 2 insertions(+)
 
-diff --git a/drivers/char/mem.c b/drivers/char/mem.c
-index 6d9cc2d..f814404 100644
 --- a/drivers/char/mem.c
 +++ b/drivers/char/mem.c
-@@ -163,6 +163,9 @@ static ssize_t write_mem(struct file *file, const char __user *buf,
- 	if (p != *ppos)
- 		return -EFBIG;
+@@ -779,6 +779,8 @@ static loff_t memory_lseek(struct file *
  
+ static int open_port(struct inode *inode, struct file *filp)
+ {
 +	if (kernel_is_locked_down())
 +		return -EPERM;
-+
- 	if (!valid_phys_addr_range(p, count))
- 		return -EFAULT;
+ 	return capable(CAP_SYS_RAWIO) ? 0 : -EPERM;
+ }
  
-@@ -513,6 +516,9 @@ static ssize_t write_kmem(struct file *file, const char __user *buf,
- 	char *kbuf; /* k-addr because vwrite() takes vmlist_lock rwlock */
- 	int err = 0;
- 
-+	if (kernel_is_locked_down())
-+		return -EPERM;
-+
- 	if (p < (unsigned long) high_memory) {
- 		unsigned long to_write = min_t(unsigned long, count,
- 					       (unsigned long)high_memory - p);
--- 
-2.10.2
-

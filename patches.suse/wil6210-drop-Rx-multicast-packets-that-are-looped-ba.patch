@@ -1,0 +1,45 @@
+From 9a65064abdf82934e0ed4744125f9f466f421f57 Mon Sep 17 00:00:00 2001
+From: Dedy Lansky <dlansky@codeaurora.org>
+Date: Thu, 23 Aug 2018 14:47:07 +0300
+Subject: [PATCH] wil6210: drop Rx multicast packets that are looped-back to STA
+Git-commit: 9a65064abdf82934e0ed4744125f9f466f421f57
+Patch-mainline: v4.20-rc1
+References: bsc#1111666
+
+Delivering a looped-back multicast packet to network stack can cause
+higher layer protocols to fail like for example IPv6 DAD.
+In STA mode, upon receiving Rx multicast packet, check if the source
+MAC address is equal to our own MAC address and if so drop the packet.
+
+Signed-off-by: Dedy Lansky <dlansky@codeaurora.org>
+Signed-off-by: Maya Erez <merez@codeaurora.org>
+Signed-off-by: Kalle Valo <kvalo@codeaurora.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/net/wireless/ath/wil6210/txrx.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/ath/wil6210/txrx.c b/drivers/net/wireless/ath/wil6210/txrx.c
+index 6a7943e487fb..e7b003b38f45 100644
+--- a/drivers/net/wireless/ath/wil6210/txrx.c
++++ b/drivers/net/wireless/ath/wil6210/txrx.c
+@@ -765,7 +765,14 @@ void wil_netif_rx_any(struct sk_buff *skb, struct net_device *ndev)
+ 		return;
+ 	}
+ 
+-	if (wdev->iftype == NL80211_IFTYPE_AP && !vif->ap_isolate) {
++	if (wdev->iftype == NL80211_IFTYPE_STATION) {
++		if (mcast && ether_addr_equal(eth->h_source, ndev->dev_addr)) {
++			/* mcast packet looped back to us */
++			rc = GRO_DROP;
++			dev_kfree_skb(skb);
++			goto stats;
++		}
++	} else if (wdev->iftype == NL80211_IFTYPE_AP && !vif->ap_isolate) {
+ 		if (mcast) {
+ 			/* send multicast frames both to higher layers in
+ 			 * local net stack and back to the wireless medium
+-- 
+2.16.4
+

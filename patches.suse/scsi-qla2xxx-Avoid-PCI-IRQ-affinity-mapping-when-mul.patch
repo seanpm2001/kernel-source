@@ -1,10 +1,10 @@
 From: Giridhar Malavali <gmalavali@marvell.com>
 Date: Fri, 15 Feb 2019 16:42:55 -0800
-Subject: [PATCH] scsi: qla2xxx: Avoid PCI IRQ affinity mapping when multiqueue
- is not supported
+Subject: scsi: qla2xxx: Avoid PCI IRQ affinity mapping when multiqueue is not
+ supported
+Patch-mainline: v5.1-rc1
 Git-commit: f3e026951771bceb17319a4d0d6121ca58746c88
-Patch-mainline: v5.2-rc1
-References: bsc#1136215
+References: bsc#1123034 bsc#1131304 bsc#1127988 bsc#1136215
 
 This patch fixes warning seen when BLK-MQ is enabled and hardware does not
 support MQ. This will result into driver requesting MSIx vectors which are
@@ -43,17 +43,15 @@ Cc: stable@vger.kernel.org #4.19
 Signed-off-by: Giridhar Malavali <gmalavali@marvell.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_isr.c | 2 +-
- drivers/scsi/qla2xxx/qla_os.c  | 2 +-
+ drivers/scsi/qla2xxx/qla_isr.c |    2 +-
+ drivers/scsi/qla2xxx/qla_os.c  |    2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_isr.c b/drivers/scsi/qla2xxx/qla_isr.c
-index b5ae76869d5b..89ee82e6773b 100644
 --- a/drivers/scsi/qla2xxx/qla_isr.c
 +++ b/drivers/scsi/qla2xxx/qla_isr.c
-@@ -3431,7 +3431,7 @@ qla24xx_enable_msix(struct qla_hw_data *ha, struct rsp_que *rsp)
+@@ -3431,7 +3431,7 @@ qla24xx_enable_msix(struct qla_hw_data *
  		min_vecs++;
  	}
  
@@ -62,11 +60,9 @@ index b5ae76869d5b..89ee82e6773b 100644
  		/* user wants to control IRQ setting for target mode */
  		ret = pci_alloc_irq_vectors(ha->pdev, min_vecs,
  		    ha->msix_count, PCI_IRQ_MSIX);
-diff --git a/drivers/scsi/qla2xxx/qla_os.c b/drivers/scsi/qla2xxx/qla_os.c
-index 7bf23943c815..84cd6bff8b12 100644
 --- a/drivers/scsi/qla2xxx/qla_os.c
 +++ b/drivers/scsi/qla2xxx/qla_os.c
-@@ -7181,7 +7181,7 @@ static int qla2xxx_map_queues(struct Scsi_Host *shost)
+@@ -7186,7 +7186,7 @@ static int qla2xxx_map_queues(struct Scs
  	int rc;
  	scsi_qla_host_t *vha = (scsi_qla_host_t *)shost->hostdata;
  
@@ -75,6 +71,3 @@ index 7bf23943c815..84cd6bff8b12 100644
  		rc = blk_mq_map_queues(&shost->tag_set);
  	else
  		rc = blk_mq_pci_map_queues(&shost->tag_set, vha->hw->pdev, 0);
--- 
-2.16.4
-

@@ -1,9 +1,9 @@
 From: Quinn Tran <quinn.tran@cavium.com>
 Date: Thu, 24 Jan 2019 23:23:45 -0800
-Subject: [PATCH] scsi: qla2xxx: allow session delete to finish before create.
-Git-commit: 1021f0bc2f3d6ac80a33aac0059dce8fd1622235
+Subject: scsi: qla2xxx: allow session delete to finish before create.
 Patch-mainline: v5.1-rc1
-References: bsc#1124541
+Git-commit: 1021f0bc2f3d6ac80a33aac0059dce8fd1622235
+References: bsc#1123034 bsc#1124541 bsc#1131304 bsc#1127988
 
 This patch flushes del_work and free_work while sending NACK response for
 PRLI
@@ -11,16 +11,14 @@ PRLI
 Signed-off-by: Quinn Tran <quinn.tran@cavium.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_target.c | 3 +++
+ drivers/scsi/qla2xxx/qla_target.c |    3 +++
  1 file changed, 3 insertions(+)
 
-diff --git a/drivers/scsi/qla2xxx/qla_target.c b/drivers/scsi/qla2xxx/qla_target.c
-index 7f5b1156ea8c..6b8c655d9eb4 100644
 --- a/drivers/scsi/qla2xxx/qla_target.c
 +++ b/drivers/scsi/qla2xxx/qla_target.c
-@@ -684,6 +684,9 @@ void qla24xx_do_nack_work(struct scsi_qla_host *vha, struct qla_work_evt *e)
+@@ -684,6 +684,9 @@ void qla24xx_do_nack_work(struct scsi_ql
  
  	switch (e->u.nack.type) {
  	case SRB_NACK_PRLI:
@@ -30,6 +28,3 @@ index 7f5b1156ea8c..6b8c655d9eb4 100644
  		mutex_lock(&vha->vha_tgt.tgt_mutex);
  		t = qlt_create_sess(vha, e->u.nack.fcport, 0);
  		mutex_unlock(&vha->vha_tgt.tgt_mutex);
--- 
-2.16.4
-

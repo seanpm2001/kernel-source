@@ -1,0 +1,78 @@
+From: Weihang Li <liweihang@hisilicon.com>
+Date: Thu, 20 Jun 2019 16:52:39 +0800
+Subject: net: hns3: code optimizaition of hclge_handle_hw_ras_error()
+Patch-mainline: v5.3-rc1
+Git-commit: 2253db16f8ec5710eccb540ac833995a6d1d7e19
+References: bsc#1104353 FATE#326415
+
+This patch optimizes hclge_handle_hw_ras_error() to make the code logic
+clearer.
+1. If there was no NIC or Roce RAS when we read
+   HCLGE_RAS_PF_OTHER_INT_STS_REG, we return directly.
+2. Because NIC and Roce RAS may occurs at the same time, so we should
+   check value of revision at first before we handle Roce RAS instead
+   of only checking it in branch of no NIC RAS is detected.
+3. Check HCLGE_STATE_RST_HANDLING each time before we want to return
+   PCI_ERS_RESULT_NEED_RESET.
+4. Remove checking of HCLGE_RAS_REG_NFE_MASK and
+   HCLGE_RAS_REG_ROCEE_ERR_MASK because if hw_err_reset_req is not
+   zero, it proves that we have set it in handling of NIC or Roce RAS.
+
+Signed-off-by: Weihang Li <liweihang@hisilicon.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_err.c |   24 ++++++++---------
+ 1 file changed, 12 insertions(+), 12 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_err.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_err.c
+@@ -1606,6 +1606,8 @@ pci_ers_result_t hclge_handle_hw_ras_err
+ 	if (status & HCLGE_RAS_REG_NFE_MASK ||
+ 	    status & HCLGE_RAS_REG_ROCEE_ERR_MASK)
+ 		ae_dev->hw_err_reset_req = 0;
++	else
++		goto out;
+ 
+ 	/* Handling Non-fatal HNS RAS errors */
+ 	if (status & HCLGE_RAS_REG_NFE_MASK) {
+@@ -1613,27 +1615,25 @@ pci_ers_result_t hclge_handle_hw_ras_err
+ 			 "HNS Non-Fatal RAS error(status=0x%x) identified\n",
+ 			 status);
+ 		hclge_handle_all_ras_errors(hdev);
+-	} else {
+-		if (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state) ||
+-		    hdev->pdev->revision < 0x21) {
+-			ae_dev->override_pci_need_reset = 1;
+-			return PCI_ERS_RESULT_RECOVERED;
+-		}
+ 	}
+ 
+-	if (status & HCLGE_RAS_REG_ROCEE_ERR_MASK) {
+-		dev_warn(dev, "ROCEE uncorrected RAS error identified\n");
++	/* Handling Non-fatal Rocee RAS errors */
++	if (hdev->pdev->revision >= 0x21 &&
++	    status & HCLGE_RAS_REG_ROCEE_ERR_MASK) {
++		dev_warn(dev, "ROCEE Non-Fatal RAS error identified\n");
+ 		hclge_handle_rocee_ras_error(ae_dev);
+ 	}
+ 
+-	if ((status & HCLGE_RAS_REG_NFE_MASK ||
+-	     status & HCLGE_RAS_REG_ROCEE_ERR_MASK) &&
+-	     ae_dev->hw_err_reset_req) {
++	if (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
++		goto out;
++
++	if (ae_dev->hw_err_reset_req) {
+ 		ae_dev->override_pci_need_reset = 0;
+ 		return PCI_ERS_RESULT_NEED_RESET;
+ 	}
+-	ae_dev->override_pci_need_reset = 1;
+ 
++out:
++	ae_dev->override_pci_need_reset = 1;
+ 	return PCI_ERS_RESULT_RECOVERED;
+ }
+ 

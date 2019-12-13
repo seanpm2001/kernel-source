@@ -1,0 +1,55 @@
+From: Mark Rutland <mark.rutland@arm.com>
+Date: Wed, 11 Jul 2018 14:56:39 +0100
+Subject: arm64: kill change_cpacr()
+
+Git-commit: 8d370933faecec098acb99fbf317cf9dfa9ee995
+Patch-mainline: v4.19-rc1
+References: jsc#ECO-561
+
+Now that we have sysreg_clear_set(), we can use this instead of
+change_cpacr().
+
+Note that the order of the set and clear arguments differs between
+change_cpacr() and sysreg_clear_set(), so these are flipped as part of
+the conversion. Also, sve_user_enable() redundantly clears
+CPACR_EL1_ZEN_EL0EN before setting it; this is removed for clarity.
+
+Signed-off-by: Mark Rutland <mark.rutland@arm.com>
+Reviewed-by: Dave Martin <dave.martin@arm.com>
+Acked-by: Catalin Marinas <catalin.marinas@arm.com>
+Cc: James Morse <james.morse@arm.com>
+Cc: Will Deacon <will.deacon@arm.com>
+Signed-off-by: Will Deacon <will.deacon@arm.com>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ arch/arm64/kernel/fpsimd.c |   13 ++-----------
+ 1 file changed, 2 insertions(+), 11 deletions(-)
+
+--- a/arch/arm64/kernel/fpsimd.c
++++ b/arch/arm64/kernel/fpsimd.c
+@@ -171,23 +171,14 @@ static void *sve_pffr(struct task_struct
+ 		sve_ffr_offset(task->thread.sve_vl);
+ }
+ 
+-static void change_cpacr(u64 val, u64 mask)
+-{
+-	u64 cpacr = read_sysreg(CPACR_EL1);
+-	u64 new = (cpacr & ~mask) | val;
+-
+-	if (new != cpacr)
+-		write_sysreg(new, CPACR_EL1);
+-}
+-
+ static void sve_user_disable(void)
+ {
+-	change_cpacr(0, CPACR_EL1_ZEN_EL0EN);
++	sysreg_clear_set(cpacr_el1, CPACR_EL1_ZEN_EL0EN, 0);
+ }
+ 
+ static void sve_user_enable(void)
+ {
+-	change_cpacr(CPACR_EL1_ZEN_EL0EN, CPACR_EL1_ZEN_EL0EN);
++	sysreg_clear_set(cpacr_el1, 0, CPACR_EL1_ZEN_EL0EN);
+ }
+ 
+ /*

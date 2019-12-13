@@ -1,0 +1,43 @@
+From: Ming Lei <ming.lei@redhat.com>
+Date: Tue, 9 Apr 2019 06:31:22 +0800
+Subject: [PATCH] nvme: cancel request synchronously
+Git-commit: eb3afb75b57c28599af0dfa03a99579d410749e9
+Patch-Mainline: v5.1-rc5
+References: bsc#1145661
+
+nvme_cancel_request() is used in error handler, and it is always
+reliable to cancel request synchronously, and avoids possible race
+in which request may be completed after real hw queue is destroyed.
+
+One issue is reported by our customer on NVMe RDMA, in which freed ib
+queue pair may be used in nvme_rdma_complete_rq().
+
+Cc: Sagi Grimberg <sagi@grimberg.me>
+Cc: Bart Van Assche <bvanassche@acm.org>
+Cc: James Smart <james.smart@broadcom.com>
+Cc: linux-nvme@lists.infradead.org
+Reviewed-by: Keith Busch <keith.busch@intel.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Ming Lei <ming.lei@redhat.com>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Acked-by: Hannes Reinecke <hare@suse.com>
+---
+ drivers/nvme/host/core.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/nvme/host/core.c b/drivers/nvme/host/core.c
+index 470601980794..2c43e12b70af 100644
+--- a/drivers/nvme/host/core.c
++++ b/drivers/nvme/host/core.c
+@@ -288,7 +288,7 @@ bool nvme_cancel_request(struct request *req, void *data, bool reserved)
+ 				"Cancelling I/O %d", req->tag);
+ 
+ 	nvme_req(req)->status = NVME_SC_ABORT_REQ;
+-	blk_mq_complete_request(req);
++	blk_mq_complete_request_sync(req);
+ 
+ }
+ EXPORT_SYMBOL_GPL(nvme_cancel_request);
+-- 
+2.16.4
+

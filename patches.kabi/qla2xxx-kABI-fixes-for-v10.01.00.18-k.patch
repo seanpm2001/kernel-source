@@ -1,7 +1,7 @@
 From: Daniel Wagner <dwagner@suse.de>
 Date: Thu, 15 Aug 2019 08:50:13 +0200
 Subject: [PATCH] qla2xxx: kABI fixes for v10.01.00.18-k
-References: bcs#1082635 bcs#1141340 bcs#1143706
+References: bcs#1082635 bsc#1123034 bsc#1131304 bsc#1127988 bcs#1143706
 Patch-Mainline: never, SLE15 SP1 specific kABI fix.
 
 That patch series breaks kABI again, so fix it up.
@@ -9,9 +9,6 @@ That patch series breaks kABI again, so fix it up.
 Signed-off-by: Daniel Wagner <dwagner@suse.de>
 ---
  drivers/nvme/host/fc.c            |    2 ++
- drivers/scsi/qla2xxx/qla_def.h    |   22 +++++++++++++++++++---
- drivers/scsi/qla2xxx/qla_nvme.h   |    5 +++++
- drivers/scsi/qla2xxx/qla_target.h |   21 +++++++++++++--------
  4 files changed, 39 insertions(+), 11 deletions(-)
 
 --- a/drivers/nvme/host/fc.c
@@ -28,19 +25,19 @@ Signed-off-by: Daniel Wagner <dwagner@suse.de>
  
 --- a/drivers/scsi/qla2xxx/qla_def.h
 +++ b/drivers/scsi/qla2xxx/qla_def.h
-@@ -531,12 +531,9 @@ typedef struct srb {
+@@ -591,12 +591,9 @@ typedef struct srb {
+ 	 */
  	uint8_t cmd_type;
  	uint8_t pad[3];
- 	atomic_t ref_count;
 -	struct kref cmd_kref;	/* need to migrate ref_count over to this */
 -	void *priv;
  	wait_queue_head_t nvme_ls_waitq;
  	struct fc_port *fcport;
  	struct scsi_qla_host *vha;
 -	unsigned int start_timer:1;
- 	uint32_t handle;
- 	uint16_t flags;
- 	uint16_t type;
+ 	unsigned int abort:1;
+ 	unsigned int aborted:1;
+ 	unsigned int completed:1;
 @@ -548,7 +545,11 @@ typedef struct srb {
  	u32 gen2;	/* scratch */
  	int rc;
@@ -54,9 +51,9 @@ Signed-off-by: Daniel Wagner <dwagner@suse.de>
  		struct srb_iocb iocb_cmd;
  		struct bsg_job *bsg_job;
 @@ -556,7 +557,12 @@ typedef struct srb {
- 	} u;
- 	void (*done)(void *, int);
- 	void (*free)(void *);
+ 	 * Call nvme_private->fd->done() and free @sp. Only used by the NVMe
+ 	 * code.
+ 	 */
 +#ifndef __GENKSYMS__
 +	struct kref cmd_kref;	/* need to migrate ref_count over to this */
 +	void *priv;
@@ -81,9 +78,9 @@ Signed-off-by: Daniel Wagner <dwagner@suse.de>
  } fc_port_type_t;
  
  enum qla_sess_deletion {
-@@ -2372,6 +2382,9 @@ typedef struct fc_port {
- 	unsigned int id_changed:1;
+@@ -2398,6 +2398,9 @@ typedef struct fc_port {
  	unsigned int scan_needed:1;
+ 	unsigned int n2n_flag:1;
  
 +#ifdef __GENKSYMS__
 +	struct work_struct nvme_del_work;

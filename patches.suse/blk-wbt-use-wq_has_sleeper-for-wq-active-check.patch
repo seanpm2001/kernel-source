@@ -1,0 +1,51 @@
+From b78820937b4762b7d30b807d7156bec1d89e4dd3 Mon Sep 17 00:00:00 2001
+From: Jens Axboe <axboe@kernel.dk>
+Date: Mon, 20 Aug 2018 13:20:50 -0600
+Subject: [PATCH] blk-wbt: use wq_has_sleeper() for wq active check
+Git-commit: b78820937b4762b7d30b807d7156bec1d89e4dd3
+Patch-mainline: v4.19-rc1
+References: bsc#1135873
+
+We need the memory barrier before checking the list head,
+use the appropriate helper for this. The matching queue
+side memory barrier is provided by set_current_state().
+
+Tested-by: Anchal Agarwal <anchalag@amazon.com>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Acked-by: Jan Kara <jack@suse.cz>
+
+---
+ block/blk-wbt.c |    8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+--- a/block/blk-wbt.c
++++ b/block/blk-wbt.c
+@@ -113,7 +113,7 @@ static void rwb_wake_all(struct rq_wb *r
+ 	for (i = 0; i < WBT_NUM_RWQ; i++) {
+ 		struct rq_wait *rqw = &rwb->rq_wait[i];
+ 
+-		if (waitqueue_active(&rqw->wait))
++		if (wq_has_sleeper(&rqw->wait))
+ 			wake_up_all(&rqw->wait);
+ 	}
+ }
+@@ -153,7 +153,7 @@ void __wbt_done(struct rq_wb *rwb, enum
+ 	if (inflight && inflight >= limit)
+ 		return;
+ 
+-	if (waitqueue_active(&rqw->wait)) {
++	if (wq_has_sleeper(&rqw->wait)) {
+ 		int diff = limit - inflight;
+ 
+ 		if (!inflight || diff >= rwb->wb_background / 2)
+@@ -552,8 +552,8 @@ static void __wbt_wait(struct rq_wb *rwb
+ 	struct rq_wait *rqw = get_rq_wait(rwb, wb_acct);
+ 	DECLARE_WAITQUEUE(wait, current);
+ 
+-	if (!waitqueue_active(&rqw->wait)
+-			&& atomic_inc_below(&rqw->inflight, get_limit(rwb, rw)))
++	if (!wq_has_sleeper(&rqw->wait) &&
++			atomic_inc_below(&rqw->inflight, get_limit(rwb, rw)))
+ 		return;
+ 
+ 	add_wait_queue_exclusive(&rqw->wait, &wait);

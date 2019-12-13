@@ -17,15 +17,15 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 
 --- a/kernel/printk/printk.c
 +++ b/kernel/printk/printk.c
-@@ -1630,6 +1630,7 @@ static DEFINE_RAW_SPINLOCK(console_owner
+@@ -1642,6 +1642,7 @@ static DEFINE_RAW_SPINLOCK(console_owner
  static struct task_struct *console_owner;
  static bool console_waiter;
  
 +#ifndef CONFIG_PREEMPT_RT_FULL
  /**
-  * console_lock_spinning_enable - mark beginning of code where another
-  *	thread might safely busy wait
-@@ -1690,6 +1691,7 @@ static int console_lock_spinning_disable
+  * printk_bust_locks - forcibly reset all printk-related locks
+  *
+@@ -1718,6 +1719,7 @@ static int console_lock_spinning_disable
  	mutex_release(&console_lock_dep_map, 1, _THIS_IP_);
  	return 1;
  }
@@ -33,7 +33,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  /**
   * console_trylock_spinning - try to get console_lock by busy waiting
-@@ -1711,6 +1713,9 @@ static int console_trylock_spinning(void
+@@ -1739,6 +1741,9 @@ static int console_trylock_spinning(void
  	if (console_trylock())
  		return 1;
  
@@ -43,7 +43,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	printk_safe_enter_irqsave(flags);
  
  	raw_spin_lock(&console_owner_lock);
-@@ -1770,6 +1775,7 @@ static void call_console_drivers(const c
+@@ -1798,6 +1803,7 @@ static void call_console_drivers(const c
  	if (!console_drivers)
  		return;
  
@@ -51,7 +51,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	for_each_console(con) {
  		if (exclusive_console && con != exclusive_console)
  			continue;
-@@ -1785,6 +1791,7 @@ static void call_console_drivers(const c
+@@ -1813,6 +1819,7 @@ static void call_console_drivers(const c
  		else
  			con->write(con, text, len);
  	}
@@ -59,7 +59,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  int printk_delay_msec __read_mostly;
-@@ -1967,20 +1974,30 @@ asmlinkage int vprintk_emit(int facility
+@@ -1995,20 +2002,30 @@ asmlinkage int vprintk_emit(int facility
  
  	/* If called from the scheduler, we can not call up(). */
  	if (!in_sched) {
@@ -93,7 +93,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	}
  
  	return printed_len;
-@@ -2424,6 +2441,10 @@ void console_unlock(void)
+@@ -2454,6 +2471,10 @@ skip:
  		console_seq++;
  		raw_spin_unlock(&logbuf_lock);
  
@@ -104,7 +104,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		/*
  		 * While actively printing out messages, if another printk()
  		 * were to occur on another CPU, it may wait for this one to
-@@ -2442,6 +2463,7 @@ void console_unlock(void)
+@@ -2472,6 +2493,7 @@ skip:
  		}
  
  		printk_safe_exit_irqrestore(flags);
@@ -112,7 +112,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  		if (do_cond_resched)
  			cond_resched();
-@@ -2471,7 +2493,9 @@ void console_unlock(void)
+@@ -2501,7 +2523,9 @@ skip:
  	if (retry && console_trylock())
  		goto again;
  

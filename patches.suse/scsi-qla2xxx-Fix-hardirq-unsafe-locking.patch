@@ -3,7 +3,7 @@ Date: Wed, 17 Apr 2019 14:44:41 -0700
 Subject: scsi: qla2xxx: Fix hardirq-unsafe locking
 Patch-mainline: v5.2-rc1
 Git-commit: 300ec7415c1fed5c73660f50c8e14a67e236dc0a
-References: bsc#1082635 bsc#1141340 bsc#1143706
+References: bsc#1082635 bsc#1123034 bsc#1131304 bsc#1127988 bsc#1141340 bsc#1143706
 
 Since fc_remote_port_delete() must be called with interrupts enabled, do
 not disable interrupts when calling that function. Remove the lockin calls
@@ -279,7 +279,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  }
  
  /*
-@@ -4194,9 +4188,7 @@ static void __qlt_do_work(struct qla_tgt
+@@ -4180,9 +4174,7 @@ static void __qlt_do_work(struct qla_tgt
  	/*
  	 * Drop extra session reference from qlt_handle_cmd_for_atio().
  	 */
@@ -289,7 +289,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  	return;
  
  out_term:
-@@ -4213,9 +4205,7 @@ out_term:
+@@ -4199,9 +4191,7 @@ out_term:
  	percpu_ida_free(&sess->se_sess->sess_tag_pool, cmd->se_cmd.map_tag);
  	spin_unlock_irqrestore(qpair->qp_lock_ptr, flags);
  
@@ -299,7 +299,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  }
  
  static void qlt_do_work(struct work_struct *work)
-@@ -4423,9 +4413,7 @@ static int qlt_handle_cmd_for_atio(struc
+@@ -4409,9 +4399,7 @@ static int qlt_handle_cmd_for_atio(struc
  	if (!cmd) {
  		ql_dbg(ql_dbg_io, vha, 0x3062,
  		    "qla_target(%d): Allocation of cmd failed\n", vha->vp_idx);
@@ -309,7 +309,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  		return -EBUSY;
  	}
  
-@@ -6275,17 +6263,19 @@ static void qlt_abort_work(struct qla_tg
+@@ -6261,17 +6249,19 @@ static void qlt_abort_work(struct qla_tg
  	}
  
  	rc = __qlt_24xx_handle_abts(vha, &prm->abts, sess);
@@ -331,7 +331,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  
  out_term:
  	spin_lock_irqsave(&ha->hardware_lock, flags);
-@@ -6343,9 +6333,10 @@ static void qlt_tmr_work(struct qla_tgt
+@@ -6329,9 +6319,10 @@ static void qlt_tmr_work(struct qla_tgt
  	    scsilun_to_int((struct scsi_lun *)&a->u.isp24.fcp_cmnd.lun);
  
  	rc = qlt_issue_task_mgmt(sess, unpacked_lun, fn, iocb, 0);

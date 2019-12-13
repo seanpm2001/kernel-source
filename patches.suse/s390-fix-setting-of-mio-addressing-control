@@ -1,0 +1,72 @@
+From: Sebastian Ott <sebott@linux.ibm.com>
+Date: Wed, 10 Jul 2019 13:08:06 +0200
+Subject: s390: fix setting of mio addressing control
+Git-commit: 9964f396f1d0eed72c50f7ae367119afd355ab9c
+Patch-mainline: v5.3-rc1
+References: bsc#1152665 LTC#181729
+
+Move enablement of mio addressing control from detect_machine_facilities
+to pci_base_init. detect_machine_facilities runs so early that the
+static branches have not been toggled yet, thus mio addressing control
+was always off. In pci_base_init we have to use the SMP aware
+ctl_set_bit though.
+
+Fixes: 833b441ec0f6 ("s390: enable processes for mio instructions")
+Signed-off-by: Sebastian Ott <sebott@linux.ibm.com>
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Acked-by: Petr Tesarik <ptesarik@suse.com>
+---
+ arch/s390/include/asm/pci_insn.h |   10 ----------
+ arch/s390/kernel/early.c         |    2 --
+ arch/s390/pci/pci.c              |    4 +++-
+ 3 files changed, 3 insertions(+), 13 deletions(-)
+
+--- a/arch/s390/include/asm/pci_insn.h
++++ b/arch/s390/include/asm/pci_insn.h
+@@ -142,14 +142,4 @@ static inline int zpci_set_irq_ctrl(u16
+ 	return __zpci_set_irq_ctrl(ctl, isc, &iib);
+ }
+ 
+-#ifdef CONFIG_PCI
+-static inline void enable_mio_ctl(void)
+-{
+-	if (static_branch_likely(&have_mio))
+-		__ctl_set_bit(2, 5);
+-}
+-#else /* CONFIG_PCI */
+-static inline void enable_mio_ctl(void) {}
+-#endif /* CONFIG_PCI */
+-
+ #endif
+--- a/arch/s390/kernel/early.c
++++ b/arch/s390/kernel/early.c
+@@ -29,7 +29,6 @@
+ #include <asm/sclp.h>
+ #include <asm/facility.h>
+ #include <asm/uv.h>
+-#include <asm/pci_insn.h>
+ #include "entry.h"
+ 
+ /*
+@@ -403,7 +403,6 @@ static __init void detect_machine_facili
+ 		clock_comparator_max = -1ULL >> 1;
+ 		__ctl_set_bit(0, 53);
+ 	}
+-	enable_mio_ctl();
+ }
+ 
+ static inline void save_vector_registers(void)
+--- a/arch/s390/pci/pci.c
++++ b/arch/s390/pci/pci.c
+@@ -887,8 +887,10 @@ static int __init pci_base_init(void)
+ 	if (!test_facility(69) || !test_facility(71))
+ 		return 0;
+ 
+-	if (test_facility(153) && !s390_pci_no_mio)
++	if (test_facility(153) && !s390_pci_no_mio) {
+ 		static_branch_enable(&have_mio);
++		ctl_set_bit(2, 5);
++	}
+ 
+ 	rc = zpci_debug_init();
+ 	if (rc)

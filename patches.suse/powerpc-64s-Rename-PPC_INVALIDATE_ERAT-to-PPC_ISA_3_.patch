@@ -1,0 +1,99 @@
+From fe7946ce0808eb0e43711f5db7d2d1599b362d02 Mon Sep 17 00:00:00 2001
+From: Nicholas Piggin <npiggin@gmail.com>
+Date: Sun, 23 Jun 2019 20:41:51 +1000
+Subject: [PATCH] powerpc/64s: Rename PPC_INVALIDATE_ERAT to
+ PPC_ISA_3_0_INVALIDATE_ERAT
+
+References: bsc#1055186
+Patch-mainline: v5.3-rc1
+Git-commit: fe7946ce0808eb0e43711f5db7d2d1599b362d02
+
+This makes it clear to the caller that it can only be used on POWER9
+and later CPUs.
+
+Signed-off-by: Nicholas Piggin <npiggin@gmail.com>
+[mpe: Use "ISA_3_0" rather than "ARCH_300"]
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/include/asm/ppc-opcode.h  | 2 +-
+ arch/powerpc/kernel/mce_power.c        | 3 +--
+ arch/powerpc/kvm/book3s_hv_builtin.c   | 2 +-
+ arch/powerpc/mm/hash_native_64.c | 2 +-
+ arch/powerpc/mm/tlb-radix.c   | 8 ++++----
+ arch/powerpc/platforms/powernv/idle.c  | 2 +-
+ 6 files changed, 9 insertions(+), 10 deletions(-)
+
+--- a/arch/powerpc/include/asm/ppc-opcode.h
++++ b/arch/powerpc/include/asm/ppc-opcode.h
+@@ -546,6 +546,6 @@
+ 
+ #define PPC_SLBIA(IH)	stringify_in_c(.long PPC_INST_SLBIA | \
+ 				       ((IH & 0x7) << 21))
+-#define PPC_INVALIDATE_ERAT	PPC_SLBIA(7)
++#define PPC_ISA_3_0_INVALIDATE_ERAT	PPC_SLBIA(7)
+ 
+ #endif /* _ASM_POWERPC_PPC_OPCODE_H */
+--- a/arch/powerpc/kernel/mce_power.c
++++ b/arch/powerpc/kernel/mce_power.c
+@@ -65,8 +65,7 @@ static void flush_erat(void)
+ 		return;
+ 	}
+ #endif
+-	/* PPC_INVALIDATE_ERAT can only be used on ISA v3 and newer */
+-	asm volatile(PPC_INVALIDATE_ERAT : : :"memory");
++	asm volatile(PPC_ISA_3_0_INVALIDATE_ERAT : : :"memory");
+ }
+ 
+ #define MCE_FLUSH_SLB 1
+--- a/arch/powerpc/mm/hash_native_64.c
++++ b/arch/powerpc/mm/hash_native_64.c
+@@ -116,7 +116,7 @@ static void tlbiel_all_isa300(unsigned i
+ 
+ 	asm volatile("ptesync": : :"memory");
+ 
+-	asm volatile(PPC_INVALIDATE_ERAT "; isync" : : :"memory");
++	asm volatile(PPC_ISA_3_0_INVALIDATE_ERAT "; isync" : : :"memory");
+ }
+ 
+ void hash__tlbiel_all(unsigned int action)
+--- a/arch/powerpc/mm/tlb-radix.c
++++ b/arch/powerpc/mm/tlb-radix.c
+@@ -85,7 +85,7 @@ void radix__tlbiel_all(unsigned int acti
+ 	else
+ 		WARN(1, "%s called on pre-POWER9 CPU\n", __func__);
+ 
+-	asm volatile(PPC_INVALIDATE_ERAT "; isync" : : :"memory");
++	asm volatile(PPC_ISA_3_0_INVALIDATE_ERAT "; isync" : : :"memory");
+ }
+ 
+ static __always_inline void __tlbiel_pid(unsigned long pid, int set,
+@@ -260,7 +260,7 @@ static inline void _tlbiel_pid(unsigned
+ 		__tlbiel_pid(pid, set, RIC_FLUSH_TLB);
+ 
+ 	asm volatile("ptesync": : :"memory");
+-	asm volatile(PPC_INVALIDATE_ERAT "; isync" : : :"memory");
++	asm volatile(PPC_ISA_3_0_INVALIDATE_ERAT "; isync" : : :"memory");
+ }
+ 
+ static inline void _tlbie_pid(unsigned long pid, unsigned long ric)
+@@ -312,7 +312,7 @@ static inline void _tlbiel_lpid(unsigned
+ 		__tlbiel_lpid(lpid, set, RIC_FLUSH_TLB);
+ 
+ 	asm volatile("ptesync": : :"memory");
+-	asm volatile(PPC_INVALIDATE_ERAT "; isync" : : :"memory");
++	asm volatile(PPC_ISA_3_0_INVALIDATE_ERAT "; isync" : : :"memory");
+ }
+ 
+ static inline void _tlbie_lpid(unsigned long lpid, unsigned long ric)
+--- a/arch/powerpc/kernel/idle_book3s.S
++++ b/arch/powerpc/kernel/idle_book3s.S
+@@ -544,7 +544,7 @@ pnv_restore_hyp_resource_arch300:
+ 	 */
+ 	blt	cr3,1f
+ BEGIN_FTR_SECTION
+-	PPC_INVALIDATE_ERAT
++	PPC_ISA_3_0_INVALIDATE_ERAT
+ 	ld	r1,PACAR1(r13)
+ 	ld	r4,_MMCR0(r1)
+ 	mtspr	SPRN_MMCR0,r4

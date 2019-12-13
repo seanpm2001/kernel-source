@@ -1,10 +1,10 @@
 From: Jianchao Wang <jianchao.w.wang@oracle.com>
 Date: Thu, 2 Nov 2017 23:24:32 +0800
 Subject: [PATCH] blk-mq: put the driver tag of nxt rq before first one is
+ requeued
+References: bsc#1104967,bsc#1137959,FATE#325924
 Git-commit: 6d6f167ce74158903e7fc20dfbecf89c71aa1c00
 Patch-mainline: v4.15-rc1
-References: bsc#1104967,FATE#325924
- requeued
 
 When freeing the driver tag of the next rq with an I/O scheduler
 configured, we get the first entry of the list. However, this can
@@ -14,16 +14,16 @@ failed one is requeued in the failure branch of queue_rq callback.
 
 Signed-off-by: Jianchao Wang <jianchao.w.wang@oracle.com>
 Signed-off-by: Jens Axboe <axboe@kernel.dk>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Signed-off-by: Hannes Reinecke <hare@suse.de>
 ---
  block/blk-mq.c | 19 +++++++++----------
  1 file changed, 9 insertions(+), 10 deletions(-)
 
 diff --git a/block/blk-mq.c b/block/blk-mq.c
-index c9fa4b294664..6eacc1dea8b7 100644
+index 0d8ea2b35cc5..a7e632a434cd 100644
 --- a/block/blk-mq.c
 +++ b/block/blk-mq.c
-@@ -1094,7 +1094,7 @@ bool blk_mq_dispatch_rq_list(struct request_queue *q, struct list_head *list,
+@@ -1072,7 +1072,7 @@ bool blk_mq_dispatch_rq_list(struct request_queue *q, struct list_head *list,
  		bool got_budget)
  {
  	struct blk_mq_hw_ctx *hctx;
@@ -32,7 +32,7 @@ index c9fa4b294664..6eacc1dea8b7 100644
  	int errors, queued;
  
  	if (list_empty(list))
-@@ -1151,14 +1151,20 @@ bool blk_mq_dispatch_rq_list(struct request_queue *q, struct list_head *list,
+@@ -1118,14 +1118,20 @@ bool blk_mq_dispatch_rq_list(struct request_queue *q, struct list_head *list)
  		if (list_empty(list))
  			bd.last = true;
  		else {
@@ -55,7 +55,7 @@ index c9fa4b294664..6eacc1dea8b7 100644
  			blk_mq_put_driver_tag_hctx(hctx, rq);
  			list_add(&rq->queuelist, list);
  			__blk_mq_requeue_request(rq);
-@@ -1181,13 +1187,6 @@ bool blk_mq_dispatch_rq_list(struct request_queue *q, struct list_head *list,
+@@ -1148,13 +1154,6 @@ bool blk_mq_dispatch_rq_list(struct request_queue *q, struct list_head *list)
  	 * that is where we will continue on next queue run.
  	 */
  	if (!list_empty(list)) {

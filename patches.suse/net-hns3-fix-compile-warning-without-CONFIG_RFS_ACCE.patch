@@ -1,0 +1,39 @@
+From: Jian Shen <shenjian15@huawei.com>
+Date: Tue, 28 May 2019 17:02:51 +0800
+Subject: net: hns3: fix compile warning without CONFIG_RFS_ACCEL
+Patch-mainline: v5.3-rc1
+Git-commit: 4c1522765ca84e45d147557bf7f19e85e40c81e0
+References: bsc#1104353 FATE#326415
+
+The ifdef condition of function hclge_add_fd_entry_by_arfs() is
+unnecessary. It may cause compile warning when CONFIG_RFS_ACCEL
+is not chosen. This patch fixes it by removing the ifdef condition.
+
+Fixes: d93ed94fbeaf ("net: hns3: add aRFS support for PF")
+Reported-by: kbuild test robot <lkp@intel.com>
+Signed-off-by: Jian Shen <shenjian15@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c |    2 --
+ 1 file changed, 2 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
+@@ -5366,7 +5366,6 @@ static void hclge_fd_build_arfs_rule(con
+ static int hclge_add_fd_entry_by_arfs(struct hnae3_handle *handle, u16 queue_id,
+ 				      u16 flow_id, struct flow_keys *fkeys)
+ {
+-#ifdef CONFIG_RFS_ACCEL
+ 	struct hclge_vport *vport = hclge_get_vport(handle);
+ 	struct hclge_fd_rule_tuples new_tuples;
+ 	struct hclge_dev *hdev = vport->back;
+@@ -5442,7 +5441,6 @@ static int hclge_add_fd_entry_by_arfs(st
+ 	}
+ 
+ 	return rule->location;
+-#endif
+ }
+ 
+ static void hclge_rfs_filter_expire(struct hclge_dev *hdev)

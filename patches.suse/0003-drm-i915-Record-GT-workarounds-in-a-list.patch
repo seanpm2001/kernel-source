@@ -58,7 +58,7 @@ Acked-by: Thomas Zimmermann <tzimmermann@suse.de>
 
 --- a/drivers/gpu/drm/i915/i915_drv.c
 +++ b/drivers/gpu/drm/i915/i915_drv.c
-@@ -1153,6 +1153,7 @@ static int i915_driver_init_hw(struct dr
+@@ -1140,6 +1140,7 @@ static int i915_driver_init_hw(struct dr
  
  	intel_uncore_sanitize(dev_priv);
  
@@ -76,7 +76,7 @@ Acked-by: Thomas Zimmermann <tzimmermann@suse.de>
  #include "intel_uc.h"
  
  #include "i915_gem.h"
-@@ -1770,6 +1771,7 @@ struct drm_i915_private {
+@@ -1790,6 +1791,7 @@ struct drm_i915_private {
  	int dpio_phy_iosf_port[I915_NUM_PHYS_VLV];
  
  	struct i915_workarounds workarounds;
@@ -95,15 +95,15 @@ Acked-by: Thomas Zimmermann <tzimmermann@suse.de>
  
  	i915_gem_init_swizzling(dev_priv);
  
-@@ -5622,6 +5622,8 @@ void i915_gem_fini(struct drm_i915_priva
+@@ -5632,6 +5632,8 @@ void i915_gem_fini(struct drm_i915_priva
  	i915_gem_contexts_fini(dev_priv);
  	mutex_unlock(&dev_priv->drm.struct_mutex);
  
 +	intel_wa_list_free(&dev_priv->gt_wa_list);
 +
- 	intel_uc_fini_misc(dev_priv);
- 	i915_gem_cleanup_userptr(dev_priv);
+ 	intel_cleanup_gt_powersave(dev_priv);
  
+ 	intel_uc_fini_misc(dev_priv);
 --- a/drivers/gpu/drm/i915/intel_workarounds.c
 +++ b/drivers/gpu/drm/i915/intel_workarounds.c
 @@ -48,6 +48,20 @@

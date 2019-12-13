@@ -1,0 +1,43 @@
+From 2615c93e5f52db62586112793d889face99eb905 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonathan=20Neusch=C3=A4fer?= <j.neuschaefer@gmx.net>
+Date: Wed, 28 Mar 2018 02:25:40 +0200
+Subject: [PATCH] powerpc/mm: Simplify page_is_ram by using memblock_is_memory
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+References: bsc#1065729
+Patch-mainline: v4.17-rc1
+Git-commit: 2615c93e5f52db62586112793d889face99eb905
+
+Instead of open-coding the search in page_is_ram, call memblock_is_memory.
+
+Signed-off-by: Jonathan Neuschäfer <j.neuschaefer@gmx.net>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/mm/mem.c | 8 +-------
+ 1 file changed, 1 insertion(+), 7 deletions(-)
+
+diff --git a/arch/powerpc/mm/mem.c b/arch/powerpc/mm/mem.c
+index e2f5025b03b0..8f335cf052f8 100644
+--- a/arch/powerpc/mm/mem.c
++++ b/arch/powerpc/mm/mem.c
+@@ -85,13 +85,7 @@ int page_is_ram(unsigned long pfn)
+ #ifndef CONFIG_PPC64	/* XXX for now */
+ 	return pfn < max_pfn;
+ #else
+-	unsigned long paddr = (pfn << PAGE_SHIFT);
+-	struct memblock_region *reg;
+-
+-	for_each_memblock(memory, reg)
+-		if (paddr >= reg->base && paddr < (reg->base + reg->size))
+-			return 1;
+-	return 0;
++	return memblock_is_memory(__pfn_to_phys(pfn));
+ #endif
+ }
+ 
+-- 
+2.23.0
+

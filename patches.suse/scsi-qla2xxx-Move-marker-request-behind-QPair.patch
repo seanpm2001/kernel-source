@@ -1,9 +1,9 @@
 From: Quinn Tran <qtran@marvell.com>
 Date: Fri, 15 Feb 2019 14:37:19 -0800
-Subject: [PATCH] scsi: qla2xxx: Move marker request behind QPair
-References: bsc#1136215
-Git-commit: 9eb9c6dc3ab06cf80d2c15cab39cbcd38816bde0
+Subject: scsi: qla2xxx: Move marker request behind QPair
 Patch-mainline: v5.1-rc1
+Git-commit: 9eb9c6dc3ab06cf80d2c15cab39cbcd38816bde0
+References: bsc#1123034 bsc#1131304 bsc#1127988 bsc#1136215
 
 Current code hard codes marker request to use request and response queue
 0. This patch make use of the qpair as the path to access the
@@ -13,19 +13,17 @@ queue.
 Signed-off-by: Quinn Tran <qtran@marvell.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Signed-off-by: Hannes Reinecke <hare@suse.de>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_gbl.h  |  4 ++--
- drivers/scsi/qla2xxx/qla_init.c | 30 ++++++-------------------
- drivers/scsi/qla2xxx/qla_iocb.c | 50 +++++++++++++++++------------------------
- drivers/scsi/qla2xxx/qla_mbx.c  | 18 +++------------
+ drivers/scsi/qla2xxx/qla_gbl.h  |    4 +--
+ drivers/scsi/qla2xxx/qla_init.c |   30 +++++-------------------
+ drivers/scsi/qla2xxx/qla_iocb.c |   50 ++++++++++++++++------------------------
+ drivers/scsi/qla2xxx/qla_mbx.c  |   18 ++------------
  4 files changed, 33 insertions(+), 69 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_gbl.h b/drivers/scsi/qla2xxx/qla_gbl.h
-index 283214e73ff9..ba31488d76d2 100644
 --- a/drivers/scsi/qla2xxx/qla_gbl.h
 +++ b/drivers/scsi/qla2xxx/qla_gbl.h
-@@ -270,8 +270,8 @@ extern void qla24xx_build_scsi_iocbs(srb_t *, struct cmd_type_7 *,
+@@ -270,8 +270,8 @@ extern void qla24xx_build_scsi_iocbs(srb
  	uint16_t, struct req_que *);
  extern int qla2x00_start_scsi(srb_t *sp);
  extern int qla24xx_start_scsi(srb_t *sp);
@@ -36,11 +34,9 @@ index 283214e73ff9..ba31488d76d2 100644
  extern int qla2x00_start_sp(srb_t *);
  extern int qla24xx_dif_start_scsi(srb_t *);
  extern int qla2x00_start_bidir(srb_t *, struct scsi_qla_host *, uint32_t);
-diff --git a/drivers/scsi/qla2xxx/qla_init.c b/drivers/scsi/qla2xxx/qla_init.c
-index bbe0c3c4a1c7..7679285d7c95 100644
 --- a/drivers/scsi/qla2xxx/qla_init.c
 +++ b/drivers/scsi/qla2xxx/qla_init.c
-@@ -1707,8 +1707,8 @@ qla2x00_async_tm_cmd(fc_port_t *fcport, uint32_t flags, uint32_t lun,
+@@ -1707,8 +1707,8 @@ qla2x00_async_tm_cmd(fc_port_t *fcport,
  		lun = (uint16_t)tm_iocb->u.tmf.lun;
  
  		/* Issue Marker IOCB */
@@ -51,7 +47,7 @@ index bbe0c3c4a1c7..7679285d7c95 100644
  		    flags == TCF_LUN_RESET ? MK_SYNC_ID_LUN : MK_SYNC_ID);
  	}
  
-@@ -6041,11 +6041,6 @@ qla2x00_loop_resync(scsi_qla_host_t *vha)
+@@ -6041,11 +6041,6 @@ qla2x00_loop_resync(scsi_qla_host_t *vha
  {
  	int rval = QLA_SUCCESS;
  	uint32_t wait_time;
@@ -63,7 +59,7 @@ index bbe0c3c4a1c7..7679285d7c95 100644
  
  	clear_bit(ISP_ABORT_RETRY, &vha->dpc_flags);
  	if (vha->flags.online) {
-@@ -6058,8 +6053,8 @@ qla2x00_loop_resync(scsi_qla_host_t *vha)
+@@ -6058,8 +6053,8 @@ qla2x00_loop_resync(scsi_qla_host_t *vha
  					 * Issue a marker after FW becomes
  					 * ready.
  					 */
@@ -74,7 +70,7 @@ index bbe0c3c4a1c7..7679285d7c95 100644
  					vha->marker_needed = 0;
  				}
  
-@@ -6797,8 +6792,6 @@ qla2x00_restart_isp(scsi_qla_host_t *vha)
+@@ -6797,8 +6792,6 @@ qla2x00_restart_isp(scsi_qla_host_t *vha
  {
  	int status = 0;
  	struct qla_hw_data *ha = vha->hw;
@@ -83,7 +79,7 @@ index bbe0c3c4a1c7..7679285d7c95 100644
  
  	/* If firmware needs to be loaded */
  	if (qla2x00_isp_firmware(vha)) {
-@@ -6818,7 +6811,7 @@ qla2x00_restart_isp(scsi_qla_host_t *vha)
+@@ -6818,7 +6811,7 @@ qla2x00_restart_isp(scsi_qla_host_t *vha
  		status = qla2x00_fw_ready(vha);
  		if (!status) {
  			/* Issue a marker after FW becomes ready. */
@@ -92,7 +88,7 @@ index bbe0c3c4a1c7..7679285d7c95 100644
  			set_bit(LOOP_RESYNC_NEEDED, &vha->dpc_flags);
  		}
  
-@@ -7873,22 +7866,15 @@ qla24xx_configure_vhba(scsi_qla_host_t *vha)
+@@ -7873,22 +7866,15 @@ qla24xx_configure_vhba(scsi_qla_host_t *
  	uint16_t mb[MAILBOX_REGISTER_COUNT];
  	struct qla_hw_data *ha = vha->hw;
  	struct scsi_qla_host *base_vha = pci_get_drvdata(ha->pdev);
@@ -116,7 +112,7 @@ index bbe0c3c4a1c7..7679285d7c95 100644
  	}
  
  	vha->flags.management_server_logged_in = 0;
-@@ -8280,8 +8266,6 @@ qla82xx_restart_isp(scsi_qla_host_t *vha)
+@@ -8280,8 +8266,6 @@ qla82xx_restart_isp(scsi_qla_host_t *vha
  {
  	int status, rval;
  	struct qla_hw_data *ha = vha->hw;
@@ -125,7 +121,7 @@ index bbe0c3c4a1c7..7679285d7c95 100644
  	struct scsi_qla_host *vp;
  	unsigned long flags;
  
-@@ -8293,7 +8277,7 @@ qla82xx_restart_isp(scsi_qla_host_t *vha)
+@@ -8293,7 +8277,7 @@ qla82xx_restart_isp(scsi_qla_host_t *vha
  		status = qla2x00_fw_ready(vha);
  		if (!status) {
  			/* Issue a marker after FW becomes ready. */
@@ -134,8 +130,6 @@ index bbe0c3c4a1c7..7679285d7c95 100644
  			vha->flags.online = 1;
  			set_bit(LOOP_RESYNC_NEEDED, &vha->dpc_flags);
  		}
-diff --git a/drivers/scsi/qla2xxx/qla_iocb.c b/drivers/scsi/qla2xxx/qla_iocb.c
-index f8bf4af680cc..ba7712e4f11b 100644
 --- a/drivers/scsi/qla2xxx/qla_iocb.c
 +++ b/drivers/scsi/qla2xxx/qla_iocb.c
 @@ -336,7 +336,7 @@ qla2x00_start_scsi(srb_t *sp)
@@ -147,7 +141,7 @@ index f8bf4af680cc..ba7712e4f11b 100644
  		    QLA_SUCCESS) {
  			return (QLA_FUNCTION_FAILED);
  		}
-@@ -490,8 +490,7 @@ qla2x00_start_iocbs(struct scsi_qla_host *vha, struct req_que *req)
+@@ -490,8 +490,7 @@ qla2x00_start_iocbs(struct scsi_qla_host
  /**
   * qla2x00_marker() - Send a marker IOCB to the firmware.
   * @vha: HA context
@@ -157,7 +151,7 @@ index f8bf4af680cc..ba7712e4f11b 100644
   * @loop_id: loop ID
   * @lun: LUN
   * @type: marker modifier
-@@ -501,18 +500,16 @@ qla2x00_start_iocbs(struct scsi_qla_host *vha, struct req_que *req)
+@@ -501,18 +500,16 @@ qla2x00_start_iocbs(struct scsi_qla_host
   * Returns non-zero if a failure occurred, else zero.
   */
  static int
@@ -180,7 +174,7 @@ index f8bf4af680cc..ba7712e4f11b 100644
  	if (mrk == NULL) {
  		ql_log(ql_log_warn, base_vha, 0x3026,
  		    "Failed to allocate Marker IOCB.\n");
-@@ -543,16 +540,15 @@ __qla2x00_marker(struct scsi_qla_host *vha, struct req_que *req,
+@@ -543,16 +540,15 @@ __qla2x00_marker(struct scsi_qla_host *v
  }
  
  int
@@ -202,7 +196,7 @@ index f8bf4af680cc..ba7712e4f11b 100644
  
  	return (ret);
  }
-@@ -567,11 +563,11 @@ qla2x00_marker(struct scsi_qla_host *vha, struct req_que *req,
+@@ -567,11 +563,11 @@ qla2x00_marker(struct scsi_qla_host *vha
  int qla2x00_issue_marker(scsi_qla_host_t *vha, int ha_locked)
  {
  	if (ha_locked) {
@@ -293,7 +287,7 @@ index f8bf4af680cc..ba7712e4f11b 100644
  			ql_log(ql_log_warn, vha, 0x300c,
  			    "qla2x00_marker failed for cmd=%p.\n", cmd);
  			return QLA_FUNCTION_FAILED;
-@@ -3867,8 +3859,8 @@ qla2x00_start_bidir(srb_t *sp, struct scsi_qla_host *vha, uint32_t tot_dsds)
+@@ -3867,8 +3859,8 @@ qla2x00_start_bidir(srb_t *sp, struct sc
  
  	/* Send marker if required */
  	if (vha->marker_needed != 0) {
@@ -304,11 +298,9 @@ index f8bf4af680cc..ba7712e4f11b 100644
  			return EXT_STATUS_MAILBOX;
  		vha->marker_needed = 0;
  	}
-diff --git a/drivers/scsi/qla2xxx/qla_mbx.c b/drivers/scsi/qla2xxx/qla_mbx.c
-index 7ca3b762b2e4..5400696e1f6b 100644
 --- a/drivers/scsi/qla2xxx/qla_mbx.c
 +++ b/drivers/scsi/qla2xxx/qla_mbx.c
-@@ -1513,16 +1513,12 @@ qla2x00_abort_target(struct fc_port *fcport, uint64_t l, int tag)
+@@ -1513,16 +1513,12 @@ qla2x00_abort_target(struct fc_port *fcp
  	mbx_cmd_t  mc;
  	mbx_cmd_t  *mcp = &mc;
  	scsi_qla_host_t *vha;
@@ -325,7 +317,7 @@ index 7ca3b762b2e4..5400696e1f6b 100644
  	mcp->mb[0] = MBC_ABORT_TARGET;
  	mcp->out_mb = MBX_9|MBX_2|MBX_1|MBX_0;
  	if (HAS_EXTENDED_IDS(vha->hw)) {
-@@ -1545,7 +1541,7 @@ qla2x00_abort_target(struct fc_port *fcport, uint64_t l, int tag)
+@@ -1545,7 +1541,7 @@ qla2x00_abort_target(struct fc_port *fcp
  	}
  
  	/* Issue marker IOCB. */
@@ -334,7 +326,7 @@ index 7ca3b762b2e4..5400696e1f6b 100644
  							MK_SYNC_ID);
  	if (rval2 != QLA_SUCCESS) {
  		ql_dbg(ql_dbg_mbx, vha, 0x1040,
-@@ -1565,16 +1561,12 @@ qla2x00_lun_reset(struct fc_port *fcport, uint64_t l, int tag)
+@@ -1565,16 +1561,12 @@ qla2x00_lun_reset(struct fc_port *fcport
  	mbx_cmd_t  mc;
  	mbx_cmd_t  *mcp = &mc;
  	scsi_qla_host_t *vha;
@@ -351,7 +343,7 @@ index 7ca3b762b2e4..5400696e1f6b 100644
  	mcp->mb[0] = MBC_LUN_RESET;
  	mcp->out_mb = MBX_9|MBX_3|MBX_2|MBX_1|MBX_0;
  	if (HAS_EXTENDED_IDS(vha->hw))
-@@ -1594,7 +1586,7 @@ qla2x00_lun_reset(struct fc_port *fcport, uint64_t l, int tag)
+@@ -1594,7 +1586,7 @@ qla2x00_lun_reset(struct fc_port *fcport
  	}
  
  	/* Issue marker IOCB. */
@@ -360,7 +352,7 @@ index 7ca3b762b2e4..5400696e1f6b 100644
  								MK_SYNC_ID_LUN);
  	if (rval2 != QLA_SUCCESS) {
  		ql_dbg(ql_dbg_mbx, vha, 0x1044,
-@@ -3186,7 +3178,6 @@ __qla24xx_issue_tmf(char *name, uint32_t type, struct fc_port *fcport,
+@@ -3186,7 +3178,6 @@ __qla24xx_issue_tmf(char *name, uint32_t
  	scsi_qla_host_t *vha;
  	struct qla_hw_data *ha;
  	struct req_que *req;
@@ -368,7 +360,7 @@ index 7ca3b762b2e4..5400696e1f6b 100644
  	struct qla_qpair *qpair;
  
  	vha = fcport->vha;
-@@ -3199,10 +3190,7 @@ __qla24xx_issue_tmf(char *name, uint32_t type, struct fc_port *fcport,
+@@ -3199,10 +3190,7 @@ __qla24xx_issue_tmf(char *name, uint32_t
  	if (vha->vp_idx && vha->qpair) {
  		/* NPIV port */
  		qpair = vha->qpair;
@@ -379,7 +371,7 @@ index 7ca3b762b2e4..5400696e1f6b 100644
  	}
  
  	tsk = dma_pool_zalloc(ha->s_dma_pool, GFP_KERNEL, &tsk_dma);
-@@ -3259,7 +3247,7 @@ __qla24xx_issue_tmf(char *name, uint32_t type, struct fc_port *fcport,
+@@ -3259,7 +3247,7 @@ __qla24xx_issue_tmf(char *name, uint32_t
  	}
  
  	/* Issue marker IOCB. */
@@ -388,6 +380,3 @@ index 7ca3b762b2e4..5400696e1f6b 100644
  	    type == TCF_LUN_RESET ? MK_SYNC_ID_LUN: MK_SYNC_ID);
  	if (rval2 != QLA_SUCCESS) {
  		ql_dbg(ql_dbg_mbx, vha, 0x1099,
--- 
-2.16.4
-

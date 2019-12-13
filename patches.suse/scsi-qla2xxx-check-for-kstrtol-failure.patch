@@ -1,9 +1,9 @@
 From: Dan Carpenter <dan.carpenter@oracle.com>
 Date: Wed, 20 Feb 2019 08:39:13 +0300
-Subject: [PATCH] scsi: qla2xxx: check for kstrtol() failure
-References: bsc#1136215
-Git-commit: b8870ec63676aba1d823f0b36c5f7e9929e57d23
+Subject: scsi: qla2xxx: check for kstrtol() failure
 Patch-mainline: v5.1-rc1
+Git-commit: b8870ec63676aba1d823f0b36c5f7e9929e57d23
+References: bsc#1123034 bsc#1131304 bsc#1127988 bsc#1136215
 
 The error handling was unintentionally left out so it introduces a Smatch
 static checker warning:
@@ -14,16 +14,14 @@ static checker warning:
 Fixes: a7b9ca7fc87a ("scsi: qla2xxx: Add support for setting port speed")
 Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Signed-off-by: Hannes Reinecke <hare@suse.de>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_attr.c | 2 ++
+ drivers/scsi/qla2xxx/qla_attr.c |    2 ++
  1 file changed, 2 insertions(+)
 
-diff --git a/drivers/scsi/qla2xxx/qla_attr.c b/drivers/scsi/qla2xxx/qla_attr.c
-index 69fa0d58ed9d..2e940f79cda4 100644
 --- a/drivers/scsi/qla2xxx/qla_attr.c
 +++ b/drivers/scsi/qla2xxx/qla_attr.c
-@@ -1652,6 +1652,8 @@ qla2x00_port_speed_store(struct device *dev, struct device_attribute *attr,
+@@ -1652,6 +1652,8 @@ qla2x00_port_speed_store(struct device *
  	}
  
  	rval = kstrtol(buf, 10, &type);
@@ -32,6 +30,3 @@ index 69fa0d58ed9d..2e940f79cda4 100644
  	speed = type;
  	if (type == 40 || type == 80 || type == 160 ||
  	    type == 320) {
--- 
-2.16.4
-

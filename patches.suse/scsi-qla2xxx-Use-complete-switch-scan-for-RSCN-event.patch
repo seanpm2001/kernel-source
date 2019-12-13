@@ -1,9 +1,9 @@
 From: Quinn Tran <qtran@marvell.com>
 Date: Thu, 24 Jan 2019 23:23:50 -0800
-Subject: [PATCH] scsi: qla2xxx: Use complete switch scan for RSCN events
-Git-commit: 1560bafdff9ed54857ac3a03c4c8d8f10d791ba6
+Subject: scsi: qla2xxx: Use complete switch scan for RSCN events
 Patch-mainline: v5.1-rc1
-References: bsc#1124541
+Git-commit: 1560bafdff9ed54857ac3a03c4c8d8f10d791ba6
+References: bsc#1123034 bsc#1124541 bsc#1131304 bsc#1127988
 
 This patch removes unnecessary code to handle RSCN, instead performs full
 scan everytime driver receives RSCN
@@ -13,16 +13,14 @@ Cc: stable@vger.kernel.org #4.19
 Signed-off-by: Quinn Tran <qtran@marvell.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_init.c | 86 -----------------------------------------
+ drivers/scsi/qla2xxx/qla_init.c |   86 ----------------------------------------
  1 file changed, 86 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_init.c b/drivers/scsi/qla2xxx/qla_init.c
-index 3bb4fa97e40a..8307eac796a2 100644
 --- a/drivers/scsi/qla2xxx/qla_init.c
 +++ b/drivers/scsi/qla2xxx/qla_init.c
-@@ -1471,29 +1471,6 @@ int qla24xx_fcport_handle_login(struct scsi_qla_host *vha, fc_port_t *fcport)
+@@ -1473,29 +1473,6 @@ int qla24xx_fcport_handle_login(struct s
  	return 0;
  }
  
@@ -52,7 +50,7 @@ index 3bb4fa97e40a..8307eac796a2 100644
  int qla24xx_post_newsess_work(struct scsi_qla_host *vha, port_id_t *id,
      u8 *port_name, u8 *node_name, void *pla, u8 fc4_type)
  {
-@@ -1560,8 +1537,6 @@ static void qla_handle_els_plogi_done(scsi_qla_host_t *vha,
+@@ -1562,8 +1539,6 @@ static void qla_handle_els_plogi_done(sc
  
  void qla2x00_fcport_event_handler(scsi_qla_host_t *vha, struct event_arg *ea)
  {
@@ -61,7 +59,7 @@ index 3bb4fa97e40a..8307eac796a2 100644
  	fc_port_t *fcport;
  
  	switch (ea->event) {
-@@ -1574,10 +1549,6 @@ void qla2x00_fcport_event_handler(scsi_qla_host_t *vha, struct event_arg *ea)
+@@ -1576,10 +1551,6 @@ void qla2x00_fcport_event_handler(scsi_q
  	case FCME_RSCN:
  		if (test_bit(UNLOADING, &vha->dpc_flags))
  			return;
@@ -72,7 +70,7 @@ index 3bb4fa97e40a..8307eac796a2 100644
  		{
  			unsigned long flags;
  			fcport = qla2x00_find_fcport_by_nportid
-@@ -1596,59 +1567,6 @@ void qla2x00_fcport_event_handler(scsi_qla_host_t *vha, struct event_arg *ea)
+@@ -1598,59 +1569,6 @@ void qla2x00_fcport_event_handler(scsi_q
  			}
  			spin_unlock_irqrestore(&vha->work_lock, flags);
  		}
@@ -132,7 +130,7 @@ index 3bb4fa97e40a..8307eac796a2 100644
  		break;
  	case FCME_GNL_DONE:
  		qla24xx_handle_gnl_done_event(vha, ea);
-@@ -1709,11 +1627,7 @@ void qla_rscn_replay(fc_port_t *fcport)
+@@ -1711,11 +1629,7 @@ void qla_rscn_replay(fc_port_t *fcport)
                 ea.event = FCME_RSCN;
                 ea.id = fcport->d_id;
                 ea.id.b.rsvd_1 = RSCN_PORT_ADDR;
@@ -144,6 +142,3 @@ index 3bb4fa97e40a..8307eac796a2 100644
  	}
  }
  
--- 
-2.16.4
-

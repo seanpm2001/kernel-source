@@ -1,0 +1,37 @@
+From: Colin Ian King <colin.king@canonical.com>
+Date: Mon, 17 Jun 2019 12:42:14 +0100
+Subject: net: hns3: fix dereference of ae_dev before it is null checked
+Patch-mainline: v5.3-rc1
+Git-commit: ad9bf5451945877c73ca3f49b803648363322f0e
+References: bsc#1104353 FATE#326415
+
+Pointer ae_dev is null checked however, prior to that it is dereferenced
+when assigned pointer ops. Fix this by assigning pointer ops after ae_dev
+has been null checked.
+
+Addresses-Coverity: ("Dereference before null check")
+Signed-off-by: Colin Ian King <colin.king@canonical.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3_enet.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3_enet.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3_enet.c
+@@ -1940,13 +1940,14 @@ static pci_ers_result_t hns3_error_detec
+ static pci_ers_result_t hns3_slot_reset(struct pci_dev *pdev)
+ {
+ 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(pdev);
+-	const struct hnae3_ae_ops *ops = ae_dev->ops;
++	const struct hnae3_ae_ops *ops;
+ 	enum hnae3_reset_type reset_type;
+ 	struct device *dev = &pdev->dev;
+ 
+ 	if (!ae_dev || !ae_dev->ops)
+ 		return PCI_ERS_RESULT_NONE;
+ 
++	ops = ae_dev->ops;
+ 	/* request the reset */
+ 	if (ops->reset_event) {
+ 		if (!ae_dev->override_pci_need_reset) {

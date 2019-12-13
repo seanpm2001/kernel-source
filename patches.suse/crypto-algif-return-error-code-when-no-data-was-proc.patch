@@ -1,0 +1,61 @@
+From 5703c826b758e0b33c998739af093879979315b8 Mon Sep 17 00:00:00 2001
+From: Stephan Mueller <smueller@chronox.de>
+Date: Sun, 30 Jul 2017 14:31:18 +0200
+Subject: [PATCH] crypto: algif - return error code when no data was processed
+Git-commit: 5703c826b758e0b33c998739af093879979315b8
+Patch-mainline: v4.14-rc1
+References: bsc#1154737
+
+If no data has been processed during recvmsg, return the error code.
+This covers all errors received during non-AIO operations.
+
+If any error occurs during a synchronous operation in addition to
+-EIOCBQUEUED or -EBADMSG (like -ENOMEM), it should be relayed to the
+caller.
+
+Signed-off-by: Stephan Mueller <smueller@chronox.de>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ crypto/algif_aead.c     | 4 +++-
+ crypto/algif_skcipher.c | 4 +++-
+ 2 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/crypto/algif_aead.c b/crypto/algif_aead.c
+index 9755aac0fe26..2de056c3139c 100644
+--- a/crypto/algif_aead.c
++++ b/crypto/algif_aead.c
+@@ -791,9 +791,11 @@ static int aead_recvmsg(struct socket *sock, struct msghdr *msg,
+ 		 * only handle one AIO request. If the caller wants to have
+ 		 * multiple AIO requests in parallel, he must make multiple
+ 		 * separate AIO calls.
++		 *
++		 * Also return the error if no data has been processed so far.
+ 		 */
+ 		if (err <= 0) {
+-			if (err == -EIOCBQUEUED || err == -EBADMSG)
++			if (err == -EIOCBQUEUED || err == -EBADMSG || !ret)
+ 				ret = err;
+ 			goto out;
+ 		}
+diff --git a/crypto/algif_skcipher.c b/crypto/algif_skcipher.c
+index 968d094f0bcc..ce3b5fba2279 100644
+--- a/crypto/algif_skcipher.c
++++ b/crypto/algif_skcipher.c
+@@ -714,9 +714,11 @@ static int skcipher_recvmsg(struct socket *sock, struct msghdr *msg,
+ 		 * only handle one AIO request. If the caller wants to have
+ 		 * multiple AIO requests in parallel, he must make multiple
+ 		 * separate AIO calls.
++		 *
++		 * Also return the error if no data has been processed so far.
+ 		 */
+ 		if (err <= 0) {
+-			if (err == -EIOCBQUEUED)
++			if (err == -EIOCBQUEUED || !ret)
+ 				ret = err;
+ 			goto out;
+ 		}
+-- 
+2.16.4
+

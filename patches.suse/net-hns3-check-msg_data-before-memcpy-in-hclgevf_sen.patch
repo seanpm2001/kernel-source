@@ -1,0 +1,33 @@
+From: Weihang Li <liweihang@hisilicon.com>
+Date: Thu, 4 Jul 2019 22:04:25 +0800
+Subject: net: hns3: check msg_data before memcpy in hclgevf_send_mbx_msg
+Patch-mainline: v5.3-rc1
+Git-commit: 0bae5cf25d66156ae3eb9ca20a1ad9bc4aa35a6d
+References: bsc#1104353 FATE#326415
+
+The value of msg_data may be NULL in some cases, which will cause
+errors reported by some compiler.
+
+So this patch adds a check to fix it.
+
+Signed-off-by: Weihang Li <liweihang@hisilicon.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_mbx.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_mbx.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_mbx.c
+@@ -102,7 +102,8 @@ int hclgevf_send_mbx_msg(struct hclgevf_
+ 					  ~HCLGE_MBX_NEED_RESP_BIT;
+ 	req->msg[0] = code;
+ 	req->msg[1] = subcode;
+-	memcpy(&req->msg[2], msg_data, msg_len);
++	if (msg_data)
++		memcpy(&req->msg[2], msg_data, msg_len);
+ 
+ 	/* synchronous send */
+ 	if (need_resp) {

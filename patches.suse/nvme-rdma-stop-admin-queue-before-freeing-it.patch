@@ -2,8 +2,8 @@ From: Jianchao Wang <jianchao.w.wang@oracle.com>
 Date: Thu, 24 May 2018 09:27:38 +0800
 Subject: [PATCH] nvme-rdma: stop admin queue before freeing it
 Git-commit: 2e050f00a0f0e07467050cb4afae0234941e5bf3
-Patch-mainline: v4.18-rc1
-References: bsc#1104967,FATE#325924
+Patch-Mainline: v4.18
+References: bsc#1104967,bsc#1140155,FATE#325924
 
 For any failure after nvme_rdma_start_queue in
 nvme_rdma_configure_admin_queue, the admin queue will be freed with the
@@ -20,12 +20,14 @@ Reviewed-by: Max Gurtovoy <maxg@mellanox.com>
 Signed-off-by: Christoph Hellwig <hch@lst.de>
 Acked-by: Hannes Reinecke <hare@suse.com>
 ---
- drivers/nvme/host/rdma.c |   10 ++++++----
+ drivers/nvme/host/rdma.c | 10 ++++++----
  1 file changed, 6 insertions(+), 4 deletions(-)
 
+diff --git a/drivers/nvme/host/rdma.c b/drivers/nvme/host/rdma.c
+index 1eb4438a8763..2181299ce8f5 100644
 --- a/drivers/nvme/host/rdma.c
 +++ b/drivers/nvme/host/rdma.c
-@@ -778,7 +778,7 @@ static int nvme_rdma_configure_admin_que
+@@ -778,7 +778,7 @@ static int nvme_rdma_configure_admin_queue(struct nvme_rdma_ctrl *ctrl,
  	if (error) {
  		dev_err(ctrl->ctrl.device,
  			"prop_get NVME_REG_CAP failed\n");
@@ -34,7 +36,7 @@ Acked-by: Hannes Reinecke <hare@suse.com>
  	}
  
  	ctrl->ctrl.sqsize =
-@@ -786,23 +786,25 @@ static int nvme_rdma_configure_admin_que
+@@ -786,23 +786,25 @@ static int nvme_rdma_configure_admin_queue(struct nvme_rdma_ctrl *ctrl,
  
  	error = nvme_enable_ctrl(&ctrl->ctrl, ctrl->ctrl.cap);
  	if (error)
@@ -63,3 +65,6 @@ Acked-by: Hannes Reinecke <hare@suse.com>
  out_cleanup_queue:
  	if (new)
  		blk_cleanup_queue(ctrl->ctrl.admin_q);
+-- 
+2.16.4
+

@@ -1,0 +1,99 @@
+Patch-mainline: v5.0-rc4
+Git-commit: fc24d75a7f91837d7918e40719575951820b2b8f
+References: bsc#1108382
+From: Jan Beulich <JBeulich@suse.com>
+Date: Tue, 15 Jan 2019 09:58:16 -0700
+Subject: [PATCH] x86/entry/64/compat: Fix stack switching for XEN PV
+
+While in the native case entry into the kernel happens on the trampoline
+stack, PV Xen kernels get entered with the current thread stack right
+away. Hence source and destination stacks are identical in that case,
+and special care is needed.
+
+Other than in sync_regs() the copying done on the INT80 path isn't
+NMI / #MC safe, as either of these events occurring in the middle of the
+stack copying would clobber data on the (source) stack.
+
+There is similar code in interrupt_entry() and nmi(), but there is no fixup
+required because those code paths are unreachable in XEN PV guests.
+
+[Juergen Gross: Applying the upstream patch to switch_to_thread_stack()
+                would have been wrong, as only entry_INT80_compat() should
+                be modified. For that purpose introduce a copy of
+                switch_to_thread_stack() named switch_to_thread_stack_compat()
+                and call that from entry_INT80_compat() instead.
+                In order to keep the complexity as low as possible move
+                the push of %rdi to entry_INT80_compat().]
+
+Fixes: 7f2590a110b8 ("x86/entry/64: Use a per-CPU trampoline stack for IDT entries")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+Acked-by: Andy Lutomirski <luto@kernel.org>
+Cc: Peter Anvin <hpa@zytor.com>
+Cc: xen-devel@lists.xenproject.org>
+Cc: Boris Ostrovsky <boris.ostrovsky@oracle.com>
+Cc: stable@vger.kernel.org
+Link: https://lkml.kernel.org/r/5C3E1128020000780020DFAD@prv1-mh.provo.novell.com
+---
+ arch/x86/entry/entry_64_compat.S | 38 ++++++++-
+ 1 file changed, 35 insertions(+), 3 deletions(-)
+
+diff --git a/arch/x86/entry/entry_64_compat.S b/arch/x86/entry/entry_64_compat.S
+index 8eaf8952c408..39913770a44d 100644
+--- a/arch/x86/entry/entry_64_compat.S
++++ b/arch/x86/entry/entry_64_compat.S
+@@ -322,6 +322,38 @@ sysret32_from_system_call:
+ END(entry_SYSCALL_compat)
+ 
+ /*
++ * Switch to the thread stack.  This is called with the IRET frame and
++ * orig_ax and RDI on the stack.  (That is, RSI..R12 are not on the stack and
++ * space has not been allocated for them.)
++ */
++ENTRY(switch_to_thread_stack_compat)
++	UNWIND_HINT_FUNC
++
++	/* Need to switch before accessing the thread stack. */
++	SWITCH_TO_KERNEL_CR3 scratch_reg=%rdi
++	/* In the Xen PV case we already run on the thread stack. */
++	ALTERNATIVE "movq %rsp, %rdi", "jmp .Lcompat_keep_stack", X86_FEATURE_XENPV
++	movq    %rsp, %rdi
++	movq    PER_CPU_VAR(cpu_current_top_of_stack), %rsp
++	/* Restrict Indirect Branch Speculation */
++	RESTRICT_IB_SPEC
++	UNWIND_HINT sp_offset=16 sp_reg=ORC_REG_DI
++
++	pushq   7*8(%rdi)		/* regs->ss */
++	pushq   6*8(%rdi)		/* regs->rsp */
++	pushq   5*8(%rdi)		/* regs->eflags */
++	pushq   4*8(%rdi)		/* regs->cs */
++	pushq   3*8(%rdi)		/* regs->ip */
++	pushq   2*8(%rdi)		/* regs->orig_ax */
++	pushq   8(%rdi)			/* pt_regs->di */
++	pushq   (%rdi)			/* return address */
++	UNWIND_HINT_FUNC
++
++.Lcompat_keep_stack:
++	ret
++END(switch_to_thread_stack_compat)
++
++/*
+  * 32-bit legacy system call entry.
+  *
+  * 32-bit x86 Linux system calls traditionally used the INT $0x80
+@@ -364,11 +396,11 @@ ENTRY(entry_INT80_compat)
+ 	movl	%eax, %eax
+ 
+ 	pushq	%rax			/* pt_regs->orig_ax */
++	pushq	%rdi			/* pt_regs->di */
+ 
+-	/* switch to thread stack expects orig_ax to be pushed */
+-	call	switch_to_thread_stack
++	/* switch to thread stack expects orig_ax and RDI to be pushed */
++	call	switch_to_thread_stack_compat
+ 
+-	pushq	%rdi			/* pt_regs->di */
+ 	pushq	%rsi			/* pt_regs->si */
+ 	pushq	%rdx			/* pt_regs->dx */
+ 	pushq	%rcx			/* pt_regs->cx */

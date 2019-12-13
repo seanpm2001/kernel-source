@@ -1,24 +1,22 @@
 From: Himanshu Madhani <hmadhani@marvell.com>
 Date: Fri, 15 Feb 2019 14:37:14 -0800
-Subject: [PATCH] scsi: qla2xxx: Fix unload when NVMe devices are configured
-References: bsc#1136215
-Git-commit: e476fe8af5ff2102ae622c8bf910d8f7e83eb84e
+Subject: scsi: qla2xxx: Fix unload when NVMe devices are configured
 Patch-mainline: v5.1-rc1
+Git-commit: e476fe8af5ff2102ae622c8bf910d8f7e83eb84e
+References: bsc#1123034 bsc#1131304 bsc#1127988 bsc#1136215
 
 This patch fixes driver unload issue when FC-NVMe devices are configured.
 
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Signed-off-by: Hannes Reinecke <hare@suse.de>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_nvme.c | 22 ++++++++++------------
+ drivers/scsi/qla2xxx/qla_nvme.c |   22 ++++++++++------------
  1 file changed, 10 insertions(+), 12 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_nvme.c b/drivers/scsi/qla2xxx/qla_nvme.c
-index 0007998c3da9..74a9030e587a 100644
 --- a/drivers/scsi/qla2xxx/qla_nvme.c
 +++ b/drivers/scsi/qla2xxx/qla_nvme.c
-@@ -619,6 +619,7 @@ static void qla_nvme_unregister_remote_port(struct work_struct *work)
+@@ -619,6 +619,7 @@ static void qla_nvme_unregister_remote_p
  	struct fc_port *fcport = container_of(work, struct fc_port,
  	    nvme_del_work);
  	struct qla_nvme_rport *qla_rport, *trport;
@@ -26,7 +24,7 @@ index 0007998c3da9..74a9030e587a 100644
  
  	if (!IS_ENABLED(CONFIG_NVME_FC))
  		return;
-@@ -626,6 +627,15 @@ static void qla_nvme_unregister_remote_port(struct work_struct *work)
+@@ -626,6 +627,15 @@ static void qla_nvme_unregister_remote_p
  	ql_log(ql_log_warn, NULL, 0x2112,
  	    "%s: unregister remoteport on %p\n",__func__, fcport);
  
@@ -42,7 +40,7 @@ index 0007998c3da9..74a9030e587a 100644
  	list_for_each_entry_safe(qla_rport, trport,
  	    &fcport->vha->nvme_rport_list, list) {
  		if (qla_rport->fcport == fcport) {
-@@ -642,23 +652,11 @@ static void qla_nvme_unregister_remote_port(struct work_struct *work)
+@@ -642,23 +652,11 @@ static void qla_nvme_unregister_remote_p
  
  void qla_nvme_delete(struct scsi_qla_host *vha)
  {
@@ -66,6 +64,3 @@ index 0007998c3da9..74a9030e587a 100644
  	if (vha->nvme_local_port) {
  		init_completion(&vha->nvme_del_done);
  		ql_log(ql_log_info, vha, 0x2116,
--- 
-2.16.4
-

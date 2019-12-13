@@ -1,0 +1,92 @@
+From ca8d92d7a6114aad6250ffe16275ca49438718b4 Mon Sep 17 00:00:00 2001
+From: Jon Bloomfield <jon.bloomfield@intel.com>
+Date: Thu, 27 Sep 2018 10:23:17 -0700
+Subject: [PATCH 17/23] drm/i915/cmdparser: Use explicit goto for error paths
+Git-commit: 0546a29cd884fb8184731c79ab008927ca8859d0
+Patch-mainline: v5.4-rc8
+References: CVE-2019-0154,bsc#1135966,CVE-2019-0155,bsc#1135967
+
+In the next patch we will be adding a second valid
+termination condition which will require a small
+amount of refactoring to share logic with the BB_END
+case.
+
+Refactor all error conditions to jump to a dedicated
+exit path, with 'break' reserved only for a successful
+parse.
+
+Signed-off-by: Jon Bloomfield <jon.bloomfield@intel.com>
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/gpu/drm/i915/i915_cmd_parser.c |   25 +++++++++++++------------
+ 1 file changed, 13 insertions(+), 12 deletions(-)
+
+--- a/drivers/gpu/drm/i915/i915_cmd_parser.c
++++ b/drivers/gpu/drm/i915/i915_cmd_parser.c
+@@ -1337,21 +1337,15 @@ int intel_engine_cmd_parser(struct intel
+ 	do {
+ 		u32 length;
+ 
+-		if (*cmd == MI_BATCH_BUFFER_END) {
+-			if (needs_clflush_after) {
+-				void *ptr = page_mask_bits(shadow_batch_obj->mm.mapping);
+-				drm_clflush_virt_range(ptr,
+-						       (void *)(cmd + 1) - ptr);
+-			}
++		if (*cmd == MI_BATCH_BUFFER_END)
+ 			break;
+-		}
+ 
+ 		desc = find_cmd(engine, *cmd, desc, &default_desc);
+ 		if (!desc) {
+ 			DRM_DEBUG_DRIVER("CMD: Unrecognized command: 0x%08X\n",
+ 					 *cmd);
+ 			ret = -EINVAL;
+-			break;
++			goto err;
+ 		}
+ 
+ 		/*
+@@ -1361,7 +1355,7 @@ int intel_engine_cmd_parser(struct intel
+ 		 */
+ 		if (desc->cmd.value == MI_BATCH_BUFFER_START) {
+ 			ret = -EACCES;
+-			break;
++			goto err;
+ 		}
+ 
+ 		if (desc->flags & CMD_DESC_FIXED)
+@@ -1375,22 +1369,29 @@ int intel_engine_cmd_parser(struct intel
+ 					 length,
+ 					 batch_end - cmd);
+ 			ret = -EINVAL;
+-			break;
++			goto err;
+ 		}
+ 
+ 		if (!check_cmd(engine, desc, cmd, length)) {
+ 			ret = -EACCES;
+-			break;
++			goto err;
+ 		}
+ 
+ 		cmd += length;
+ 		if  (cmd >= batch_end) {
+ 			DRM_DEBUG_DRIVER("CMD: Got to the end of the buffer w/o a BBE cmd!\n");
+ 			ret = -EINVAL;
+-			break;
++			goto err;
+ 		}
+ 	} while (1);
+ 
++	if (needs_clflush_after) {
++		void *ptr = page_mask_bits(shadow_batch_obj->mm.mapping);
++
++		drm_clflush_virt_range(ptr, (void *)(cmd + 1) - ptr);
++	}
++
++err:
+ 	i915_gem_object_unpin_map(shadow_batch_obj);
+ 	return ret;
+ }

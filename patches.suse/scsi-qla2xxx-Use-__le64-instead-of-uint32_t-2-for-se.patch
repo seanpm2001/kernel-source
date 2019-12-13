@@ -1,10 +1,10 @@
 From: Bart Van Assche <bvanassche@acm.org>
 Date: Wed, 17 Apr 2019 14:44:39 -0700
-Subject: [PATCH] scsi: qla2xxx: Use __le64 instead of uint32_t[2] for sending
- DMA addresses to firmware
+Subject: scsi: qla2xxx: Use __le64 instead of uint32_t[2] for sending DMA
+ addresses to firmware
 Patch-mainline: v5.2-rc1
 Git-commit: d4556a4932a54613fd766df6879e39d0342f49a0
-References: bsc#1082635 bsc#1141340 bsc#1143706
+References: bsc#1082635 bsc#1123034 bsc#1131304 bsc#1127988 bsc#1141340 bsc#1143706
 
 This patch makes the code easier to read and more compact.
 
@@ -13,23 +13,21 @@ Cc: Giridhar Malavali <gmalavali@marvell.com>
 Signed-off-by: Bart Van Assche <bvanassche@acm.org>
 Acked-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_def.h    |  6 ++---
- drivers/scsi/qla2xxx/qla_fw.h     | 45 ++++++++++++++++---------------
- drivers/scsi/qla2xxx/qla_gs.c     |  3 +--
- drivers/scsi/qla2xxx/qla_init.c   | 15 ++++-------
- drivers/scsi/qla2xxx/qla_iocb.c   | 57 ++++++++++++++-------------------------
- drivers/scsi/qla2xxx/qla_mr.c     |  8 +++---
- drivers/scsi/qla2xxx/qla_nvme.c   |  6 ++---
- drivers/scsi/qla2xxx/qla_nvme.h   |  4 +--
- drivers/scsi/qla2xxx/qla_nx.c     |  6 ++---
- drivers/scsi/qla2xxx/qla_target.c |  3 +--
- drivers/scsi/qla2xxx/qla_target.h |  4 +--
+ drivers/scsi/qla2xxx/qla_def.h    |    6 ++--
+ drivers/scsi/qla2xxx/qla_fw.h     |   45 +++++++++++++++---------------
+ drivers/scsi/qla2xxx/qla_gs.c     |    3 --
+ drivers/scsi/qla2xxx/qla_init.c   |   15 +++-------
+ drivers/scsi/qla2xxx/qla_iocb.c   |   57 +++++++++++++-------------------------
+ drivers/scsi/qla2xxx/qla_mr.c     |    8 ++---
+ drivers/scsi/qla2xxx/qla_nvme.c   |    6 +---
+ drivers/scsi/qla2xxx/qla_nvme.h   |    4 +-
+ drivers/scsi/qla2xxx/qla_nx.c     |    6 +---
+ drivers/scsi/qla2xxx/qla_target.c |    3 --
+ drivers/scsi/qla2xxx/qla_target.h |    4 +-
  11 files changed, 65 insertions(+), 92 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_def.h b/drivers/scsi/qla2xxx/qla_def.h
-index 502a4812bf51..1a4095c56eee 100644
 --- a/drivers/scsi/qla2xxx/qla_def.h
 +++ b/drivers/scsi/qla2xxx/qla_def.h
 @@ -1329,8 +1329,8 @@ typedef struct {
@@ -52,8 +50,6 @@ index 502a4812bf51..1a4095c56eee 100644
  			uint16_t subcommand_length;
  			uint16_t reserved_2;
  			uint16_t subcommand;
-diff --git a/drivers/scsi/qla2xxx/qla_fw.h b/drivers/scsi/qla2xxx/qla_fw.h
-index 604eb4682ac0..df079a8c2b33 100644
 --- a/drivers/scsi/qla2xxx/qla_fw.h
 +++ b/drivers/scsi/qla2xxx/qla_fw.h
 @@ -341,9 +341,9 @@ struct init_cb_24xx {
@@ -170,11 +166,9 @@ index 604eb4682ac0..df079a8c2b33 100644
  
  	uint16_t interrupt_delay_timer;		/* 100us increments. */
  	uint16_t login_timeout;
-diff --git a/drivers/scsi/qla2xxx/qla_gs.c b/drivers/scsi/qla2xxx/qla_gs.c
-index e2653bbc117d..9f58e591666d 100644
 --- a/drivers/scsi/qla2xxx/qla_gs.c
 +++ b/drivers/scsi/qla2xxx/qla_gs.c
-@@ -996,8 +996,7 @@ qla2x00_prep_sns_cmd(scsi_qla_host_t *vha, uint16_t cmd, uint16_t scmd_len,
+@@ -996,8 +996,7 @@ qla2x00_prep_sns_cmd(scsi_qla_host_t *vh
  	memset(sns_cmd, 0, sizeof(struct sns_cmd_pkt));
  	wc = data_size / 2;			/* Size in 16bit words. */
  	sns_cmd->p.cmd.buffer_length = cpu_to_le16(wc);
@@ -184,11 +178,9 @@ index e2653bbc117d..9f58e591666d 100644
  	sns_cmd->p.cmd.subcommand_length = cpu_to_le16(scmd_len);
  	sns_cmd->p.cmd.subcommand = cpu_to_le16(cmd);
  	wc = (data_size - 16) / 4;		/* Size in 32bit words. */
-diff --git a/drivers/scsi/qla2xxx/qla_init.c b/drivers/scsi/qla2xxx/qla_init.c
-index 8945278ff0be..54772d4c377f 100644
 --- a/drivers/scsi/qla2xxx/qla_init.c
 +++ b/drivers/scsi/qla2xxx/qla_init.c
-@@ -3941,10 +3941,8 @@ qla2x00_config_rings(struct scsi_qla_host *vha)
+@@ -3941,10 +3941,8 @@ qla2x00_config_rings(struct scsi_qla_hos
  	ha->init_cb->response_q_inpointer = cpu_to_le16(0);
  	ha->init_cb->request_q_length = cpu_to_le16(req->length);
  	ha->init_cb->response_q_length = cpu_to_le16(rsp->length);
@@ -201,7 +193,7 @@ index 8945278ff0be..54772d4c377f 100644
  
  	WRT_REG_WORD(ISP_REQ_Q_IN(ha, reg), 0);
  	WRT_REG_WORD(ISP_REQ_Q_OUT(ha, reg), 0);
-@@ -3971,16 +3969,13 @@ qla24xx_config_rings(struct scsi_qla_host *vha)
+@@ -3971,16 +3969,13 @@ qla24xx_config_rings(struct scsi_qla_hos
  	icb->response_q_inpointer = cpu_to_le16(0);
  	icb->request_q_length = cpu_to_le16(req->length);
  	icb->response_q_length = cpu_to_le16(rsp->length);
@@ -221,11 +213,9 @@ index 8945278ff0be..54772d4c377f 100644
  
  	if (IS_SHADOW_REG_CAPABLE(ha))
  		icb->firmware_options_2 |= cpu_to_le32(BIT_30|BIT_29);
-diff --git a/drivers/scsi/qla2xxx/qla_iocb.c b/drivers/scsi/qla2xxx/qla_iocb.c
-index ef895e1142c9..9312b19ed708 100644
 --- a/drivers/scsi/qla2xxx/qla_iocb.c
 +++ b/drivers/scsi/qla2xxx/qla_iocb.c
-@@ -1445,8 +1445,7 @@ qla24xx_build_scsi_crc_2_iocbs(srb_t *sp, struct cmd_type_crc_2 *cmd_pkt,
+@@ -1450,8 +1450,7 @@ qla24xx_build_scsi_crc_2_iocbs(srb_t *sp
  	qla24xx_set_t10dif_tags(sp, (struct fw_dif_context *)
  	    &crc_ctx_pkt->ref_tag, tot_prot_dsds);
  
@@ -235,7 +225,7 @@ index ef895e1142c9..9312b19ed708 100644
  	cmd_pkt->crc_context_len = CRC_CONTEXT_LEN_FW;
  
  	/* Determine SCSI command length -- align to 4 byte boundary */
-@@ -1473,10 +1472,8 @@ qla24xx_build_scsi_crc_2_iocbs(srb_t *sp, struct cmd_type_crc_2 *cmd_pkt,
+@@ -1478,10 +1477,8 @@ qla24xx_build_scsi_crc_2_iocbs(srb_t *sp
  	int_to_scsilun(cmd->device->lun, &fcp_cmnd->lun);
  	memcpy(fcp_cmnd->cdb, cmd->cmnd, cmd->cmd_len);
  	cmd_pkt->fcp_cmnd_dseg_len = cpu_to_le16(fcp_cmnd_len);
@@ -248,7 +238,7 @@ index ef895e1142c9..9312b19ed708 100644
  	fcp_cmnd->task_management = 0;
  	fcp_cmnd->task_attribute = TSK_SIMPLE;
  
-@@ -2707,18 +2704,13 @@ qla24xx_els_logo_iocb(srb_t *sp, struct els_entry_24xx *els_iocb)
+@@ -2714,18 +2711,13 @@ qla24xx_els_logo_iocb(srb_t *sp, struct
  	if (elsio->u.els_logo.els_cmd == ELS_DCMD_PLOGI) {
  		els_iocb->tx_byte_count = els_iocb->tx_len =
  			sizeof(struct els_plogi_payload);
@@ -271,7 +261,7 @@ index ef895e1142c9..9312b19ed708 100644
  
  		ql_dbg(ql_dbg_io + ql_dbg_buffer, vha, 0x3073,
  		    "PLOGI ELS IOCB:\n");
-@@ -2726,15 +2718,12 @@ qla24xx_els_logo_iocb(srb_t *sp, struct els_entry_24xx *els_iocb)
+@@ -2733,15 +2725,12 @@ qla24xx_els_logo_iocb(srb_t *sp, struct
  		    (uint8_t *)els_iocb, 0x70);
  	} else {
  		els_iocb->tx_byte_count = sizeof(struct els_logo_payload);
@@ -290,7 +280,7 @@ index ef895e1142c9..9312b19ed708 100644
  		els_iocb->rx_len = 0;
  	}
  
-@@ -2957,17 +2946,13 @@ qla24xx_els_iocb(srb_t *sp, struct els_entry_24xx *els_iocb)
+@@ -2966,17 +2955,13 @@ qla24xx_els_iocb(srb_t *sp, struct els_e
          els_iocb->tx_byte_count =
              cpu_to_le32(bsg_job->request_payload.payload_len);
  
@@ -312,7 +302,7 @@ index ef895e1142c9..9312b19ed708 100644
          els_iocb->rx_len = cpu_to_le32(sg_dma_len
              (bsg_job->reply_payload.sg_list));
  
-@@ -3004,12 +2989,12 @@ qla2x00_ct_iocb(srb_t *sp, ms_iocb_entry_t *ct_iocb)
+@@ -3013,12 +2998,12 @@ qla2x00_ct_iocb(srb_t *sp, ms_iocb_entry
  	ct_iocb->rsp_bytecount =
  	    cpu_to_le32(bsg_job->reply_payload.payload_len);
  
@@ -329,7 +319,7 @@ index ef895e1142c9..9312b19ed708 100644
  	ct_iocb->rsp_dsd.length = ct_iocb->rsp_bytecount;
  
  	avail_dsds = 1;
-@@ -3332,10 +3317,8 @@ qla82xx_start_scsi(srb_t *sp)
+@@ -3342,10 +3327,8 @@ sufficient_dsds:
  		*fcp_dl = htonl((uint32_t)scsi_bufflen(cmd));
  
  		cmd_pkt->fcp_cmnd_dseg_len = cpu_to_le16(ctx->fcp_cmnd_len);
@@ -342,11 +332,9 @@ index ef895e1142c9..9312b19ed708 100644
  
  		sp->flags |= SRB_FCP_CMND_DMA_VALID;
  		cmd_pkt->byte_count = cpu_to_le32((uint32_t)scsi_bufflen(cmd));
-diff --git a/drivers/scsi/qla2xxx/qla_mr.c b/drivers/scsi/qla2xxx/qla_mr.c
-index a08d83dbcece..942ee13b96a4 100644
 --- a/drivers/scsi/qla2xxx/qla_mr.c
 +++ b/drivers/scsi/qla2xxx/qla_mr.c
-@@ -3278,8 +3278,8 @@ qlafx00_fxdisc_iocb(srb_t *sp, struct fxdisc_entry_fx00 *pfxiocb)
+@@ -3278,8 +3278,8 @@ qlafx00_fxdisc_iocb(srb_t *sp, struct fx
  			fx_iocb.req_dsdcnt = cpu_to_le16(1);
  			fx_iocb.req_xfrcnt =
  			    cpu_to_le16(fxio->u.fxiocb.req_len);
@@ -357,7 +345,7 @@ index a08d83dbcece..942ee13b96a4 100644
  			fx_iocb.dseg_rq.length =
  			    cpu_to_le32(fxio->u.fxiocb.req_len);
  		}
-@@ -3288,8 +3288,8 @@ qlafx00_fxdisc_iocb(srb_t *sp, struct fxdisc_entry_fx00 *pfxiocb)
+@@ -3288,8 +3288,8 @@ qlafx00_fxdisc_iocb(srb_t *sp, struct fx
  			fx_iocb.rsp_dsdcnt = cpu_to_le16(1);
  			fx_iocb.rsp_xfrcnt =
  			    cpu_to_le16(fxio->u.fxiocb.rsp_len);
@@ -368,11 +356,9 @@ index a08d83dbcece..942ee13b96a4 100644
  			fx_iocb.dseg_rsp.length =
  			    cpu_to_le32(fxio->u.fxiocb.rsp_len);
  		}
-diff --git a/drivers/scsi/qla2xxx/qla_nvme.c b/drivers/scsi/qla2xxx/qla_nvme.c
-index 29b30df97c58..4c1112107e88 100644
 --- a/drivers/scsi/qla2xxx/qla_nvme.c
 +++ b/drivers/scsi/qla2xxx/qla_nvme.c
-@@ -410,13 +410,11 @@ static inline int qla2x00_start_nvme_mq(srb_t *sp)
+@@ -421,13 +421,11 @@ static inline int qla2x00_start_nvme_mq(
  
  	/* NVME RSP IU */
  	cmd_pkt->nvme_rsp_dsd_len = cpu_to_le16(fd->rsplen);
@@ -388,8 +374,6 @@ index 29b30df97c58..4c1112107e88 100644
  
  	cmd_pkt->dseg_count = cpu_to_le16(tot_dsds);
  	cmd_pkt->byte_count = cpu_to_le32(fd->payload_length);
-diff --git a/drivers/scsi/qla2xxx/qla_nvme.h b/drivers/scsi/qla2xxx/qla_nvme.h
-index b67aa271f6cc..d3b8a6440113 100644
 --- a/drivers/scsi/qla2xxx/qla_nvme.h
 +++ b/drivers/scsi/qla2xxx/qla_nvme.h
 @@ -65,8 +65,8 @@ struct cmd_nvme {
@@ -403,11 +387,9 @@ index b67aa271f6cc..d3b8a6440113 100644
  
  	uint32_t byte_count;            /* Total byte count. */
  
-diff --git a/drivers/scsi/qla2xxx/qla_nx.c b/drivers/scsi/qla2xxx/qla_nx.c
-index c12db16c3cf4..c760ae354174 100644
 --- a/drivers/scsi/qla2xxx/qla_nx.c
 +++ b/drivers/scsi/qla2xxx/qla_nx.c
-@@ -1788,10 +1788,8 @@ void qla82xx_config_rings(struct scsi_qla_host *vha)
+@@ -1788,10 +1788,8 @@ void qla82xx_config_rings(struct scsi_ql
  	icb->response_q_inpointer = cpu_to_le16(0);
  	icb->request_q_length = cpu_to_le16(req->length);
  	icb->response_q_length = cpu_to_le16(rsp->length);
@@ -420,11 +402,9 @@ index c12db16c3cf4..c760ae354174 100644
  
  	WRT_REG_DWORD(&reg->req_q_out[0], 0);
  	WRT_REG_DWORD(&reg->rsp_q_in[0], 0);
-diff --git a/drivers/scsi/qla2xxx/qla_target.c b/drivers/scsi/qla2xxx/qla_target.c
-index 4ee54b13a612..739a48301429 100644
 --- a/drivers/scsi/qla2xxx/qla_target.c
 +++ b/drivers/scsi/qla2xxx/qla_target.c
-@@ -3175,8 +3175,7 @@ qlt_build_ctio_crc2_pkt(struct qla_qpair *qpair, struct qla_tgt_prm *prm)
+@@ -3180,8 +3180,7 @@ qlt_build_ctio_crc2_pkt(struct qla_qpair
  
  	qla_tgt_set_dif_tags(cmd, crc_ctx_pkt, &fw_prot_opts);
  
@@ -434,8 +414,6 @@ index 4ee54b13a612..739a48301429 100644
  	pkt->crc_context_len = CRC_CONTEXT_LEN_FW;
  
  	if (!bundling) {
-diff --git a/drivers/scsi/qla2xxx/qla_target.h b/drivers/scsi/qla2xxx/qla_target.h
-index b09a9232b817..89ceffa7d4fd 100644
 --- a/drivers/scsi/qla2xxx/qla_target.h
 +++ b/drivers/scsi/qla2xxx/qla_target.h
 @@ -519,10 +519,10 @@ struct ctio_crc2_to_fw {
@@ -451,6 +429,3 @@ index b09a9232b817..89ceffa7d4fd 100644
  
  /* CTIO Type CRC_x Status IOCB */
  struct ctio_crc_from_fw {
--- 
-2.16.4
-

@@ -1,0 +1,48 @@
+From: Mahesh Bandewar <maheshb@google.com>
+Subject: bonding: speed/duplex update at NETDEV_UP event
+Patch-mainline: v4.15-rc1
+Git-commit: 4d2c0cda07448ea6980f00102dc3964eb25e241c
+References: bsc#1137069 bsc#1141013
+
+Some NIC drivers don't have correct speed/duplex settings at the
+time they send NETDEV_UP notification and that messes up the
+bonding state. Especially 802.3ad mode which is very sensitive
+to these settings. In the current implementation we invoke
+bond_update_speed_duplex() when we receive NETDEV_UP, however,
+ignore the return value. If the values we get are invalid
+(UNKNOWN), then slave gets removed from the aggregator with
+speed and duplex set to UNKNOWN while link is still marked as UP.
+
+This patch fixes this scenario. Also 802.3ad mode is sensitive to
+these conditions while other modes are not, so making sure that it
+doesn't change the behavior for other modes.
+
+Signed-off-by: Mahesh Bandewar <maheshb@google.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Reviewed-by: Jiri Wiesner <jwiesner@suse.com>
+Acked-by: Michal Kubecek <mkubecek@suse.cz>
+
+---
+ drivers/net/bonding/bond_main.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/bonding/bond_main.c
++++ b/drivers/net/bonding/bond_main.c
+@@ -3086,7 +3086,16 @@ static int bond_slave_netdev_event(unsigned long event,
+ 		break;
+ 	case NETDEV_UP:
+ 	case NETDEV_CHANGE:
+-		bond_update_speed_duplex(slave);
++		/* For 802.3ad mode only:
++		 * Getting invalid Speed/Duplex values here will put slave
++		 * in weird state. So mark it as link-down for the time
++		 * being and let link-monitoring (miimon) set it right when
++		 * correct speeds/duplex are available.
++		 */
++		if (bond_update_speed_duplex(slave) &&
++		    BOND_MODE(bond) == BOND_MODE_8023AD)
++			slave->link = BOND_LINK_DOWN;
++
+ 		if (BOND_MODE(bond) == BOND_MODE_8023AD)
+ 			bond_3ad_adapter_speed_duplex_changed(slave);
+ 		/* Fallthrough */

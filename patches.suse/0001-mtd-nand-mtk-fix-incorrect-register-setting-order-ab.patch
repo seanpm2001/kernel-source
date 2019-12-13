@@ -1,0 +1,38 @@
+From 188986c70e09f0f3cd88e6fe14c89e439474e3ec Mon Sep 17 00:00:00 2001
+From: Xiaolei Li <xiaolei.li@mediatek.com>
+Date: Fri, 23 Jun 2017 15:12:24 +0800
+Subject: [PATCH] mtd: nand: mtk: fix incorrect register setting order about
+ ecc irq
+Git-commit: 188986c70e09f0f3cd88e6fe14c89e439474e3ec
+Patch-mainline: v4.13
+REferences: git-fixes
+
+Currently, we trigger ECC HW before setting ecc irq. It is incorrect.
+Because ECC starts working once the register ECC_CTL_REG is set as
+ECC_OP_ENABLE. And this may lead an abnormal behavior of ecc irq.
+So, should enable ecc irq at first, then trigger ECC.
+
+Fixes: 1d6b1e464950 ("mtd: mediatek: driver for MTK Smart Device")
+Signed-off-by: Xiaolei Li <xiaolei.li@mediatek.com>
+Signed-off-by: Boris Brezillon <boris.brezillon@free-electrons.com>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/mtd/nand/mtk_ecc.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/drivers/mtd/nand/mtk_ecc.c
++++ b/drivers/mtd/nand/mtk_ecc.c
+@@ -323,11 +323,12 @@ int mtk_ecc_enable(struct mtk_ecc *ecc,
+ 
+ 	mtk_ecc_wait_idle(ecc, op);
+ 	mtk_ecc_config(ecc, config);
+-	writew(ECC_OP_ENABLE, ecc->regs + ECC_CTL_REG(op));
+ 
+ 	init_completion(&ecc->done);
+ 	writew(ECC_IRQ_EN, ecc->regs + ECC_IRQ_REG(op));
+ 
++	writew(ECC_OP_ENABLE, ecc->regs + ECC_CTL_REG(op));
++
+ 	return 0;
+ }
+ EXPORT_SYMBOL(mtk_ecc_enable);

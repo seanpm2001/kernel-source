@@ -216,11 +216,14 @@ remotes = (
     Head(RepoURL("klassert/ipsec.git")),
     Head(RepoURL("klassert/ipsec-next.git")),
     Head(RepoURL("kvalo/wireless-drivers-next.git")),
+    Head(RepoURL("mkp/scsi.git"), "4.19/scsi-queue"),
+    Head(RepoURL("mkp/scsi.git"), "5.0/scsi-fixes"),
     Head(RepoURL("mkp/scsi.git"), "queue"),
     Head(RepoURL("mkp/scsi.git"), "fixes"),
     Head(RepoURL("git://git.kernel.dk/linux-block.git"), "for-next"),
     Head(RepoURL("git://git.kernel.org/pub/scm/virt/kvm/kvm.git"), "queue"),
     Head(RepoURL("git://git.infradead.org/nvme.git"), "nvme-5.3-rc"),
+    Head(RepoURL("git://git.infradead.org/nvme.git"), "nvme-5.4"),
     Head(RepoURL("dhowells/linux-fs.git")),
     Head(RepoURL("herbert/cryptodev-2.6.git")),
     Head(RepoURL("helgaas/pci.git"), "next"),
@@ -237,6 +240,9 @@ remotes = (
     Head(RepoURL("herbert/crypto-2.6.git"), "master"),
     Head(RepoURL("rafael/linux-pm.git")),
     Head(RepoURL("git://git.cmpxchg.org/linux-mmots.git"), "master"),
+    Head(RepoURL("git://git.linux-nfs.org/~bfields/linux.git"), "nfsd-next"),
+    Head(RepoURL("vkoul/soundwire.git"),"fixes"),
+    Head(RepoURL("vkoul/soundwire.git"),"next"),
 )
 
 

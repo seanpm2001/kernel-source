@@ -1,0 +1,55 @@
+From 7cd2a8695ef9c31e8f51773f0de9e6007d6dc083 Mon Sep 17 00:00:00 2001
+From: Suraj Jitindar Singh <sjitindarsingh@gmail.com>
+Date: Thu, 3 Aug 2017 14:15:51 +1000
+Subject: [PATCH] powerpc/mm: Properly invalidate when setting process table
+ base
+
+References: bsc#1055186
+Patch-mainline: v4.14-rc1
+Git-commit: 7cd2a8695ef9c31e8f51773f0de9e6007d6dc083
+
+The host process table base is stored in the partition table by calling
+the function native_register_process_table(). Currently this just sets
+the entry in memory and is missing a subsequent cache invalidation
+instruction. Any update to the partition table should be followed by a
+cache invalidation instruction specifying invalidation of the caching of
+any partition table entries (RIC = 2, PRS = 0).
+
+We already have a function to update the partition table with the
+required cache invalidation instructions - mmu_partition_table_set_entry().
+Update the native_register_process_table() function to call
+mmu_partition_table_set_entry(), this ensures all appropriate
+invalidation will be performed.
+
+Signed-off-by: Suraj Jitindar Singh <sjitindarsingh@gmail.com>
+Reviewed-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+[mpe: Use a local for patb0 to clean it up slightly]
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/mm/pgtable-radix.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/arch/powerpc/mm/pgtable-radix.c b/arch/powerpc/mm/pgtable-radix.c
+index c1185c8ecb22..5d8be076f8e5 100644
+--- a/arch/powerpc/mm/pgtable-radix.c
++++ b/arch/powerpc/mm/pgtable-radix.c
+@@ -28,9 +28,13 @@
+ static int native_register_process_table(unsigned long base, unsigned long pg_sz,
+ 					 unsigned long table_size)
+ {
+-	unsigned long patb1 = base | table_size | PATB_GR;
++	unsigned long patb0, patb1;
++
++	patb0 = be64_to_cpu(partition_tb[0].patb0);
++	patb1 = base | table_size | PATB_GR;
++
++	mmu_partition_table_set_entry(0, patb0, patb1);
+ 
+-	partition_tb->patb1 = cpu_to_be64(patb1);
+ 	return 0;
+ }
+ 
+-- 
+2.23.0
+

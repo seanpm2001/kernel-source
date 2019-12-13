@@ -1,0 +1,52 @@
+From: Nikolay Borisov <nborisov@suse.com>
+Date: Tue, 14 May 2019 13:54:41 +0300
+Subject: btrfs: Ensure btrfs_init_dev_replace_tgtdev sees up to date values
+Git-commit: e1e0eb43ce1fd7bbdd9590715623cb3799896434
+Patch-mainline: v5.3-rc1
+References: bsc#1154651
+
+btrfs_init_dev_replace_tgtdev reads certain values from the source
+device (such as commit_total_bytes) which are updated during transaction
+commit. Currently this function is called before committing any pending
+transaction, leading to possibly reading outdated values.
+
+Fix this by moving the function below the transaction commit, at this
+point the EXCL_OP bit it set hence once transaction is complete the
+total size of the device cannot be changed (it's usually changed by
+resize/remove ops which are blocked).
+
+Fixes: 9e271ae27e44 ("Btrfs: kernel operation should come after user input has been verified")
+Signed-off-by: Nikolay Borisov <nborisov@suse.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/dev-replace.c |   10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+--- a/fs/btrfs/dev-replace.c
++++ b/fs/btrfs/dev-replace.c
+@@ -320,11 +320,6 @@ int btrfs_dev_replace_start(struct btrfs
+ 	if (ret)
+ 		return ret;
+
+-	ret = btrfs_init_dev_replace_tgtdev(fs_info, tgtdev_name,
+-					    src_device, &tgt_device);
+-	if (ret)
+-		return ret;
+-
+ 	/*
+ 	 * Here we commit the transaction to make sure commit_total_bytes
+ 	 * of all the devices are updated.
+@@ -338,6 +333,11 @@ int btrfs_dev_replace_start(struct btrfs
+ 		return PTR_ERR(trans);
+ 	}
+
++	ret = btrfs_init_dev_replace_tgtdev(fs_info, tgtdev_name,
++					    src_device, &tgt_device);
++	if (ret)
++		return ret;
++
+ 	btrfs_dev_replace_lock(dev_replace, 1);
+ 	switch (dev_replace->replace_state) {
+ 	case BTRFS_IOCTL_DEV_REPLACE_STATE_NEVER_STARTED:
+

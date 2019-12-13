@@ -4,7 +4,7 @@ Subject: scsi: qla2xxx: move IO flush to the front of NVME rport
  unregistration
 Patch-mainline: v5.3-rc1
 Git-commit: baf23eddbf2a4ba9bf2bdb342686c71a8042e39b
-References: bsc#1082635 bsc#1141340 bsc#1143706
+References: bsc#1082635 bsc#1123034 bsc#1131304 bsc#1127988 bsc#1141340 bsc#1143706
 
 On session deletion, current qla code would unregister an NVMe session
 before flushing IOs. This patch would move the unregistration of NVMe
@@ -25,7 +25,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
 
 --- a/drivers/scsi/qla2xxx/qla_def.h
 +++ b/drivers/scsi/qla2xxx/qla_def.h
-@@ -2371,7 +2371,6 @@ typedef struct fc_port {
+@@ -2339,7 +2339,6 @@ typedef struct fc_port {
  	unsigned int id_changed:1;
  	unsigned int scan_needed:1;
  
@@ -61,7 +61,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  	fcport->nvme_flag &= ~NVME_FLAG_RESETTING;
  
  	memset(&req, 0, sizeof(struct nvme_fc_port_info));
-@@ -636,16 +633,11 @@ static void qla_nvme_remoteport_delete(s
+@@ -630,16 +627,11 @@ static void qla_nvme_remoteport_delete(s
  	fcport = qla_rport->fcport;
  	fcport->nvme_remote_port = NULL;
  	fcport->nvme_flag &= ~NVME_FLAG_REGISTERED;
@@ -79,7 +79,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  }
  
  static struct nvme_fc_port_template qla_nvme_fc_transport = {
-@@ -668,10 +660,8 @@ static struct nvme_fc_port_template qla_
+@@ -662,10 +654,8 @@ static struct nvme_fc_port_template qla_
  	.fcprqst_priv_sz = sizeof(struct nvme_private),
  };
  

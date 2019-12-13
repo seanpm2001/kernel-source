@@ -1,10 +1,10 @@
 From: Giridhar Malavali <gmalavali@marvell.com>
 Date: Thu, 24 Jan 2019 23:23:46 -0800
-Subject: [PATCH] scsi: qla2xxx: Fix SRB allocation flag to avoid sleeping in
- IRQ context
-Git-commit: 97a93cea887376e13ea7d473ab349181850f4e39
+Subject: scsi: qla2xxx: Fix SRB allocation flag to avoid sleeping in IRQ
+ context
 Patch-mainline: v5.1-rc1
-References: bsc#1124541
+Git-commit: 97a93cea887376e13ea7d473ab349181850f4e39
+References: bsc#1123034 bsc#1124541 bsc#1131304 bsc#1127988
 
 This patch fixes SRB allocation flag from GFP_KERNEL to GFP_ATOMIC, to
 prevent sleeping in IRQ context
@@ -12,16 +12,14 @@ prevent sleeping in IRQ context
 Signed-off-by: Giridhar Malavali <gmalavali@marvell.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_init.c | 2 +-
+ drivers/scsi/qla2xxx/qla_init.c |    2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_init.c b/drivers/scsi/qla2xxx/qla_init.c
-index aa72e8316533..3bb4fa97e40a 100644
 --- a/drivers/scsi/qla2xxx/qla_init.c
 +++ b/drivers/scsi/qla2xxx/qla_init.c
-@@ -1829,7 +1829,7 @@ qla24xx_async_abort_cmd(srb_t *cmd_sp, bool wait)
+@@ -1831,7 +1831,7 @@ qla24xx_async_abort_cmd(srb_t *cmd_sp, b
  	int rval = QLA_FUNCTION_FAILED;
  
  	sp = qla2xxx_get_qpair_sp(cmd_sp->vha, cmd_sp->qpair, cmd_sp->fcport,
@@ -30,6 +28,3 @@ index aa72e8316533..3bb4fa97e40a 100644
  	if (!sp)
  		goto done;
  
--- 
-2.16.4
-

@@ -1,0 +1,30 @@
+From: Saeed Mahameed <saeedm@mellanox.com>
+Date: Thu, 16 May 2019 11:11:11 -0700
+Subject: net/mlx5: Fix error handling in mlx5_load()
+Patch-mainline: v5.2-rc3
+Git-commit: 8788392995e7f1ea87d4efa03c14d872b05f9f25
+References: bsc#1046305 FATE#322943
+
+In case mlx5_core_set_hca_defaults fails, it should jump to
+mlx5_cleanup_fs, fix that.
+
+Fixes: c85023e153e3 ("IB/mlx5: Add raw ethernet local loopback support")
+Signed-off-by: Saeed Mahameed <saeedm@mellanox.com>
+Reviewed-by: Huy Nguyen <huyn@mellanox.com>
+Signed-off-by: Saeed Mahameed <saeedm@mellanox.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/mellanox/mlx5/core/main.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/net/ethernet/mellanox/mlx5/core/main.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/main.c
+@@ -1153,7 +1153,7 @@ static int mlx5_load_one(struct mlx5_cor
+ 	err = mlx5_core_set_hca_defaults(dev);
+ 	if (err) {
+ 		dev_err(&pdev->dev, "Failed to set hca defaults\n");
+-		goto err_fs;
++		goto err_sriov;
+ 	}
+ 
+ 	err = mlx5_sriov_attach(dev);

@@ -2,8 +2,8 @@ From: Christoph Hellwig <hch@lst.de>
 Date: Tue, 29 May 2018 15:52:29 +0200
 Subject: [PATCH] block: rename BLK_EH_NOT_HANDLED to BLK_EH_DONE
 Git-commit: 6600593cbd9340b3d4fcde8e58d17653732620c4
-Patch-mainline: v4.18-rc1
-References: bsc#1104967,FATE#325924
+Patch-Mainline: v4.18-rc1
+References: bsc#1104967,bsc#1142076,FATE#325924
 
 The BLK_EH_NOT_HANDLED implies nothing happen, but very often that
 is not what is happening - instead the driver already completed the
@@ -13,7 +13,6 @@ Signed-off-by: Christoph Hellwig <hch@lst.de>
 Reviewed-by: Hannes Reinecke <hare@suse.com>
 Reviewed-by: Johannes Thumshirn <jthumshirn@suse.de>
 Signed-off-by: Jens Axboe <axboe@kernel.dk>
-Acked-by: Hannes Reinecke <hare@suse.com>
 ---
  Documentation/scsi/scsi_eh.txt            | 4 ++--
  block/blk-mq.c                            | 2 +-
@@ -51,10 +50,10 @@ index 11e447bdb3a5..3ae8419e72cf 100644
  	Step #2 is taken.
  
 diff --git a/block/blk-mq.c b/block/blk-mq.c
-index 6a7803abbf19..42002c2930b0 100644
+index 1ea504b789c0..0d8ea2b35cc5 100644
 --- a/block/blk-mq.c
 +++ b/block/blk-mq.c
-@@ -784,7 +784,7 @@ static void blk_mq_rq_timed_out(struct request *req, bool reserved)
+@@ -803,7 +803,7 @@ void blk_mq_rq_timed_out(struct request *req, bool reserved)
  	case BLK_EH_RESET_TIMER:
  		blk_add_timer(req);
  		break;
@@ -64,10 +63,10 @@ index 6a7803abbf19..42002c2930b0 100644
  	default:
  		printk(KERN_ERR "block: bad eh return: %d\n", ret);
 diff --git a/block/blk-timeout.c b/block/blk-timeout.c
-index f95d6e6cbc96..11879e98c249 100644
+index 764ecf9aeb30..420f3dbeaa27 100644
 --- a/block/blk-timeout.c
 +++ b/block/blk-timeout.c
-@@ -93,7 +93,7 @@ static void blk_rq_timed_out(struct request *req)
+@@ -95,7 +95,7 @@ static void blk_rq_timed_out(struct request *req)
  		blk_add_timer(req);
  		blk_clear_rq_complete(req);
  		break;
@@ -77,10 +76,10 @@ index f95d6e6cbc96..11879e98c249 100644
  		 * LLD handles this for now but in the future
  		 * we can send a request msg to abort the command
 diff --git a/drivers/block/nbd.c b/drivers/block/nbd.c
-index 800e1ec71f3d..88ae833aabe9 100644
+index ed5ef2eb8d6f..bd26317d41ab 100644
 --- a/drivers/block/nbd.c
 +++ b/drivers/block/nbd.c
-@@ -332,7 +332,7 @@ static enum blk_eh_timer_return nbd_xmit_timeout(struct request *req,
+@@ -318,7 +318,7 @@ static enum blk_eh_timer_return nbd_xmit_timeout(struct request *req,
  			}
  			blk_mq_requeue_request(req, true);
  			nbd_config_put(nbd);
@@ -90,10 +89,10 @@ index 800e1ec71f3d..88ae833aabe9 100644
  	} else {
  		dev_err_ratelimited(nbd_to_dev(nbd),
 diff --git a/drivers/message/fusion/mptsas.c b/drivers/message/fusion/mptsas.c
-index 86503f60468f..19a5aa70ecda 100644
+index 42ee70c23d9f..c18a2f9423e4 100644
 --- a/drivers/message/fusion/mptsas.c
 +++ b/drivers/message/fusion/mptsas.c
-@@ -1929,7 +1929,7 @@ static enum blk_eh_timer_return mptsas_eh_timed_out(struct scsi_cmnd *sc)
+@@ -1930,7 +1930,7 @@ static enum blk_eh_timer_return mptsas_eh_timed_out(struct scsi_cmnd *sc)
  	MPT_SCSI_HOST *hd;
  	MPT_ADAPTER   *ioc;
  	VirtDevice    *vdevice;
@@ -103,10 +102,10 @@ index 86503f60468f..19a5aa70ecda 100644
  	hd = shost_priv(sc->device->host);
  	if (hd == NULL) {
 diff --git a/drivers/s390/block/dasd.c b/drivers/s390/block/dasd.c
-index 04143c08bd6e..b0e89ca48a3c 100644
+index 7e0d85ddd618..550feef578aa 100644
 --- a/drivers/s390/block/dasd.c
 +++ b/drivers/s390/block/dasd.c
-@@ -3053,7 +3053,7 @@ static blk_status_t do_dasd_request(struct blk_mq_hw_ctx *hctx,
+@@ -3065,7 +3065,7 @@ static void do_dasd_request(struct request_queue *queue)
   *
   * Return values:
   * BLK_EH_RESET_TIMER if the request should be left running
@@ -115,7 +114,7 @@ index 04143c08bd6e..b0e89ca48a3c 100644
   *		      by the driver.
   */
  enum blk_eh_timer_return dasd_times_out(struct request *req, bool reserved)
-@@ -3065,7 +3065,7 @@ enum blk_eh_timer_return dasd_times_out(struct request *req, bool reserved)
+@@ -3077,7 +3077,7 @@ enum blk_eh_timer_return dasd_times_out(struct request *req)
  
  	cqr = *((struct dasd_ccw_req **) blk_mq_rq_to_pdu(req));
  	if (!cqr)
@@ -124,7 +123,7 @@ index 04143c08bd6e..b0e89ca48a3c 100644
  
  	spin_lock_irqsave(&cqr->dq->lock, flags);
  	device = cqr->startdev ? cqr->startdev : block->base;
-@@ -3124,7 +3124,7 @@ enum blk_eh_timer_return dasd_times_out(struct request *req, bool reserved)
+@@ -3128,7 +3128,7 @@ enum blk_eh_timer_return dasd_times_out(struct request *req)
  	spin_unlock(&block->queue_lock);
  	spin_unlock_irqrestore(&cqr->dq->lock, flags);
  
@@ -134,10 +133,10 @@ index 04143c08bd6e..b0e89ca48a3c 100644
  
  static int dasd_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
 diff --git a/drivers/scsi/gdth.c b/drivers/scsi/gdth.c
-index c35f05c4c6bb..85604795d8ee 100644
+index facc7271f932..ba5b14ef4bc4 100644
 --- a/drivers/scsi/gdth.c
 +++ b/drivers/scsi/gdth.c
-@@ -3882,7 +3882,7 @@ static enum blk_eh_timer_return gdth_timed_out(struct scsi_cmnd *scp)
+@@ -3884,7 +3884,7 @@ static enum blk_eh_timer_return gdth_timed_out(struct scsi_cmnd *scp)
  	struct gdth_cmndinfo *cmndinfo = gdth_cmnd_priv(scp);
  	u8 b, t;
  	unsigned long flags;
@@ -147,10 +146,10 @@ index c35f05c4c6bb..85604795d8ee 100644
  	TRACE(("%s() cmd 0x%x\n", scp->cmnd[0], __func__));
  	b = scp->device->channel;
 diff --git a/drivers/scsi/libiscsi.c b/drivers/scsi/libiscsi.c
-index 15a2fef51e38..eee43ba83a60 100644
+index 0f47307138d0..f6d7c060edf5 100644
 --- a/drivers/scsi/libiscsi.c
 +++ b/drivers/scsi/libiscsi.c
-@@ -1963,7 +1963,7 @@ static int iscsi_has_ping_timed_out(struct iscsi_conn *conn)
+@@ -1971,7 +1971,7 @@ static int iscsi_has_ping_timed_out(struct iscsi_conn *conn)
  
  enum blk_eh_timer_return iscsi_eh_cmd_timed_out(struct scsi_cmnd *sc)
  {
@@ -160,10 +159,10 @@ index 15a2fef51e38..eee43ba83a60 100644
  	struct iscsi_cls_session *cls_session;
  	struct iscsi_session *session;
 diff --git a/drivers/scsi/megaraid/megaraid_sas_base.c b/drivers/scsi/megaraid/megaraid_sas_base.c
-index b89c6e6c0589..ce656c466ca9 100644
+index f06c5be453e1..37dc4b5f006c 100644
 --- a/drivers/scsi/megaraid/megaraid_sas_base.c
 +++ b/drivers/scsi/megaraid/megaraid_sas_base.c
-@@ -2772,7 +2772,7 @@ blk_eh_timer_return megasas_reset_timer(struct scsi_cmnd *scmd)
+@@ -2775,7 +2775,7 @@ blk_eh_timer_return megasas_reset_timer(struct scsi_cmnd *scmd)
  
  	if (time_after(jiffies, scmd->jiffies_at_alloc +
  				(scmd_timeout * 2) * HZ)) {
@@ -186,7 +185,7 @@ index fe97401ad192..afd27165cd93 100644
  
  static int
 diff --git a/drivers/scsi/qla4xxx/ql4_os.c b/drivers/scsi/qla4xxx/ql4_os.c
-index 94c14ce94da2..0e13349dce57 100644
+index f7da489e15e2..ada033b9ca72 100644
 --- a/drivers/scsi/qla4xxx/ql4_os.c
 +++ b/drivers/scsi/qla4xxx/ql4_os.c
 @@ -1848,7 +1848,7 @@ static enum blk_eh_timer_return qla4xxx_eh_cmd_timed_out(struct scsi_cmnd *sc)
@@ -199,10 +198,10 @@ index 94c14ce94da2..0e13349dce57 100644
  	session = starget_to_session(scsi_target(sc->device));
  	sess = session->dd_data;
 diff --git a/drivers/scsi/scsi_error.c b/drivers/scsi/scsi_error.c
-index b36e73090018..9c02ba2e7ef3 100644
+index d63c75cea32d..ad322160543c 100644
 --- a/drivers/scsi/scsi_error.c
 +++ b/drivers/scsi/scsi_error.c
-@@ -282,7 +282,7 @@ void scsi_eh_scmd_add(struct scsi_cmnd *scmd)
+@@ -262,7 +262,7 @@ void scsi_eh_scmd_add(struct scsi_cmnd *scmd)
  enum blk_eh_timer_return scsi_times_out(struct request *req)
  {
  	struct scsi_cmnd *scmd = blk_mq_rq_to_pdu(req);
@@ -211,7 +210,7 @@ index b36e73090018..9c02ba2e7ef3 100644
  	struct Scsi_Host *host = scmd->device->host;
  
  	trace_scsi_dispatch_cmd_timeout(scmd);
-@@ -294,7 +294,7 @@ enum blk_eh_timer_return scsi_times_out(struct request *req)
+@@ -274,7 +274,7 @@ enum blk_eh_timer_return scsi_times_out(struct request *req)
  	if (host->hostt->eh_timed_out)
  		rtn = host->hostt->eh_timed_out(scmd);
  
@@ -221,7 +220,7 @@ index b36e73090018..9c02ba2e7ef3 100644
  			set_host_byte(scmd, DID_TIME_OUT);
  			scsi_eh_scmd_add(scmd);
 diff --git a/drivers/scsi/scsi_transport_fc.c b/drivers/scsi/scsi_transport_fc.c
-index be3be0f9cb2d..90075a0ddcfe 100644
+index 4d921bed9ef8..372122052541 100644
 --- a/drivers/scsi/scsi_transport_fc.c
 +++ b/drivers/scsi/scsi_transport_fc.c
 @@ -2087,7 +2087,7 @@ fc_eh_timed_out(struct scsi_cmnd *scmd)
@@ -233,7 +232,7 @@ index be3be0f9cb2d..90075a0ddcfe 100644
  }
  EXPORT_SYMBOL(fc_eh_timed_out);
  
-@@ -3592,7 +3592,7 @@ fc_bsg_job_timeout(struct request *req)
+@@ -3591,7 +3591,7 @@ fc_bsg_job_timeout(struct request *req)
  
  	/* the blk_end_sync_io() doesn't check the error */
  	if (!inflight)
@@ -243,10 +242,10 @@ index be3be0f9cb2d..90075a0ddcfe 100644
  		return BLK_EH_HANDLED;
  }
 diff --git a/drivers/scsi/scsi_transport_srp.c b/drivers/scsi/scsi_transport_srp.c
-index 36f6190931bc..a9c1c991da35 100644
+index daeb29aa3b0f..f95f4f219981 100644
 --- a/drivers/scsi/scsi_transport_srp.c
 +++ b/drivers/scsi/scsi_transport_srp.c
-@@ -587,7 +587,7 @@ EXPORT_SYMBOL(srp_reconnect_rport);
+@@ -604,7 +604,7 @@ EXPORT_SYMBOL(srp_reconnect_rport);
   *
   * If a timeout occurs while an rport is in the blocked state, ask the SCSI
   * EH to continue waiting (BLK_EH_RESET_TIMER). Otherwise let the SCSI core
@@ -255,7 +254,7 @@ index 36f6190931bc..a9c1c991da35 100644
   *
   * Note: This function is called from soft-IRQ context and with the request
   * queue lock held.
-@@ -602,7 +602,7 @@ enum blk_eh_timer_return srp_timed_out(struct scsi_cmnd *scmd)
+@@ -620,7 +620,7 @@ enum blk_eh_timer_return srp_timed_out(struct scsi_cmnd *scmd)
  	return rport && rport->fast_io_fail_tmo < 0 &&
  		rport->dev_loss_tmo < 0 &&
  		i->f->reset_timer_if_blocked && scsi_device_blocked(sdev) ?
@@ -265,10 +264,10 @@ index 36f6190931bc..a9c1c991da35 100644
  EXPORT_SYMBOL(srp_timed_out);
  
 diff --git a/drivers/scsi/ufs/ufshcd.c b/drivers/scsi/ufs/ufshcd.c
-index 00e79057f870..d0a1674915a1 100644
+index 32d69616821d..fa6aa3fb6b7d 100644
 --- a/drivers/scsi/ufs/ufshcd.c
 +++ b/drivers/scsi/ufs/ufshcd.c
-@@ -6497,12 +6497,12 @@ static enum blk_eh_timer_return ufshcd_eh_timed_out(struct scsi_cmnd *scmd)
+@@ -6461,12 +6461,12 @@ static enum blk_eh_timer_return ufshcd_eh_timed_out(struct scsi_cmnd *scmd)
  	bool found = false;
  
  	if (!scmd || !scmd->device || !scmd->device->host)
@@ -283,7 +282,7 @@ index 00e79057f870..d0a1674915a1 100644
  
  	spin_lock_irqsave(host->host_lock, flags);
  
-@@ -6520,7 +6520,7 @@ static enum blk_eh_timer_return ufshcd_eh_timed_out(struct scsi_cmnd *scmd)
+@@ -6484,7 +6484,7 @@ static enum blk_eh_timer_return ufshcd_eh_timed_out(struct scsi_cmnd *scmd)
  	 * SCSI command was not actually dispatched to UFS driver, otherwise
  	 * let SCSI layer handle the error as usual.
  	 */
@@ -293,10 +292,10 @@ index 00e79057f870..d0a1674915a1 100644
  
  static const struct attribute_group *ufshcd_driver_groups[] = {
 diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
-index a1c05e85a443..f82e05df905b 100644
+index 52ae47904496..e694692ca968 100644
 --- a/include/linux/blkdev.h
 +++ b/include/linux/blkdev.h
-@@ -326,7 +326,7 @@ typedef int (init_rq_fn)(struct request_queue *, struct request *, gfp_t);
+@@ -296,7 +296,7 @@ typedef int (init_rq_fn)(struct request_queue *, struct request *, gfp_t);
  typedef void (exit_rq_fn)(struct request_queue *, struct request *);
  
  enum blk_eh_timer_return {
@@ -306,10 +305,10 @@ index a1c05e85a443..f82e05df905b 100644
  	BLK_EH_RESET_TIMER,
  };
 diff --git a/include/scsi/scsi_host.h b/include/scsi/scsi_host.h
-index 12f454cb6f61..53b485fe9b67 100644
+index afb04811b7b9..52d2a0fc6637 100644
 --- a/include/scsi/scsi_host.h
 +++ b/include/scsi/scsi_host.h
-@@ -307,7 +307,7 @@ struct scsi_host_template {
+@@ -321,7 +321,7 @@ struct scsi_host_template {
  	 * EH_HANDLED:		I fixed the error, please complete the command
  	 * EH_RESET_TIMER:	I need more time, reset the timer and
  	 *			begin counting again

@@ -1,0 +1,91 @@
+From: Huazhong Tan <tanhuazhong@huawei.com>
+Date: Fri, 28 Jun 2019 19:50:13 +0800
+Subject: net: hns3: re-schedule reset task while VF reset fail
+Patch-mainline: v5.3-rc1
+Git-commit: bbe6540e7d70cda8ee311e0f14b197a20b6bf3e3
+References: bsc#1104353 FATE#326415
+
+The VF reset may fail for some probabilistic reasons,
+such as wait for hardware reset timeout, wait for mailbox
+response timeout, so this patch tries to re-schedule the
+reset task when the number of reset failing is under
+HCLGEVF_RESET_MAX_FAIL_CNT. This patch also add a function
+hclgevf_reset_err_handle() to handle the reset failing.
+
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c |   30 ++++++++++----
+ drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.h |    1 
+ 2 files changed, 23 insertions(+), 8 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c
+@@ -11,6 +11,8 @@
+ 
+ #define HCLGEVF_NAME	"hclgevf"
+ 
++#define HCLGEVF_RESET_MAX_FAIL_CNT	5
++
+ static int hclgevf_reset_hdev(struct hclgevf_dev *hdev);
+ static struct hnae3_ae_algo ae_algovf;
+ 
+@@ -1480,6 +1482,24 @@ static int hclgevf_reset_prepare_wait(st
+ 	return ret;
+ }
+ 
++static void hclgevf_reset_err_handle(struct hclgevf_dev *hdev)
++{
++	hdev->rst_stats.rst_fail_cnt++;
++	dev_err(&hdev->pdev->dev, "failed to reset VF(%d)\n",
++		hdev->rst_stats.rst_fail_cnt);
++
++	if (hdev->rst_stats.rst_fail_cnt < HCLGEVF_RESET_MAX_FAIL_CNT)
++		set_bit(hdev->reset_type, &hdev->reset_pending);
++
++	if (hclgevf_is_reset_pending(hdev)) {
++		set_bit(HCLGEVF_RESET_PENDING, &hdev->reset_state);
++		hclgevf_reset_task_schedule(hdev);
++	} else {
++		hclgevf_write_dev(&hdev->hw, HCLGEVF_NIC_CSQ_DEPTH_REG,
++				  HCLGEVF_NIC_CMQ_ENABLE);
++	}
++}
++
+ static int hclgevf_reset(struct hclgevf_dev *hdev)
+ {
+ 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
+@@ -1536,19 +1556,13 @@ static int hclgevf_reset(struct hclgevf_
+ 	hdev->last_reset_time = jiffies;
+ 	ae_dev->reset_type = HNAE3_NONE_RESET;
+ 	hdev->rst_stats.rst_done_cnt++;
++	hdev->rst_stats.rst_fail_cnt = 0;
+ 
+ 	return ret;
+ err_reset_lock:
+ 	rtnl_unlock();
+ err_reset:
+-	/* When VF reset failed, only the higher level reset asserted by PF
+-	 * can restore it, so re-initialize the command queue to receive
+-	 * this higher reset event.
+-	 */
+-	hclgevf_cmd_init(hdev);
+-	dev_err(&hdev->pdev->dev, "failed to reset VF\n");
+-	if (hclgevf_is_reset_pending(hdev))
+-		hclgevf_reset_task_schedule(hdev);
++	hclgevf_reset_err_handle(hdev);
+ 
+ 	return ret;
+ }
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.h
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.h
+@@ -225,6 +225,7 @@ struct hclgevf_rst_stats {
+ 	u32 vf_rst_cnt;			/* the number of VF reset */
+ 	u32 rst_done_cnt;		/* the number of reset completed */
+ 	u32 hw_rst_done_cnt;		/* the number of HW reset completed */
++	u32 rst_fail_cnt;		/* the number of VF reset fail */
+ };
+ 
+ struct hclgevf_dev {

@@ -1,0 +1,43 @@
+From 4c96ed170d658d8826d94edec8ac93ee777981a2 Mon Sep 17 00:00:00 2001
+From: Niklas Cassel <niklas.cassel@linaro.org>
+Date: Wed, 29 Aug 2018 09:57:21 +0200
+Subject: [PATCH] soc: qcom: wcnss_ctrl: Avoid string overflow
+Git-commit: 4c96ed170d658d8826d94edec8ac93ee777981a2
+Patch-mainline: v4.20-rc1
+References: bsc#1051510
+
+'chinfo.name' is used as a NUL-terminated string, but using strncpy() with
+the length equal to the buffer size may result in lack of the termination:
+
+Drivers//soc/qcom/wcnss_ctrl.c: In function 'qcom_wcnss_open_channel':
+drivers//soc/qcom/wcnss_ctrl.c:284:2: warning: 'strncpy' specified bound 32 equals destination size [-Wstringop-truncation]
+  strncpy(chinfo.name, name, sizeof(chinfo.name));
+  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This changes it to use the safer strscpy() instead.
+
+Signed-off-by: Niklas Cassel <niklas.cassel@linaro.org>
+Reviewed-by: Bjorn Andersson <bjorn.andersson@linaro.org>
+Signed-off-by: Andy Gross <andy.gross@linaro.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/soc/qcom/wcnss_ctrl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/soc/qcom/wcnss_ctrl.c b/drivers/soc/qcom/wcnss_ctrl.c
+index df3ccb30bc2d..373400dd816d 100644
+--- a/drivers/soc/qcom/wcnss_ctrl.c
++++ b/drivers/soc/qcom/wcnss_ctrl.c
+@@ -281,7 +281,7 @@ struct rpmsg_endpoint *qcom_wcnss_open_channel(void *wcnss, const char *name, rp
+ 	struct rpmsg_channel_info chinfo;
+ 	struct wcnss_ctrl *_wcnss = wcnss;
+ 
+-	strncpy(chinfo.name, name, sizeof(chinfo.name));
++	strscpy(chinfo.name, name, sizeof(chinfo.name));
+ 	chinfo.src = RPMSG_ADDR_ANY;
+ 	chinfo.dst = RPMSG_ADDR_ANY;
+ 
+-- 
+2.16.4
+

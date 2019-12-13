@@ -1,0 +1,42 @@
+From: Weihang Li <liweihang@hisilicon.com>
+Date: Thu, 20 Jun 2019 16:52:40 +0800
+Subject: net: hns3: modify handling of out of memory in hclge_err.c
+Patch-mainline: v5.3-rc1
+Git-commit: b4b9bd92fe3f1ad147f3fe753b4fe4d7726ec741
+References: bsc#1104353 FATE#326415
+
+Users should be informed if HNS driver failed to allocate memory for
+descriptor when handling hw errors. This patch solve above issues.
+
+Signed-off-by: Weihang Li <liweihang@hisilicon.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_err.c |    6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_err.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_err.c
+@@ -1859,7 +1859,7 @@ static int hclge_handle_all_hw_msix_erro
+ 	if (ret) {
+ 		dev_err(dev, "fail(%d) to query msix int status bd num\n",
+ 			ret);
+-		return ret;
++		goto out;
+ 	}
+ 
+ 	mpf_bd_num = le32_to_cpu(desc_bd.data[0]);
+@@ -1867,8 +1867,10 @@ static int hclge_handle_all_hw_msix_erro
+ 	bd_num = max_t(u32, mpf_bd_num, pf_bd_num);
+ 
+ 	desc = kcalloc(bd_num, sizeof(struct hclge_desc), GFP_KERNEL);
+-	if (!desc)
++	if (!desc) {
++		ret = -ENOMEM;
+ 		goto out;
++	}
+ 
+ 	ret = hclge_handle_mpf_msix_error(hdev, desc, mpf_bd_num,
+ 					  reset_requests);

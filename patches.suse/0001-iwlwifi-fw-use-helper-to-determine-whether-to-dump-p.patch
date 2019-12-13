@@ -1,0 +1,114 @@
+From 56b657f7f9c07421a4f910b7e2b382184f1ddbc8 Mon Sep 17 00:00:00 2001
+From: Sara Sharon <sara.sharon@intel.com>
+Date: Mon, 30 Jul 2018 11:06:09 +0300
+Subject: [PATCH] iwlwifi: fw: use helper to determine whether to dump paging
+Git-commit: 56b657f7f9c07421a4f910b7e2b382184f1ddbc8
+Patch-mainline: v5.0
+References: bsc#1106434
+
+Logic is there twice, and we'll need a third place
+soon for ini dumping. In addition move the dumping
+to a function, also to enable reuse.
+
+Signed-off-by: Sara Sharon <sara.sharon@intel.com>
+Signed-off-by: Luca Coelho <luciano.coelho@intel.com>
+Acked-by: Simon Schricker <sschricker@suse.de>
+---
+ drivers/net/wireless/intel/iwlwifi/fw/dbg.c |   55 ++++++++++++++--------------
+ drivers/net/wireless/intel/iwlwifi/fw/dbg.h |    6 +++
+ 2 files changed, 35 insertions(+), 26 deletions(-)
+
+--- a/drivers/net/wireless/intel/iwlwifi/fw/dbg.c
++++ b/drivers/net/wireless/intel/iwlwifi/fw/dbg.c
+@@ -556,6 +556,33 @@ static struct scatterlist *alloc_sgtable
+ 	return table;
+ }
+ 
++static void iwl_dump_paging(struct iwl_fw_runtime *fwrt,
++		struct iwl_fw_error_dump_data **data)
++{
++	int i;
++
++	IWL_DEBUG_INFO(fwrt, "WRT paging dump\n");
++	for (i = 1; i < fwrt->num_of_paging_blk + 1; i++) {
++		struct iwl_fw_error_dump_paging *paging;
++		struct page *pages =
++			fwrt->fw_paging_db[i].fw_paging_block;
++		dma_addr_t addr = fwrt->fw_paging_db[i].fw_paging_phys;
++
++		(*data)->type = cpu_to_le32(IWL_FW_ERROR_DUMP_PAGING);
++		(*data)->len = cpu_to_le32(sizeof(*paging) +
++				PAGING_BLOCK_SIZE);
++
++		paging =  (void *)(*data)->data;
++		paging->index = cpu_to_le32(i);
++		dma_sync_single_for_cpu(fwrt->trans->dev, addr,
++				PAGING_BLOCK_SIZE,
++				DMA_BIDIRECTIONAL);
++		memcpy(paging->data, page_address(pages),
++				PAGING_BLOCK_SIZE);
++		(*data) = iwl_fw_error_next_data(*data);
++	}
++}
++
+ static struct iwl_fw_error_dump_file *
+ _iwl_fw_error_dump(struct iwl_fw_runtime *fwrt,
+ 		   struct iwl_fw_dump_ptrs *fw_error_dump)
+@@ -689,9 +715,7 @@ _iwl_fw_error_dump(struct iwl_fw_runtime
+ 
+ 	/* Make room for fw's virtual image pages, if it exists */
+ 	if (fwrt->fw->dbg_dump_mask & BIT(IWL_FW_ERROR_DUMP_PAGING) &&
+-	    !fwrt->trans->cfg->gen2 &&
+-	    fwrt->fw->img[fwrt->cur_fw_img].paging_mem_size &&
+-	    fwrt->fw_paging_db[0].fw_paging_block)
++			iwl_fw_dbg_is_paging_enabled(fwrt))
+ 		file_len += fwrt->num_of_paging_blk *
+ 			(sizeof(*dump_data) +
+ 			 sizeof(struct iwl_fw_error_dump_paging) +
+@@ -855,28 +878,9 @@ _iwl_fw_error_dump(struct iwl_fw_runtime
+ 
+ 	/* Dump fw's virtual image */
+ 	if (fwrt->fw->dbg_dump_mask & BIT(IWL_FW_ERROR_DUMP_PAGING) &&
+-	    !fwrt->trans->cfg->gen2 &&
+-	    fwrt->fw->img[fwrt->cur_fw_img].paging_mem_size &&
+-	    fwrt->fw_paging_db[0].fw_paging_block) {
++			iwl_fw_dbg_is_paging_enabled(fwrt)) {
+ 		IWL_DEBUG_INFO(fwrt, "WRT paging dump\n");
+-		for (i = 1; i < fwrt->num_of_paging_blk + 1; i++) {
+-			struct iwl_fw_error_dump_paging *paging;
+-			struct page *pages =
+-				fwrt->fw_paging_db[i].fw_paging_block;
+-			dma_addr_t addr = fwrt->fw_paging_db[i].fw_paging_phys;
+-
+-			dump_data->type = cpu_to_le32(IWL_FW_ERROR_DUMP_PAGING);
+-			dump_data->len = cpu_to_le32(sizeof(*paging) +
+-						     PAGING_BLOCK_SIZE);
+-			paging = (void *)dump_data->data;
+-			paging->index = cpu_to_le32(i);
+-			dma_sync_single_for_cpu(fwrt->trans->dev, addr,
+-						PAGING_BLOCK_SIZE,
+-						DMA_BIDIRECTIONAL);
+-			memcpy(paging->data, page_address(pages),
+-			       PAGING_BLOCK_SIZE);
+-			dump_data = iwl_fw_error_next_data(dump_data);
+-		}
++		iwl_dump_paging(fwrt, &dump_data);
+ 	}
+ 
+ 	if (prph_len) {
+--- a/drivers/net/wireless/intel/iwlwifi/fw/dbg.h
++++ b/drivers/net/wireless/intel/iwlwifi/fw/dbg.h
+@@ -214,6 +214,13 @@ static inline void iwl_fw_cancel_dump(st
+ 
+ void iwl_fw_error_dump_wk(struct work_struct *work);
+ 
++static inline bool iwl_fw_dbg_is_paging_enabled(struct iwl_fw_runtime *fwrt)
++{
++	return !fwrt->trans->cfg->gen2 &&
++		fwrt->fw->img[fwrt->cur_fw_img].paging_mem_size &&
++		fwrt->fw_paging_db[0].fw_paging_block;
++}
++
+ static inline void iwl_fw_flush_dump(struct iwl_fw_runtime *fwrt)
+ {
+ 	flush_delayed_work(&fwrt->dump.wk);

@@ -1,0 +1,32 @@
+From: Colin Ian King <colin.king@canonical.com>
+Date: Fri, 31 May 2019 10:21:01 +0100
+Subject: RDMA/hns: fix inverted logic of readl read and shift
+Patch-mainline: v5.3-rc1
+Git-commit: fa027328a1c93d72031e6cc6b4a7eee967fd7406
+References: bsc#1104427 FATE#326416
+
+A previous change incorrectly changed the inverted logic and logically
+negated the readl rather than the shifted readl result. Fix this by
+adding in missing parentheses around the expression that needs to be
+logically negated.
+
+Addresses-Coverity: ("Logically dead code")
+Fixes: 669cefb654cb ("RDMA/hns: Remove jiffies operation in disable interrupt context")
+Signed-off-by: Colin Ian King <colin.king@canonical.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/infiniband/hw/hns/hns_roce_hem.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/infiniband/hw/hns/hns_roce_hem.c
++++ b/drivers/infiniband/hw/hns/hns_roce_hem.c
+@@ -378,7 +378,7 @@ static int hns_roce_set_hem(struct hns_r
+ 
+ 		end = HW_SYNC_TIMEOUT_MSECS;
+ 		while (end) {
+-			if (!readl(bt_cmd) >> BT_CMD_SYNC_SHIFT)
++			if (!(readl(bt_cmd) >> BT_CMD_SYNC_SHIFT))
+ 				break;
+ 
+ 			mdelay(HW_SYNC_SLEEP_TIME_INTERVAL);

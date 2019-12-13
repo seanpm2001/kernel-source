@@ -1,0 +1,73 @@
+From: Huazhong Tan <tanhuazhong@huawei.com>
+Date: Tue, 28 May 2019 17:02:55 +0800
+Subject: net: hns3: use HCLGE_STATE_ROCE_REGISTERED to indicate PF ROCE client
+ has registered
+Patch-mainline: v5.3-rc1
+Git-commit: 2a0bfc36183cb4eb5f1212faafbc93876a9a2088
+References: bsc#1104353 FATE#326415
+
+When PF ROCE client's init_instance() succeeds, it means this client
+has been registered successfully, so we use HCLGE_STATE_ROCE_REGISTERED
+to indicate that. And before calling PF ROCE client's uninit_instance(),
+we clear this state.
+
+So any operation of the ROCE client from HCLGE is not allowed if this
+state is not set.
+
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c |    8 +++++++-
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.h |    1 +
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
+@@ -2586,7 +2586,8 @@ static int hclge_notify_roce_client(stru
+ 	int ret = 0;
+ 	u16 i;
+ 
+-	if (!client)
++	if (!test_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state) ||
++	    !client)
+ 		return 0;
+ 
+ 	if (!client->ops->reset_notify)
+@@ -7895,6 +7896,8 @@ static int hclge_init_client_instance(st
+ 				if (ret)
+ 					goto clear_roce;
+ 
++				set_bit(HCLGE_STATE_ROCE_REGISTERED,
++					&hdev->state);
+ 				hnae3_set_client_init_flag(hdev->roce_client,
+ 							   ae_dev, 1);
+ 			}
+@@ -7926,6 +7929,8 @@ static int hclge_init_client_instance(st
+ 				if (ret)
+ 					goto clear_roce;
+ 
++				set_bit(HCLGE_STATE_ROCE_REGISTERED,
++					&hdev->state);
+ 				hnae3_set_client_init_flag(client, ae_dev, 1);
+ 			}
+ 
+@@ -7957,6 +7962,7 @@ static void hclge_uninit_client_instance
+ 	for (i = 0; i < hdev->num_vmdq_vport + 1; i++) {
+ 		vport = &hdev->vport[i];
+ 		if (hdev->roce_client) {
++			clear_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state);
+ 			hdev->roce_client->ops->uninit_instance(&vport->roce,
+ 								0);
+ 			hdev->roce_client = NULL;
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.h
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.h
+@@ -200,6 +200,7 @@ enum HCLGE_DEV_STATE {
+ 	HCLGE_STATE_DISABLED,
+ 	HCLGE_STATE_REMOVING,
+ 	HCLGE_STATE_NIC_REGISTERED,
++	HCLGE_STATE_ROCE_REGISTERED,
+ 	HCLGE_STATE_SERVICE_INITED,
+ 	HCLGE_STATE_SERVICE_SCHED,
+ 	HCLGE_STATE_RST_SERVICE_SCHED,

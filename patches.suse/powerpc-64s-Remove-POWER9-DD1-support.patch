@@ -165,14 +165,15 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  
 --- a/arch/powerpc/include/asm/book3s/64/tlbflush-radix.h
 +++ b/arch/powerpc/include/asm/book3s/64/tlbflush-radix.h
-@@ -43,7 +43,5 @@ extern void radix__flush_tlb_page_psize(
+@@ -43,8 +43,6 @@ extern void radix__flush_tlb_page_psize(
  extern void radix__flush_tlb_pwc(struct mmu_gather *tlb, unsigned long addr);
  extern void radix__flush_tlb_collapsed_pmd(struct mm_struct *mm, unsigned long addr);
  extern void radix__flush_tlb_all(void);
 -extern void radix__flush_tlb_pte_p9_dd1(unsigned long old_pte, struct mm_struct *mm,
 -					unsigned long address);
  
- #endif
+ extern void radix__flush_tlb_lpid_page(unsigned int lpid,
+ 					unsigned long addr,
 --- a/arch/powerpc/include/asm/cputable.h
 +++ b/arch/powerpc/include/asm/cputable.h
 @@ -209,7 +209,6 @@ static inline void cpu_feature_keys_init
@@ -779,7 +780,7 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  		old_pte = __radix_pte_update(ptep, ~0, 0);
 --- a/arch/powerpc/mm/tlb-radix.c
 +++ b/arch/powerpc/mm/tlb-radix.c
-@@ -548,24 +548,6 @@ void radix__flush_tlb_all(void)
+@@ -930,24 +930,6 @@ void radix__flush_tlb_all(void)
  	asm volatile("eieio; tlbsync; ptesync": : :"memory");
  }
  

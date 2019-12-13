@@ -3,7 +3,7 @@ Date: Fri, 21 Jun 2019 09:50:24 -0700
 Subject: scsi: qla2xxx: Fix NVME cmd and LS cmd timeout race condition
 Patch-mainline: v5.3-rc1
 Git-commit: 4c2a2d0178d5d8006a6bc50c8dc0ed122e4e946e
-References: bsc#1082635 bsc#1141340 bsc#1143706
+References: bsc#1082635 bsc#1123034 bsc#1131304 bsc#1127988 bsc#1141340 bsc#1143706
 
 This patch uses kref to protect access between fcp_abort path and nvme
 command and LS command completion path.  Stack trace below shows the abort
@@ -34,7 +34,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
 
 --- a/drivers/scsi/qla2xxx/qla_def.h
 +++ b/drivers/scsi/qla2xxx/qla_def.h
-@@ -531,6 +531,8 @@ typedef struct srb {
+@@ -532,6 +532,8 @@ typedef struct srb {
  	uint8_t cmd_type;
  	uint8_t pad[3];
  	atomic_t ref_count;
@@ -43,7 +43,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  	wait_queue_head_t nvme_ls_waitq;
  	struct fc_port *fcport;
  	struct scsi_qla_host *vha;
-@@ -553,6 +555,7 @@ typedef struct srb {
+@@ -554,6 +556,7 @@ typedef struct srb {
  	} u;
  	void (*done)(void *, int);
  	void (*free)(void *);
@@ -287,7 +287,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  
  	INIT_WORK(&priv->abort_work, qla_nvme_abort_work);
  	schedule_work(&priv->abort_work);
-@@ -532,12 +591,15 @@ static int qla_nvme_post_cmd(struct nvme
+@@ -526,12 +585,15 @@ static int qla_nvme_post_cmd(struct nvme
  	if (!sp)
  		return -EBUSY;
  
@@ -304,7 +304,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  	sp->qpair = qpair;
  	sp->vha = vha;
  	nvme = &sp->u.iocb_cmd;
-@@ -547,9 +609,10 @@ static int qla_nvme_post_cmd(struct nvme
+@@ -541,9 +603,10 @@ static int qla_nvme_post_cmd(struct nvme
  	if (rval != QLA_SUCCESS) {
  		ql_log(ql_log_warn, vha, 0x212d,
  		    "qla2x00_start_nvme_mq failed = %d\n", rval);
@@ -319,7 +319,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  	return rval;
 --- a/drivers/scsi/qla2xxx/qla_nvme.h
 +++ b/drivers/scsi/qla2xxx/qla_nvme.h
-@@ -33,6 +33,7 @@ struct nvme_private {
+@@ -34,6 +34,7 @@ struct nvme_private {
  	struct work_struct ls_work;
  	struct work_struct abort_work;
  	int comp_status;

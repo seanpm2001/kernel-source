@@ -1,9 +1,9 @@
 From: "Martin K. Petersen" <martin.petersen@oracle.com>
 Date: Fri, 21 Dec 2018 09:33:44 -0800
-Subject: [PATCH] scsi: qla2xxx: Add protection mask module parameters
-References: bsc#1136215
-Git-commit: 7855d2ba1172d716d96a628af7c5bafa5725ac57
+Subject: scsi: qla2xxx: Add protection mask module parameters
 Patch-mainline: v5.1-rc1
+Git-commit: 7855d2ba1172d716d96a628af7c5bafa5725ac57
+References: bsc#1123034 bsc#1131304 bsc#1127988 bsc#1136215
 
 Allow user to selectively enable/disable DIF/DIX protection
 capabilities mask.
@@ -11,16 +11,14 @@ capabilities mask.
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Signed-off-by: Hannes Reinecke <hare@suse.de>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_os.c | 36 ++++++++++++++++++++++++++++--------
+ drivers/scsi/qla2xxx/qla_os.c |   36 ++++++++++++++++++++++++++++--------
  1 file changed, 28 insertions(+), 8 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_os.c b/drivers/scsi/qla2xxx/qla_os.c
-index ce99890305d4..fca6f4af7309 100644
 --- a/drivers/scsi/qla2xxx/qla_os.c
 +++ b/drivers/scsi/qla2xxx/qla_os.c
-@@ -281,6 +281,20 @@ MODULE_PARM_DESC(qla2xuseresexchforels,
+@@ -285,6 +285,20 @@ MODULE_PARM_DESC(qla2xuseresexchforels,
  		 "Reserve 1/2 of emergency exchanges for ELS.\n"
  		 " 0 (default): disabled");
  
@@ -41,7 +39,7 @@ index ce99890305d4..fca6f4af7309 100644
  /*
   * SCSI host template entry points
   */
-@@ -3345,13 +3359,16 @@ qla2x00_probe_one(struct pci_dev *pdev, const struct pci_device_id *id)
+@@ -3349,13 +3363,16 @@ skip_dpc:
  			    "Registering for DIF/DIX type 1 and 3 protection.\n");
  			if (ql2xenabledif == 1)
  				prot = SHOST_DIX_TYPE0_PROTECTION;
@@ -65,7 +63,7 @@ index ce99890305d4..fca6f4af7309 100644
  
  			guard = SHOST_DIX_GUARD_CRC;
  
-@@ -3359,7 +3376,10 @@ qla2x00_probe_one(struct pci_dev *pdev, const struct pci_device_id *id)
+@@ -3363,7 +3380,10 @@ skip_dpc:
  			    (ql2xenabledif > 1 || IS_PI_DIFB_DIX0_CAPABLE(ha)))
  				guard |= SHOST_DIX_GUARD_IP;
  
@@ -77,6 +75,3 @@ index ce99890305d4..fca6f4af7309 100644
  		} else
  			base_vha->flags.difdix_supported = 0;
  	}
--- 
-2.16.4
-

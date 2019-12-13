@@ -1,0 +1,69 @@
+From 4f916593be9da38c5cf0d3a5c386b57beb70f422 Mon Sep 17 00:00:00 2001
+From: Alexey Kardashevskiy <aik@ozlabs.ru>
+Date: Mon, 26 Aug 2019 14:55:20 +1000
+Subject: [PATCH] KVM: PPC: Book3S: Fix incorrect guest-to-user-translation
+ error handling
+
+References: bsc#1061840
+Patch-mainline: v5.3-rc7
+Git-commit: ddfd151f3def9258397fcde7a372205a2d661903
+Not-fixes: 4f916593be9da38c5cf0d3a5c386b57beb70f422
+
+H_PUT_TCE_INDIRECT handlers receive a page with up to 512 TCEs from
+a guest. Although we verify correctness of TCEs before we do anything
+with the existing tables, there is a small window when a check in
+kvmppc_tce_validate might pass and right after that the guest alters
+the page with TCEs which can cause early exit from the handler and
+leave srcu_read_lock(&vcpu->kvm->srcu) (virtual mode) or lock_rmap(rmap)
+(real mode) locked.
+
+This fixes the bug by jumping to the common exit code with an appropriate
+unlock.
+
+Fixes: 121f80ba68f1 ("KVM: PPC: VFIO: Add in-kernel acceleration for VFIO")
+Signed-off-by: Alexey Kardashevskiy <aik@ozlabs.ru>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Link: https://lore.kernel.org/r/20190826045520.92153-1-aik@ozlabs.ru
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kvm/book3s_64_vio.c    | 6 ++++--
+ arch/powerpc/kvm/book3s_64_vio_hv.c | 6 ++++--
+ 2 files changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/arch/powerpc/kvm/book3s_64_vio.c b/arch/powerpc/kvm/book3s_64_vio.c
+index e99a14798ab0..c4b606fe73eb 100644
+--- a/arch/powerpc/kvm/book3s_64_vio.c
++++ b/arch/powerpc/kvm/book3s_64_vio.c
+@@ -660,8 +660,10 @@ long kvmppc_h_put_tce_indirect(struct kvm_vcpu *vcpu,
+ 		}
+ 		tce = be64_to_cpu(tce);
+ 
+-		if (kvmppc_tce_to_ua(vcpu->kvm, tce, &ua))
+-			return H_PARAMETER;
++		if (kvmppc_tce_to_ua(vcpu->kvm, tce, &ua)) {
++			ret = H_PARAMETER;
++			goto unlock_exit;
++		}
+ 
+ 		list_for_each_entry_lockless(stit, &stt->iommu_tables, next) {
+ 			ret = kvmppc_tce_iommu_map(vcpu->kvm, stt,
+diff --git a/arch/powerpc/kvm/book3s_64_vio_hv.c b/arch/powerpc/kvm/book3s_64_vio_hv.c
+index f50bbeedfc66..b4f20f13b860 100644
+--- a/arch/powerpc/kvm/book3s_64_vio_hv.c
++++ b/arch/powerpc/kvm/book3s_64_vio_hv.c
+@@ -556,8 +556,10 @@ long kvmppc_rm_h_put_tce_indirect(struct kvm_vcpu *vcpu,
+ 		unsigned long tce = be64_to_cpu(((u64 *)tces)[i]);
+ 
+ 		ua = 0;
+-		if (kvmppc_rm_tce_to_ua(vcpu->kvm, tce, &ua, NULL))
+-			return H_PARAMETER;
++		if (kvmppc_rm_tce_to_ua(vcpu->kvm, tce, &ua, NULL)) {
++			ret = H_PARAMETER;
++			goto unlock_exit;
++		}
+ 
+ 		list_for_each_entry_lockless(stit, &stt->iommu_tables, next) {
+ 			ret = kvmppc_rm_tce_iommu_map(vcpu->kvm, stt,
+-- 
+2.23.0
+

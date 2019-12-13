@@ -1,0 +1,71 @@
+From 4e4210402639f16dfbfa5ba277aeb88fff401cec Mon Sep 17 00:00:00 2001
+From: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+Date: Fri, 30 Aug 2019 18:08:19 +0300
+Subject: [PATCH] leds: trigger: gpio: GPIO 0 is valid
+Git-commit: 4e4210402639f16dfbfa5ba277aeb88fff401cec
+Patch-mainline: v5.4-rc1
+References: bsc#1051510
+
+Allow all valid GPIOs to be used in the driver.
+
+Fixes: 17354bfe8527 ("leds: Add gpio-led trigger")
+Signed-off-by: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+Signed-off-by: Jacek Anaszewski <jacek.anaszewski@gmail.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/leds/trigger/ledtrig-gpio.c |   14 ++++++++------
+ 1 file changed, 8 insertions(+), 6 deletions(-)
+
+--- a/drivers/leds/trigger/ledtrig-gpio.c
++++ b/drivers/leds/trigger/ledtrig-gpio.c
+@@ -45,7 +45,7 @@ static void gpio_trig_work(struct work_s
+ 			struct gpio_trig_data, work);
+ 	int tmp;
+ 
+-	if (!gpio_data->gpio)
++	if (!gpio_is_valid(gpio_data->gpio))
+ 		return;
+ 
+ 	tmp = gpio_get_value_cansleep(gpio_data->gpio);
+@@ -154,10 +154,10 @@ static ssize_t gpio_trig_gpio_store(stru
+ 	if (gpio_data->gpio == gpio)
+ 		return n;
+ 
+-	if (!gpio) {
+-		if (gpio_data->gpio != 0)
++	if (!gpio_is_valid(gpio)) {
++		if (gpio_is_valid(gpio_data->gpio))
+ 			free_irq(gpio_to_irq(gpio_data->gpio), led);
+-		gpio_data->gpio = 0;
++		gpio_data->gpio = gpio;
+ 		return n;
+ 	}
+ 
+@@ -167,7 +167,7 @@ static ssize_t gpio_trig_gpio_store(stru
+ 	if (ret) {
+ 		dev_err(dev, "request_irq failed with error %d\n", ret);
+ 	} else {
+-		if (gpio_data->gpio != 0)
++		if (gpio_is_valid(gpio_data->gpio))
+ 			free_irq(gpio_to_irq(gpio_data->gpio), led);
+ 		gpio_data->gpio = gpio;
+ 	}
+@@ -198,6 +198,8 @@ static void gpio_trig_activate(struct le
+ 		goto err_brightness;
+ 
+ 	gpio_data->led = led;
++	gpio_data->gpio = -ENOENT;
++
+ 	led->trigger_data = gpio_data;
+ 	INIT_WORK(&gpio_data->work, gpio_trig_work);
+ 	led->activated = true;
+@@ -223,7 +225,7 @@ static void gpio_trig_deactivate(struct
+ 		device_remove_file(led->dev, &dev_attr_inverted);
+ 		device_remove_file(led->dev, &dev_attr_desired_brightness);
+ 		flush_work(&gpio_data->work);
+-		if (gpio_data->gpio != 0)
++		if (gpio_is_valid(gpio_data->gpio))
+ 			free_irq(gpio_to_irq(gpio_data->gpio), led);
+ 		kfree(gpio_data);
+ 		led->activated = false;

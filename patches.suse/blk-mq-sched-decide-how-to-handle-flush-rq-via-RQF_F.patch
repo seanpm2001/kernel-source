@@ -1,9 +1,9 @@
 From: Ming Lei <ming.lei@redhat.com>
 Date: Thu, 2 Nov 2017 23:24:36 +0800
 Subject: [PATCH] blk-mq-sched: decide how to handle flush rq via RQF_FLUSH_SEQ
+References: bsc#1104967,bsc#1137959,FATE#325924
 Git-commit: a6a252e6491443c1c18eab7e254daee63d4a7a04
 Patch-mainline: v4.15-rc1
-References: bsc#1104967,FATE#325924
 
 In case of IO scheduler we always pre-allocate one driver tag before
 calling blk_insert_flush(), and flush request will be marked as
@@ -19,16 +19,16 @@ similar to what the legacy path does.
 
 Signed-off-by: Ming Lei <ming.lei@redhat.com>
 Signed-off-by: Jens Axboe <axboe@kernel.dk>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Signed-off-by: Hannes Reinecke <hare@suse.de>
 ---
  block/blk-mq-sched.c | 29 ++++++++++++++++-------------
  1 file changed, 16 insertions(+), 13 deletions(-)
 
 diff --git a/block/blk-mq-sched.c b/block/blk-mq-sched.c
-index 13a27d4d1671..e7094f44afaf 100644
+index 2d046f490d71..3e39fc655eef 100644
 --- a/block/blk-mq-sched.c
 +++ b/block/blk-mq-sched.c
-@@ -345,21 +345,23 @@ void blk_mq_sched_request_inserted(struct request *rq)
+@@ -242,21 +242,23 @@ void blk_mq_sched_request_inserted(struct request *rq)
  EXPORT_SYMBOL_GPL(blk_mq_sched_request_inserted);
  
  static bool blk_mq_sched_bypass_insert(struct blk_mq_hw_ctx *hctx,
@@ -62,7 +62,7 @@ index 13a27d4d1671..e7094f44afaf 100644
  }
  
  /*
-@@ -385,12 +387,13 @@ void blk_mq_sched_insert_request(struct request *rq, bool at_head,
+@@ -282,12 +284,13 @@ void blk_mq_sched_insert_request(struct request *rq, bool at_head,
  	struct blk_mq_ctx *ctx = rq->mq_ctx;
  	struct blk_mq_hw_ctx *hctx = blk_mq_map_queue(q, ctx->cpu);
  
@@ -78,7 +78,7 @@ index 13a27d4d1671..e7094f44afaf 100644
  		goto run;
  
  	if (e && e->type->ops.mq.insert_requests) {
-@@ -428,7 +431,7 @@ void blk_mq_sched_insert_requests(struct request_queue *q,
+@@ -325,7 +328,7 @@ void blk_mq_sched_insert_requests(struct request_queue *q,
  		list_for_each_entry_safe(rq, next, list, queuelist) {
  			if (WARN_ON_ONCE(rq->tag != -1)) {
  				list_del_init(&rq->queuelist);

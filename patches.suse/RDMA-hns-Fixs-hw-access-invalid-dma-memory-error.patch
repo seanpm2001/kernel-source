@@ -1,0 +1,41 @@
+From: Xi Wang <wangxi11@huawei.com>
+Date: Mon, 24 Jun 2019 19:47:51 +0800
+Subject: RDMA/hns: Fixs hw access invalid dma memory error
+Patch-mainline: v5.3-rc1
+Git-commit: ec5bc2cc69b4fc494e04d10fc5226f6f9cf67c56
+References: bsc#1104427 FATE#326416
+
+When smmu is enable, if execute the perftest command and then use 'kill
+-9' to exit, follow this operation repeatedly, the kernel will have a high
+probability to print the following smmu event:
+
+  arm-smmu-v3 arm-smmu-v3.1.auto: event 0x10 received:
+  arm-smmu-v3 arm-smmu-v3.1.auto:  0x00007d0000000010
+  arm-smmu-v3 arm-smmu-v3.1.auto:  0x0000020900000080
+  arm-smmu-v3 arm-smmu-v3.1.auto:  0x00000000f47cf000
+  arm-smmu-v3 arm-smmu-v3.1.auto:  0x00000000f47cf000
+
+This is because the hw will periodically refresh the qpc cache until the
+next reset.
+
+This patch fixed it by removing the action that release qpc memory in the
+'hns_roce_qp_free' function.
+
+Fixes: 9a4435375cd1 ("IB/hns: Add driver files for hns RoCE driver")
+Signed-off-by: Xi Wang <wangxi11@huawei.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/infiniband/hw/hns/hns_roce_qp.c |    1 -
+ 1 file changed, 1 deletion(-)
+
+--- a/drivers/infiniband/hw/hns/hns_roce_qp.c
++++ b/drivers/infiniband/hw/hns/hns_roce_qp.c
+@@ -277,7 +277,6 @@ void hns_roce_qp_free(struct hns_roce_de
+ 			hns_roce_table_put(hr_dev, &qp_table->trrl_table,
+ 					   hr_qp->qpn);
+ 		hns_roce_table_put(hr_dev, &qp_table->irrl_table, hr_qp->qpn);
+-		hns_roce_table_put(hr_dev, &qp_table->qp_table, hr_qp->qpn);
+ 	}
+ }
+ EXPORT_SYMBOL_GPL(hns_roce_qp_free);

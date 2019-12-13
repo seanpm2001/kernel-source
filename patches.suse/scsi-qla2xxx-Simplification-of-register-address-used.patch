@@ -1,23 +1,20 @@
 From: Joe Carnuccio <joe.carnuccio@cavium.com>
 Date: Tue, 12 Mar 2019 11:08:20 -0700
-Subject: [PATCH] scsi: qla2xxx: Simplification of register address used in
- qla_tmpl.c
-Git-commit: ce0366df542a214be62bb3250e688f7c6d644ad7
+Subject: scsi: qla2xxx: Simplification of register address used in qla_tmpl.c
 Patch-mainline: v5.2-rc1
-References: bsc#1136215
+Git-commit: ce0366df542a214be62bb3250e688f7c6d644ad7
+References: bsc#1136215 bsc#1123034 bsc#1131304 bsc#1127988
 
 Reduce stack space on each fwdt routine by eliminating local variable reg.
 
 Signed-off-by: Joe Carnuccio <joe.carnuccio@cavium.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_tmpl.c | 71 ++++++++++++++++-------------------------
+ drivers/scsi/qla2xxx/qla_tmpl.c |   71 +++++++++++++++-------------------------
  1 file changed, 27 insertions(+), 44 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_tmpl.c b/drivers/scsi/qla2xxx/qla_tmpl.c
-index 9f8a7a3d6726..de696a07532e 100644
 --- a/drivers/scsi/qla2xxx/qla_tmpl.c
 +++ b/drivers/scsi/qla2xxx/qla_tmpl.c
 @@ -7,13 +7,9 @@
@@ -37,7 +34,7 @@ index 9f8a7a3d6726..de696a07532e 100644
  
  static inline void
  qla27xx_insert16(uint16_t value, void *buf, ulong *len)
-@@ -114,7 +110,7 @@ qla27xx_read_window(__iomem struct device_reg_24xx *reg,
+@@ -114,7 +110,7 @@ qla27xx_read_window(__iomem struct devic
  	void __iomem *window = (void __iomem *)reg + offset;
  	void (*readn)(void __iomem*, void *, ulong *) = qla27xx_read_vector(width);
  
@@ -54,7 +51,7 @@ index 9f8a7a3d6726..de696a07532e 100644
  	ulong addr = le32_to_cpu(ent->t256.base_addr);
  	uint offset = ent->t256.pci_offset;
  	ulong count = le16_to_cpu(ent->t256.reg_count);
-@@ -171,7 +166,7 @@ qla27xx_fwdt_entry_t256(struct scsi_qla_host *vha,
+@@ -171,7 +166,7 @@ qla27xx_fwdt_entry_t256(struct scsi_qla_
  
  	ql_dbg(ql_dbg_misc, vha, 0xd200,
  	    "%s: rdio t1 [%lx]\n", __func__, *len);
@@ -89,7 +86,7 @@ index 9f8a7a3d6726..de696a07532e 100644
  	uint banksel = ent->t258.banksel_offset;
  	ulong bank = le32_to_cpu(ent->t258.bank);
  	ulong addr = le32_to_cpu(ent->t258.base_addr);
-@@ -207,8 +200,8 @@ qla27xx_fwdt_entry_t258(struct scsi_qla_host *vha,
+@@ -207,8 +200,8 @@ qla27xx_fwdt_entry_t258(struct scsi_qla_
  
  	ql_dbg(ql_dbg_misc, vha, 0xd202,
  	    "%s: rdio t2 [%lx]\n", __func__, *len);
@@ -108,7 +105,7 @@ index 9f8a7a3d6726..de696a07532e 100644
  	ulong addr = le32_to_cpu(ent->t259.base_addr);
  	uint banksel = ent->t259.banksel_offset;
  	ulong bank = le32_to_cpu(ent->t259.bank);
-@@ -226,9 +218,9 @@ qla27xx_fwdt_entry_t259(struct scsi_qla_host *vha,
+@@ -226,9 +218,9 @@ qla27xx_fwdt_entry_t259(struct scsi_qla_
  
  	ql_dbg(ql_dbg_misc, vha, 0xd203,
  	    "%s: wrio t2 [%lx]\n", __func__, *len);
@@ -229,7 +226,7 @@ index 9f8a7a3d6726..de696a07532e 100644
  	ulong cmd_addr = le32_to_cpu(ent->t277.cmd_addr);
  	ulong wr_cmd_data = le32_to_cpu(ent->t277.wr_cmd_data);
  	ulong data_addr = le32_to_cpu(ent->t277.data_addr);
-@@ -757,8 +741,8 @@ qla27xx_fwdt_entry_t277(struct scsi_qla_host *vha,
+@@ -757,8 +741,8 @@ qla27xx_fwdt_entry_t277(struct scsi_qla_
  	ql_dbg(ql_dbg_misc + ql_dbg_verbose, vha, 0xd215,
  	    "%s: rdpep [%lx]\n", __func__, *len);
  	qla27xx_insert32(wr_cmd_data, buf, len);
@@ -248,7 +245,7 @@ index 9f8a7a3d6726..de696a07532e 100644
  	ulong cmd_addr = le32_to_cpu(ent->t278.cmd_addr);
  	ulong wr_cmd_data = le32_to_cpu(ent->t278.wr_cmd_data);
  	ulong data_addr = le32_to_cpu(ent->t278.data_addr);
-@@ -775,8 +758,8 @@ qla27xx_fwdt_entry_t278(struct scsi_qla_host *vha,
+@@ -775,8 +758,8 @@ qla27xx_fwdt_entry_t278(struct scsi_qla_
  
  	ql_dbg(ql_dbg_misc + ql_dbg_verbose, vha, 0xd216,
  	    "%s: wrpep [%lx]\n", __func__, *len);
@@ -259,6 +256,3 @@ index 9f8a7a3d6726..de696a07532e 100644
  
  	return qla27xx_next_entry(ent);
  }
--- 
-2.16.4
-

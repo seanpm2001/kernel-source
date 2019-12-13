@@ -1,0 +1,49 @@
+From f25f06b67ba237b76092a6fc522b1a94e84bfa85 Mon Sep 17 00:00:00 2001
+From: Dmytro Laktyushkin <Dmytro.Laktyushkin@amd.com>
+Date: Fri, 8 Mar 2019 16:44:53 -0500
+Subject: [PATCH] drm/amd/display: fix odm combine pipe reset
+Git-commit: f25f06b67ba237b76092a6fc522b1a94e84bfa85
+Patch-mainline: v5.2-rc1
+References: bsc#1111666
+
+We fail to reset the second odm combine pipe. This change fixes
+odm pointer management.
+
+Signed-off-by: Dmytro Laktyushkin <Dmytro.Laktyushkin@amd.com>
+Reviewed-by: Tony Cheng <Tony.Cheng@amd.com>
+Acked-by: Bhawanpreet Lakha <Bhawanpreet.Lakha@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/gpu/drm/amd/display/dc/core/dc_resource.c | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/gpu/drm/amd/display/dc/core/dc_resource.c b/drivers/gpu/drm/amd/display/dc/core/dc_resource.c
+index ec0e2ad5f1c3..13f99b11aaa6 100644
+--- a/drivers/gpu/drm/amd/display/dc/core/dc_resource.c
++++ b/drivers/gpu/drm/amd/display/dc/core/dc_resource.c
+@@ -1293,9 +1293,9 @@ bool dc_remove_plane_from_context(
+ 			 * For head pipe detach surfaces from pipe for tail
+ 			 * pipe just zero it out
+ 			 */
+-			if (!pipe_ctx->top_pipe ||
+-				(!pipe_ctx->top_pipe->top_pipe &&
++			if (!pipe_ctx->top_pipe || (!pipe_ctx->top_pipe->top_pipe &&
+ 					pipe_ctx->top_pipe->stream_res.opp != pipe_ctx->stream_res.opp)) {
++				pipe_ctx->top_pipe = NULL;
+ 				pipe_ctx->plane_state = NULL;
+ 				pipe_ctx->bottom_pipe = NULL;
+ 			} else {
+@@ -1727,8 +1727,6 @@ enum dc_status dc_remove_stream_from_ctx(
+ 				dc->res_pool->funcs->remove_stream_from_ctx(dc, new_ctx, stream);
+ 
+ 			memset(del_pipe, 0, sizeof(*del_pipe));
+-
+-			break;
+ 		}
+ 	}
+ 
+-- 
+2.16.4
+

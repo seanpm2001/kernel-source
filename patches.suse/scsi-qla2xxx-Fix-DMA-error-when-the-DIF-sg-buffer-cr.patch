@@ -1,10 +1,10 @@
 From: Giridhar Malavali <gmalavali@marvell.com>
 Date: Fri, 21 Dec 2018 09:33:45 -0800
-Subject: [PATCH] scsi: qla2xxx: Fix DMA error when the DIF sg buffer crosses
- 4GB boundary
-References: bsc#1136215
-Git-commit: 50b812755e9766fa0a1a28533f4d11a34a5b813e
+Subject: scsi: qla2xxx: Fix DMA error when the DIF sg buffer crosses 4GB
+ boundary
 Patch-mainline: v5.1-rc1
+Git-commit: 50b812755e9766fa0a1a28533f4d11a34a5b813e
+References: bsc#1123034 bsc#1131304 bsc#1127988 bsc#1136215
 
 When SGE buffer containing DIF information crosses 4G boundary, it results
 in DMA error. This patch fixes this issue by calculating SGE buffer size
@@ -14,23 +14,21 @@ buffers to avoid DMA error.
 Signed-off-by: Giridhar Malavali <gmalavali@marvell.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Signed-off-by: Hannes Reinecke <hare@suse.de>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_attr.c   |  21 ++-
- drivers/scsi/qla2xxx/qla_def.h    |  28 ++++
- drivers/scsi/qla2xxx/qla_gbl.h    |   3 +-
- drivers/scsi/qla2xxx/qla_iocb.c   | 335 +++++++++++++++++++++++++++++++-------
- drivers/scsi/qla2xxx/qla_isr.c    |  11 ++
- drivers/scsi/qla2xxx/qla_os.c     | 169 ++++++++++++++++++-
- drivers/scsi/qla2xxx/qla_target.c |   2 +-
- drivers/scsi/qla2xxx/qla_target.h |   2 +
+ drivers/scsi/qla2xxx/qla_attr.c   |   21 ++
+ drivers/scsi/qla2xxx/qla_def.h    |   28 +++
+ drivers/scsi/qla2xxx/qla_gbl.h    |    3 
+ drivers/scsi/qla2xxx/qla_iocb.c   |  335 ++++++++++++++++++++++++++++++--------
+ drivers/scsi/qla2xxx/qla_isr.c    |   11 +
+ drivers/scsi/qla2xxx/qla_os.c     |  169 ++++++++++++++++++-
+ drivers/scsi/qla2xxx/qla_target.c |    2 
+ drivers/scsi/qla2xxx/qla_target.h |    2 
  8 files changed, 503 insertions(+), 68 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_attr.c b/drivers/scsi/qla2xxx/qla_attr.c
-index 1ef08e8f9f13..1478fa9d62d6 100644
 --- a/drivers/scsi/qla2xxx/qla_attr.c
 +++ b/drivers/scsi/qla2xxx/qla_attr.c
-@@ -1002,7 +1002,7 @@ qla2x00_free_sysfs_attr(scsi_qla_host_t *vha, bool stop_beacon)
+@@ -1002,7 +1002,7 @@ qla2x00_free_sysfs_attr(scsi_qla_host_t
  /* Scsi_Host attributes. */
  
  static ssize_t
@@ -39,7 +37,7 @@ index 1ef08e8f9f13..1478fa9d62d6 100644
  			  struct device_attribute *attr, char *buf)
  {
  	return scnprintf(buf, PAGE_SIZE, "%s\n", qla2x00_version_str);
-@@ -2059,7 +2059,21 @@ ql2xiniexchg_store(struct device *dev, struct device_attribute *attr,
+@@ -2059,7 +2059,21 @@ ql2xiniexchg_store(struct device *dev, s
  	return strlen(buf);
  }
  
@@ -71,7 +69,7 @@ index 1ef08e8f9f13..1478fa9d62d6 100644
  
  
  struct device_attribute *qla2x00_host_attrs[] = {
-@@ -2150,6 +2166,7 @@ struct device_attribute *qla2x00_host_attrs[] = {
+@@ -2150,6 +2166,7 @@ struct device_attribute *qla2x00_host_at
  	&dev_attr_min_link_speed,
  	&dev_attr_max_speed_sup,
  	&dev_attr_zio_threshold,
@@ -79,8 +77,6 @@ index 1ef08e8f9f13..1478fa9d62d6 100644
  	NULL, /* reserve for qlini_mode */
  	NULL, /* reserve for ql2xiniexchg */
  	NULL, /* reserve for ql2xexchoffld */
-diff --git a/drivers/scsi/qla2xxx/qla_def.h b/drivers/scsi/qla2xxx/qla_def.h
-index d4b1ff43cacb..c256ba7fba84 100644
 --- a/drivers/scsi/qla2xxx/qla_def.h
 +++ b/drivers/scsi/qla2xxx/qla_def.h
 @@ -314,6 +314,7 @@ struct srb_cmd {
@@ -105,7 +101,7 @@ index d4b1ff43cacb..c256ba7fba84 100644
  	/* This structure should not exceed 512 bytes */
  };
  
-@@ -4190,6 +4198,26 @@ struct qla_hw_data {
+@@ -4184,6 +4192,26 @@ struct qla_hw_data {
  	uint16_t min_link_speed;
  	uint16_t max_speed_sup;
  
@@ -132,8 +128,6 @@ index d4b1ff43cacb..c256ba7fba84 100644
  	atomic_t        nvme_active_aen_cnt;
  	uint16_t        nvme_last_rptd_aen;             /* Last recorded aen count */
  
-diff --git a/drivers/scsi/qla2xxx/qla_gbl.h b/drivers/scsi/qla2xxx/qla_gbl.h
-index bf9d22a931d9..e672952ad450 100644
 --- a/drivers/scsi/qla2xxx/qla_gbl.h
 +++ b/drivers/scsi/qla2xxx/qla_gbl.h
 @@ -160,6 +160,7 @@ extern int ql2xautodetectsfp;
@@ -144,7 +138,7 @@ index bf9d22a931d9..e672952ad450 100644
  
  extern int qla2x00_loop_reset(scsi_qla_host_t *);
  extern void qla2x00_abort_all_cmds(scsi_qla_host_t *, int);
-@@ -285,7 +286,7 @@ extern int qla24xx_walk_and_build_sglist_no_difb(struct qla_hw_data *, srb_t *,
+@@ -285,7 +286,7 @@ extern int qla24xx_walk_and_build_sglist
  extern int qla24xx_walk_and_build_sglist(struct qla_hw_data *, srb_t *,
  	uint32_t *, uint16_t, struct qla_tc_param *);
  extern int qla24xx_walk_and_build_prot_sglist(struct qla_hw_data *, srb_t *,
@@ -153,11 +147,9 @@ index bf9d22a931d9..e672952ad450 100644
  extern int qla24xx_get_one_block_sg(uint32_t, struct qla2_sgx *, uint32_t *);
  extern int qla24xx_configure_prot_mode(srb_t *, uint16_t *);
  extern int qla24xx_build_scsi_crc_2_iocbs(srb_t *,
-diff --git a/drivers/scsi/qla2xxx/qla_iocb.c b/drivers/scsi/qla2xxx/qla_iocb.c
-index 8689e0284f26..f8bf4af680cc 100644
 --- a/drivers/scsi/qla2xxx/qla_iocb.c
 +++ b/drivers/scsi/qla2xxx/qla_iocb.c
-@@ -1098,88 +1098,300 @@ qla24xx_walk_and_build_sglist(struct qla_hw_data *ha, srb_t *sp, uint32_t *dsd,
+@@ -1098,88 +1098,300 @@ qla24xx_walk_and_build_sglist(struct qla
  
  int
  qla24xx_walk_and_build_prot_sglist(struct qla_hw_data *ha, srb_t *sp,
@@ -519,7 +511,7 @@ index 8689e0284f26..f8bf4af680cc 100644
  	}
  	/* Null termination */
  	*cur_dsd++ = 0;
-@@ -1187,7 +1399,6 @@ qla24xx_walk_and_build_prot_sglist(struct qla_hw_data *ha, srb_t *sp,
+@@ -1187,7 +1399,6 @@ qla24xx_walk_and_build_prot_sglist(struc
  	*cur_dsd++ = 0;
  	return 0;
  }
@@ -527,11 +519,9 @@ index 8689e0284f26..f8bf4af680cc 100644
  /**
   * qla24xx_build_scsi_crc_2_iocbs() - Build IOCB command utilizing Command
   *							Type 6 IOCB types.
-diff --git a/drivers/scsi/qla2xxx/qla_isr.c b/drivers/scsi/qla2xxx/qla_isr.c
-index 0a42000e1358..15f87845ec01 100644
 --- a/drivers/scsi/qla2xxx/qla_isr.c
 +++ b/drivers/scsi/qla2xxx/qla_isr.c
-@@ -2735,6 +2735,17 @@ qla2x00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
+@@ -2725,6 +2725,17 @@ check_scsi_status:
  			    cp->device->vendor);
  		break;
  
@@ -549,11 +539,9 @@ index 0a42000e1358..15f87845ec01 100644
  	default:
  		res = DID_ERROR << 16;
  		break;
-diff --git a/drivers/scsi/qla2xxx/qla_os.c b/drivers/scsi/qla2xxx/qla_os.c
-index fca6f4af7309..8df000c27003 100644
 --- a/drivers/scsi/qla2xxx/qla_os.c
 +++ b/drivers/scsi/qla2xxx/qla_os.c
-@@ -295,6 +295,13 @@ MODULE_PARM_DESC(ql2xprotguard, "Override choice of DIX checksum\n"
+@@ -299,6 +299,13 @@ MODULE_PARM_DESC(ql2xprotguard, "Overrid
  		 "  1 -- Force T10 CRC\n"
  		 "  2 -- Force IP checksum\n");
  
@@ -567,7 +555,7 @@ index fca6f4af7309..8df000c27003 100644
  /*
   * SCSI host template entry points
   */
-@@ -817,7 +824,44 @@ qla2xxx_qpair_sp_free_dma(void *ptr)
+@@ -821,7 +828,44 @@ qla2xxx_qpair_sp_free_dma(void *ptr)
  		ha->gbl_dsd_inuse -= ctx1->dsd_use_cnt;
  		ha->gbl_dsd_avail += ctx1->dsd_use_cnt;
  		mempool_free(ctx1, ha->ctx_mempool);
@@ -612,7 +600,7 @@ index fca6f4af7309..8df000c27003 100644
  end:
  	CMD_SP(cmd) = NULL;
  	qla2xxx_rel_qpair_sp(sp->qpair, sp);
-@@ -4006,9 +4050,86 @@ qla2x00_mem_alloc(struct qla_hw_data *ha, uint16_t req_len, uint16_t rsp_len,
+@@ -4025,9 +4069,86 @@ qla2x00_mem_alloc(struct qla_hw_data *ha
  			    "Failed to allocate memory for fcp_cmnd_dma_pool.\n");
  			goto fail_dl_dma_pool;
  		}
@@ -701,7 +689,7 @@ index fca6f4af7309..8df000c27003 100644
  	}
  
  	/* Allocate memory for SNS commands */
-@@ -4171,6 +4292,24 @@ qla2x00_mem_alloc(struct qla_hw_data *ha, uint16_t req_len, uint16_t rsp_len,
+@@ -4190,6 +4311,24 @@ fail_free_ms_iocb:
  		dma_free_coherent(&ha->pdev->dev, sizeof(struct sns_cmd_pkt),
  		    ha->sns_cmd, ha->sns_cmd_dma);
  fail_dma_pool:
@@ -726,7 +714,7 @@ index fca6f4af7309..8df000c27003 100644
  	if (IS_QLA82XX(ha) || ql2xenabledif) {
  		dma_pool_destroy(ha->fcp_cmnd_dma_pool);
  		ha->fcp_cmnd_dma_pool = NULL;
-@@ -4551,6 +4690,32 @@ qla2x00_mem_free(struct qla_hw_data *ha)
+@@ -4570,6 +4709,32 @@ qla2x00_mem_free(struct qla_hw_data *ha)
  
  	mempool_destroy(ha->ctx_mempool);
  
@@ -759,11 +747,9 @@ index fca6f4af7309..8df000c27003 100644
  	qlt_mem_free(ha);
  
  	if (ha->init_cb)
-diff --git a/drivers/scsi/qla2xxx/qla_target.c b/drivers/scsi/qla2xxx/qla_target.c
-index 3deb566487d5..adf4634199a8 100644
 --- a/drivers/scsi/qla2xxx/qla_target.c
 +++ b/drivers/scsi/qla2xxx/qla_target.c
-@@ -3238,7 +3238,7 @@ qlt_build_ctio_crc2_pkt(struct qla_qpair *qpair, struct qla_tgt_prm *prm)
+@@ -3235,7 +3235,7 @@ qlt_build_ctio_crc2_pkt(struct qla_qpair
  
  		cur_dsd = (uint32_t *) &crc_ctx_pkt->u.bundling.dif_address;
  		if (qla24xx_walk_and_build_prot_sglist(ha, NULL, cur_dsd,
@@ -772,8 +758,6 @@ index 3deb566487d5..adf4634199a8 100644
  			goto crc_queuing_error;
  	}
  	return QLA_SUCCESS;
-diff --git a/drivers/scsi/qla2xxx/qla_target.h b/drivers/scsi/qla2xxx/qla_target.h
-index 085782db911c..54925e2fe5ea 100644
 --- a/drivers/scsi/qla2xxx/qla_target.h
 +++ b/drivers/scsi/qla2xxx/qla_target.h
 @@ -928,6 +928,8 @@ struct qla_tgt_cmd {
@@ -785,6 +769,3 @@ index 085782db911c..54925e2fe5ea 100644
  
  	uint64_t jiffies_at_alloc;
  	uint64_t jiffies_at_free;
--- 
-2.16.4
-

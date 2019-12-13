@@ -1,0 +1,30 @@
+From: Takashi Iwai <tiwai@suse.de>
+Subject: kABI workaround for ath10k hw_filter_reset_required field
+Patch-mainline: Never, kABI workaround
+References: bsc#1111666
+
+struct ath10k_hw_params got a new field hw_filter_reset_required
+and we need to hide it via the standard ifdef trick for kABI
+compatibility.
+
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/net/wireless/ath/ath10k/hw.h |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/drivers/net/wireless/ath/ath10k/hw.h
++++ b/drivers/net/wireless/ath/ath10k/hw.h
+@@ -590,10 +590,12 @@ struct ath10k_hw_params {
+ 	/* Number of bytes to be the offset for each FFT sample */
+ 	int spectral_bin_offset;
+ 
++#ifndef __GENKSYMS__
+ 	/* targets which require hw filter reset during boot up,
+ 	 * to avoid it sending spurious acks.
+ 	 */
+ 	bool hw_filter_reset_required;
++#endif
+ };
+ 
+ struct htt_rx_desc;

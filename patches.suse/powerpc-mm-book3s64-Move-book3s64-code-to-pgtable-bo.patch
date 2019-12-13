@@ -1,0 +1,173 @@
+From 59879d542a8e880391863d82cddf38854e3807f4 Mon Sep 17 00:00:00 2001
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+Date: Mon, 16 Apr 2018 16:57:14 +0530
+Subject: [PATCH] powerpc/mm/book3s64: Move book3s64 code to pgtable-book3s64
+
+References: bsc#1055186
+Patch-mainline: v4.18-rc1
+Git-commit: 59879d542a8e880391863d82cddf38854e3807f4
+
+Only code movement and avoid #ifdef.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/mm/pgtable-book3s64.c | 54 ++++++++++++++++++++++++++++
+ arch/powerpc/mm/pgtable_64.c       | 56 ------------------------------
+ 2 files changed, 54 insertions(+), 56 deletions(-)
+
+--- a/arch/powerpc/mm/pgtable-book3s64.c
++++ b/arch/powerpc/mm/pgtable-book3s64.c
+@@ -9,9 +9,12 @@
+ 
+ #include <linux/sched.h>
+ #include <linux/mm_types.h>
++#include <linux/memblock.h>
+ 
+ #include <asm/pgalloc.h>
+ #include <asm/tlb.h>
++#include <asm/trace.h>
++#include <asm/powernv.h>
+ 
+ #include "mmu_decl.h"
+ #include <trace/events/thp.h>
+@@ -146,3 +149,54 @@ int remove_section_mapping(unsigned long
+ 	return hash__remove_section_mapping(start, end);
+ }
+ #endif /* CONFIG_MEMORY_HOTPLUG */
++
++void __init mmu_partition_table_init(void)
++{
++	unsigned long patb_size = 1UL << PATB_SIZE_SHIFT;
++	unsigned long ptcr;
++
++	BUILD_BUG_ON_MSG((PATB_SIZE_SHIFT > 36), "Partition table size too large.");
++	partition_tb = __va(memblock_alloc_base(patb_size, patb_size,
++						MEMBLOCK_ALLOC_ANYWHERE));
++
++	/* Initialize the Partition Table with no entries */
++	memset((void *)partition_tb, 0, patb_size);
++
++	/*
++	 * update partition table control register,
++	 * 64 K size.
++	 */
++	ptcr = __pa(partition_tb) | (PATB_SIZE_SHIFT - 12);
++	mtspr(SPRN_PTCR, ptcr);
++	powernv_set_nmmu_ptcr(ptcr);
++}
++
++void mmu_partition_table_set_entry(unsigned int lpid, unsigned long dw0,
++				   unsigned long dw1)
++{
++	unsigned long old = be64_to_cpu(partition_tb[lpid].patb0);
++
++	partition_tb[lpid].patb0 = cpu_to_be64(dw0);
++	partition_tb[lpid].patb1 = cpu_to_be64(dw1);
++
++	/*
++	 * Global flush of TLBs and partition table caches for this lpid.
++	 * The type of flush (hash or radix) depends on what the previous
++	 * use of this partition ID was, not the new use.
++	 */
++	asm volatile("ptesync" : : : "memory");
++	if (old & PATB_HR) {
++		asm volatile(PPC_TLBIE_5(%0,%1,2,0,1) : :
++			     "r" (TLBIEL_INVAL_SET_LPID), "r" (lpid));
++		asm volatile(PPC_TLBIE_5(%0,%1,2,1,1) : :
++			     "r" (TLBIEL_INVAL_SET_LPID), "r" (lpid));
++		trace_tlbie(lpid, 0, TLBIEL_INVAL_SET_LPID, lpid, 2, 0, 1);
++	} else {
++		asm volatile(PPC_TLBIE_5(%0,%1,2,0,0) : :
++			     "r" (TLBIEL_INVAL_SET_LPID), "r" (lpid));
++		trace_tlbie(lpid, 0, TLBIEL_INVAL_SET_LPID, lpid, 2, 0, 0);
++	}
++	/* do we need fixup here ?*/
++	asm volatile("eieio; tlbsync; ptesync" : : : "memory");
++}
++EXPORT_SYMBOL_GPL(mmu_partition_table_set_entry);
+--- a/arch/powerpc/mm/pgtable_64.c
++++ b/arch/powerpc/mm/pgtable_64.c
+@@ -33,7 +33,6 @@
+ #include <linux/swap.h>
+ #include <linux/stddef.h>
+ #include <linux/vmalloc.h>
+-#include <linux/memblock.h>
+ #include <linux/slab.h>
+ #include <linux/hugetlb.h>
+ 
+@@ -47,13 +46,11 @@
+ #include <asm/smp.h>
+ #include <asm/machdep.h>
+ #include <asm/tlb.h>
+-#include <asm/trace.h>
+ #include <asm/processor.h>
+ #include <asm/cputable.h>
+ #include <asm/sections.h>
+ #include <asm/firmware.h>
+ #include <asm/dma.h>
+-#include <asm/powernv.h>
+ 
+ #include "mmu_decl.h"
+ 
+@@ -438,59 +435,6 @@ void pgtable_free_tlb(struct mmu_gather
+ }
+ #endif
+ 
+-#ifdef CONFIG_PPC_BOOK3S_64
+-void __init mmu_partition_table_init(void)
+-{
+-	unsigned long patb_size = 1UL << PATB_SIZE_SHIFT;
+-	unsigned long ptcr;
+-
+-	BUILD_BUG_ON_MSG((PATB_SIZE_SHIFT > 36), "Partition table size too large.");
+-	partition_tb = __va(memblock_alloc_base(patb_size, patb_size,
+-						MEMBLOCK_ALLOC_ANYWHERE));
+-
+-	/* Initialize the Partition Table with no entries */
+-	memset((void *)partition_tb, 0, patb_size);
+-
+-	/*
+-	 * update partition table control register,
+-	 * 64 K size.
+-	 */
+-	ptcr = __pa(partition_tb) | (PATB_SIZE_SHIFT - 12);
+-	mtspr(SPRN_PTCR, ptcr);
+-	powernv_set_nmmu_ptcr(ptcr);
+-}
+-
+-void mmu_partition_table_set_entry(unsigned int lpid, unsigned long dw0,
+-				   unsigned long dw1)
+-{
+-	unsigned long old = be64_to_cpu(partition_tb[lpid].patb0);
+-
+-	partition_tb[lpid].patb0 = cpu_to_be64(dw0);
+-	partition_tb[lpid].patb1 = cpu_to_be64(dw1);
+-
+-	/*
+-	 * Global flush of TLBs and partition table caches for this lpid.
+-	 * The type of flush (hash or radix) depends on what the previous
+-	 * use of this partition ID was, not the new use.
+-	 */
+-	asm volatile("ptesync" : : : "memory");
+-	if (old & PATB_HR) {
+-		asm volatile(PPC_TLBIE_5(%0,%1,2,0,1) : :
+-			     "r" (TLBIEL_INVAL_SET_LPID), "r" (lpid));
+-		asm volatile(PPC_TLBIE_5(%0,%1,2,1,1) : :
+-			     "r" (TLBIEL_INVAL_SET_LPID), "r" (lpid));
+-		trace_tlbie(lpid, 0, TLBIEL_INVAL_SET_LPID, lpid, 2, 0, 1);
+-	} else {
+-		asm volatile(PPC_TLBIE_5(%0,%1,2,0,0) : :
+-			     "r" (TLBIEL_INVAL_SET_LPID), "r" (lpid));
+-		trace_tlbie(lpid, 0, TLBIEL_INVAL_SET_LPID, lpid, 2, 0, 0);
+-	}
+-	/* do we need fixup here ?*/
+-	asm volatile("eieio; tlbsync; ptesync" : : : "memory");
+-}
+-EXPORT_SYMBOL_GPL(mmu_partition_table_set_entry);
+-#endif /* CONFIG_PPC_BOOK3S_64 */
+-
+ #ifdef CONFIG_STRICT_KERNEL_RWX
+ void mark_rodata_ro(void)
+ {

@@ -1,0 +1,34 @@
+From: Lijun Ou <oulijun@huawei.com>
+Date: Mon, 24 Jun 2019 19:47:49 +0800
+Subject: RDMA/hns: Bugfix for calculating qp buffer size
+Patch-mainline: v5.3-rc1
+Git-commit: e0222d18d628ce96f0def790ea26b6b7b3c18f78
+References: bsc#1104427 FATE#326416
+
+The buffer size of qp which used to allocate qp buffer space for storing
+sqwqe and rqwqe will be the length of buffer space. The kernel driver will
+use the buffer address and the same size to get the user memory. The same
+size named buff_size of qp. According the algorithm of calculating, The
+size of the two is not equal when users set the max sge of sq.
+
+Fixes: b28ca7cceff8 ("RDMA/hns: Limit extend sq sge num")
+Signed-off-by: Lijun Ou <oulijun@huawei.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/infiniband/hw/hns/hns_roce_qp.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/drivers/infiniband/hw/hns/hns_roce_qp.c
++++ b/drivers/infiniband/hw/hns/hns_roce_qp.c
+@@ -407,8 +407,8 @@ static int hns_roce_set_user_sq_size(str
+ 					     hr_qp->sq.wqe_shift), PAGE_SIZE);
+ 	} else {
+ 		page_size = 1 << (hr_dev->caps.mtt_buf_pg_sz + PAGE_SHIFT);
+-		hr_qp->sge.sge_cnt =
+-		       max(page_size / (1 << hr_qp->sge.sge_shift), ex_sge_num);
++		hr_qp->sge.sge_cnt = ex_sge_num ?
++		   max(page_size / (1 << hr_qp->sge.sge_shift), ex_sge_num) : 0;
+ 		hr_qp->buff_size = HNS_ROCE_ALOGN_UP((hr_qp->rq.wqe_cnt <<
+ 					     hr_qp->rq.wqe_shift), page_size) +
+ 				   HNS_ROCE_ALOGN_UP((hr_qp->sge.sge_cnt <<

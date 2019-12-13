@@ -1,0 +1,77 @@
+From: NeilBrown <neilb@suse.de>
+Subject: Fix kabi for: NFSv4: Fix OPEN / CLOSE race
+References: git-fixes
+Patch-mainline: Never, kabi
+
+Adding a waitq to the nfs4_state breaks the kabi.
+So instead use wait_on_bit which provides its own
+waitq.
+
+Signed-off-by: NeilBrown <neilb@suse.de>
+---
+ fs/nfs/nfs4_fs.h   |    2 --
+ fs/nfs/nfs4proc.c  |   10 ++++++----
+ fs/nfs/nfs4state.c |    1 -
+ 3 files changed, 6 insertions(+), 7 deletions(-)
+
+--- a/fs/nfs/nfs4_fs.h
++++ b/fs/nfs/nfs4_fs.h
+@@ -185,8 +185,6 @@ struct nfs4_state {
+ 	unsigned int n_rdwr;		/* Number of read/write references */
+ 	fmode_t state;			/* State on the server (R,W, or RW) */
+ 	atomic_t count;
+-
+-	wait_queue_head_t waitq;
+ };
+ 
+ 
+--- a/fs/nfs/nfs4proc.c
++++ b/fs/nfs/nfs4proc.c
+@@ -1399,7 +1399,7 @@ static bool nfs_open_stateid_recover_ope
+ static void nfs_state_log_update_open_stateid(struct nfs4_state *state)
+ {
+ 	if (test_and_clear_bit(NFS_STATE_CHANGE_WAIT, &state->flags))
+-		wake_up_all(&state->waitq);
++		wake_up_bit(&state->flags, NFS_STATE_CHANGE_WAIT);
+ }
+ 
+ static void nfs_state_log_out_of_order_open_stateid(struct nfs4_state *state,
+@@ -1519,7 +1519,9 @@ static void nfs_clear_open_stateid(struc
+ static void nfs_set_open_stateid_locked(struct nfs4_state *state,
+ 		const nfs4_stateid *stateid, nfs4_stateid *freeme)
+ {
+-	DEFINE_WAIT(wait);
++	struct wait_queue_head *wq_head = bit_waitqueue(&state->flags,
++							NFS_STATE_CHANGE_WAIT);
++	DEFINE_WAIT_BIT(wbq_entry, &state->flags, NFS_STATE_CHANGE_WAIT);
+ 	int status = 0;
+ 	for (;;) {
+ 
+@@ -1533,7 +1535,7 @@ static void nfs_set_open_stateid_locked(
+ 		if (!nfs4_has_session(NFS_SERVER(state->inode)->nfs_client))
+ 			break;
+ 
+-		prepare_to_wait(&state->waitq, &wait, TASK_KILLABLE);
++		prepare_to_wait(wq_head, &wbq_entry.wq_entry, TASK_KILLABLE);
+ 		/*
+ 		 * Ensure we process the state changes in the same order
+ 		 * in which the server processed them by delaying the
+@@ -1549,7 +1551,7 @@ static void nfs_set_open_stateid_locked(
+ 				status = 0;
+ 		} else
+ 			status = -EINTR;
+-		finish_wait(&state->waitq, &wait);
++		finish_wait(wq_head, &wbq_entry.wq_entry);
+ 		rcu_read_lock();
+ 		spin_lock(&state->owner->so_lock);
+ 		write_seqlock(&state->seqlock);
+--- a/fs/nfs/nfs4state.c
++++ b/fs/nfs/nfs4state.c
+@@ -658,7 +658,6 @@ nfs4_alloc_open_state(void)
+ 	INIT_LIST_HEAD(&state->lock_states);
+ 	spin_lock_init(&state->state_lock);
+ 	seqlock_init(&state->seqlock);
+-	init_waitqueue_head(&state->waitq);
+ 	return state;
+ }
+ 

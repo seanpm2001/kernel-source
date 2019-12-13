@@ -1,0 +1,50 @@
+From 1a19c139be18ed4d6d681049cc48586fae070120 Mon Sep 17 00:00:00 2001
+From: Sara Sharon <sara.sharon@intel.com>
+Date: Tue, 1 May 2018 15:12:08 +0300
+Subject: [PATCH] iwlwifi: mvm: avoid sending too many BARs
+Git-commit: 1a19c139be18ed4d6d681049cc48586fae070120
+Patch-mainline: v4.20-rc1
+References: bsc#1051510
+
+When we receive TX response, we may release a few packets
+due to a hole that was closed in the transmission window.
+
+However, if that frame failed, we will mark all the released
+frames as failed and will send multiple BARs.
+
+This affects statistics badly, and cause unnecessary frames
+transmission.
+
+Instead, mark all the following packets as success, with the
+desired result of sending a bar for the failed frame only.
+
+Signed-off-by: Sara Sharon <sara.sharon@intel.com>
+Signed-off-by: Luca Coelho <luciano.coelho@intel.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/net/wireless/intel/iwlwifi/mvm/tx.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/net/wireless/intel/iwlwifi/mvm/tx.c b/drivers/net/wireless/intel/iwlwifi/mvm/tx.c
+index 31a81a4c6e78..b33b8357a8f7 100644
+--- a/drivers/net/wireless/intel/iwlwifi/mvm/tx.c
++++ b/drivers/net/wireless/intel/iwlwifi/mvm/tx.c
+@@ -1510,6 +1510,14 @@ static void iwl_mvm_rx_tx_cmd_single(struct iwl_mvm *mvm,
+ 			break;
+ 		}
+ 
++		/*
++		 * If we are freeing multiple frames, mark all the frames
++		 * but the first one as acked, since they were acknowledged
++		 * before
++		 * */
++		if (skb_freed > 1)
++			info->flags |= IEEE80211_TX_STAT_ACK;
++
+ 		iwl_mvm_tx_status_check_trigger(mvm, status);
+ 
+ 		info->status.rates[0].count = tx_resp->failure_frame + 1;
+-- 
+2.16.4
+

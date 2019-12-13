@@ -1,0 +1,88 @@
+From: Yunsheng Lin <linyunsheng@huawei.com>
+Date: Thu, 13 Jun 2019 17:12:31 +0800
+Subject: net: hns3: delay ring buffer clearing during reset
+Patch-mainline: v5.3-rc1
+Git-commit: 3a30964a2eef6aabd3ab18b979ea0eacf1147731
+References: bsc#1104353 FATE#326415
+
+The driver may not be able to disable the ring through firmware
+when downing the netdev during reset process, which may cause
+hardware accessing freed buffer problem.
+
+This patch delays the ring buffer clearing to reset uninit
+process because hardware will not access the ring buffer after
+hardware reset is completed.
+
+Fixes: bb6b94a896d4 ("net: hns3: Add reset interface implementation in client")
+Signed-off-by: Yunsheng Lin <linyunsheng@huawei.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3_enet.c |   19 ++++++++++++++-----
+ 1 file changed, 14 insertions(+), 5 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3_enet.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3_enet.c
+@@ -29,7 +29,7 @@
+ #define hns3_tx_bd_count(S)	DIV_ROUND_UP(S, HNS3_MAX_BD_SIZE)
+ 
+ static void hns3_clear_all_ring(struct hnae3_handle *h);
+-static void hns3_force_clear_all_rx_ring(struct hnae3_handle *h);
++static void hns3_force_clear_all_ring(struct hnae3_handle *h);
+ static void hns3_remove_hw_addr(struct net_device *netdev);
+ 
+ static const char hns3_driver_name[] = "hns3";
+@@ -488,7 +488,12 @@ static void hns3_nic_net_down(struct net
+ 	/* free irq resources */
+ 	hns3_nic_uninit_irq(priv);
+ 
+-	hns3_clear_all_ring(priv->ae_handle);
++	/* delay ring buffer clearing to hns3_reset_notify_uninit_enet
++	 * during reset process, because driver may not be able
++	 * to disable the ring through firmware when downing the netdev.
++	 */
++	if (!hns3_nic_resetting(netdev))
++		hns3_clear_all_ring(priv->ae_handle);
+ }
+ 
+ static int hns3_nic_net_stop(struct net_device *netdev)
+@@ -3913,7 +3918,7 @@ static void hns3_client_uninit(struct hn
+ 
+ 	hns3_del_all_fd_rules(netdev, true);
+ 
+-	hns3_force_clear_all_rx_ring(handle);
++	hns3_force_clear_all_ring(handle);
+ 
+ 	hns3_nic_uninit_vector_data(priv);
+ 
+@@ -4082,7 +4087,7 @@ static void hns3_force_clear_rx_ring(str
+ 	}
+ }
+ 
+-static void hns3_force_clear_all_rx_ring(struct hnae3_handle *h)
++static void hns3_force_clear_all_ring(struct hnae3_handle *h)
+ {
+ 	struct net_device *ndev = h->kinfo.netdev;
+ 	struct hns3_nic_priv *priv = netdev_priv(ndev);
+@@ -4090,6 +4095,9 @@ static void hns3_force_clear_all_rx_ring
+ 	u32 i;
+ 
+ 	for (i = 0; i < h->kinfo.num_tqps; i++) {
++		ring = priv->ring_data[i].ring;
++		hns3_clear_tx_ring(ring);
++
+ 		ring = priv->ring_data[i + h->kinfo.num_tqps].ring;
+ 		hns3_force_clear_rx_ring(ring);
+ 	}
+@@ -4320,7 +4328,8 @@ static int hns3_reset_notify_uninit_enet
+ 		return 0;
+ 	}
+ 
+-	hns3_force_clear_all_rx_ring(handle);
++	hns3_clear_all_ring(handle);
++	hns3_force_clear_all_ring(handle);
+ 
+ 	hns3_nic_uninit_vector_data(priv);
+ 

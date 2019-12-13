@@ -2,6 +2,8 @@
 SRCVERSION=4.12
 # variant of the kernel-source package, either empty or "-rt"
 VARIANT=-rt
+# Use old style livepatch package names
+LIVEPATCH=kgraft
 # buildservice projects to build the kernel against
 OBS_PROJECT=SUSE:SLE-12-SP4:Update
 IBS_PROJECT=SUSE:SLE-12-SP5:Update

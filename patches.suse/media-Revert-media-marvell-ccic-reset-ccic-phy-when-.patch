@@ -1,0 +1,110 @@
+From: Lubomir Rintel <lkundrak@v3.sk>
+Date: Tue, 28 May 2019 05:07:25 -0400
+Subject: [PATCH] media: Revert "[media] marvell-ccic: reset ccic phy when stop
+ streaming for stability"
+Git-commit: 415cd3ac4ea04ba916a5b02f7853a504e0994757
+Patch-mainline: v5.3-rc1
+References: bsc#1051510
+
+This accesses the clock registers directly and thus is going to stay in the
+way of making the driver devicetree friendly.
+
+No boards seems to actually use this. If it's somehow actually needed it
+needs to be done differently.
+
+This reverts commit 7c269f454e7a51b151d94f99344120efa1cd0acb.
+
+Signed-off-by: Lubomir Rintel <lkundrak@v3.sk>
+Signed-off-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Signed-off-by: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+Acked-by: Simon Schricker <sschricker@suse.de>
+---
+ drivers/media/platform/marvell-ccic/mcam-core.c  |    6 -----
+ drivers/media/platform/marvell-ccic/mcam-core.h  |    2 -
+ drivers/media/platform/marvell-ccic/mmp-driver.c |   25 -----------------------
+ 3 files changed, 33 deletions(-)
+
+--- a/drivers/media/platform/marvell-ccic/mcam-core.c
++++ b/drivers/media/platform/marvell-ccic/mcam-core.c
+@@ -1153,12 +1153,6 @@ static void mcam_vb_stop_streaming(struc
+ 		return;
+ 	mcam_ctlr_stop_dma(cam);
+ 	/*
+-	 * Reset the CCIC PHY after stopping streaming,
+-	 * otherwise, the CCIC may be unstable.
+-	 */
+-	if (cam->ctlr_reset)
+-		cam->ctlr_reset(cam);
+-	/*
+ 	 * VB2 reclaims the buffers, so we need to forget
+ 	 * about them.
+ 	 */
+--- a/drivers/media/platform/marvell-ccic/mcam-core.h
++++ b/drivers/media/platform/marvell-ccic/mcam-core.h
+@@ -115,7 +115,6 @@ struct mcam_camera {
+ 	int mclk_src;	/* which clock source the mclk derives from */
+ 	int mclk_div;	/* Clock Divider Value for MCLK */
+ 
+-	int ccic_id;
+ 	enum v4l2_mbus_type bus_type;
+ 	/* MIPI support */
+ 	/* The dphy config value, allocated in board file
+@@ -136,7 +135,6 @@ struct mcam_camera {
+ 	int (*plat_power_up) (struct mcam_camera *cam);
+ 	void (*plat_power_down) (struct mcam_camera *cam);
+ 	void (*calc_dphy) (struct mcam_camera *cam);
+-	void (*ctlr_reset) (struct mcam_camera *cam);
+ 
+ 	/*
+ 	 * Everything below here is private to the mcam core and
+--- a/drivers/media/platform/marvell-ccic/mmp-driver.c
++++ b/drivers/media/platform/marvell-ccic/mmp-driver.c
+@@ -105,7 +105,6 @@ static struct mmp_camera *mmpcam_find_de
+ #define CPU_SUBSYS_PMU_BASE	0xd4282800
+ #define REG_CCIC_DCGCR		0x28	/* CCIC dyn clock gate ctrl reg */
+ #define REG_CCIC_CRCR		0x50	/* CCIC clk reset ctrl reg	*/
+-#define REG_CCIC2_CRCR		0xf4	/* CCIC2 clk reset ctrl reg	*/
+ 
+ static void mcam_clk_enable(struct mcam_camera *mcam)
+ {
+@@ -183,28 +182,6 @@ static void mmpcam_power_down(struct mca
+ 	mcam_clk_disable(mcam);
+ }
+ 
+-void mcam_ctlr_reset(struct mcam_camera *mcam)
+-{
+-	unsigned long val;
+-	struct mmp_camera *cam = mcam_to_cam(mcam);
+-
+-	if (mcam->ccic_id) {
+-		/*
+-		 * Using CCIC2
+-		 */
+-		val = ioread32(cam->power_regs + REG_CCIC2_CRCR);
+-		iowrite32(val & ~0x2, cam->power_regs + REG_CCIC2_CRCR);
+-		iowrite32(val | 0x2, cam->power_regs + REG_CCIC2_CRCR);
+-	} else {
+-		/*
+-		 * Using CCIC1
+-		 */
+-		val = ioread32(cam->power_regs + REG_CCIC_CRCR);
+-		iowrite32(val & ~0x2, cam->power_regs + REG_CCIC_CRCR);
+-		iowrite32(val | 0x2, cam->power_regs + REG_CCIC_CRCR);
+-	}
+-}
+-
+ /*
+  * calc the dphy register values
+  * There are three dphy registers being used.
+@@ -352,11 +329,9 @@ static int mmpcam_probe(struct platform_
+ 	mcam = &cam->mcam;
+ 	mcam->plat_power_up = mmpcam_power_up;
+ 	mcam->plat_power_down = mmpcam_power_down;
+-	mcam->ctlr_reset = mcam_ctlr_reset;
+ 	mcam->calc_dphy = mmpcam_calc_dphy;
+ 	mcam->dev = &pdev->dev;
+ 	mcam->use_smbus = 0;
+-	mcam->ccic_id = pdev->id;
+ 	mcam->mclk_min = pdata->mclk_min;
+ 	mcam->mclk_src = pdata->mclk_src;
+ 	mcam->mclk_div = pdata->mclk_div;

@@ -21,19 +21,19 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  3 files changed, 22 insertions(+), 3 deletions(-)
 
 diff --git a/arch/powerpc/include/asm/bug.h b/arch/powerpc/include/asm/bug.h
-index 87fcc1948817..3b3d244810c0 100644
+index 3c04249bcf39..97c38472b924 100644
 --- a/arch/powerpc/include/asm/bug.h
 +++ b/arch/powerpc/include/asm/bug.h
-@@ -132,6 +132,7 @@ struct pt_regs;
+@@ -133,6 +133,7 @@ struct pt_regs;
  extern int do_page_fault(struct pt_regs *, unsigned long, unsigned long);
  extern void bad_page_fault(struct pt_regs *, unsigned long, int);
  extern void _exception(int, struct pt_regs *, int, unsigned long);
 +extern void _exception_pkey(int, struct pt_regs *, int, unsigned long, int);
  extern void die(const char *, struct pt_regs *, long);
+ extern bool die_will_crash(void);
  
- #endif /* !__ASSEMBLY__ */
 diff --git a/arch/powerpc/kernel/traps.c b/arch/powerpc/kernel/traps.c
-index 43ccb232f1e1..f6a9080d42e7 100644
+index d139117d3339..4b1a8e2ec023 100644
 --- a/arch/powerpc/kernel/traps.c
 +++ b/arch/powerpc/kernel/traps.c
 @@ -20,6 +20,7 @@
@@ -44,7 +44,7 @@ index 43ccb232f1e1..f6a9080d42e7 100644
  #include <linux/stddef.h>
  #include <linux/unistd.h>
  #include <linux/ptrace.h>
-@@ -248,7 +249,9 @@ void user_single_step_siginfo(struct task_struct *tsk,
+@@ -266,7 +267,9 @@ void user_single_step_siginfo(struct task_struct *tsk,
  	info->si_addr = (void __user *)regs->nip;
  }
  
@@ -55,7 +55,7 @@ index 43ccb232f1e1..f6a9080d42e7 100644
  {
  	siginfo_t info;
  	const char fmt32[] = KERN_INFO "%s[%d]: unhandled signal %d " \
-@@ -275,9 +278,16 @@ void _exception(int signr, struct pt_regs *regs, int code, unsigned long addr)
+@@ -293,9 +296,16 @@ void _exception(int signr, struct pt_regs *regs, int code, unsigned long addr)
  	info.si_signo = signr;
  	info.si_code = code;
  	info.si_addr = (void __user *) addr;

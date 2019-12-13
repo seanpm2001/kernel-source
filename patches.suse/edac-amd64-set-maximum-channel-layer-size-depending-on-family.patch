@@ -1,0 +1,46 @@
+From: Yazen Ghannam <yazen.ghannam@amd.com>
+Date: Mon, 25 Mar 2019 20:33:30 +0000
+Subject: EDAC/amd64: Set maximum channel layer size depending on family
+Git-commit: 869adc4316ea348e3c52af2494d9b1f6bd68abbd
+Patch-mainline: v5.2-rc1
+References: bsc#1131489
+
+The AMD64 EDAC module currently hardcodes the EDAC channel layer size
+count to two. Future AMD systems may have more channels than this.
+
+Set the EDAC channel layer size equal to the maximum number of channels
+possible for the system. On Family 17h and later, this is set in the
+num_umcs variable. Older systems will continue to use two as the
+default.
+
+Signed-off-by: Yazen Ghannam <yazen.ghannam@amd.com>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Cc: James Morse <james.morse@arm.com>
+Cc: Mauro Carvalho Chehab <mchehab@kernel.org>
+Cc: linux-edac <linux-edac@vger.kernel.org>
+Link: https://lkml.kernel.org/r/20190325203319.7603-1-Yazen.Ghannam@amd.com
+---
+ drivers/edac/amd64_edac.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/edac/amd64_edac.c b/drivers/edac/amd64_edac.c
+index 81dca957fce0..54acd3a7acdc 100644
+--- a/drivers/edac/amd64_edac.c
++++ b/drivers/edac/amd64_edac.c
+@@ -3326,8 +3326,14 @@ static int init_one_instance(unsigned int nid)
+ 	 * Always allocate two channels since we can have setups with DIMMs on
+ 	 * only one channel. Also, this simplifies handling later for the price
+ 	 * of a couple of KBs tops.
++	 *
++	 * On Fam17h+, the number of controllers may be greater than two. So set
++	 * the size equal to the maximum number of UMCs.
+ 	 */
+-	layers[1].size = 2;
++	if (pvt->fam >= 0x17)
++		layers[1].size = num_umcs;
++	else
++		layers[1].size = 2;
+ 	layers[1].is_virt_csrow = false;
+ 
+ 	mci = edac_mc_alloc(nid, ARRAY_SIZE(layers), layers, 0);
+

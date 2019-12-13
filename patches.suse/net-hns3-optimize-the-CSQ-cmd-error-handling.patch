@@ -1,0 +1,106 @@
+From: Peng Li <lipeng321@huawei.com>
+Date: Fri, 28 Jun 2019 19:50:18 +0800
+Subject: net: hns3: optimize the CSQ cmd error handling
+Patch-mainline: v5.3-rc1
+Git-commit: 82c8ae6e8390f09c3c2b1d0a567c993dd88a281c
+References: bsc#1104353 FATE#326415
+
+If CMDQ ring is full, hclge_cmd_send may return directly, but IMP still
+working and HW pointer changed, SW ring pointer do not match the HW
+pointer. This patch update the SW pointer every time when the space is
+full, so it can work normally next time if IMP and HW still working.
+
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_cmd.c   |   15 +++++++++--
+ drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_cmd.c |   19 +++++++++++----
+ 2 files changed, 26 insertions(+), 8 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_cmd.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_cmd.c
+@@ -233,6 +233,7 @@ static int hclge_cmd_check_retval(struct
+ int hclge_cmd_send(struct hclge_hw *hw, struct hclge_desc *desc, int num)
+ {
+ 	struct hclge_dev *hdev = container_of(hw, struct hclge_dev, hw);
++	struct hclge_cmq_ring *csq = &hw->cmq.csq;
+ 	struct hclge_desc *desc_to_use;
+ 	bool complete = false;
+ 	u32 timeout = 0;
+@@ -242,8 +243,16 @@ int hclge_cmd_send(struct hclge_hw *hw,
+ 
+ 	spin_lock_bh(&hw->cmq.csq.lock);
+ 
+-	if (num > hclge_ring_space(&hw->cmq.csq) ||
+-	    test_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state)) {
++	if (test_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state)) {
++		spin_unlock_bh(&hw->cmq.csq.lock);
++		return -EBUSY;
++	}
++
++	if (num > hclge_ring_space(&hw->cmq.csq)) {
++		/* If CMDQ ring is full, SW HEAD and HW HEAD may be different,
++		 * need update the SW HEAD pointer csq->next_to_clean
++		 */
++		csq->next_to_clean = hclge_read_dev(hw, HCLGE_NIC_CSQ_HEAD_REG);
+ 		spin_unlock_bh(&hw->cmq.csq.lock);
+ 		return -EBUSY;
+ 	}
+@@ -281,7 +290,7 @@ int hclge_cmd_send(struct hclge_hw *hw,
+ 	}
+ 
+ 	if (!complete) {
+-		retval = -EAGAIN;
++		retval = -EBADE;
+ 	} else {
+ 		retval = hclge_cmd_check_retval(hw, desc, num, ntc);
+ 	}
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_cmd.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_cmd.c
+@@ -189,6 +189,7 @@ void hclgevf_cmd_setup_basic_desc(struct
+ int hclgevf_cmd_send(struct hclgevf_hw *hw, struct hclgevf_desc *desc, int num)
+ {
+ 	struct hclgevf_dev *hdev = (struct hclgevf_dev *)hw->hdev;
++	struct hclgevf_cmq_ring *csq = &hw->cmq.csq;
+ 	struct hclgevf_desc *desc_to_use;
+ 	bool complete = false;
+ 	u32 timeout = 0;
+@@ -200,8 +201,17 @@ int hclgevf_cmd_send(struct hclgevf_hw *
+ 
+ 	spin_lock_bh(&hw->cmq.csq.lock);
+ 
+-	if (num > hclgevf_ring_space(&hw->cmq.csq) ||
+-	    test_bit(HCLGEVF_STATE_CMD_DISABLE, &hdev->state)) {
++	if (test_bit(HCLGEVF_STATE_CMD_DISABLE, &hdev->state)) {
++		spin_unlock_bh(&hw->cmq.csq.lock);
++		return -EBUSY;
++	}
++
++	if (num > hclgevf_ring_space(&hw->cmq.csq)) {
++		/* If CMDQ ring is full, SW HEAD and HW HEAD may be different,
++		 * need update the SW HEAD pointer csq->next_to_clean
++		 */
++		csq->next_to_clean = hclgevf_read_dev(hw,
++						      HCLGEVF_NIC_CSQ_HEAD_REG);
+ 		spin_unlock_bh(&hw->cmq.csq.lock);
+ 		return -EBUSY;
+ 	}
+@@ -264,14 +274,13 @@ int hclgevf_cmd_send(struct hclgevf_hw *
+ 	}
+ 
+ 	if (!complete)
+-		status = -EAGAIN;
++		status = -EBADE;
+ 
+ 	/* Clean the command send queue */
+ 	handle = hclgevf_cmd_csq_clean(hw);
+-	if (handle != num) {
++	if (handle != num)
+ 		dev_warn(&hdev->pdev->dev,
+ 			 "cleaned %d, need to clean %d\n", handle, num);
+-	}
+ 
+ 	spin_unlock_bh(&hw->cmq.csq.lock);
+ 

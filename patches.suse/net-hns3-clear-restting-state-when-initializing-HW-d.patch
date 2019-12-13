@@ -1,0 +1,54 @@
+From: Peng Li <lipeng321@huawei.com>
+Date: Thu, 13 Jun 2019 17:12:27 +0800
+Subject: net: hns3: clear restting state when initializing HW device
+Patch-mainline: v5.3-rc1
+Git-commit: 31bb229d6f4a603a351d670ac078dff8ba3af398
+References: bsc#1104353 FATE#326415
+
+IMP will set restting state for all function when PF FLR, driver
+just clear the restting state in resetting progress, but don't do
+it in initializing progress. As FLR is not created by driver,
+it is necessary to clear restting state when initializing HW device.
+
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c |   18 ++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
+@@ -8140,6 +8140,23 @@ static void hclge_flr_done(struct hnae3_
+ 	set_bit(HNAE3_FLR_DONE, &hdev->flr_state);
+ }
+ 
++static void hclge_clear_resetting_state(struct hclge_dev *hdev)
++{
++	u16 i;
++
++	for (i = 0; i < hdev->num_alloc_vport; i++) {
++		struct hclge_vport *vport = &hdev->vport[i];
++		int ret;
++
++		 /* Send cmd to clear VF's FUNC_RST_ING */
++		ret = hclge_set_vf_rst(hdev, vport->vport_id, false);
++		if (ret)
++			dev_warn(&hdev->pdev->dev,
++				 "clear vf(%d) rst failed %d!\n",
++				 vport->vport_id, ret);
++	}
++}
++
+ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
+ {
+ 	struct pci_dev *pdev = ae_dev->pdev;
+@@ -8300,6 +8317,7 @@ static int hclge_init_ae_dev(struct hnae
+ 	INIT_WORK(&hdev->mbx_service_task, hclge_mailbox_service_task);
+ 
+ 	hclge_clear_all_event_cause(hdev);
++	hclge_clear_resetting_state(hdev);
+ 
+ 	/* Log and clear the hw errors those already occurred */
+ 	hclge_handle_all_hns_hw_errors(ae_dev);

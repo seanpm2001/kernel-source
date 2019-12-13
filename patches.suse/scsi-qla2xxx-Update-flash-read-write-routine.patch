@@ -1,9 +1,9 @@
 From: Joe Carnuccio <joe.carnuccio@cavium.com>
 Date: Tue, 12 Mar 2019 11:08:18 -0700
-Subject: [PATCH] scsi: qla2xxx: Update flash read/write routine
-Git-commit: 3695310e37b4e571d40593cbe59188b0006a2274
+Subject: scsi: qla2xxx: Update flash read/write routine
 Patch-mainline: v5.2-rc1
-References: bsc#1136215
+Git-commit: 3695310e37b4e571d40593cbe59188b0006a2274
+References: bsc#1123034 bsc#1131304 bsc#1127988 bsc#1136215
 
 This patch makes following changes to flash access routines:
 
@@ -15,22 +15,20 @@ This patch makes following changes to flash access routines:
 Signed-off-by: Joe Carnuccio <joe.carnuccio@cavium.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_attr.c |  65 +++---
- drivers/scsi/qla2xxx/qla_def.h  |   8 +-
- drivers/scsi/qla2xxx/qla_gbl.h  |  47 ++---
- drivers/scsi/qla2xxx/qla_init.c |  24 +--
- drivers/scsi/qla2xxx/qla_nx.c   |  13 +-
- drivers/scsi/qla2xxx/qla_nx2.c  |   8 +-
- drivers/scsi/qla2xxx/qla_sup.c  | 443 +++++++++++++++++++---------------------
+ drivers/scsi/qla2xxx/qla_attr.c |   65 +++--
+ drivers/scsi/qla2xxx/qla_def.h  |    8 
+ drivers/scsi/qla2xxx/qla_gbl.h  |   47 ++--
+ drivers/scsi/qla2xxx/qla_init.c |   24 --
+ drivers/scsi/qla2xxx/qla_nx.c   |   13 -
+ drivers/scsi/qla2xxx/qla_nx2.c  |    8 
+ drivers/scsi/qla2xxx/qla_sup.c  |  443 +++++++++++++++++++---------------------
  7 files changed, 296 insertions(+), 312 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_attr.c b/drivers/scsi/qla2xxx/qla_attr.c
-index e762e60ae072..35f7804682ec 100644
 --- a/drivers/scsi/qla2xxx/qla_attr.c
 +++ b/drivers/scsi/qla2xxx/qla_attr.c
-@@ -223,9 +223,9 @@ qla2x00_sysfs_write_nvram(struct file *filp, struct kobject *kobj,
+@@ -223,9 +223,9 @@ qla2x00_sysfs_write_nvram(struct file *f
  	}
  
  	/* Write NVRAM. */
@@ -43,7 +41,7 @@ index e762e60ae072..35f7804682ec 100644
  	mutex_unlock(&ha->optrom_mutex);
  
  	ql_dbg(ql_dbg_user, vha, 0x7060,
-@@ -511,22 +511,24 @@ qla2x00_sysfs_read_vpd(struct file *filp, struct kobject *kobj,
+@@ -511,22 +511,24 @@ qla2x00_sysfs_read_vpd(struct file *filp
  	if (!capable(CAP_SYS_ADMIN))
  		return -EINVAL;
  
@@ -80,7 +78,7 @@ index e762e60ae072..35f7804682ec 100644
  	return memory_read_from_buffer(buf, count, &off, ha->vpd, ha->vpd_size);
  }
  
-@@ -563,8 +565,8 @@ qla2x00_sysfs_write_vpd(struct file *filp, struct kobject *kobj,
+@@ -563,8 +565,8 @@ qla2x00_sysfs_write_vpd(struct file *fil
  	}
  
  	/* Write NVRAM. */
@@ -91,7 +89,7 @@ index e762e60ae072..35f7804682ec 100644
  
  	/* Update flash version information for 4Gb & above. */
  	if (!IS_FWI2_CAPABLE(ha)) {
-@@ -934,7 +936,7 @@ static struct bin_attribute sysfs_dcbx_tlv_attr = {
+@@ -934,7 +936,7 @@ static struct bin_attribute sysfs_dcbx_t
  static struct sysfs_entry {
  	char *name;
  	struct bin_attribute *attr;
@@ -100,7 +98,7 @@ index e762e60ae072..35f7804682ec 100644
  } bin_file_entries[] = {
  	{ "fw_dump", &sysfs_fw_dump_attr, },
  	{ "nvram", &sysfs_nvram_attr, },
-@@ -957,11 +959,11 @@ qla2x00_alloc_sysfs_attr(scsi_qla_host_t *vha)
+@@ -957,11 +959,11 @@ qla2x00_alloc_sysfs_attr(scsi_qla_host_t
  	int ret;
  
  	for (iter = bin_file_entries; iter->name; iter++) {
@@ -115,7 +113,7 @@ index e762e60ae072..35f7804682ec 100644
  			continue;
  
  		ret = sysfs_create_bin_file(&host->shost_gendev.kobj,
-@@ -985,14 +987,14 @@ qla2x00_free_sysfs_attr(scsi_qla_host_t *vha, bool stop_beacon)
+@@ -985,14 +987,14 @@ qla2x00_free_sysfs_attr(scsi_qla_host_t
  	struct qla_hw_data *ha = vha->hw;
  
  	for (iter = bin_file_entries; iter->name; iter++) {
@@ -135,7 +133,7 @@ index e762e60ae072..35f7804682ec 100644
  			continue;
  
  		sysfs_remove_bin_file(&host->shost_gendev.kobj,
-@@ -1360,19 +1362,20 @@ qla24xx_84xx_fw_version_show(struct device *dev,
+@@ -1360,19 +1362,20 @@ qla24xx_84xx_fw_version_show(struct devi
  	struct device_attribute *attr, char *buf)
  {
  	int rval = QLA_SUCCESS;
@@ -161,8 +159,6 @@ index e762e60ae072..35f7804682ec 100644
  
  	return scnprintf(buf, PAGE_SIZE, "\n");
  }
-diff --git a/drivers/scsi/qla2xxx/qla_def.h b/drivers/scsi/qla2xxx/qla_def.h
-index cf2f597fa7f4..ac229cf7126b 100644
 --- a/drivers/scsi/qla2xxx/qla_def.h
 +++ b/drivers/scsi/qla2xxx/qla_def.h
 @@ -3161,9 +3161,9 @@ struct isp_operations {
@@ -189,11 +185,9 @@ index cf2f597fa7f4..ac229cf7126b 100644
  		uint32_t);
  
  	int (*get_flash_version) (struct scsi_qla_host *, void *);
-diff --git a/drivers/scsi/qla2xxx/qla_gbl.h b/drivers/scsi/qla2xxx/qla_gbl.h
-index a222997141d3..f00f1d213253 100644
 --- a/drivers/scsi/qla2xxx/qla_gbl.h
 +++ b/drivers/scsi/qla2xxx/qla_gbl.h
-@@ -543,19 +543,20 @@ fc_port_t *qla2x00_find_fcport_by_nportid(scsi_qla_host_t *, port_id_t *, u8);
+@@ -543,19 +543,20 @@ fc_port_t *qla2x00_find_fcport_by_nporti
   */
  extern void qla2x00_release_nvram_protection(scsi_qla_host_t *);
  extern uint32_t *qla24xx_read_flash_data(scsi_qla_host_t *, uint32_t *,
@@ -227,7 +221,7 @@ index a222997141d3..f00f1d213253 100644
  extern int qla2x00_is_a_vp_did(scsi_qla_host_t *, uint32_t);
  bool qla2x00_check_reg32_for_disconnect(scsi_qla_host_t *, uint32_t);
  bool qla2x00_check_reg16_for_disconnect(scsi_qla_host_t *, uint16_t);
-@@ -575,18 +576,18 @@ extern int qla83xx_restart_nic_firmware(scsi_qla_host_t *);
+@@ -575,18 +576,18 @@ extern int qla83xx_restart_nic_firmware(
  extern int qla83xx_access_control(scsi_qla_host_t *, uint16_t, uint32_t,
  				  uint32_t, uint16_t *);
  
@@ -253,7 +247,7 @@ index a222997141d3..f00f1d213253 100644
  extern void qla8044_watchdog(struct scsi_qla_host *vha);
  
  extern int qla2x00_get_flash_version(scsi_qla_host_t *, void *);
-@@ -766,9 +767,9 @@ extern int qla82xx_start_firmware(scsi_qla_host_t *);
+@@ -766,9 +767,9 @@ extern int qla82xx_start_firmware(scsi_q
  
  /* Firmware and flash related functions */
  extern int qla82xx_load_risc(scsi_qla_host_t *, uint32_t *);
@@ -265,7 +259,7 @@ index a222997141d3..f00f1d213253 100644
  				     uint32_t, uint32_t);
  
  /* Mailbox related functions */
-@@ -864,7 +865,7 @@ extern void qla8044_clear_drv_active(struct qla_hw_data *);
+@@ -864,7 +865,7 @@ extern void qla8044_clear_drv_active(str
  void qla8044_get_minidump(struct scsi_qla_host *vha);
  int qla8044_collect_md_data(struct scsi_qla_host *vha);
  extern int qla8044_md_get_template(scsi_qla_host_t *);
@@ -274,11 +268,9 @@ index a222997141d3..f00f1d213253 100644
  				     uint32_t, uint32_t);
  extern irqreturn_t qla8044_intr_handler(int, void *);
  extern void qla82xx_mbx_completion(scsi_qla_host_t *, uint16_t);
-diff --git a/drivers/scsi/qla2xxx/qla_init.c b/drivers/scsi/qla2xxx/qla_init.c
-index 24fc0a51053a..158ec5aa2837 100644
 --- a/drivers/scsi/qla2xxx/qla_init.c
 +++ b/drivers/scsi/qla2xxx/qla_init.c
-@@ -4419,9 +4419,8 @@ qla2x00_nvram_config(scsi_qla_host_t *vha)
+@@ -4419,9 +4419,8 @@ qla2x00_nvram_config(scsi_qla_host_t *vh
  	    nv->nvram_version < 1) {
  		/* Reset NVRAM data. */
  		ql_log(ql_log_warn, vha, 0x0064,
@@ -290,7 +282,7 @@ index 24fc0a51053a..158ec5aa2837 100644
  		ql_log(ql_log_warn, vha, 0x0065,
  		    "Falling back to "
  		    "functioning (yet invalid -- WWPN) defaults.\n");
-@@ -7007,13 +7006,12 @@ qla24xx_nvram_config(scsi_qla_host_t *vha)
+@@ -7014,13 +7013,12 @@ qla24xx_nvram_config(scsi_qla_host_t *vh
  
  	/* Get VPD data into cache */
  	ha->vpd = ha->nvram + VPD_OFFSET;
@@ -306,7 +298,7 @@ index 24fc0a51053a..158ec5aa2837 100644
  	for (cnt = 0, chksum = 0; cnt < ha->nvram_size >> 2; cnt++, dptr++)
  		chksum += le32_to_cpu(*dptr);
  
-@@ -7027,9 +7025,9 @@ qla24xx_nvram_config(scsi_qla_host_t *vha)
+@@ -7034,9 +7032,9 @@ qla24xx_nvram_config(scsi_qla_host_t *vh
  	    le16_to_cpu(nv->nvram_version) < ICB_VERSION) {
  		/* Reset NVRAM data. */
  		ql_log(ql_log_warn, vha, 0x006b,
@@ -319,7 +311,7 @@ index 24fc0a51053a..158ec5aa2837 100644
  		ql_log(ql_log_warn, vha, 0x006c,
  		    "Falling back to functioning (yet invalid -- WWPN) "
  		    "defaults.\n");
-@@ -7418,6 +7416,7 @@ qla24xx_load_risc_flash(scsi_qla_host_t *vha, uint32_t *srisc_addr,
+@@ -7425,6 +7423,7 @@ qla24xx_load_risc_flash(scsi_qla_host_t
  		fwdt->template = NULL;
  		fwdt->length = 0;
  
@@ -327,7 +319,7 @@ index 24fc0a51053a..158ec5aa2837 100644
  		qla24xx_read_flash_data(vha, dcode, faddr, 7);
  		risc_size = be32_to_cpu(dcode[2]);
  		ql_dbg(ql_dbg_init, vha, 0x0161,
-@@ -8020,10 +8019,9 @@ qla81xx_nvram_config(scsi_qla_host_t *vha)
+@@ -8027,10 +8026,9 @@ qla81xx_nvram_config(scsi_qla_host_t *vh
  	    le16_to_cpu(nv->nvram_version) < ICB_VERSION) {
  		/* Reset NVRAM data. */
  		ql_log(ql_log_info, vha, 0x0073,
@@ -341,11 +333,9 @@ index 24fc0a51053a..158ec5aa2837 100644
  		ql_log(ql_log_info, vha, 0x0074,
  		    "Falling back to functioning (yet invalid -- WWPN) "
  		    "defaults.\n");
-diff --git a/drivers/scsi/qla2xxx/qla_nx.c b/drivers/scsi/qla2xxx/qla_nx.c
-index f2f54806f4da..d545d34419e5 100644
 --- a/drivers/scsi/qla2xxx/qla_nx.c
 +++ b/drivers/scsi/qla2xxx/qla_nx.c
-@@ -2658,8 +2658,8 @@ qla82xx_erase_sector(struct qla_hw_data *ha, int addr)
+@@ -2658,8 +2658,8 @@ done:
  /*
   * Address and length are byte address
   */
@@ -356,7 +346,7 @@ index f2f54806f4da..d545d34419e5 100644
  	uint32_t offset, uint32_t length)
  {
  	scsi_block_requests(vha->host);
-@@ -2767,15 +2767,14 @@ qla82xx_write_flash_data(struct scsi_qla_host *vha, uint32_t *dwptr,
+@@ -2767,15 +2767,14 @@ write_done:
  }
  
  int
@@ -374,7 +364,7 @@ index f2f54806f4da..d545d34419e5 100644
  	scsi_unblock_requests(vha->host);
  
  	/* Convert return ISP82xx to generic */
-@@ -3699,8 +3698,8 @@ qla82xx_chip_reset_cleanup(scsi_qla_host_t *vha)
+@@ -3699,8 +3698,8 @@ qla82xx_chip_reset_cleanup(scsi_qla_host
  		spin_unlock_irqrestore(&ha->hardware_lock, flags);
  
  		/* Wait for pending cmds (physical and virtual) to complete */
@@ -385,11 +375,9 @@ index f2f54806f4da..d545d34419e5 100644
  			ql_dbg(ql_dbg_init, vha, 0x00b3,
  			    "Done wait for "
  			    "pending commands.\n");
-diff --git a/drivers/scsi/qla2xxx/qla_nx2.c b/drivers/scsi/qla2xxx/qla_nx2.c
-index fe856b602e03..691f81d7b1a3 100644
 --- a/drivers/scsi/qla2xxx/qla_nx2.c
 +++ b/drivers/scsi/qla2xxx/qla_nx2.c
-@@ -559,12 +559,12 @@ qla8044_read_flash_data(scsi_qla_host_t *vha,  uint8_t *p_data,
+@@ -559,12 +559,12 @@ exit_lock_error:
  /*
   * Address and length are byte address
   */
@@ -405,7 +393,7 @@ index fe856b602e03..691f81d7b1a3 100644
  	    != QLA_SUCCESS) {
  		ql_log(ql_log_warn, vha,  0xb08d,
  		    "%s: Failed to read from flash\n",
-@@ -3797,7 +3797,7 @@ qla8044_write_flash_dword_mode(scsi_qla_host_t *vha, uint32_t *dwptr,
+@@ -3797,7 +3797,7 @@ qla8044_write_flash_dword_mode(scsi_qla_
  }
  
  int
@@ -414,11 +402,9 @@ index fe856b602e03..691f81d7b1a3 100644
  			  uint32_t offset, uint32_t length)
  {
  	int rval = QLA_FUNCTION_FAILED, i, burst_iter_count;
-diff --git a/drivers/scsi/qla2xxx/qla_sup.c b/drivers/scsi/qla2xxx/qla_sup.c
-index 9c3abe2baaba..eb4514a56640 100644
 --- a/drivers/scsi/qla2xxx/qla_sup.c
 +++ b/drivers/scsi/qla2xxx/qla_sup.c
-@@ -429,66 +429,64 @@ qla2x00_set_nvram_protection(struct qla_hw_data *ha, int stat)
+@@ -429,66 +429,64 @@ qla2x00_set_nvram_protection(struct qla_
  static inline uint32_t
  flash_conf_addr(struct qla_hw_data *ha, uint32_t faddr)
  {
@@ -510,7 +496,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  
  	return dwptr;
  }
-@@ -496,35 +494,37 @@ qla24xx_read_flash_data(scsi_qla_host_t *vha, uint32_t *dwptr, uint32_t faddr,
+@@ -496,35 +494,37 @@ qla24xx_read_flash_data(scsi_qla_host_t
  static int
  qla24xx_write_flash_dword(struct qla_hw_data *ha, uint32_t addr, uint32_t data)
  {
@@ -564,7 +550,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  
  	/* Check if man_id and flash_id are valid. */
  	if (ids != 0xDEADDEAD && (*man_id == 0 || *flash_id == 0)) {
-@@ -534,9 +534,11 @@ qla24xx_get_flash_manufacturer(struct qla_hw_data *ha, uint8_t *man_id,
+@@ -534,9 +534,11 @@ qla24xx_get_flash_manufacturer(struct ql
  		 * Example: ATMEL 0x00 01 45 1F
  		 * Extract MFG and Dev ID from last two bytes.
  		 */
@@ -579,7 +565,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  	}
  }
  
-@@ -545,12 +547,12 @@ qla2xxx_find_flt_start(scsi_qla_host_t *vha, uint32_t *start)
+@@ -545,12 +547,12 @@ qla2xxx_find_flt_start(scsi_qla_host_t *
  {
  	const char *loc, *locations[] = { "DEF", "PCI" };
  	uint32_t pcihdr, pcids;
@@ -595,7 +581,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  
  	/*
  	 * FLT-location structure resides after the last PCI region.
-@@ -575,11 +577,9 @@ qla2xxx_find_flt_start(scsi_qla_host_t *vha, uint32_t *start)
+@@ -575,11 +577,9 @@ qla2xxx_find_flt_start(scsi_qla_host_t *
  		*start = FA_FLASH_LAYOUT_ADDR_28;
  		goto end;
  	}
@@ -608,7 +594,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  	do {
  		/* Verify PCI expansion ROM header. */
  		qla24xx_read_flash_data(vha, dcode, pcihdr >> 2, 0x20);
-@@ -604,15 +604,12 @@ qla2xxx_find_flt_start(scsi_qla_host_t *vha, uint32_t *start)
+@@ -604,15 +604,12 @@ qla2xxx_find_flt_start(scsi_qla_host_t *
  	} while (!last_image);
  
  	/* Now verify FLT-location structure. */
@@ -628,7 +614,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  	for (chksum = 0; cnt--; wptr++)
  		chksum += le16_to_cpu(*wptr);
  	if (chksum) {
-@@ -915,22 +912,19 @@ qla2xxx_get_fdt_info(scsi_qla_host_t *vha)
+@@ -915,22 +912,19 @@ qla2xxx_get_fdt_info(scsi_qla_host_t *vh
  #define FLASH_BLK_SIZE_32K	0x8000
  #define FLASH_BLK_SIZE_64K	0x10000
  	const char *loc, *locations[] = { "MID", "FDT" };
@@ -659,7 +645,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  		goto no_flash_data;
  
  	for (cnt = 0, chksum = 0; cnt < sizeof(*fdt) >> 1; cnt++, wptr++)
-@@ -1022,8 +1016,7 @@ qla2xxx_get_idc_param(scsi_qla_host_t *vha)
+@@ -1022,8 +1016,7 @@ qla2xxx_get_idc_param(scsi_qla_host_t *v
  		return;
  
  	wptr = (uint32_t *)req->ring;
@@ -669,7 +655,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  
  	if (*wptr == cpu_to_le32(0xffffffff)) {
  		ha->fcoe_dev_init_timeout = QLA82XX_ROM_DEV_INIT_TIMEOUT;
-@@ -1085,8 +1078,8 @@ qla2xxx_flash_npiv_conf(scsi_qla_host_t *vha)
+@@ -1085,8 +1078,8 @@ qla2xxx_flash_npiv_conf(scsi_qla_host_t
  	if (IS_QLA8044(ha))
  		return;
  
@@ -680,7 +666,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  	if (hdr.version == cpu_to_le16(0xffff))
  		return;
  	if (hdr.version != cpu_to_le16(1)) {
-@@ -1105,8 +1098,8 @@ qla2xxx_flash_npiv_conf(scsi_qla_host_t *vha)
+@@ -1105,8 +1098,8 @@ qla2xxx_flash_npiv_conf(scsi_qla_host_t
  		return;
  	}
  
@@ -691,7 +677,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  
  	cnt = (sizeof(hdr) + le16_to_cpu(hdr.entries) * sizeof(*entry)) >> 1;
  	for (wptr = data, chksum = 0; cnt--; wptr++)
-@@ -1143,10 +1136,8 @@ qla2xxx_flash_npiv_conf(scsi_qla_host_t *vha)
+@@ -1143,10 +1136,8 @@ qla2xxx_flash_npiv_conf(scsi_qla_host_t
  		vid.node_name = wwn_to_u64(entry->node_name);
  
  		ql_dbg(ql_dbg_user, vha, 0x7093,
@@ -704,7 +690,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  		    le16_to_cpu(entry->vf_id),
  		    entry->q_qos, entry->f_qos);
  
-@@ -1154,10 +1145,8 @@ qla2xxx_flash_npiv_conf(scsi_qla_host_t *vha)
+@@ -1154,10 +1145,8 @@ qla2xxx_flash_npiv_conf(scsi_qla_host_t
  			vport = fc_vport_create(vha->host, 0, &vid);
  			if (!vport)
  				ql_log(ql_log_warn, vha, 0x7094,
@@ -717,7 +703,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  		}
  	}
  done:
-@@ -1192,9 +1181,10 @@ qla24xx_unprotect_flash(scsi_qla_host_t *vha)
+@@ -1192,9 +1181,10 @@ done:
  static int
  qla24xx_protect_flash(scsi_qla_host_t *vha)
  {
@@ -729,7 +715,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  
  	if (ha->flags.fac_supported)
  		return qla81xx_fac_do_write_enable(vha, 0);
-@@ -1203,11 +1193,14 @@ qla24xx_protect_flash(scsi_qla_host_t *vha)
+@@ -1203,11 +1193,14 @@ qla24xx_protect_flash(scsi_qla_host_t *v
  		goto skip_wrt_protect;
  
  	/* Enable flash write-protection and wait for completion. */
@@ -749,7 +735,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  		udelay(10);
  	}
  
-@@ -1215,7 +1208,6 @@ qla24xx_protect_flash(scsi_qla_host_t *vha)
+@@ -1215,7 +1208,6 @@ skip_wrt_protect:
  	/* Disable flash write. */
  	WRT_REG_DWORD(&reg->ctrl_status,
  	    RD_REG_DWORD(&reg->ctrl_status) & ~CSRX_FLASH_ENABLE);
@@ -757,7 +743,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  
  	return QLA_SUCCESS;
  }
-@@ -1243,107 +1235,103 @@ qla24xx_write_flash_data(scsi_qla_host_t *vha, uint32_t *dwptr, uint32_t faddr,
+@@ -1243,107 +1235,103 @@ qla24xx_write_flash_data(scsi_qla_host_t
      uint32_t dwords)
  {
  	int ret;
@@ -926,7 +912,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  done:
  	if (optrom)
  		dma_free_coherent(&ha->pdev->dev,
-@@ -1353,7 +1341,7 @@ qla24xx_write_flash_data(scsi_qla_host_t *vha, uint32_t *dwptr, uint32_t faddr,
+@@ -1353,7 +1341,7 @@ done:
  }
  
  uint8_t *
@@ -935,7 +921,7 @@ index 9c3abe2baaba..eb4514a56640 100644
      uint32_t bytes)
  {
  	uint32_t i;
-@@ -1372,27 +1360,30 @@ qla2x00_read_nvram_data(scsi_qla_host_t *vha, uint8_t *buf, uint32_t naddr,
+@@ -1372,27 +1360,30 @@ qla2x00_read_nvram_data(scsi_qla_host_t
  }
  
  uint8_t *
@@ -974,7 +960,7 @@ index 9c3abe2baaba..eb4514a56640 100644
      uint32_t bytes)
  {
  	int ret, stat;
-@@ -1426,14 +1417,14 @@ qla2x00_write_nvram_data(scsi_qla_host_t *vha, uint8_t *buf, uint32_t naddr,
+@@ -1426,14 +1417,14 @@ qla2x00_write_nvram_data(scsi_qla_host_t
  }
  
  int
@@ -993,7 +979,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  
  	ret = QLA_SUCCESS;
  
-@@ -1450,11 +1441,10 @@ qla24xx_write_nvram_data(scsi_qla_host_t *vha, uint8_t *buf, uint32_t naddr,
+@@ -1450,11 +1441,10 @@ qla24xx_write_nvram_data(scsi_qla_host_t
  	qla24xx_write_flash_dword(ha, nvram_conf_addr(ha, 0x101), 0);
  
  	/* Dword writes to flash. */
@@ -1009,7 +995,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  			ql_dbg(ql_dbg_user, vha, 0x709a,
  			    "Unable to program nvram address=%x data=%x.\n",
  			    naddr, *dwptr);
-@@ -1474,31 +1464,34 @@ qla24xx_write_nvram_data(scsi_qla_host_t *vha, uint8_t *buf, uint32_t naddr,
+@@ -1474,31 +1464,34 @@ qla24xx_write_nvram_data(scsi_qla_host_t
  }
  
  uint8_t *
@@ -1055,7 +1041,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  	if (!dbuf)
  		return QLA_MEMORY_ALLOC_FAILED;
  	ha->isp_ops->read_optrom(vha, dbuf, ha->flt_region_vpd_nvram << 2,
-@@ -2319,8 +2312,8 @@ qla2x00_resume_hba(struct scsi_qla_host *vha)
+@@ -2319,8 +2312,8 @@ qla2x00_resume_hba(struct scsi_qla_host
  	scsi_unblock_requests(vha->host);
  }
  
@@ -1066,7 +1052,7 @@ index 9c3abe2baaba..eb4514a56640 100644
      uint32_t offset, uint32_t length)
  {
  	uint32_t addr, midpoint;
-@@ -2354,12 +2347,12 @@ qla2x00_read_optrom_data(struct scsi_qla_host *vha, uint8_t *buf,
+@@ -2354,12 +2347,12 @@ qla2x00_read_optrom_data(struct scsi_qla
  }
  
  int
@@ -1081,7 +1067,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  	uint16_t wd;
  	uint32_t addr, liter, sec_mask, rest_addr;
  	struct qla_hw_data *ha = vha->hw;
-@@ -2488,7 +2481,7 @@ qla2x00_write_optrom_data(struct scsi_qla_host *vha, uint8_t *buf,
+@@ -2488,7 +2481,7 @@ update_flash:
  
  		for (addr = offset, liter = 0; liter < length; liter++,
  		    addr++) {
@@ -1090,7 +1076,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  			/* Are we at the beginning of a sector? */
  			if ((addr & rest_addr) == 0) {
  				if (IS_QLA2322(ha) || IS_QLA6322(ha)) {
-@@ -2556,7 +2549,7 @@ qla2x00_write_optrom_data(struct scsi_qla_host *vha, uint8_t *buf,
+@@ -2556,7 +2549,7 @@ update_flash:
  				}
  			}
  
@@ -1099,7 +1085,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  			    man_id, flash_id)) {
  				rval = QLA_FUNCTION_FAILED;
  				break;
-@@ -2572,8 +2565,8 @@ qla2x00_write_optrom_data(struct scsi_qla_host *vha, uint8_t *buf,
+@@ -2572,8 +2565,8 @@ update_flash:
  	return rval;
  }
  
@@ -1110,7 +1096,7 @@ index 9c3abe2baaba..eb4514a56640 100644
      uint32_t offset, uint32_t length)
  {
  	struct qla_hw_data *ha = vha->hw;
-@@ -2583,7 +2576,7 @@ qla24xx_read_optrom_data(struct scsi_qla_host *vha, uint8_t *buf,
+@@ -2583,7 +2576,7 @@ qla24xx_read_optrom_data(struct scsi_qla
  	set_bit(MBX_UPDATE_FLASH_ACTIVE, &ha->mbx_cmd_flags);
  
  	/* Go with read. */
@@ -1119,7 +1105,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  
  	/* Resume HBA. */
  	clear_bit(MBX_UPDATE_FLASH_ACTIVE, &ha->mbx_cmd_flags);
-@@ -2593,7 +2586,7 @@ qla24xx_read_optrom_data(struct scsi_qla_host *vha, uint8_t *buf,
+@@ -2593,7 +2586,7 @@ qla24xx_read_optrom_data(struct scsi_qla
  }
  
  int
@@ -1128,7 +1114,7 @@ index 9c3abe2baaba..eb4514a56640 100644
      uint32_t offset, uint32_t length)
  {
  	int rval;
-@@ -2604,7 +2597,7 @@ qla24xx_write_optrom_data(struct scsi_qla_host *vha, uint8_t *buf,
+@@ -2604,7 +2597,7 @@ qla24xx_write_optrom_data(struct scsi_ql
  	set_bit(MBX_UPDATE_FLASH_ACTIVE, &ha->mbx_cmd_flags);
  
  	/* Go with write. */
@@ -1137,7 +1123,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  	    length >> 2);
  
  	clear_bit(MBX_UPDATE_FLASH_ACTIVE, &ha->mbx_cmd_flags);
-@@ -2613,8 +2606,8 @@ qla24xx_write_optrom_data(struct scsi_qla_host *vha, uint8_t *buf,
+@@ -2613,8 +2606,8 @@ qla24xx_write_optrom_data(struct scsi_ql
  	return rval;
  }
  
@@ -1148,7 +1134,7 @@ index 9c3abe2baaba..eb4514a56640 100644
      uint32_t offset, uint32_t length)
  {
  	int rval;
-@@ -2881,7 +2874,7 @@ qla2x00_get_flash_version(scsi_qla_host_t *vha, void *mbuf)
+@@ -2881,7 +2874,7 @@ qla2x00_get_flash_version(scsi_qla_host_
  		    "Dumping fw "
  		    "ver from flash:.\n");
  		ql_dump_buffer(ql_dbg_init + ql_dbg_buffer, vha, 0x010b,
@@ -1157,7 +1143,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  
  		if ((dcode[0] == 0xffff && dcode[1] == 0xffff &&
  		    dcode[2] == 0xffff && dcode[3] == 0xffff) ||
-@@ -2912,8 +2905,8 @@ qla82xx_get_flash_version(scsi_qla_host_t *vha, void *mbuf)
+@@ -2912,8 +2905,8 @@ qla82xx_get_flash_version(scsi_qla_host_
  {
  	int ret = QLA_SUCCESS;
  	uint32_t pcihdr, pcids;
@@ -1168,7 +1154,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  	uint8_t code_type, last_image;
  	struct qla_hw_data *ha = vha->hw;
  
-@@ -2925,17 +2918,14 @@ qla82xx_get_flash_version(scsi_qla_host_t *vha, void *mbuf)
+@@ -2925,17 +2918,14 @@ qla82xx_get_flash_version(scsi_qla_host_
  	memset(ha->fcode_revision, 0, sizeof(ha->fcode_revision));
  	memset(ha->fw_revision, 0, sizeof(ha->fw_revision));
  
@@ -1188,7 +1174,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  			/* No signature */
  			ql_log(ql_log_fatal, vha, 0x0154,
  			    "No matching ROM signature.\n");
-@@ -2946,13 +2936,11 @@ qla82xx_get_flash_version(scsi_qla_host_t *vha, void *mbuf)
+@@ -2946,13 +2936,11 @@ qla82xx_get_flash_version(scsi_qla_host_
  		/* Locate PCI data structure. */
  		pcids = pcihdr + ((bcode[0x19] << 8) | bcode[0x18]);
  
@@ -1204,7 +1190,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  			/* Incorrect header. */
  			ql_log(ql_log_fatal, vha, 0x0155,
  			    "PCI data struct not found pcir_adr=%x.\n", pcids);
-@@ -3003,8 +2991,7 @@ qla82xx_get_flash_version(scsi_qla_host_t *vha, void *mbuf)
+@@ -3003,8 +2991,7 @@ qla82xx_get_flash_version(scsi_qla_host_
  	/* Read firmware image information. */
  	memset(ha->fw_revision, 0, sizeof(ha->fw_revision));
  	dcode = mbuf;
@@ -1234,7 +1220,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  	if (IS_P3P_TYPE(ha))
  		return ret;
  
-@@ -3047,18 +3032,16 @@ qla24xx_get_flash_version(scsi_qla_host_t *vha, void *mbuf)
+@@ -3047,18 +3032,16 @@ qla24xx_get_flash_version(scsi_qla_host_
  	memset(ha->fcode_revision, 0, sizeof(ha->fcode_revision));
  	memset(ha->fw_revision, 0, sizeof(ha->fw_revision));
  
@@ -1254,7 +1240,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  			/* No signature */
  			ql_log(ql_log_fatal, vha, 0x0059,
  			    "No matching ROM signature.\n");
-@@ -3073,11 +3056,11 @@ qla24xx_get_flash_version(scsi_qla_host_t *vha, void *mbuf)
+@@ -3073,11 +3056,11 @@ qla24xx_get_flash_version(scsi_qla_host_
  		bcode = mbuf + (pcihdr % 4);
  
  		/* Validate signature of PCI data structure. */
@@ -1268,7 +1254,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  			ret = QLA_FUNCTION_FAILED;
  			break;
  		}
-@@ -3124,7 +3107,6 @@ qla24xx_get_flash_version(scsi_qla_host_t *vha, void *mbuf)
+@@ -3124,7 +3107,6 @@ qla24xx_get_flash_version(scsi_qla_host_
  
  	/* Read firmware image information. */
  	memset(ha->fw_revision, 0, sizeof(ha->fw_revision));
@@ -1276,7 +1262,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  	faddr = ha->flt_region_fw;
  	if ((IS_QLA27XX(ha) || IS_QLA28XX(ha)) &&
  	    qla27xx_find_valid_image(vha) == QLA27XX_SECONDARY_IMAGE)
-@@ -3135,11 +3117,12 @@ qla24xx_get_flash_version(scsi_qla_host_t *vha, void *mbuf)
+@@ -3135,11 +3117,12 @@ qla24xx_get_flash_version(scsi_qla_host_
  		ql_log(ql_log_warn, vha, 0x005f,
  		    "Unrecognized fw revision at %x.\n",
  		    ha->flt_region_fw * 4);
@@ -1290,7 +1276,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  		    ha->fw_revision[0], ha->fw_revision[1],
  		    ha->fw_revision[2], ha->fw_revision[3]);
  	}
-@@ -3151,12 +3134,12 @@ qla24xx_get_flash_version(scsi_qla_host_t *vha, void *mbuf)
+@@ -3151,12 +3134,12 @@ qla24xx_get_flash_version(scsi_qla_host_
  	}
  
  	memset(ha->gold_fw_version, 0, sizeof(ha->gold_fw_version));
@@ -1307,7 +1293,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  		return ret;
  	}
  
-@@ -3233,7 +3216,7 @@ qla24xx_read_fcp_prio_cfg(scsi_qla_host_t *vha)
+@@ -3233,7 +3216,7 @@ qla24xx_read_fcp_prio_cfg(scsi_qla_host_
  	fcp_prio_addr = ha->flt_region_fcp_prio;
  
  	/* first read the fcp priority data header from flash */
@@ -1316,7 +1302,7 @@ index 9c3abe2baaba..eb4514a56640 100644
  			fcp_prio_addr << 2, FCP_PRIO_CFG_HDR_SIZE);
  
  	if (!qla24xx_fcp_prio_cfg_valid(vha, ha->fcp_prio_cfg, 0))
-@@ -3244,7 +3227,7 @@ qla24xx_read_fcp_prio_cfg(scsi_qla_host_t *vha)
+@@ -3244,7 +3227,7 @@ qla24xx_read_fcp_prio_cfg(scsi_qla_host_
  	len = ha->fcp_prio_cfg->num_entries * FCP_PRIO_CFG_ENTRY_SIZE;
  	max_len = FCP_PRIO_CFG_SIZE - FCP_PRIO_CFG_HDR_SIZE;
  
@@ -1325,6 +1311,3 @@ index 9c3abe2baaba..eb4514a56640 100644
  			fcp_prio_addr << 2, (len < max_len ? len : max_len));
  
  	/* revalidate the entire FCP priority config data, including entries */
--- 
-2.16.4
-

@@ -1,0 +1,98 @@
+From: Yufeng Mo <moyufeng@huawei.com>
+Date: Fri, 7 Jun 2019 10:03:11 +0800
+Subject: net: hns3: refactor PF/VF RSS hash key configuration
+Patch-mainline: v5.3-rc1
+Git-commit: 3caf772bcea18a3c5045113aaa119dd2dd81f98f
+References: bsc#1104353 FATE#326415
+
+In order to make it more readable, this patch modifies PF/VF's
+RSS hash key configuring function.
+
+Signed-off-by: Yufeng Mo <moyufeng@huawei.com>
+Signed-off-by: Jian Shen <shenjian15@huawei.com>
+Signed-off-by: Weihang Li <liweihang@hisilicon.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c   |   15 ++++++--------
+ drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c |   15 ++++++--------
+ 2 files changed, 14 insertions(+), 16 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
+@@ -3293,28 +3293,27 @@ static int hclge_set_rss_algo_key(struct
+ {
+ 	struct hclge_rss_config_cmd *req;
+ 	struct hclge_desc desc;
+-	int key_offset;
++	int key_offset = 0;
++	int key_counts;
+ 	int key_size;
+ 	int ret;
+ 
++	key_counts = HCLGE_RSS_KEY_SIZE;
+ 	req = (struct hclge_rss_config_cmd *)desc.data;
+ 
+-	for (key_offset = 0; key_offset < 3; key_offset++) {
++	while (key_counts) {
+ 		hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_RSS_GENERIC_CONFIG,
+ 					   false);
+ 
+ 		req->hash_config |= (hfunc & HCLGE_RSS_HASH_ALGO_MASK);
+ 		req->hash_config |= (key_offset << HCLGE_RSS_HASH_KEY_OFFSET_B);
+ 
+-		if (key_offset == 2)
+-			key_size =
+-			HCLGE_RSS_KEY_SIZE - HCLGE_RSS_HASH_KEY_NUM * 2;
+-		else
+-			key_size = HCLGE_RSS_HASH_KEY_NUM;
+-
++		key_size = min(HCLGE_RSS_HASH_KEY_NUM, key_counts);
+ 		memcpy(req->hash_key,
+ 		       key + key_offset * HCLGE_RSS_HASH_KEY_NUM, key_size);
+ 
++		key_counts -= key_size;
++		key_offset++;
+ 		ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+ 		if (ret) {
+ 			dev_err(&hdev->pdev->dev,
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c
+@@ -538,13 +538,15 @@ static int hclgevf_set_rss_algo_key(stru
+ {
+ 	struct hclgevf_rss_config_cmd *req;
+ 	struct hclgevf_desc desc;
+-	int key_offset;
++	int key_offset = 0;
++	int key_counts;
+ 	int key_size;
+ 	int ret;
+ 
++	key_counts = HCLGEVF_RSS_KEY_SIZE;
+ 	req = (struct hclgevf_rss_config_cmd *)desc.data;
+ 
+-	for (key_offset = 0; key_offset < 3; key_offset++) {
++	while (key_counts) {
+ 		hclgevf_cmd_setup_basic_desc(&desc,
+ 					     HCLGEVF_OPC_RSS_GENERIC_CONFIG,
+ 					     false);
+@@ -553,15 +555,12 @@ static int hclgevf_set_rss_algo_key(stru
+ 		req->hash_config |=
+ 			(key_offset << HCLGEVF_RSS_HASH_KEY_OFFSET_B);
+ 
+-		if (key_offset == 2)
+-			key_size =
+-			HCLGEVF_RSS_KEY_SIZE - HCLGEVF_RSS_HASH_KEY_NUM * 2;
+-		else
+-			key_size = HCLGEVF_RSS_HASH_KEY_NUM;
+-
++		key_size = min(HCLGEVF_RSS_HASH_KEY_NUM, key_counts);
+ 		memcpy(req->hash_key,
+ 		       key + key_offset * HCLGEVF_RSS_HASH_KEY_NUM, key_size);
+ 
++		key_counts -= key_size;
++		key_offset++;
+ 		ret = hclgevf_cmd_send(&hdev->hw, &desc, 1);
+ 		if (ret) {
+ 			dev_err(&hdev->pdev->dev,

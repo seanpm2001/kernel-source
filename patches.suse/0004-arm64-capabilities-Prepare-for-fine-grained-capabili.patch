@@ -70,8 +70,8 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
 ---
  arch/arm64/include/asm/cpufeature.h |  105 +++++++++++++++++++++++++++++++++---
  arch/arm64/kernel/cpu_errata.c      |    6 +-
- arch/arm64/kernel/cpufeature.c      |   36 ++++++------
- 3 files changed, 120 insertions(+), 27 deletions(-)
+ arch/arm64/kernel/cpufeature.c      |   40 ++++++-------
+ 3 files changed, 122 insertions(+), 29 deletions(-)
 
 --- a/arch/arm64/include/asm/cpufeature.h
 +++ b/arch/arm64/include/asm/cpufeature.h
@@ -217,7 +217,7 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  	.matches = is_affected_midr_range, \
  	.midr_model = model, \
  	.midr_range_min = 0, \
-@@ -338,7 +338,7 @@ const struct arm64_cpu_capabilities arm6
+@@ -347,7 +347,7 @@ const struct arm64_cpu_capabilities arm6
  		.desc = "Mismatched cache line size",
  		.capability = ARM64_MISMATCHED_CACHE_LINE_SIZE,
  		.matches = has_mismatched_cache_line_size,
@@ -228,7 +228,7 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  #ifdef CONFIG_QCOM_FALKOR_ERRATUM_1003
 --- a/arch/arm64/kernel/cpufeature.c
 +++ b/arch/arm64/kernel/cpufeature.c
-@@ -963,7 +963,7 @@ static const struct arm64_cpu_capabiliti
+@@ -975,7 +975,7 @@ static const struct arm64_cpu_capabiliti
  	{
  		.desc = "GIC system register CPU interface",
  		.capability = ARM64_HAS_SYSREG_GIC_CPUIF,
@@ -237,7 +237,7 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  		.matches = has_useable_gicv3_cpuif,
  		.sys_reg = SYS_ID_AA64PFR0_EL1,
  		.field_pos = ID_AA64PFR0_GIC_SHIFT,
-@@ -974,7 +974,7 @@ static const struct arm64_cpu_capabiliti
+@@ -986,7 +986,7 @@ static const struct arm64_cpu_capabiliti
  	{
  		.desc = "Privileged Access Never",
  		.capability = ARM64_HAS_PAN,
@@ -246,7 +246,7 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  		.matches = has_cpuid_feature,
  		.sys_reg = SYS_ID_AA64MMFR1_EL1,
  		.field_pos = ID_AA64MMFR1_PAN_SHIFT,
-@@ -987,7 +987,7 @@ static const struct arm64_cpu_capabiliti
+@@ -999,7 +999,7 @@ static const struct arm64_cpu_capabiliti
  	{
  		.desc = "LSE atomic instructions",
  		.capability = ARM64_HAS_LSE_ATOMICS,
@@ -255,7 +255,7 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  		.matches = has_cpuid_feature,
  		.sys_reg = SYS_ID_AA64ISAR0_EL1,
  		.field_pos = ID_AA64ISAR0_ATOMICS_SHIFT,
-@@ -998,14 +998,14 @@ static const struct arm64_cpu_capabiliti
+@@ -1010,14 +1010,14 @@ static const struct arm64_cpu_capabiliti
  	{
  		.desc = "Software prefetching using PRFM",
  		.capability = ARM64_HAS_NO_HW_PREFETCH,
@@ -272,7 +272,7 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  		.matches = has_cpuid_feature,
  		.sys_reg = SYS_ID_AA64MMFR2_EL1,
  		.field_pos = ID_AA64MMFR2_UAO_SHIFT,
-@@ -1019,21 +1019,21 @@ static const struct arm64_cpu_capabiliti
+@@ -1031,21 +1031,21 @@ static const struct arm64_cpu_capabiliti
  #ifdef CONFIG_ARM64_PAN
  	{
  		.capability = ARM64_ALT_PAN_NOT_UAO,
@@ -297,7 +297,7 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  		.matches = has_cpuid_feature,
  		.sys_reg = SYS_ID_AA64PFR0_EL1,
  		.sign = FTR_UNSIGNED,
-@@ -1043,14 +1043,14 @@ static const struct arm64_cpu_capabiliti
+@@ -1055,14 +1055,14 @@ static const struct arm64_cpu_capabiliti
  	{
  		.desc = "Reduced HYP mapping offset",
  		.capability = ARM64_HYP_OFFSET_LOW,
@@ -314,7 +314,7 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  		.matches = unmap_kernel_at_el0,
  		.cpu_enable = kpti_install_ng_mappings,
  	},
-@@ -1058,15 +1058,15 @@ static const struct arm64_cpu_capabiliti
+@@ -1070,15 +1070,15 @@ static const struct arm64_cpu_capabiliti
  	{
  		/* FP/SIMD is not implemented */
  		.capability = ARM64_HAS_NO_FPSIMD,
@@ -332,7 +332,7 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  		.sys_reg = SYS_ID_AA64PFR0_EL1,
  		.sign = FTR_UNSIGNED,
  		.field_pos = ID_AA64PFR0_SVE_SHIFT,
-@@ -1079,7 +1079,7 @@ static const struct arm64_cpu_capabiliti
+@@ -1091,7 +1091,7 @@ static const struct arm64_cpu_capabiliti
  	{
  		.desc = "RAS Extension Support",
  		.capability = ARM64_HAS_RAS_EXTN,
@@ -341,7 +341,21 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  		.matches = has_cpuid_feature,
  		.sys_reg = SYS_ID_AA64PFR0_EL1,
  		.sign = FTR_UNSIGNED,
-@@ -1091,16 +1091,16 @@ static const struct arm64_cpu_capabiliti
+@@ -1103,28 +1103,28 @@ static const struct arm64_cpu_capabiliti
+ 	{
+ 		.desc = "Data cache clean to the PoU not required for I/D coherence",
+ 		.capability = ARM64_HAS_CACHE_IDC,
+-		.def_scope = SCOPE_SYSTEM,
++		.type = ARM64_CPUCAP_SCOPE_SYSTEM,
+ 		.matches = has_cache_idc,
+ 	},
+ 	{
+ 		.desc = "Instruction cache invalidation not required for I/D coherence",
+ 		.capability = ARM64_HAS_CACHE_DIC,
+-		.def_scope = SCOPE_SYSTEM,
++		.type = ARM64_CPUCAP_SCOPE_SYSTEM,
+ 		.matches = has_cache_dic,
+ 	},
  	{},
  };
  
@@ -361,7 +375,7 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  		.hwcap = cap,					\
  	}
  
-@@ -1196,7 +1196,7 @@ static void __init setup_elf_hwcaps(cons
+@@ -1220,7 +1220,7 @@ static void __init setup_elf_hwcaps(cons
  	/* We support emulation of accesses to CPU ID feature registers */
  	elf_hwcap |= HWCAP_CPUID;
  	for (; hwcaps->matches; hwcaps++)
@@ -370,7 +384,7 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  			cap_set_elf_hwcap(hwcaps);
  }
  
-@@ -1223,7 +1223,7 @@ static void update_cpu_capabilities(cons
+@@ -1247,7 +1247,7 @@ static void update_cpu_capabilities(cons
  				    const char *info)
  {
  	for (; caps->matches; caps++) {

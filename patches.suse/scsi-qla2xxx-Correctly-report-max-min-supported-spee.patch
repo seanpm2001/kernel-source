@@ -1,9 +1,9 @@
 From: Joe Carnuccio <joe.carnuccio@cavium.com>
 Date: Tue, 12 Mar 2019 11:08:15 -0700
-Subject: [PATCH] scsi: qla2xxx: Correctly report max/min supported speeds
-Git-commit: 72a92df2109bf62094c25436ded2be0283d9aa24
+Subject: scsi: qla2xxx: Correctly report max/min supported speeds
 Patch-mainline: v5.2-rc1
-References: bsc#1136215
+Git-commit: 72a92df2109bf62094c25436ded2be0283d9aa24
+References: bsc#1136215 bsc#1123034 bsc#1131304 bsc#1127988
 
 This patch fixes reported speed for min_link and max_supported speed. Also
 rename sysfs nodes link_speed and max_supported to be consistent with
@@ -13,19 +13,17 @@ Signed-off-by: Joe Carnuccio <joe.carnuccio@cavium.com>
 Signed-off-by: Mike Hernandez <mhernandez@marvell.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_attr.c | 94 +++++++++++++++++++++++++----------------
- drivers/scsi/qla2xxx/qla_def.h  |  7 +--
- drivers/scsi/qla2xxx/qla_fw.h   |  2 +-
- drivers/scsi/qla2xxx/qla_mbx.c  | 65 +++++++++++++++-------------
+ drivers/scsi/qla2xxx/qla_attr.c |   94 ++++++++++++++++++++++++----------------
+ drivers/scsi/qla2xxx/qla_def.h  |    7 +-
+ drivers/scsi/qla2xxx/qla_fw.h   |    2 
+ drivers/scsi/qla2xxx/qla_mbx.c  |   65 ++++++++++++++-------------
  4 files changed, 98 insertions(+), 70 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_attr.c b/drivers/scsi/qla2xxx/qla_attr.c
-index 93da79a0ccf5..e762e60ae072 100644
 --- a/drivers/scsi/qla2xxx/qla_attr.c
 +++ b/drivers/scsi/qla2xxx/qla_attr.c
-@@ -1621,8 +1621,8 @@ qla2x00_pep_version_show(struct device *dev, struct device_attribute *attr,
+@@ -1621,8 +1621,8 @@ qla2x00_pep_version_show(struct device *
  }
  
  static ssize_t
@@ -36,7 +34,7 @@ index 93da79a0ccf5..e762e60ae072 100644
  {
  	scsi_qla_host_t *vha = shost_priv(class_to_shost(dev));
  	struct qla_hw_data *ha = vha->hw;
-@@ -1631,16 +1631,17 @@ qla2x00_min_link_speed_show(struct device *dev, struct device_attribute *attr,
+@@ -1631,16 +1631,17 @@ qla2x00_min_link_speed_show(struct devic
  		return scnprintf(buf, PAGE_SIZE, "\n");
  
  	return scnprintf(buf, PAGE_SIZE, "%s\n",
@@ -61,7 +59,7 @@ index 93da79a0ccf5..e762e60ae072 100644
  {
  	scsi_qla_host_t *vha = shost_priv(class_to_shost(dev));
  	struct qla_hw_data *ha = vha->hw;
-@@ -1649,7 +1650,9 @@ qla2x00_max_speed_sup_show(struct device *dev, struct device_attribute *attr,
+@@ -1649,7 +1650,9 @@ qla2x00_max_speed_sup_show(struct device
  		return scnprintf(buf, PAGE_SIZE, "\n");
  
  	return scnprintf(buf, PAGE_SIZE, "%s\n",
@@ -72,7 +70,7 @@ index 93da79a0ccf5..e762e60ae072 100644
  }
  
  static ssize_t
-@@ -2253,8 +2256,10 @@ static DEVICE_ATTR(allow_cna_fw_dump, S_IRUGO | S_IWUSR,
+@@ -2253,8 +2256,10 @@ static DEVICE_ATTR(allow_cna_fw_dump, S_
  		   qla2x00_allow_cna_fw_dump_show,
  		   qla2x00_allow_cna_fw_dump_store);
  static DEVICE_ATTR(pep_version, S_IRUGO, qla2x00_pep_version_show, NULL);
@@ -85,7 +83,7 @@ index 93da79a0ccf5..e762e60ae072 100644
  static DEVICE_ATTR(zio_threshold, 0644,
      qla_zio_threshold_show,
      qla_zio_threshold_store);
-@@ -2303,8 +2308,8 @@ struct device_attribute *qla2x00_host_attrs[] = {
+@@ -2303,8 +2308,8 @@ struct device_attribute *qla2x00_host_at
  	&dev_attr_fw_dump_size,
  	&dev_attr_allow_cna_fw_dump,
  	&dev_attr_pep_version,
@@ -105,7 +103,7 @@ index 93da79a0ccf5..e762e60ae072 100644
  
  	fc_host_dev_loss_tmo(vha->host) = ha->port_down_retry_count;
  	fc_host_node_name(vha->host) = wwn_to_u64(vha->node_name);
-@@ -3044,28 +3049,45 @@ qla2x00_init_host_attr(scsi_qla_host_t *vha)
+@@ -3044,28 +3049,45 @@ qla2x00_init_host_attr(scsi_qla_host_t *
  	fc_host_npiv_vports_inuse(vha->host) = ha->cur_vport_count;
  
  	if (IS_CNA_CAPABLE(ha))
@@ -172,8 +170,6 @@ index 93da79a0ccf5..e762e60ae072 100644
 +
 +	fc_host_supported_speeds(vha->host) = speeds;
  }
-diff --git a/drivers/scsi/qla2xxx/qla_def.h b/drivers/scsi/qla2xxx/qla_def.h
-index a4661306cc34..52289702174d 100644
 --- a/drivers/scsi/qla2xxx/qla_def.h
 +++ b/drivers/scsi/qla2xxx/qla_def.h
 @@ -4223,8 +4223,8 @@ struct qla_hw_data {
@@ -196,14 +192,12 @@ index a4661306cc34..52289702174d 100644
  	uint8_t n2n_node_name[WWN_SIZE];
  	uint8_t n2n_port_name[WWN_SIZE];
  	uint16_t	n2n_id;
-@@ -4738,4 +4738,5 @@ struct sff_8247_a0 {
+@@ -4736,4 +4736,5 @@ struct sff_8247_a0 {
  #include "qla_gbl.h"
  #include "qla_dbg.h"
  #include "qla_inline.h"
 +
  #endif
-diff --git a/drivers/scsi/qla2xxx/qla_fw.h b/drivers/scsi/qla2xxx/qla_fw.h
-index f7ff1d01a315..62b37775a7b8 100644
 --- a/drivers/scsi/qla2xxx/qla_fw.h
 +++ b/drivers/scsi/qla2xxx/qla_fw.h
 @@ -1757,7 +1757,7 @@ struct nvram_81xx {
@@ -215,11 +209,9 @@ index f7ff1d01a315..62b37775a7b8 100644
  	uint8_t reserved_7_0;
  	uint16_t reserved_7[31];
  
-diff --git a/drivers/scsi/qla2xxx/qla_mbx.c b/drivers/scsi/qla2xxx/qla_mbx.c
-index 304c21491d83..21a595027ce3 100644
 --- a/drivers/scsi/qla2xxx/qla_mbx.c
 +++ b/drivers/scsi/qla2xxx/qla_mbx.c
-@@ -737,13 +737,14 @@ qla2x00_execute_fw(scsi_qla_host_t *vha, uint32_t risc_addr)
+@@ -737,13 +737,14 @@ qla2x00_execute_fw(scsi_qla_host_t *vha,
  		if (IS_QLA83XX(ha) || IS_QLA27XX(ha) || IS_QLA28XX(ha)) {
  			struct nvram_81xx *nv = ha->nvram;
  			/* set minimum speed if specified in nvram */
@@ -238,7 +230,7 @@ index 304c21491d83..21a595027ce3 100644
  			}
  		}
  
-@@ -771,35 +772,39 @@ qla2x00_execute_fw(scsi_qla_host_t *vha, uint32_t risc_addr)
+@@ -771,35 +772,39 @@ qla2x00_execute_fw(scsi_qla_host_t *vha,
  	if (rval != QLA_SUCCESS) {
  		ql_dbg(ql_dbg_mbx, vha, 0x1026,
  		    "Failed=%x mb[0]=%x.\n", rval, mcp->mb[0]);
@@ -304,6 +296,3 @@ index 304c21491d83..21a595027ce3 100644
  	return rval;
  }
  
--- 
-2.16.4
-

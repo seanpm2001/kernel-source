@@ -7,7 +7,7 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 Git-commit: 4c888e7bd26f58deb27c2e6ddc90000b89ee9393
 Patch-mainline: v5.4-rc1
-References: bsc#1152446
+References: bsc#1113722
 
 Gen2 doesn't have a frame counter and apparently we no longer provide
 a fake .get_vblank_counter() hook for it. That means all tracepoints
@@ -30,8 +30,8 @@ Reviewed-by: Chris Wilson <chris@chris-wilson.co.uk>
 Link: https://patchwork.freedesktop.org/patch/msgid/20190619170842.20579-2-ville.syrjala@linux.intel.com
 Acked-by: Thomas Zimmermann <tzimmermann@suse.de>
 ---
- drivers/gpu/drm/i915/i915_trace.h |   44 ++++++++++++++++----------------------
- 1 file changed, 19 insertions(+), 25 deletions(-)
+ drivers/gpu/drm/i915/i915_trace.h |   42 ++++++++++++++++----------------------
+ 1 file changed, 18 insertions(+), 24 deletions(-)
 
 --- a/drivers/gpu/drm/i915/i915_trace.h
 +++ b/drivers/gpu/drm/i915/i915_trace.h
@@ -63,7 +63,7 @@ Acked-by: Thomas Zimmermann <tzimmermann@suse.de>
  			   ),
  
  	    TP_printk("pch transcoder %c, frame=%u, scanline=%u",
-@@ -71,13 +73,11 @@ TRACE_EVENT(intel_memory_cxsr,
+@@ -71,12 +73,10 @@ TRACE_EVENT(intel_memory_cxsr,
  			     ),
  
  	    TP_fast_assign(
@@ -73,15 +73,13 @@ Acked-by: Thomas Zimmermann <tzimmermann@suse.de>
 -					   dev_priv->drm.driver->get_vblank_counter(&dev_priv->drm, pipe);
 -				   __entry->scanline[pipe] =
 -					   intel_get_crtc_scanline(intel_get_crtc_for_pipe(dev_priv, pipe));
--			   }
 +			   struct intel_crtc *crtc;
 +			   for_each_intel_crtc(&dev_priv->drm, crtc) {
 +				   __entry->frame[crtc->pipe] = intel_crtc_get_vblank_counter(crtc);
 +				   __entry->scanline[crtc->pipe] = intel_get_crtc_scanline(crtc);
-+ 			   }
+ 			   }
  			   __entry->old = old;
  			   __entry->new = new;
- 			   ),
 @@ -113,8 +113,7 @@ TRACE_EVENT(g4x_wm,
  
  	    TP_fast_assign(

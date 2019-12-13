@@ -1,0 +1,38 @@
+From: Lijun Ou <oulijun@huawei.com>
+Date: Fri, 31 May 2019 18:28:03 +0800
+Subject: RDMA/hns: Bugfix for filling the sge of srq
+Patch-mainline: v5.3-rc1
+Git-commit: 4f18904c78495ec16e271ee507709c626e61a62a
+References: bsc#1104427 FATE#326416
+
+When user post recv a srq with multiple sges, the hardware will get the
+last correct sge and count the sge numbers according to the specific
+identifier with lkey. For example, when the driver fills the sges with
+every wr less than the max sge that the user configured when creating srq,
+the hardware will stop getting the sge according to the specific lkey in
+the sge. However, it will always end with the first sge in the current
+post srq recv interface implementation.
+
+Fixes: c7bcb13442e1 ("RDMA/hns: Add SRQ support for hip08 kernel mode")
+Signed-off-by: Lijun Ou <oulijun@huawei.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/infiniband/hw/hns/hns_roce_hw_v2.c |    6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+--- a/drivers/infiniband/hw/hns/hns_roce_hw_v2.c
++++ b/drivers/infiniband/hw/hns/hns_roce_hw_v2.c
+@@ -6047,9 +6047,9 @@ static int hns_roce_v2_post_srq_recv(str
+ 		}
+ 
+ 		if (i < srq->max_gs) {
+-			dseg->len = 0;
+-			dseg->lkey = cpu_to_le32(0x100);
+-			dseg->addr = 0;
++			dseg[i].len = 0;
++			dseg[i].lkey = cpu_to_le32(0x100);
++			dseg[i].addr = 0;
+ 		}
+ 
+ 		srq->wrid[wqe_idx] = wr->wr_id;

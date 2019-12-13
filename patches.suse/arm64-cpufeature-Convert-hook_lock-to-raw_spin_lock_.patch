@@ -1,0 +1,51 @@
+From: Julien Grall <julien.grall@arm.com>
+Date: Thu, 30 May 2019 12:30:58 +0100
+Subject: arm64/cpufeature: Convert hook_lock to raw_spin_lock_t in
+ cpu_enable_ssbs()
+
+Git-commit: 27e6e7d63fc2b43334ce79070a727a9ca6e58700
+Patch-mainline: v5.3-rc1
+References: jsc#ECO-561
+
+cpu_enable_ssbs() is called via stop_machine() as part of the cpu_enable
+callback. A spin lock is used to ensure the hook is registered before
+the rest of the callback is executed.
+
+On -RT spin_lock() may sleep. However, all the callees in stop_machine()
+are expected to not sleep. Therefore a raw_spin_lock() is required here.
+
+Given this is already done under stop_machine() and the work done under
+the lock is quite small, the latency should not increase too much.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Signed-off-by: Catalin Marinas <catalin.marinas@arm.com>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ arch/arm64/kernel/cpufeature.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm64/kernel/cpufeature.c b/arch/arm64/kernel/cpufeature.c
+index ca27e08e3d8a..2a7159fda3ce 100644
+--- a/arch/arm64/kernel/cpufeature.c
++++ b/arch/arm64/kernel/cpufeature.c
+@@ -1194,14 +1194,14 @@ static struct undef_hook ssbs_emulation_hook = {
+ static void cpu_enable_ssbs(const struct arm64_cpu_capabilities *__unused)
+ {
+ 	static bool undef_hook_registered = false;
+-	static DEFINE_SPINLOCK(hook_lock);
++	static DEFINE_RAW_SPINLOCK(hook_lock);
+ 
+-	spin_lock(&hook_lock);
++	raw_spin_lock(&hook_lock);
+ 	if (!undef_hook_registered) {
+ 		register_undef_hook(&ssbs_emulation_hook);
+ 		undef_hook_registered = true;
+ 	}
+-	spin_unlock(&hook_lock);
++	raw_spin_unlock(&hook_lock);
+ 
+ 	if (arm64_get_ssbd_state() == ARM64_SSBD_FORCE_DISABLE) {
+ 		sysreg_clear_set(sctlr_el1, 0, SCTLR_ELx_DSSBS);
+-- 
+2.16.4
+

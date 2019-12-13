@@ -66,10 +66,10 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
 +#endif
 +
- static void __blk_mq_complete_request(struct request *rq)
+ void blk_mq_complete_request_sync(struct request *rq)
  {
- 	struct blk_mq_ctx *ctx = rq->mq_ctx;
-@@ -596,10 +612,18 @@ static void __blk_mq_complete_request(st
+ 	WRITE_ONCE(rq->state, MQ_RQ_COMPLETE);
+@@ -603,10 +619,18 @@ static void __blk_mq_complete_request(st
  		shared = cpus_share_cache(cpu, ctx->cpu);
  
  	if (cpu != ctx->cpu && !shared && cpu_online(ctx->cpu)) {
@@ -97,8 +97,8 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 -
 +void __blk_mq_complete_request_remote_work(struct work_struct *work);
  int blk_mq_request_started(struct request *rq);
+ int blk_mq_request_completed(struct request *rq);
  void blk_mq_start_request(struct request *rq);
- void blk_mq_end_request(struct request *rq, blk_status_t error);
 --- a/include/linux/blkdev.h
 +++ b/include/linux/blkdev.h
 @@ -167,6 +167,9 @@ struct request {

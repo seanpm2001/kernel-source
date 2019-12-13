@@ -1,9 +1,9 @@
 From: Quinn Tran <quinn.tran@cavium.com>
 Date: Thu, 24 Jan 2019 23:23:44 -0800
-Subject: [PATCH] scsi: qla2xxx: fix fcport null pointer access.
-Git-commit: 9ecd6564d1547d64fec464fdae75c82794c94c51
+Subject: scsi: qla2xxx: fix fcport null pointer access.
 Patch-mainline: v5.1-rc1
-References: bsc#1124541
+Git-commit: 9ecd6564d1547d64fec464fdae75c82794c94c51
+References: bsc#1123034 bsc#1124541 bsc#1131304 bsc#1127988
 
 This patch allocates DMA memory to prevent NULL pointer access for ct_sns
 request while sending switch commands.
@@ -11,16 +11,14 @@ request while sending switch commands.
 Signed-off-by: Quinn Tran <quinn.tran@cavium.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_init.c | 15 ++++++++++++---
+ drivers/scsi/qla2xxx/qla_init.c |   15 ++++++++++++---
  1 file changed, 12 insertions(+), 3 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_init.c b/drivers/scsi/qla2xxx/qla_init.c
-index 58b4bfe01202..aa72e8316533 100644
 --- a/drivers/scsi/qla2xxx/qla_init.c
 +++ b/drivers/scsi/qla2xxx/qla_init.c
-@@ -4755,6 +4755,16 @@ qla2x00_alloc_fcport(scsi_qla_host_t *vha, gfp_t flags)
+@@ -4755,6 +4755,16 @@ qla2x00_alloc_fcport(scsi_qla_host_t *vh
  	if (!fcport)
  		return NULL;
  
@@ -37,7 +35,7 @@ index 58b4bfe01202..aa72e8316533 100644
  	/* Setup fcport template structure. */
  	fcport->vha = vha;
  	fcport->port_type = FCT_UNKNOWN;
-@@ -4763,13 +4773,11 @@ qla2x00_alloc_fcport(scsi_qla_host_t *vha, gfp_t flags)
+@@ -4763,13 +4773,11 @@ qla2x00_alloc_fcport(scsi_qla_host_t *vh
  	fcport->supported_classes = FC_COS_UNSPECIFIED;
  	fcport->fp_speed = PORT_SPEED_UNKNOWN;
  
@@ -52,7 +50,7 @@ index 58b4bfe01202..aa72e8316533 100644
  	fcport->logout_on_delete = 1;
  
  	if (!fcport->ct_desc.ct_sns) {
-@@ -4778,6 +4786,7 @@ qla2x00_alloc_fcport(scsi_qla_host_t *vha, gfp_t flags)
+@@ -4778,6 +4786,7 @@ qla2x00_alloc_fcport(scsi_qla_host_t *vh
  		kfree(fcport);
  		fcport = NULL;
  	}
@@ -60,6 +58,3 @@ index 58b4bfe01202..aa72e8316533 100644
  	INIT_WORK(&fcport->del_work, qla24xx_delete_sess_fn);
  	INIT_WORK(&fcport->reg_work, qla_register_fcport_fn);
  	INIT_LIST_HEAD(&fcport->gnl_entry);
--- 
-2.16.4
-

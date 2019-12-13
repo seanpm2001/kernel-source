@@ -1,0 +1,32 @@
+From: Peng Li <lipeng321@huawei.com>
+Date: Thu, 4 Jul 2019 22:04:28 +0800
+Subject: net: hns3: set maximum length to resp_data_len for exceptional case
+Patch-mainline: v5.3-rc1
+Git-commit: 892951524647d593d9f5e540a56fef4e52b95c03
+References: bsc#1104353 FATE#326415
+
+If HCLGE_MBX_MAX_RESP_DATA_SIZE > HCLGE_MBX_MAX_RESP_DATA_SIZE,
+the memcpy will cause out of memory. So this patch just set
+resp_data_len to the maximum length for this case.
+
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_mbx.c |    4 ++++
+ 1 file changed, 4 insertions(+)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_mbx.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_mbx.c
+@@ -29,6 +29,10 @@ static int hclge_gen_resp_to_vf(struct h
+ 			"PF fail to gen resp to VF len %d exceeds max len %d\n",
+ 			resp_data_len,
+ 			HCLGE_MBX_MAX_RESP_DATA_SIZE);
++		/* If resp_data_len is too long, set the value to max length
++		 * and return the msg to VF
++		 */
++		resp_data_len = HCLGE_MBX_MAX_RESP_DATA_SIZE;
+ 	}
+ 
+ 	hclge_cmd_setup_basic_desc(&desc, HCLGEVF_OPC_MBX_PF_TO_VF, false);

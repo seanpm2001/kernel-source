@@ -1,0 +1,41 @@
+From: Yunsheng Lin <linyunsheng@huawei.com>
+Date: Fri, 7 Jun 2019 10:03:05 +0800
+Subject: net: hns3: replace numa_node_id with numa_mem_id for buffer reusing
+Patch-mainline: v5.3-rc1
+Git-commit: d5970dc73f1c12a07f89b427799ca8b0b6c30b97
+References: bsc#1104353 FATE#326415
+
+This patch replaces numa_node_id with numa_mem_id when doing buffer
+reusing checking, because the buffer still can be reused when the
+buffer is from the nearest node and the local node has no memory
+attached.
+
+Signed-off-by: Yunsheng Lin <linyunsheng@huawei.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3_enet.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3_enet.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3_enet.c
+@@ -2368,7 +2368,7 @@ static void hns3_nic_reuse_page(struct s
+ 	/* Avoid re-using remote pages, or the stack is still using the page
+ 	 * when page_offset rollback to zero, flag default unreuse
+ 	 */
+-	if (unlikely(page_to_nid(desc_cb->priv) != numa_node_id()) ||
++	if (unlikely(page_to_nid(desc_cb->priv) != numa_mem_id()) ||
+ 	    (!desc_cb->page_offset && page_count(desc_cb->priv) > 1))
+ 		return;
+ 
+@@ -2584,7 +2584,7 @@ static int hns3_alloc_skb(struct hns3_en
+ 		memcpy(__skb_put(skb, length), va, ALIGN(length, sizeof(long)));
+ 
+ 		/* We can reuse buffer as-is, just make sure it is local */
+-		if (likely(page_to_nid(desc_cb->priv) == numa_node_id()))
++		if (likely(page_to_nid(desc_cb->priv) == numa_mem_id()))
+ 			desc_cb->reuse_flag = 1;
+ 		else /* This page cannot be reused so discard it */
+ 			put_page(desc_cb->priv);

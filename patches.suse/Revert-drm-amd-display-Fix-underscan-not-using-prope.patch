@@ -1,0 +1,55 @@
+From 5cb99d46f7bdf02cacf08ea9d4301aff0cd311a6 Mon Sep 17 00:00:00 2001
+From: David Francis <David.Francis@amd.com>
+Date: Thu, 23 May 2019 14:25:35 -0400
+Subject: [PATCH] Revert "drm/amd/display: Fix underscan not using proper scaling"
+Git-commit: 5cb99d46f7bdf02cacf08ea9d4301aff0cd311a6
+Patch-mainline: v5.4-rc1
+References: bsc#1111666
+
+This reverts commit 80e80ec817f161560b4159608fb41bd289abede3.
+
+This commit fixed an issue with underscan commits not updating all
+needed timing values, but through various refactors it is no longer
+necessary. It causes corruption on odm combine by
+overwriting the halved h_active in the stream timing
+
+Signed-off-by: David Francis <David.Francis@amd.com>
+Reviewed-by: Roman Li <Roman.Li@amd.com>
+Reviewed-by: Harry Wentland <harry.wentland@amd.com>
+Reviewed-by: Nicholas Kazlauskas <nicholas.kazlauskas@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/gpu/drm/amd/display/dc/core/dc.c |   13 +------------
+ 1 file changed, 1 insertion(+), 12 deletions(-)
+
+--- a/drivers/gpu/drm/amd/display/dc/core/dc.c
++++ b/drivers/gpu/drm/amd/display/dc/core/dc.c
+@@ -1452,7 +1452,7 @@ void dc_commit_updates_for_stream(struct
+ 	enum surface_update_type update_type;
+ 	struct dc_state *context;
+ 	struct dc_context *dc_ctx = dc->ctx;
+-	int i, j;
++	int i;
+ 
+ 	stream_status = dc_stream_get_status(stream);
+ 	context = dc->current_state;
+@@ -1496,17 +1496,6 @@ void dc_commit_updates_for_stream(struct
+ 			surface->flip_immediate = srf_updates[i].flip_addr->flip_immediate;
+ 
+ 		}
+-
+-		if (update_type >= UPDATE_TYPE_MED) {
+-			for (j = 0; j < dc->res_pool->pipe_count; j++) {
+-				struct pipe_ctx *pipe_ctx = &context->res_ctx.pipe_ctx[j];
+-
+-				if (pipe_ctx->plane_state != surface)
+-					continue;
+-
+-				resource_build_scaling_params(pipe_ctx);
+-			}
+-		}
+ 	}
+ 
+ 	commit_planes_for_stream(

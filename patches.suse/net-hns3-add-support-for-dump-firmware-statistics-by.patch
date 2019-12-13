@@ -1,0 +1,137 @@
+From: Zhongzhu Liu <liuzhongzhu@huawei.com>
+Date: Tue, 28 May 2019 17:02:53 +0800
+Subject: net: hns3: add support for dump firmware statistics by debugfs
+Patch-mainline: v5.3-rc1
+Git-commit: 33a90e2f20e6c455889a0f41857692221172a5ae
+References: bsc#1104353 FATE#326415
+
+This patch prints firmware statistics information.
+
+debugfs command:
+echo dump m7 info > cmd
+
+estuary:/dbg/hns3/0000:7d:00.0$ echo dump m7 info > cmd
+[  172.577240] hns3 0000:7d:00.0: 0x00000000  0x00000000  0x00000000
+[  172.583471] hns3 0000:7d:00.0: 0x00000000  0x00000000  0x00000000
+[  172.589552] hns3 0000:7d:00.0: 0x00000030  0x00000000  0x00000000
+[  172.595632] hns3 0000:7d:00.0: 0x00000000  0x00000000  0x00000000
+estuary:/dbg/hns3/0000:7d:00.0$
+
+Signed-off-by: Zhongzhu Liu <liuzhongzhu@huawei.com>
+Signed-off-by: Peng Li <lipeng321@huawei.com>
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3_debugfs.c         |    1 
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_cmd.h     |    8 +
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_debugfs.c |   57 +++++++++++++
+ 3 files changed, 66 insertions(+)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3_debugfs.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3_debugfs.c
+@@ -252,6 +252,7 @@ static void hns3_dbg_help(struct hnae3_h
+ 	dev_info(&h->pdev->dev, "dump qos buf cfg\n");
+ 	dev_info(&h->pdev->dev, "dump mng tbl\n");
+ 	dev_info(&h->pdev->dev, "dump reset info\n");
++	dev_info(&h->pdev->dev, "dump m7 info\n");
+ 	dev_info(&h->pdev->dev, "dump ncl_config <offset> <length>(in hex)\n");
+ 	dev_info(&h->pdev->dev, "dump mac tnl status\n");
+ 
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_cmd.h
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_cmd.h
+@@ -242,6 +242,9 @@ enum hclge_opcode_type {
+ 
+ 	/* NCL config command */
+ 	HCLGE_OPC_QUERY_NCL_CONFIG	= 0x7011,
++	/* M7 stats command */
++	HCLGE_OPC_M7_STATS_BD		= 0x7012,
++	HCLGE_OPC_M7_STATS_INFO		= 0x7013,
+ 
+ 	/* SFP command */
+ 	HCLGE_OPC_SFP_GET_SPEED		= 0x7104,
+@@ -948,6 +951,11 @@ struct hclge_fd_ad_config_cmd {
+ 	u8 rsv2[8];
+ };
+ 
++struct hclge_get_m7_bd_cmd {
++	__le32 bd_num;
++	u8 rsv[20];
++};
++
+ int hclge_cmd_init(struct hclge_dev *hdev);
+ static inline void hclge_write_reg(void __iomem *base, u32 reg, u32 value)
+ {
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_debugfs.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_debugfs.c
+@@ -921,6 +921,61 @@ static void hclge_dbg_dump_rst_info(stru
+ 		 hdev->rst_stats.reset_cnt);
+ }
+ 
++void hclge_dbg_get_m7_stats_info(struct hclge_dev *hdev)
++{
++	struct hclge_desc *desc_src, *desc_tmp;
++	struct hclge_get_m7_bd_cmd *req;
++	struct hclge_desc desc;
++	u32 bd_num, buf_len;
++	int ret, i;
++
++	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_M7_STATS_BD, true);
++
++	req = (struct hclge_get_m7_bd_cmd *)desc.data;
++	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
++	if (ret) {
++		dev_err(&hdev->pdev->dev,
++			"get firmware statistics bd number failed, ret=%d\n",
++			ret);
++		return;
++	}
++
++	bd_num = le32_to_cpu(req->bd_num);
++
++	buf_len	 = sizeof(struct hclge_desc) * bd_num;
++	desc_src = kzalloc(buf_len, GFP_KERNEL);
++	if (!desc_src) {
++		dev_err(&hdev->pdev->dev,
++			"allocate desc for get_m7_stats failed\n");
++		return;
++	}
++
++	desc_tmp = desc_src;
++	ret  = hclge_dbg_cmd_send(hdev, desc_tmp, 0, bd_num,
++				  HCLGE_OPC_M7_STATS_INFO);
++	if (ret) {
++		kfree(desc_src);
++		dev_err(&hdev->pdev->dev,
++			"get firmware statistics failed, ret=%d\n", ret);
++		return;
++	}
++
++	for (i = 0; i < bd_num; i++) {
++		dev_info(&hdev->pdev->dev, "0x%08x  0x%08x  0x%08x\n",
++			 le32_to_cpu(desc_tmp->data[0]),
++			 le32_to_cpu(desc_tmp->data[1]),
++			 le32_to_cpu(desc_tmp->data[2]));
++		dev_info(&hdev->pdev->dev, "0x%08x  0x%08x  0x%08x\n",
++			 le32_to_cpu(desc_tmp->data[3]),
++			 le32_to_cpu(desc_tmp->data[4]),
++			 le32_to_cpu(desc_tmp->data[5]));
++
++		desc_tmp++;
++	}
++
++	kfree(desc_src);
++}
++
+ /* hclge_dbg_dump_ncl_config: print specified range of NCL_CONFIG file
+  * @hdev: pointer to struct hclge_dev
+  * @cmd_buf: string that contains offset and length
+@@ -1029,6 +1084,8 @@ int hclge_dbg_run_cmd(struct hnae3_handl
+ 		hclge_dbg_dump_reg_cmd(hdev, cmd_buf);
+ 	} else if (strncmp(cmd_buf, "dump reset info", 15) == 0) {
+ 		hclge_dbg_dump_rst_info(hdev);
++	} else if (strncmp(cmd_buf, "dump m7 info", 12) == 0) {
++		hclge_dbg_get_m7_stats_info(hdev);
+ 	} else if (strncmp(cmd_buf, "dump ncl_config", 15) == 0) {
+ 		hclge_dbg_dump_ncl_config(hdev,
+ 					  &cmd_buf[sizeof("dump ncl_config")]);

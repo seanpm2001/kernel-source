@@ -1,9 +1,9 @@
 From: Quinn Tran <qtran@marvall.com>
 Date: Thu, 24 Jan 2019 23:23:47 -0800
-Subject: [PATCH] scsi: qla2xxx: Prevent memory leak for CT req/rsp allocation
-Git-commit: 5e85f6df77223f69e738b815558ca01e6891a173
+Subject: scsi: qla2xxx: Prevent memory leak for CT req/rsp allocation
 Patch-mainline: v5.1-rc1
-References: bsc#1124541
+Git-commit: 5e85f6df77223f69e738b815558ca01e6891a173
+References: bsc#1123034 bsc#1124541 bsc#1131304 bsc#1127988
 
 This patch fixes memory leak by releasing DMA memory in case CT request and
 response allocation fails.
@@ -11,16 +11,14 @@ response allocation fails.
 Signed-off-by: Quinn Tran <qtran@marvall.com>
 Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_gs.c | 11 +++++++++--
+ drivers/scsi/qla2xxx/qla_gs.c |   11 +++++++++--
  1 file changed, 9 insertions(+), 2 deletions(-)
 
-diff --git a/drivers/scsi/qla2xxx/qla_gs.c b/drivers/scsi/qla2xxx/qla_gs.c
-index 90cfa394f942..4aada6b37076 100644
 --- a/drivers/scsi/qla2xxx/qla_gs.c
 +++ b/drivers/scsi/qla2xxx/qla_gs.c
-@@ -4157,7 +4157,8 @@ int qla24xx_async_gpnft(scsi_qla_host_t *vha, u8 fc4_type, srb_t *sp)
+@@ -4157,7 +4157,8 @@ int qla24xx_async_gpnft(scsi_qla_host_t
  			spin_lock_irqsave(&vha->work_lock, flags);
  			vha->scan.scan_flags &= ~SF_SCANNING;
  			spin_unlock_irqrestore(&vha->work_lock, flags);
@@ -30,7 +28,7 @@ index 90cfa394f942..4aada6b37076 100644
  		}
  		sp->u.iocb_cmd.u.ctarg.req_size = GPN_FT_REQ_SIZE;
  
-@@ -4175,7 +4176,13 @@ int qla24xx_async_gpnft(scsi_qla_host_t *vha, u8 fc4_type, srb_t *sp)
+@@ -4175,7 +4176,13 @@ int qla24xx_async_gpnft(scsi_qla_host_t
  			spin_lock_irqsave(&vha->work_lock, flags);
  			vha->scan.scan_flags &= ~SF_SCANNING;
  			spin_unlock_irqrestore(&vha->work_lock, flags);
@@ -45,6 +43,3 @@ index 90cfa394f942..4aada6b37076 100644
  		}
  		sp->u.iocb_cmd.u.ctarg.rsp_size = rspsz;
  
--- 
-2.16.4
-

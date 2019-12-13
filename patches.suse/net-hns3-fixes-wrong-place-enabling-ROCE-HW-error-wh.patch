@@ -1,0 +1,51 @@
+From: Huazhong Tan <tanhuazhong@huawei.com>
+Date: Thu, 20 Jun 2019 16:52:44 +0800
+Subject: net: hns3: fixes wrong place enabling ROCE HW error when loading
+Patch-mainline: v5.3-rc1
+Git-commit: 72fcd2bed719c6587dfea74e30bcdf6f9b64b18e
+References: bsc#1104353 FATE#326415
+
+The ROCE HW errors should only be enabled when initializing ROCE's
+client, the current code enable it no matter initializing NIC or
+ROCE client.
+
+So this patch fixes it.
+
+Fixes: 00ea6e5fda9d ("net: hns3: delay and separate enabling of NIC and ROCE HW errors")
+Signed-off-by: Huazhong Tan <tanhuazhong@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c |   14 ++++++++------
+ 1 file changed, 8 insertions(+), 6 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
+@@ -8019,6 +8019,14 @@ static int hclge_init_roce_client_instan
+ 		goto init_roce_err;
+ 	}
+ 
++	/* Enable roce ras interrupts */
++	ret = hclge_config_rocee_ras_interrupt(hdev, true);
++	if (ret) {
++		dev_err(&ae_dev->pdev->dev,
++			"fail(%d) to enable roce ras interrupts\n", ret);
++		goto init_roce_err;
++	}
++
+ 	hnae3_set_client_init_flag(client, ae_dev, 1);
+ 
+ 	return 0;
+@@ -8073,12 +8081,6 @@ static int hclge_init_client_instance(st
+ 		}
+ 	}
+ 
+-	/* Enable roce ras interrupts */
+-	ret = hclge_config_rocee_ras_interrupt(hdev, true);
+-	if (ret)
+-		dev_err(&ae_dev->pdev->dev,
+-			"fail(%d) to enable roce ras interrupts\n", ret);
+-
+ 	return ret;
+ 
+ clear_nic:

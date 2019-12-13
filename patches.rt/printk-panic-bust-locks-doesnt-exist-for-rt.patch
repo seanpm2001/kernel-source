@@ -1,0 +1,30 @@
+From: Matt Fleming <mfleming@suse.de>
+Date: Wed, 9 Oct 2019 12:17:32 +0100
+Subject: printk/panic: printk_bust_locks() doesn't exist for RT
+Patch-mainline: Never, RT specific
+References: SLE Realtime Extension
+
+Fix the following SLE-specific patch,
+
+  patches.suse/printk-panic-Avoid-deadlock-in-printk-after-stopping-CPUs-by-NMI.patch
+
+Guard the call to printk_bust_locks() with CONFIG_PREEMPT_RT_FULL
+otherwise the kernel doesn't build.
+
+Signed-off-by: Matt Fleming <mfleming@suse.de>
+---
+ arch/x86/kernel/crash.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/arch/x86/kernel/crash.c
++++ b/arch/x86/kernel/crash.c
+@@ -137,7 +137,9 @@ static void kdump_nmi_callback(int cpu,
+ void kdump_nmi_shootdown_cpus(void)
+ {
+ 	nmi_shootdown_cpus(kdump_nmi_callback);
++#ifndef CONFIG_PREEMPT_RT_FULL
+ 	printk_bust_locks();
++#endif
+ 
+ 	disable_local_APIC();
+ }

@@ -1,0 +1,205 @@
+From bf2ae2e4bf9360e07c0cdfa166bcdc0afd92f4ce Mon Sep 17 00:00:00 2001
+From: Xin Long <lucien.xin@gmail.com>
+Date: Sat, 10 Mar 2018 18:57:50 +0800
+Subject: [PATCH] sock_diag: request _diag module only when the family or proto
+ has been registered
+References: bsc#1152791
+Git-commit: bf2ae2e4bf9360e07c0cdfa166bcdc0afd92f4ce
+Patch-mainline: v4.16-rc7
+
+Now when using 'ss' in iproute, kernel would try to load all _diag
+modules, which also causes corresponding family and proto modules
+to be loaded as well due to module dependencies.
+
+Like after running 'ss', sctp, dccp, af_packet (if it works as a module)
+would be loaded.
+
+For example:
+
+  $ lsmod|grep sctp
+  $ ss
+  $ lsmod|grep sctp
+  sctp_diag              16384  0
+  sctp                  323584  5 sctp_diag
+  inet_diag              24576  4 raw_diag,tcp_diag,sctp_diag,udp_diag
+  libcrc32c              16384  3 nf_conntrack,nf_nat,sctp
+
+As these family and proto modules are loaded unintentionally, it
+could cause some problems, like:
+
+- Some debug tools use 'ss' to collect the socket info, which loads all
+  those diag and family and protocol modules. It's noisy for identifying
+  issues.
+
+- Users usually expect to drop sctp init packet silently when they
+  have no sense of sctp protocol instead of sending abort back.
+
+- It wastes resources (especially with multiple netns), and SCTP module
+  can't be unloaded once it's loaded.
+
+...
+
+In short, it's really inappropriate to have these family and proto
+modules loaded unexpectedly when just doing debugging with inet_diag.
+
+This patch is to introduce sock_load_diag_module() where it loads
+the _diag module only when it's corresponding family or proto has
+been already registered.
+
+Note that we can't just load _diag module without the family or
+proto loaded, as some symbols used in _diag module are from the
+family or proto module.
+
+v1->v2:
+  - move inet proto check to inet_diag to avoid a compiling err.
+v2->v3:
+  - define sock_load_diag_module in sock.c and export one symbol
+    only.
+  - improve the changelog.
+
+Reported-by: Sabrina Dubroca <sd@queasysnail.net>
+Acked-by: Marcelo Ricardo Leitner <marcelo.leitner@gmail.com>
+Acked-by: Phil Sutter <phil@nwl.cc>
+Acked-by: Sabrina Dubroca <sd@queasysnail.net>
+Signed-off-by: Xin Long <lucien.xin@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Thomas Abraham <tabraham@suse.com>
+---
+ include/linux/net.h  |  1 +
+ include/net/sock.h   |  1 +
+ net/core/sock.c      | 21 +++++++++++++++++++++
+ net/core/sock_diag.c | 12 ++++--------
+ net/ipv4/inet_diag.c |  3 +--
+ net/socket.c         |  5 +++++
+ 6 files changed, 33 insertions(+), 10 deletions(-)
+
+diff --git a/include/linux/net.h b/include/linux/net.h
+index 91216b16feb7..2a0391eea05c 100644
+--- a/include/linux/net.h
++++ b/include/linux/net.h
+@@ -222,6 +222,7 @@ enum {
+ int sock_wake_async(struct socket_wq *sk_wq, int how, int band);
+ int sock_register(const struct net_proto_family *fam);
+ void sock_unregister(int family);
++bool sock_is_registered(int family);
+ int __sock_create(struct net *net, int family, int type, int proto,
+ 		  struct socket **res, int kern);
+ int sock_create(int family, int type, int proto, struct socket **res);
+diff --git a/include/net/sock.h b/include/net/sock.h
+index 169c92afcafa..ae23f3b389ca 100644
+--- a/include/net/sock.h
++++ b/include/net/sock.h
+@@ -1137,6 +1137,7 @@ struct proto {
+ 
+ int proto_register(struct proto *prot, int alloc_slab);
+ void proto_unregister(struct proto *prot);
++int sock_load_diag_module(int family, int protocol);
+ 
+ #ifdef SOCK_REFCNT_DEBUG
+ static inline void sk_refcnt_debug_inc(struct sock *sk)
+diff --git a/net/core/sock.c b/net/core/sock.c
+index c501499a04fe..85b0b64e7f9d 100644
+--- a/net/core/sock.c
++++ b/net/core/sock.c
+@@ -3261,6 +3261,27 @@ void proto_unregister(struct proto *prot)
+ }
+ EXPORT_SYMBOL(proto_unregister);
+ 
++int sock_load_diag_module(int family, int protocol)
++{
++	if (!protocol) {
++		if (!sock_is_registered(family))
++			return -ENOENT;
++
++		return request_module("net-pf-%d-proto-%d-type-%d", PF_NETLINK,
++				      NETLINK_SOCK_DIAG, family);
++	}
++
++#ifdef CONFIG_INET
++	if (family == AF_INET &&
++	    !rcu_access_pointer(inet_protos[protocol]))
++		return -ENOENT;
++#endif
++
++	return request_module("net-pf-%d-proto-%d-type-%d-%d", PF_NETLINK,
++			      NETLINK_SOCK_DIAG, family, protocol);
++}
++EXPORT_SYMBOL(sock_load_diag_module);
++
+ #ifdef CONFIG_PROC_FS
+ static void *proto_seq_start(struct seq_file *seq, loff_t *pos)
+ 	__acquires(proto_list_mutex)
+diff --git a/net/core/sock_diag.c b/net/core/sock_diag.c
+index 146b50e30659..c37b5be7c5e4 100644
+--- a/net/core/sock_diag.c
++++ b/net/core/sock_diag.c
+@@ -220,8 +220,7 @@ static int __sock_diag_cmd(struct sk_buff *skb, struct nlmsghdr *nlh)
+ 		return -EINVAL;
+ 
+ 	if (sock_diag_handlers[req->sdiag_family] == NULL)
+-		request_module("net-pf-%d-proto-%d-type-%d", PF_NETLINK,
+-				NETLINK_SOCK_DIAG, req->sdiag_family);
++		sock_load_diag_module(req->sdiag_family, 0);
+ 
+ 	mutex_lock(&sock_diag_table_mutex);
+ 	hndl = sock_diag_handlers[req->sdiag_family];
+@@ -247,8 +246,7 @@ static int sock_diag_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh,
+ 	case TCPDIAG_GETSOCK:
+ 	case DCCPDIAG_GETSOCK:
+ 		if (inet_rcv_compat == NULL)
+-			request_module("net-pf-%d-proto-%d-type-%d", PF_NETLINK,
+-					NETLINK_SOCK_DIAG, AF_INET);
++			sock_load_diag_module(AF_INET, 0);
+ 
+ 		mutex_lock(&sock_diag_table_mutex);
+ 		if (inet_rcv_compat != NULL)
+@@ -281,14 +279,12 @@ static int sock_diag_bind(struct net *net, int group)
+ 	case SKNLGRP_INET_TCP_DESTROY:
+ 	case SKNLGRP_INET_UDP_DESTROY:
+ 		if (!sock_diag_handlers[AF_INET])
+-			request_module("net-pf-%d-proto-%d-type-%d", PF_NETLINK,
+-				       NETLINK_SOCK_DIAG, AF_INET);
++			sock_load_diag_module(AF_INET, 0);
+ 		break;
+ 	case SKNLGRP_INET6_TCP_DESTROY:
+ 	case SKNLGRP_INET6_UDP_DESTROY:
+ 		if (!sock_diag_handlers[AF_INET6])
+-			request_module("net-pf-%d-proto-%d-type-%d", PF_NETLINK,
+-				       NETLINK_SOCK_DIAG, AF_INET6);
++			sock_load_diag_module(AF_INET6, 0);
+ 		break;
+ 	}
+ 	return 0;
+diff --git a/net/ipv4/inet_diag.c b/net/ipv4/inet_diag.c
+index a383f299ce24..4e5bc4b2f14e 100644
+--- a/net/ipv4/inet_diag.c
++++ b/net/ipv4/inet_diag.c
+@@ -53,8 +53,7 @@ static DEFINE_MUTEX(inet_diag_table_mutex);
+ static const struct inet_diag_handler *inet_diag_lock_handler(int proto)
+ {
+ 	if (!inet_diag_table[proto])
+-		request_module("net-pf-%d-proto-%d-type-%d-%d", PF_NETLINK,
+-			       NETLINK_SOCK_DIAG, AF_INET, proto);
++		sock_load_diag_module(AF_INET, proto);
+ 
+ 	mutex_lock(&inet_diag_table_mutex);
+ 	if (!inet_diag_table[proto])
+diff --git a/net/socket.c b/net/socket.c
+index a93c99b518ca..08847c3b8c39 100644
+--- a/net/socket.c
++++ b/net/socket.c
+@@ -2587,6 +2587,11 @@ void sock_unregister(int family)
+ }
+ EXPORT_SYMBOL(sock_unregister);
+ 
++bool sock_is_registered(int family)
++{
++	return family < NPROTO && rcu_access_pointer(net_families[family]);
++}
++
+ static int __init sock_init(void)
+ {
+ 	int err;
+-- 
+2.12.3
+

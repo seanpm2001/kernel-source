@@ -1,0 +1,157 @@
+From 6d3ca7e73642ce17398f4cd5df1780da4a1ccdaf Mon Sep 17 00:00:00 2001
+From: Masahiro Yamada <yamada.masahiro@socionext.com>
+Date: Tue, 21 May 2019 22:13:24 +0900
+Subject: [PATCH] powerpc/mm: mark more tlb functions as __always_inline
+
+References: bsc#1055186
+Patch-mainline: v5.3-rc1
+Git-commit: 6d3ca7e73642ce17398f4cd5df1780da4a1ccdaf
+
+With CONFIG_OPTIMIZE_INLINING enabled, Laura Abbott reported error
+with gcc 9.1.1:
+
+  arch/powerpc/mm/tlb-radix.c: In function '_tlbiel_pid':
+  arch/powerpc/mm/tlb-radix.c:104:2: warning: asm operand 3 probably doesn't match constraints
+    104 |  asm volatile(PPC_TLBIEL(%0, %4, %3, %2, %1)
+        |  ^~~
+  arch/powerpc/mm/tlb-radix.c:104:2: error: impossible constraint in 'asm'
+
+Fixing _tlbiel_pid() is enough to address the warning above, but I
+inlined more functions to fix all potential issues.
+
+To meet the "i" (immediate) constraint for the asm operands, functions
+propagating "ric" must be always inlined.
+
+Fixes: 9012d011660e ("compiler: allow all arches to enable CONFIG_OPTIMIZE_INLINING")
+Reported-by: Laura Abbott <labbott@redhat.com>
+Signed-off-by: Masahiro Yamada <yamada.masahiro@socionext.com>
+Reviewed-by: Christophe Leroy <christophe.leroy@c-s.fr>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/mm/hash_native_64.c |  2 +-
+ arch/powerpc/mm/tlb-radix.c   | 32 +++++++++++++-------------
+ 2 files changed, 17 insertions(+), 17 deletions(-)
+
+diff --git a/arch/powerpc/mm/hash_native_64.c b/arch/powerpc/mm/hash_native_64.c
+index 0b447d96b911..79e5c814675f 100644
+--- a/arch/powerpc/mm/hash_native_64.c
++++ b/arch/powerpc/mm/hash_native_64.c
+@@ -60,7 +60,7 @@ static inline void tlbiel_hash_set_isa206(unsigned int set, unsigned int is)
+  * tlbiel instruction for hash, set invalidation
+  * i.e., r=1 and is=01 or is=10 or is=11
+  */
+-static inline void tlbiel_hash_set_isa300(unsigned int set, unsigned int is,
++static __always_inline void tlbiel_hash_set_isa300(unsigned int set, unsigned int is,
+ 					unsigned int pid,
+ 					unsigned int ric, unsigned int prs)
+ {
+diff --git a/arch/powerpc/mm/tlb-radix.c b/arch/powerpc/mm/tlb-radix.c
+index edf39e9a4ec4..8901f5c8ef8c 100644
+--- a/arch/powerpc/mm/tlb-radix.c
++++ b/arch/powerpc/mm/tlb-radix.c
+@@ -29,7 +29,7 @@
+  * tlbiel instruction for radix, set invalidation
+  * i.e., r=1 and is=01 or is=10 or is=11
+  */
+-static inline void tlbiel_radix_set_isa300(unsigned int set, unsigned int is,
++static __always_inline void tlbiel_radix_set_isa300(unsigned int set, unsigned int is,
+ 					unsigned int pid,
+ 					unsigned int ric, unsigned int prs)
+ {
+@@ -150,8 +150,8 @@ static __always_inline void __tlbie_lpid(unsigned long lpid, unsigned long ric)
+ 	trace_tlbie(lpid, 0, rb, rs, ric, prs, r);
+ }
+ 
+-static inline void __tlbiel_lpid_guest(unsigned long lpid, int set,
+-				unsigned long ric)
++static __always_inline void __tlbiel_lpid_guest(unsigned long lpid, int set,
++						unsigned long ric)
+ {
+ 	unsigned long rb,rs,prs,r;
+ 
+@@ -167,8 +167,8 @@ static inline void __tlbiel_lpid_guest(unsigned long lpid, int set,
+ }
+ 
+ 
+-static inline void __tlbiel_va(unsigned long va, unsigned long pid,
+-			       unsigned long ap, unsigned long ric)
++static __always_inline void __tlbiel_va(unsigned long va, unsigned long pid,
++					unsigned long ap, unsigned long ric)
+ {
+ 	unsigned long rb,rs,prs,r;
+ 
+@@ -183,8 +183,8 @@ static inline void __tlbiel_va(unsigned long va, unsigned long pid,
+ 	trace_tlbie(0, 1, rb, rs, ric, prs, r);
+ }
+ 
+-static inline void __tlbie_va(unsigned long va, unsigned long pid,
+-			      unsigned long ap, unsigned long ric)
++static __always_inline void __tlbie_va(unsigned long va, unsigned long pid,
++				       unsigned long ap, unsigned long ric)
+ {
+ 	unsigned long rb,rs,prs,r;
+ 
+@@ -199,8 +199,8 @@ static inline void __tlbie_va(unsigned long va, unsigned long pid,
+ 	trace_tlbie(0, 0, rb, rs, ric, prs, r);
+ }
+ 
+-static inline void __tlbie_lpid_va(unsigned long va, unsigned long lpid,
+-			      unsigned long ap, unsigned long ric)
++static __always_inline void __tlbie_lpid_va(unsigned long va, unsigned long lpid,
++					    unsigned long ap, unsigned long ric)
+ {
+ 	unsigned long rb,rs,prs,r;
+ 
+@@ -239,7 +239,7 @@ static inline void fixup_tlbie_lpid(unsigned long lpid)
+ /*
+  * We use 128 set in radix mode and 256 set in hpt mode.
+  */
+-static inline void _tlbiel_pid(unsigned long pid, unsigned long ric)
++static __always_inline void _tlbiel_pid(unsigned long pid, unsigned long ric)
+ {
+ 	int set;
+ 
+@@ -341,7 +341,7 @@ static inline void _tlbie_lpid(unsigned long lpid, unsigned long ric)
+ 	asm volatile("eieio; tlbsync; ptesync": : :"memory");
+ }
+ 
+-static inline void _tlbiel_lpid_guest(unsigned long lpid, unsigned long ric)
++static __always_inline void _tlbiel_lpid_guest(unsigned long lpid, unsigned long ric)
+ {
+ 	int set;
+ 
+@@ -381,8 +381,8 @@ static inline void __tlbiel_va_range(unsigned long start, unsigned long end,
+ 		__tlbiel_va(addr, pid, ap, RIC_FLUSH_TLB);
+ }
+ 
+-static inline void _tlbiel_va(unsigned long va, unsigned long pid,
+-			      unsigned long psize, unsigned long ric)
++static __always_inline void _tlbiel_va(unsigned long va, unsigned long pid,
++				       unsigned long psize, unsigned long ric)
+ {
+ 	unsigned long ap = mmu_get_ap(psize);
+ 
+@@ -413,8 +413,8 @@ static inline void __tlbie_va_range(unsigned long start, unsigned long end,
+ 		__tlbie_va(addr, pid, ap, RIC_FLUSH_TLB);
+ }
+ 
+-static inline void _tlbie_va(unsigned long va, unsigned long pid,
+-			      unsigned long psize, unsigned long ric)
++static __always_inline void _tlbie_va(unsigned long va, unsigned long pid,
++				      unsigned long psize, unsigned long ric)
+ {
+ 	unsigned long ap = mmu_get_ap(psize);
+ 
+@@ -424,7 +424,7 @@ static inline void _tlbie_va(unsigned long va, unsigned long pid,
+ 	asm volatile("eieio; tlbsync; ptesync": : :"memory");
+ }
+ 
+-static inline void _tlbie_lpid_va(unsigned long va, unsigned long lpid,
++static __always_inline void _tlbie_lpid_va(unsigned long va, unsigned long lpid,
+ 			      unsigned long psize, unsigned long ric)
+ {
+ 	unsigned long ap = mmu_get_ap(psize);
+-- 
+2.23.0
+

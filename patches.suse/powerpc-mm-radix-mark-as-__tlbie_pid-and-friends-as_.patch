@@ -1,0 +1,101 @@
+From efc344c57e39754416731e24e1eadd7d9b9f335e Mon Sep 17 00:00:00 2001
+From: Masahiro Yamada <yamada.masahiro@socionext.com>
+Date: Tue, 14 May 2019 15:42:21 -0700
+Subject: [PATCH] powerpc/mm/radix: mark as __tlbie_pid() and friends
+ as__always_inline
+
+References: bsc#1055186
+Patch-mainline: v5.2-rc1
+Git-commit: efc344c57e39754416731e24e1eadd7d9b9f335e
+
+This prepares to move CONFIG_OPTIMIZE_INLINING from x86 to a common
+place.  We need to eliminate potential issues beforehand.
+
+If it is enabled for powerpc, the following errors are reported:
+
+  arch/powerpc/mm/tlb-radix.c: In function '__tlbie_lpid':
+  arch/powerpc/mm/tlb-radix.c:148:2: warning: asm operand 3 probably doesn't match constraints
+    asm volatile(PPC_TLBIE_5(%0, %4, %3, %2, %1)
+    ^~~
+  arch/powerpc/mm/tlb-radix.c:148:2: error: impossible constraint in 'asm'
+  arch/powerpc/mm/tlb-radix.c: In function '__tlbie_pid':
+  arch/powerpc/mm/tlb-radix.c:118:2: warning: asm operand 3 probably doesn't match constraints
+    asm volatile(PPC_TLBIE_5(%0, %4, %3, %2, %1)
+    ^~~
+  arch/powerpc/mm/tlb-radix.c: In function '__tlbiel_pid':
+  arch/powerpc/mm/tlb-radix.c:104:2: warning: asm operand 3 probably doesn't match constraints
+    asm volatile(PPC_TLBIEL(%0, %4, %3, %2, %1)
+    ^~~
+
+Link: http://lkml.kernel.org/r/20190423034959.13525-11-yamada.masahiro@socionext.com
+Signed-off-by: Masahiro Yamada <yamada.masahiro@socionext.com>
+Cc: Arnd Bergmann <arnd@arndb.de>
+Cc: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+Cc: Boris Brezillon <bbrezillon@kernel.org>
+Cc: Borislav Petkov <bp@suse.de>
+Cc: Brian Norris <computersforpeace@gmail.com>
+Cc: Christophe Leroy <christophe.leroy@c-s.fr>
+Cc: David Woodhouse <dwmw2@infradead.org>
+Cc: Heiko Carstens <heiko.carstens@de.ibm.com>
+Cc: "H. Peter Anvin" <hpa@zytor.com>
+Cc: Ingo Molnar <mingo@redhat.com>
+Cc: Marek Vasut <marek.vasut@gmail.com>
+Cc: Mark Rutland <mark.rutland@arm.com>
+Cc: Mathieu Malaterre <malat@debian.org>
+Cc: Miquel Raynal <miquel.raynal@bootlin.com>
+Cc: Paul Mackerras <paulus@samba.org>
+Cc: Ralf Baechle <ralf@linux-mips.org>
+Cc: Richard Weinberger <richard@nod.at>
+Cc: Russell King <rmk+kernel@arm.linux.org.uk>
+Cc: Stefan Agner <stefan@agner.ch>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/mm/tlb-radix.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/arch/powerpc/mm/tlb-radix.c b/arch/powerpc/mm/tlb-radix.c
+index a2b2848f0ae3..4d841369399f 100644
+--- a/arch/powerpc/mm/tlb-radix.c
++++ b/arch/powerpc/mm/tlb-radix.c
+@@ -90,7 +90,7 @@ void radix__tlbiel_all(unsigned int action)
+ 	asm volatile(PPC_INVALIDATE_ERAT "; isync" : : :"memory");
+ }
+ 
+-static inline void __tlbiel_pid(unsigned long pid, int set,
++static __always_inline void __tlbiel_pid(unsigned long pid, int set,
+ 				unsigned long ric)
+ {
+ 	unsigned long rb,rs,prs,r;
+@@ -106,7 +106,7 @@ static inline void __tlbiel_pid(unsigned long pid, int set,
+ 	trace_tlbie(0, 1, rb, rs, ric, prs, r);
+ }
+ 
+-static inline void __tlbie_pid(unsigned long pid, unsigned long ric)
++static __always_inline void __tlbie_pid(unsigned long pid, unsigned long ric)
+ {
+ 	unsigned long rb,rs,prs,r;
+ 
+@@ -120,7 +120,7 @@ static inline void __tlbie_pid(unsigned long pid, unsigned long ric)
+ 	trace_tlbie(0, 0, rb, rs, ric, prs, r);
+ }
+ 
+-static inline void __tlbiel_lpid(unsigned long lpid, int set,
++static __always_inline void __tlbiel_lpid(unsigned long lpid, int set,
+ 				unsigned long ric)
+ {
+ 	unsigned long rb,rs,prs,r;
+@@ -136,7 +136,7 @@ static inline void __tlbiel_lpid(unsigned long lpid, int set,
+ 	trace_tlbie(lpid, 1, rb, rs, ric, prs, r);
+ }
+ 
+-static inline void __tlbie_lpid(unsigned long lpid, unsigned long ric)
++static __always_inline void __tlbie_lpid(unsigned long lpid, unsigned long ric)
+ {
+ 	unsigned long rb,rs,prs,r;
+ 
+-- 
+2.23.0
+

@@ -1,0 +1,46 @@
+From: Jeff Kirsher <jeffrey.t.kirsher@intel.com>
+Date: Thu, 12 Sep 2019 12:07:34 -0700
+Subject: ixgbevf: Fix secpath usage for IPsec Tx offload
+Patch-mainline: v5.3
+Git-commit: 8f6617badcc96a582678ea36ea96490c5ff26eb4
+References: bsc#1113994 FATE#326315 FATE#326317
+
+Port the same fix for ixgbe to ixgbevf.
+
+The ixgbevf driver currently does IPsec Tx offloading
+based on an existing secpath. However, the secpath
+can also come from the Rx side, in this case it is
+misinterpreted for Tx offload and the packets are
+dropped with a "bad sa_idx" error. Fix this by using
+the xfrm_offload() function to test for Tx offload.
+
+CC: Shannon Nelson <snelson@pensando.io>
+Fixes: 7f68d4306701 ("ixgbevf: enable VF IPsec offload operations")
+Reported-by: Jonathan Tooker <jonathan@reliablehosting.com>
+Signed-off-by: Jeff Kirsher <jeffrey.t.kirsher@intel.com>
+Acked-by: Shannon Nelson <snelson@pensando.io>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/intel/ixgbevf/ixgbevf_main.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/ethernet/intel/ixgbevf/ixgbevf_main.c
++++ b/drivers/net/ethernet/intel/ixgbevf/ixgbevf_main.c
+@@ -53,6 +53,7 @@
+ #include <linux/bpf.h>
+ #include <linux/bpf_trace.h>
+ #include <linux/atomic.h>
++#include <net/xfrm.h>
+ 
+ #include "ixgbevf.h"
+ 
+@@ -4179,7 +4180,7 @@ static int ixgbevf_xmit_frame_ring(struc
+ 	first->protocol = vlan_get_protocol(skb);
+ 
+ #ifdef CONFIG_IXGBEVF_IPSEC
+-	if (skb->sp && !ixgbevf_ipsec_tx(tx_ring, first, &ipsec_tx))
++	if (xfrm_offload(skb) && !ixgbevf_ipsec_tx(tx_ring, first, &ipsec_tx))
+ 		goto out_drop;
+ #endif
+ 	tso = ixgbevf_tso(tx_ring, first, &hdr_len, &ipsec_tx);
