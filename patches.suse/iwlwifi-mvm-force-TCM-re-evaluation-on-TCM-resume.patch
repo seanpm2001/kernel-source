@@ -1,0 +1,66 @@
+From 7bc2468277033e05401d5f8fd48a772f407338c2 Mon Sep 17 00:00:00 2001
+From: Avraham Stern <avraham.stern@intel.com>
+Date: Wed, 15 Aug 2018 12:23:39 +0300
+Subject: [PATCH] iwlwifi: mvm: force TCM re-evaluation on TCM resume
+Git-commit: 7bc2468277033e05401d5f8fd48a772f407338c2
+Patch-mainline: v5.0-rc1
+References: bsc#1111666
+
+When traffic load is not low or low latency is active, TCM schedules
+re-evaluation work so in case traffic stops TCM will detect that
+traffic load has become low or that low latency is no longer active.
+However, if TCM is paused when the re-evaluation work runs, it does
+not re-evaluate and the re-evaluation work is no longer scheduled.
+As a result, TCM will not indicate that low latency is no longer
+active or that traffic load is low when traffic stops.
+
+Fix this by forcing TCM re-evaluation when TCM is resumed in case
+low latency is active or traffic load is not low.
+
+Signed-off-by: Avraham Stern <avraham.stern@intel.com>
+Signed-off-by: Luca Coelho <luciano.coelho@intel.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/net/wireless/intel/iwlwifi/mvm/utils.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/drivers/net/wireless/intel/iwlwifi/mvm/utils.c b/drivers/net/wireless/intel/iwlwifi/mvm/utils.c
+index 3761fbfff292..5ad352ef8e9b 100644
+--- a/drivers/net/wireless/intel/iwlwifi/mvm/utils.c
++++ b/drivers/net/wireless/intel/iwlwifi/mvm/utils.c
+@@ -1378,6 +1378,7 @@ void iwl_mvm_pause_tcm(struct iwl_mvm *mvm, bool with_cancel)
+ void iwl_mvm_resume_tcm(struct iwl_mvm *mvm)
+ {
+ 	int mac;
++	bool low_latency = false;
+ 
+ 	spin_lock_bh(&mvm->tcm.lock);
+ 	mvm->tcm.ts = jiffies;
+@@ -1389,10 +1390,23 @@ void iwl_mvm_resume_tcm(struct iwl_mvm *mvm)
+ 		memset(&mdata->tx.pkts, 0, sizeof(mdata->tx.pkts));
+ 		memset(&mdata->rx.airtime, 0, sizeof(mdata->rx.airtime));
+ 		memset(&mdata->tx.airtime, 0, sizeof(mdata->tx.airtime));
++
++		if (mvm->tcm.result.low_latency[mac])
++			low_latency = true;
+ 	}
+ 	/* The TCM data needs to be reset before "paused" flag changes */
+ 	smp_mb();
+ 	mvm->tcm.paused = false;
++
++	/*
++	 * if the current load is not low or low latency is active, force
++	 * re-evaluation to cover the case of no traffic.
++	 */
++	if (mvm->tcm.result.global_load > IWL_MVM_TRAFFIC_LOW)
++		schedule_delayed_work(&mvm->tcm.work, MVM_TCM_PERIOD);
++	else if (low_latency)
++		schedule_delayed_work(&mvm->tcm.work, MVM_LL_PERIOD);
++
+ 	spin_unlock_bh(&mvm->tcm.lock);
+ }
+ 
+-- 
+2.16.4
+

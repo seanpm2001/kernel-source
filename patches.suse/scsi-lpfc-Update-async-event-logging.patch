@@ -1,8 +1,7 @@
 From: James Smart <jsmart2021@gmail.com>
 Date: Sat, 21 Sep 2019 20:59:03 -0700
 Subject: scsi: lpfc: Update async event logging
-Patch-mainline: Queued in subsystem maintainer repository
-Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/jejb/scsi.git
+Patch-mainline: v5.5-rc1
 Git-commit: d11ed16db698c31663938d004451b11ac6b2b2e1
 References: bsc#1154521
 
@@ -32,9 +31,9 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  #define LPFC_SLI_EVENT_TYPE_MISCONFIGURED	0x9
  #define LPFC_SLI_EVENT_TYPE_REMOTE_DPORT	0xA
 +#define LPFC_SLI_EVENT_TYPE_EEPROM_FAILURE	0x10
- #define LPFC_SLI_EVENT_TYPE_MISCONF_FAWWN	0xF
  };
  
+ /*
 --- a/drivers/scsi/lpfc/lpfc_init.c
 +++ b/drivers/scsi/lpfc/lpfc_init.c
 @@ -5288,10 +5288,10 @@ lpfc_sli4_async_sli_evt(struct lpfc_hba
@@ -51,7 +50,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  
  	port_name = phba->Port[0];
  	if (port_name == 0x00)
-@@ -5431,6 +5431,13 @@ lpfc_sli4_async_sli_evt(struct lpfc_hba
+@@ -5431,11 +5431,16 @@ lpfc_sli4_async_sli_evt(struct lpfc_hba
  				"Event Data1:x%08x Event Data2: x%08x\n",
  				acqe_sli->event_data1, acqe_sli->event_data2);
  		break;
@@ -62,11 +61,6 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
 +				"Event Data1: x%08x Event Data2: x%08x\n",
 +				acqe_sli->event_data1, acqe_sli->event_data2);
 +		break;
- 	case LPFC_SLI_EVENT_TYPE_MISCONF_FAWWN:
- 		/* Misconfigured WWN. Reports that the SLI Port is configured
- 		 * to use FA-WWN, but the attached device doesn’t support it.
-@@ -5443,9 +5450,7 @@ lpfc_sli4_async_sli_evt(struct lpfc_hba
- 		break;
  	default:
  		lpfc_printf_log(phba, KERN_INFO, LOG_SLI,
 -				"3193 Async SLI event - Event Data1:x%08x Event Data2:"

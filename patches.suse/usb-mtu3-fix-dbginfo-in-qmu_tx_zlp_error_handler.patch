@@ -1,0 +1,41 @@
+From f770e3bc236ee954a3b4052bdf55739e26ee25db Mon Sep 17 00:00:00 2001
+From: YueHaibing <yuehaibing@huawei.com>
+Date: Fri, 7 Dec 2018 03:52:43 +0000
+Subject: [PATCH] usb: mtu3: fix dbginfo in qmu_tx_zlp_error_handler
+Git-commit: f770e3bc236ee954a3b4052bdf55739e26ee25db
+Patch-mainline: v5.0-rc1
+References: bsc#1051510
+
+Fixes gcc '-Wunused-but-set-variable' warning:
+
+Drivers/usb/mtu3/mtu3_qmu.c: In function 'qmu_tx_zlp_error_handler':
+drivers/usb/mtu3/mtu3_qmu.c:385:22: warning:
+ variable 'req' set but not used [-Wunused-but-set-variable]
+
+It seems dbginfo original intention is print 'req' other than 'mreq'
+
+Acked-by: Chunfeng Yun <chunfeng.yun@mediatek.com>
+Signed-off-by: YueHaibing <yuehaibing@huawei.com>
+Signed-off-by: Felipe Balbi <felipe.balbi@linux.intel.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/usb/mtu3/mtu3_qmu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/usb/mtu3/mtu3_qmu.c b/drivers/usb/mtu3/mtu3_qmu.c
+index 73ac042c45a8..09f19f70fe8f 100644
+--- a/drivers/usb/mtu3/mtu3_qmu.c
++++ b/drivers/usb/mtu3/mtu3_qmu.c
+@@ -402,7 +402,7 @@ static void qmu_tx_zlp_error_handler(struct mtu3 *mtu, u8 epnum)
+ 		return;
+ 	}
+ 
+-	dev_dbg(mtu->dev, "%s send ZLP for req=%p\n", __func__, mreq);
++	dev_dbg(mtu->dev, "%s send ZLP for req=%p\n", __func__, req);
+ 
+ 	mtu3_clrbits(mbase, MU3D_EP_TXCR0(mep->epnum), TX_DMAREQEN);
+ 
+-- 
+2.16.4
+

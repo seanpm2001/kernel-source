@@ -1,0 +1,40 @@
+From: YueHaibing <yuehaibing@huawei.com>
+Date: Wed, 26 Jun 2019 17:47:50 +0200
+Subject: net/smc: Fix error path in smc_init
+Git-commit: 8c33bf1b0a9663d1742cb19ee71da46a1d8670dd
+Patch-mainline: v5.2-rc7
+References: git-fixes
+
+If register_pernet_subsys success in smc_init,
+we should cleanup it in case any other error.
+
+Fixes: 64e28b52c7a6 (net/smc: add pnet table namespace support")
+Signed-off-by: YueHaibing <yuehaibing@huawei.com>
+Signed-off-by: Ursula Braun <ubraun@linux.ibm.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Petr Tesarik <ptesarik@suse.com>
+---
+ net/smc/af_smc.c |    5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/net/smc/af_smc.c
++++ b/net/smc/af_smc.c
+@@ -2026,7 +2026,7 @@ static int __init smc_init(void)
+ 
+ 	rc = smc_pnet_init();
+ 	if (rc)
+-		return rc;
++		goto out_pernet_subsys;
+ 
+ 	rc = smc_llc_init();
+ 	if (rc) {
+@@ -2077,6 +2077,9 @@ out_proto:
+ 	proto_unregister(&smc_proto);
+ out_pnet:
+ 	smc_pnet_exit();
++out_pernet_subsys:
++	unregister_pernet_subsys(&smc_net_ops);
++
+ 	return rc;
+ }
+ 

@@ -1,0 +1,55 @@
+From 377e208f44784174f3002d9892d553715a3ab71b Mon Sep 17 00:00:00 2001
+From: Richard Weinberger <richard@nod.at>
+Date: Tue, 13 Aug 2019 23:55:48 +0200
+Subject: [PATCH] ubifs: Correctly initialize c->min_log_bytes
+Mime-version: 1.0
+Content-type: text/plain; charset=UTF-8
+Content-transfer-encoding: 8bit
+Git-commit: 377e208f44784174f3002d9892d553715a3ab71b
+Patch-mainline: v5.3-rc6
+References: bsc#1158641
+
+Currently on a freshly mounted UBIFS, c->min_log_bytes is 0.
+This can lead to a log overrun and make commits fail.
+
+Recent kernels will report the following assert:
+UBIFS assert failed: c->lhead_lnum != c->ltail_lnum, in fs/ubifs/log.c:412
+
+c->min_log_bytes can have two states, 0 and c->leb_size.
+It controls how much bytes of the log area are reserved for non-bud
+nodes such as commit nodes.
+
+After a commit it has to be set to c->leb_size such that we have always
+enough space for a commit. While a commit runs it can be 0 to make the
+remaining bytes of the log available to writers.
+
+Having it set to 0 right after mount is wrong since no space for commits
+is reserved.
+
+Fixes: 1e51764a3c2ac ("UBIFS: add new flash file system")
+Reported-and-tested-by: Uwe Kleine-König <u.kleine-koenig@pengutronix.de>
+Signed-off-by: Richard Weinberger <richard@nod.at>
+Acked-by: Jan Kara <jack@suse.cz>
+
+---
+ fs/ubifs/super.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/fs/ubifs/super.c b/fs/ubifs/super.c
+index 2c0803b0ac3a..8c1d571334bc 100644
+--- a/fs/ubifs/super.c
++++ b/fs/ubifs/super.c
+@@ -609,6 +609,10 @@ static int init_constants_early(struct ubifs_info *c)
+ 	c->max_bu_buf_len = UBIFS_MAX_BULK_READ * UBIFS_MAX_DATA_NODE_SZ;
+ 	if (c->max_bu_buf_len > c->leb_size)
+ 		c->max_bu_buf_len = c->leb_size;
++
++	/* Log is ready, preserve one LEB for commits. */
++	c->min_log_bytes = c->leb_size;
++
+ 	return 0;
+ }
+ 
+-- 
+2.16.4
+

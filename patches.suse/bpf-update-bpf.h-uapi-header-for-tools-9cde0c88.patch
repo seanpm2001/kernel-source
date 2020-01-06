@@ -13,12 +13,12 @@ Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
 Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
 Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
 ---
- tools/include/uapi/linux/bpf.h | 1774 +++++++++++++++++++++++++++++++----------
- 1 file changed, 1379 insertions(+), 395 deletions(-)
+ tools/include/uapi/linux/bpf.h | 1745 +++++++++++++++++++++++++++++++----------
+ 1 file changed, 1354 insertions(+), 391 deletions(-)
 
 --- a/tools/include/uapi/linux/bpf.h
 +++ b/tools/include/uapi/linux/bpf.h
-@@ -377,412 +377,1396 @@ union bpf_attr {
+@@ -377,408 +377,1371 @@ union bpf_attr {
  	};
  } __attribute__((aligned(8)));
  
@@ -1295,10 +1295,6 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
 - *     @buf_size: size of the buf
 - *     Return : 0 on success or negative error code
 - *
-- * int bpf_override_return(pt_regs, rc)
-- *	@pt_regs: pointer to struct pt_regs
-- *	@rc: the return value to set
-- *
 - * int bpf_msg_redirect_map(map, key, flags)
 - *     Redirect msg to a sock in map using key as a lookup key for the
 - *     sock in map.
@@ -1602,31 +1598,6 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
 + * 		* **IPPROTO_IPV6**, which supports *optname* **IPV6_TCLASS**.
 + * 	Return
 + * 		0 on success, or a negative error in case of failure.
-+ *
-+ * int bpf_override_return(struct pt_reg *regs, u64 rc)
-+ * 	Description
-+ * 		Used for error injection, this helper uses kprobes to override
-+ * 		the return value of the probed function, and to set it to *rc*.
-+ * 		The first argument is the context *regs* on which the kprobe
-+ * 		works.
-+ *
-+ * 		This helper works by setting setting the PC (program counter)
-+ * 		to an override function which is run in place of the original
-+ * 		probed function. This means the probed function is not run at
-+ * 		all. The replacement function just returns with the required
-+ * 		value.
-+ *
-+ * 		This helper has security implications, and thus is subject to
-+ * 		restrictions. It is only available if the kernel was compiled
-+ * 		with the **CONFIG_BPF_KPROBE_OVERRIDE** configuration
-+ * 		option, and in this case it only works on functions tagged with
-+ * 		**ALLOW_ERROR_INJECTION** in the kernel code.
-+ *
-+ * 		Also, the helper is only available for the architectures having
-+ * 		the CONFIG_FUNCTION_ERROR_INJECTION option. As of this writing,
-+ * 		x86 architecture is the only one to support this feature.
-+ * 	Return
-+ * 		0
 + *
 + * int bpf_sock_ops_cb_flags_set(struct bpf_sock_ops_kern *bpf_sock, int argval)
 + * 	Description

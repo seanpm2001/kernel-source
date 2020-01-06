@@ -1,13 +1,13 @@
 Subject: hyperv: set nvme msi interrupts to unmanaged
 From: Olaf Hering <ohering@suse.de>
 Patch-mainline: Never, stale kernel
-References: jsc#SLE-4941, bsc#1119461
+References: jsc#SLE-8953, jsc#SLE-9221, jsc#SLE-4941, bsc#1119461, bsc#1119465, bsc#1138190, bsc#1154905
 
 Needs a matching irqbalance.rpm
 
 --- a/drivers/nvme/host/pci.c
 +++ b/drivers/nvme/host/pci.c
-@@ -30,6 +30,7 @@
+@@ -29,6 +29,7 @@
  #include <linux/types.h>
  #include <linux/io-64-nonatomic-lo-hi.h>
  #include <linux/sed-opal.h>
@@ -15,7 +15,7 @@ Needs a matching irqbalance.rpm
  
  #include "nvme.h"
  
-@@ -1925,6 +1926,10 @@ static int nvme_setup_io_queues(struct n
+@@ -1970,6 +1971,10 @@ static int nvme_setup_io_queues(struct n
  	dev->num_vecs = result;
  	dev->max_qid = max(result - 1, 1);
  
@@ -38,19 +38,21 @@ Needs a matching irqbalance.rpm
  static inline void get_cached_msi_msg(unsigned int irq, struct msi_msg *msg)
 --- a/kernel/irq/msi.c
 +++ b/kernel/irq/msi.c
-@@ -15,6 +15,43 @@
+@@ -15,6 +15,45 @@
  #include <linux/irqdomain.h>
  #include <linux/msi.h>
  #include <linux/slab.h>
-+#ifdef CONFIG_HYPERV
++#if IS_ENABLED(CONFIG_HYPERV)
++#ifndef __GENKSYMS__
 +#include "internals.h"
 +#include <asm/hypervisor.h>
++#endif
 +#endif
 +
 +/* Compensate the lack of matrix.c in pre-v4.20 kernels */
 +int suse_msi_set_irq_unmanaged(struct device *dev)
 +{
-+#ifdef CONFIG_HYPERV
++#if IS_ENABLED(CONFIG_HYPERV)
 +	struct msi_desc *msi_desc;
 +	struct irq_desc *irq_desc;
 +	struct cpumask *mask;

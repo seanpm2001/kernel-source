@@ -1,0 +1,43 @@
+From a8da3c7873ea57acb8f9cea58c0af477522965aa Mon Sep 17 00:00:00 2001
+From: Alexander Shiyan <shc_work@mail.ru>
+Date: Wed, 19 Dec 2018 14:19:20 +0300
+Subject: [PATCH] serial: max310x: Fix tx_empty() callback
+Git-commit: a8da3c7873ea57acb8f9cea58c0af477522965aa
+Patch-mainline: v5.0-rc1
+References: bsc#1051510
+
+Function max310x_tx_empty() accesses the IRQSTS register, which is
+cleared by IC when reading, so if there is an interrupt status, we
+will lose it. This patch implement the transmitter check only by
+the current FIFO level.
+
+Signed-off-by: Alexander Shiyan <shc_work@mail.ru>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/tty/serial/max310x.c | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/tty/serial/max310x.c b/drivers/tty/serial/max310x.c
+index 3db48fcd6068..4f479841769a 100644
+--- a/drivers/tty/serial/max310x.c
++++ b/drivers/tty/serial/max310x.c
+@@ -833,12 +833,9 @@ static void max310x_wq_proc(struct work_struct *ws)
+ 
+ static unsigned int max310x_tx_empty(struct uart_port *port)
+ {
+-	unsigned int lvl, sts;
++	u8 lvl = max310x_port_read(port, MAX310X_TXFIFOLVL_REG);
+ 
+-	lvl = max310x_port_read(port, MAX310X_TXFIFOLVL_REG);
+-	sts = max310x_port_read(port, MAX310X_IRQSTS_REG);
+-
+-	return ((sts & MAX310X_IRQ_TXEMPTY_BIT) && !lvl) ? TIOCSER_TEMT : 0;
++	return lvl ? 0 : TIOCSER_TEMT;
+ }
+ 
+ static unsigned int max310x_get_mctrl(struct uart_port *port)
+-- 
+2.16.4
+

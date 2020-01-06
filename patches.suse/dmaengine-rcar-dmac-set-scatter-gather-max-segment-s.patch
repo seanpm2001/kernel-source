@@ -1,0 +1,43 @@
+From 97d49c59e219acac576e16293a6b8cb99302f62f Mon Sep 17 00:00:00 2001
+From: Wolfram Sang <wsa+renesas@sang-engineering.com>
+Date: Fri, 14 Sep 2018 17:43:28 +0200
+Subject: [PATCH] dmaengine: rcar-dmac: set scatter/gather max segment size
+Git-commit: 97d49c59e219acac576e16293a6b8cb99302f62f
+Patch-mainline: v4.20-rc1
+References: bsc#1051510
+
+Fix warning when running with CONFIG_DMA_API_DEBUG_SG=y by allocating a
+device_dma_parameters structure and filling in the max segment size.
+
+Signed-off-by: Wolfram Sang <wsa+renesas@sang-engineering.com>
+Signed-off-by: Vinod Koul <vkoul@kernel.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/dma/sh/rcar-dmac.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/dma/sh/rcar-dmac.c b/drivers/dma/sh/rcar-dmac.c
+index 48ee35e2bce6..74fa2b1a6a86 100644
+--- a/drivers/dma/sh/rcar-dmac.c
++++ b/drivers/dma/sh/rcar-dmac.c
+@@ -198,6 +198,7 @@ struct rcar_dmac {
+ 	struct dma_device engine;
+ 	struct device *dev;
+ 	void __iomem *iomem;
++	struct device_dma_parameters parms;
+ 
+ 	unsigned int n_channels;
+ 	struct rcar_dmac_chan *channels;
+@@ -1792,6 +1793,8 @@ static int rcar_dmac_probe(struct platform_device *pdev)
+ 
+ 	dmac->dev = &pdev->dev;
+ 	platform_set_drvdata(pdev, dmac);
++	dmac->dev->dma_parms = &dmac->parms;
++	dma_set_max_seg_size(dmac->dev, RCAR_DMATCR_MASK);
+ 	dma_set_mask_and_coherent(dmac->dev, DMA_BIT_MASK(40));
+ 
+ 	ret = rcar_dmac_parse_of(&pdev->dev, dmac);
+-- 
+2.16.4
+

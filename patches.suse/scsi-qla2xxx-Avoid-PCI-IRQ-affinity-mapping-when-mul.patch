@@ -45,24 +45,25 @@ Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
 Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_isr.c |    2 +-
+ drivers/scsi/qla2xxx/qla_isr.c |    3 ++-
  drivers/scsi/qla2xxx/qla_os.c  |    2 +-
- 2 files changed, 2 insertions(+), 2 deletions(-)
+ 2 files changed, 3 insertions(+), 2 deletions(-)
 
 --- a/drivers/scsi/qla2xxx/qla_isr.c
 +++ b/drivers/scsi/qla2xxx/qla_isr.c
-@@ -3431,7 +3431,7 @@ qla24xx_enable_msix(struct qla_hw_data *
+@@ -3431,7 +3431,8 @@ qla24xx_enable_msix(struct qla_hw_data *
  		min_vecs++;
  	}
  
 -	if (USER_CTRL_IRQ(ha)) {
-+	if (USER_CTRL_IRQ(ha) || !ha->mqiobase) {
++	if (USER_CTRL_IRQ(ha) || !ha->mqiobase ||
++            !shost_use_blk_mq(vha->host)) {
  		/* user wants to control IRQ setting for target mode */
  		ret = pci_alloc_irq_vectors(ha->pdev, min_vecs,
  		    ha->msix_count, PCI_IRQ_MSIX);
 --- a/drivers/scsi/qla2xxx/qla_os.c
 +++ b/drivers/scsi/qla2xxx/qla_os.c
-@@ -7186,7 +7186,7 @@ static int qla2xxx_map_queues(struct Scs
+@@ -7187,7 +7187,7 @@ static int qla2xxx_map_queues(struct Scs
  	int rc;
  	scsi_qla_host_t *vha = (scsi_qla_host_t *)shost->hostdata;
  
@@ -70,4 +71,4 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
 +	if (USER_CTRL_IRQ(vha->hw) || !vha->hw->mqiobase)
  		rc = blk_mq_map_queues(&shost->tag_set);
  	else
- 		rc = blk_mq_pci_map_queues(&shost->tag_set, vha->hw->pdev, 0);
+ 		rc = blk_mq_pci_map_queues(&shost->tag_set, vha->hw->pdev, vha->irq_offset);

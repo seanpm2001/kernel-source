@@ -1,0 +1,46 @@
+From: Vlastimil Babka <vbabka@suse.cz>
+Subject: prevent active file list thrashing due to refault detection
+Patch-mainline: Never, discussing proper upstream solution
+References: VM Performance, bsc#1156286
+
+In bsc#1156286 we found that 12SP4 kernel regression compared to 12SP3 is due
+to commit 2a2e48854d70 ("mm: vmscan: fix IO/refault regression in cache
+workingset transition") causing active file list thrashing, as the refault
+counter may increase since the last snapshot between kswapd runs and cause
+the second kswapd run to focus all reclaim on the active list.
+
+Proper upstreamable solution needs to be discussed, but we need to fix the
+regression meanwhile, so effectively disabling commit 2a2e48854d70 is the
+simplest option. There has been positive feedback from the customer, and
+performance team found no obvious regressions from this change.
+
+Signed-off-by: Vlastimil Babka <vbabka@suse.cz>
+
+---
+ mm/vmscan.c |    8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -2061,6 +2061,12 @@ static bool inactive_list_is_low(struct
+ 	unsigned long refaults;
+ 	unsigned long gb;
+ 
++	/*
++	 * spurious refault detection results in active list thrashing,
++	 * disable it - bsc#1156286
++	 */
++	actual_reclaim = false;
++
+ 	/*
+ 	 * If we don't have swap space, anonymous page deactivation
+ 	 * is pointless.
+@@ -2091,6 +2097,8 @@ static bool inactive_list_is_low(struct
+ 			inactive_ratio = 1;
+ 	}
+ 
++	/* bsc#1156286 - don't lose the tracepoint */
++	actual_reclaim = true;
+ 	if (actual_reclaim)
+ 		trace_mm_vmscan_inactive_list_is_low(pgdat->node_id, sc->reclaim_idx,
+ 			lruvec_lru_size(lruvec, inactive_lru, MAX_NR_ZONES), inactive,

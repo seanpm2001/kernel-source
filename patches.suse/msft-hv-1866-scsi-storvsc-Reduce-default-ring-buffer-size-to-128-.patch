@@ -1,23 +1,29 @@
-Subject: hv: reduce storvsc_ringbuffer_size from 1M to 128K to simplify booting with 1k vcpus
-From: <ohering@suse.de>
-Git-commit: ed2e63aaec4fbf248275d2d83c4cfd65e069594f
+From: Michael Kelley <mikelley@microsoft.com>
+Date: Mon, 1 Apr 2019 21:42:06 +0000
 Patch-mainline: v5.1-rc4
+Subject: scsi: storvsc: Reduce default ring buffer size to 128 Kbytes
+Git-commit: ed2e63aaec4fbf248275d2d83c4cfd65e069594f
 References: fate#323887
 
-This is actually related to bsc#1122822. Michael Kelley says:
-The current size of 1 Mbyte is much bigger than is needed. Experiments
-about a year ago showed that 128 Kbytes is quite sufficient, and I never
-got around to changing the default size in the upstream code. I'll try
-to push the upstream change in the next few days.
+Reduce the default VMbus channel ring buffer size for storvsc SCSI devices
+from 1 Mbyte to 128 Kbytes. Measurements show that ring buffer sizes above
+128 Kbytes do not increase performance even at very high IOPS rates, so
+don't waste the memory. Also remove the dependence on PAGE_SIZE, since the
+ring buffer size should not change on architectures where PAGE_SIZE is not
+4 Kbytes.
 
-Workaround so far is:
-boot up  with "hv_storvsc.storvsc_ringbuffer_size=131072"
-
+Signed-off-by: Michael Kelley <mikelley@microsoft.com>
+Reviewed-by: Haiyang Zhang <haiyangz@microsoft.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
 Acked-by: Olaf Hering <ohering@suse.de>
+---
+ drivers/scsi/storvsc_drv.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
+diff --git a/drivers/scsi/storvsc_drv.c b/drivers/scsi/storvsc_drv.c
 --- a/drivers/scsi/storvsc_drv.c
 +++ b/drivers/scsi/storvsc_drv.c
-@@ -385,7 +389,7 @@ enum storvsc_request_type {
+@@ -385,7 +385,7 @@ enum storvsc_request_type {
   * This is the end of Protocol specific defines.
   */
  

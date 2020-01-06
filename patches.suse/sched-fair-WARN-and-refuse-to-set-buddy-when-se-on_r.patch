@@ -1,0 +1,73 @@
+From 58cdfe74bcde282072b3057d43264c56da748c16 Mon Sep 17 00:00:00 2001
+From: Daniel Axtens <dja@axtens.net>
+Date: Thu, 11 May 2017 06:11:39 +1000
+Subject: [PATCH] sched/fair: WARN() and refuse to set buddy when !se->on_rq
+Git-commit: c5ae366e12b2bd56fc7d7e9d484836bec9ddc110
+Patch-mainline: v4.13-rc1
+References: bsc#1158132
+
+If we set a next or last buddy for a se that is not on_rq, we will
+end up taking a NULL pointer dereference in wakeup_preempt_entity
+via pick_next_task_fair.
+
+Detect when we would be about to do that, throw a warning and
+then refuse to actually set it.
+
+This has been suggested at least twice:
+
+  https://marc.info/?l=linux-kernel&m=146651668921468&w=2
+  https://lkml.org/lkml/2016/6/16/663
+
+I recently had to debug a problem with these (we hadn't backported
+Konstantin's patches in this area) and this would have saved a lot
+of time/pain.
+
+Just do it.
+
+Signed-off-by: Daniel Axtens <dja@axtens.net>
+Cc: Ben Segall <bsegall@google.com>
+Cc: Konstantin Khlebnikov <khlebnikov@yandex-team.ru>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Cc: Mike Galbraith <efault@gmx.de>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Link: http://lkml.kernel.org/r/20170510201139.16236-1-dja@axtens.net
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+Signed-off-by: Matt Fleming <mfleming@suse.de>
+---
+ kernel/sched/fair.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 10e60376e9c4..3651470412d8 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -5786,8 +5786,11 @@ static void set_last_buddy(struct sched_entity *se)
+ 	if (entity_is_task(se) && unlikely(task_of(se)->policy == SCHED_IDLE))
+ 		return;
+ 
+-	for_each_sched_entity(se)
++	for_each_sched_entity(se) {
++		if (WARN_ON_ONCE(!se->on_rq))
++			return;
+ 		cfs_rq_of(se)->last = se;
++	}
+ }
+ 
+ static void set_next_buddy(struct sched_entity *se)
+@@ -5795,8 +5798,11 @@ static void set_next_buddy(struct sched_entity *se)
+ 	if (entity_is_task(se) && unlikely(task_of(se)->policy == SCHED_IDLE))
+ 		return;
+ 
+-	for_each_sched_entity(se)
++	for_each_sched_entity(se) {
++		if (WARN_ON_ONCE(!se->on_rq))
++			return;
+ 		cfs_rq_of(se)->next = se;
++	}
+ }
+ 
+ static void set_skip_buddy(struct sched_entity *se)
+-- 
+2.16.4
+

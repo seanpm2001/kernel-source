@@ -82,14 +82,12 @@ Link: https://lore.kernel.org/r/20190729095128.23707-1-aneesh.kumar@linux.ibm.co
 Acked-by: Michal Suchanek <msuchanek@suse.de>
 Acked-by: Michal Suchanek <msuchanek@suse.de>
 ---
- arch/powerpc/platforms/pseries/papr_scm.c |   29 +++++++++++++++++++++++++++--
- 1 file changed, 27 insertions(+), 2 deletions(-)
+ arch/powerpc/platforms/pseries/papr_scm.c |   27 ++++++++++++++++++++++++++-
+ 1 file changed, 26 insertions(+), 1 deletion(-)
 
-diff --git a/arch/powerpc/platforms/pseries/papr_scm.c b/arch/powerpc/platforms/pseries/papr_scm.c
-index 2c07908..a5ac371 100644
 --- a/arch/powerpc/platforms/pseries/papr_scm.c
 +++ b/arch/powerpc/platforms/pseries/papr_scm.c
-@@ -275,12 +275,32 @@ static const struct attribute_group *papr_scm_dimm_groups[] = {
+@@ -275,12 +275,32 @@ static const struct attribute_group *pap
  	NULL,
  };
  
@@ -122,20 +120,18 @@ index 2c07908..a5ac371 100644
  
  	p->bus_desc.ndctl = papr_scm_ndctl;
  	p->bus_desc.module = THIS_MODULE;
-@@ -319,8 +339,10 @@ static int papr_scm_nvdimm_init(struct papr_scm_priv *p)
+@@ -319,7 +339,9 @@ static int papr_scm_nvdimm_init(struct p
  
  	memset(&ndr_desc, 0, sizeof(ndr_desc));
  	ndr_desc.attr_groups = region_attr_groups;
 -	ndr_desc.numa_node = dev_to_node(&p->pdev->dev);
--	ndr_desc.target_node = ndr_desc.numa_node;
 +	target_nid = dev_to_node(&p->pdev->dev);
 +	online_nid = papr_scm_node(target_nid);
 +	ndr_desc.numa_node = online_nid;
-+	ndr_desc.target_node = target_nid;
+ 	ndr_desc.target_node = ndr_desc.numa_node;
  	ndr_desc.res = &p->res;
  	ndr_desc.of_node = p->dn;
- 	ndr_desc.provider_data = p;
-@@ -338,6 +360,9 @@ static int papr_scm_nvdimm_init(struct papr_scm_priv *p)
+@@ -338,6 +360,9 @@ static int papr_scm_nvdimm_init(struct p
  				ndr_desc.res, p->dn);
  		goto err;
  	}
@@ -145,4 +141,3 @@ index 2c07908..a5ac371 100644
  
  	return 0;
  
-

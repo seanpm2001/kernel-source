@@ -1,0 +1,42 @@
+From 197f9ab7f08ce4b9ece662f747c3991b2f0fbb57 Mon Sep 17 00:00:00 2001
+From: Paul Kocialkowski <paul.kocialkowski@bootlin.com>
+Date: Fri, 15 Feb 2019 17:17:08 +0100
+Subject: [PATCH] net: phy: xgmiitorgmii: Support generic PHY status read
+Git-commit: 197f9ab7f08ce4b9ece662f747c3991b2f0fbb57
+Patch-mainline: v5.0-rc8
+References: bsc#1051510
+
+Some PHY drivers like the generic one do not provide a read_status
+callback on their own but rely on genphy_read_status being called
+directly.
+
+With the current code, this results in a NULL function pointer call.
+Call genphy_read_status instead when there is no specific callback.
+
+Signed-off-by: Paul Kocialkowski <paul.kocialkowski@bootlin.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/net/phy/xilinx_gmii2rgmii.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/phy/xilinx_gmii2rgmii.c b/drivers/net/phy/xilinx_gmii2rgmii.c
+index 74a8782313cf..bd6084e315de 100644
+--- a/drivers/net/phy/xilinx_gmii2rgmii.c
++++ b/drivers/net/phy/xilinx_gmii2rgmii.c
+@@ -44,7 +44,10 @@ static int xgmiitorgmii_read_status(struct phy_device *phydev)
+ 	u16 val = 0;
+ 	int err;
+ 
+-	err = priv->phy_drv->read_status(phydev);
++	if (priv->phy_drv->read_status)
++		err = priv->phy_drv->read_status(phydev);
++	else
++		err = genphy_read_status(phydev);
+ 	if (err < 0)
+ 		return err;
+ 
+-- 
+2.16.4
+

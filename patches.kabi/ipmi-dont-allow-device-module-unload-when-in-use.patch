@@ -1,0 +1,104 @@
+From: Jean Delvare <jdelvare@suse.de>
+Subject: kABI fix for "ipmi: Don't allow device module unload when in use"
+References: bsc#1154768
+Patch-mainline: Never, kABI breakage workaround
+
+In order to avoid breaking the kABI, we restore the original
+ipmi_register_smi() as a wrapper around the new ipmi_add_smi(). We
+rename the new ipmi_register_smi macro to ipmi_register_smi_owner
+and update the 3 drivers using it accordingly.
+
+If any 3rd party ipmi driver exists then they will call the old
+code which does not protect against module removal while in use,
+and a warning will be printed to let the user know.
+---
+ drivers/char/ipmi/ipmi_msghandler.c |   11 +++++++++++
+ drivers/char/ipmi/ipmi_powernv.c    |    2 +-
+ drivers/char/ipmi/ipmi_si_intf.c    |    8 ++++----
+ drivers/char/ipmi/ipmi_ssif.c       |    8 ++++----
+ include/linux/ipmi_smi.h            |    7 ++++++-
+ 5 files changed, 26 insertions(+), 10 deletions(-)
+
+--- a/drivers/char/ipmi/ipmi_msghandler.c
++++ b/drivers/char/ipmi/ipmi_msghandler.c
+@@ -3698,6 +3698,17 @@ int ipmi_add_smi(struct module         *
+ }
+ EXPORT_SYMBOL(ipmi_add_smi);
+ 
++/* Compatibility layer to preserve kABI */
++int ipmi_register_smi(const struct ipmi_smi_handlers *handlers,
++		      void		    *send_info,
++		      struct device         *si_dev,
++		      unsigned char         slave_addr)
++{
++	pr_warn("Warning: legacy ipmi_register_smi does not protect against module removal\n");
++	return ipmi_add_smi(NULL, handlers, send_info, si_dev, slave_addr);
++}
++EXPORT_SYMBOL(ipmi_register_smi);
++
+ static void deliver_smi_err_response(struct ipmi_smi *intf,
+ 				     struct ipmi_smi_msg *msg,
+ 				     unsigned char err)
+--- a/drivers/char/ipmi/ipmi_powernv.c
++++ b/drivers/char/ipmi/ipmi_powernv.c
+@@ -261,7 +261,7 @@ static int ipmi_powernv_probe(struct pla
+ 		goto err_unregister;
+ 	}
+ 
+-	rc = ipmi_register_smi(&ipmi_powernv_smi_handlers, ipmi, dev, 0);
++	rc = ipmi_register_smi_owner(&ipmi_powernv_smi_handlers, ipmi, dev, 0);
+ 	if (rc) {
+ 		dev_warn(dev, "IPMI SMI registration failed (%d)\n", rc);
+ 		goto err_free_msg;
+--- a/drivers/char/ipmi/ipmi_si_intf.c
++++ b/drivers/char/ipmi/ipmi_si_intf.c
+@@ -2076,10 +2076,10 @@ static int try_smi_init(struct smi_info
+ 
+ 	dev_set_drvdata(new_smi->io.dev, new_smi);
+ 
+-	rv = ipmi_register_smi(&handlers,
+-			       new_smi,
+-			       new_smi->io.dev,
+-			       new_smi->io.slave_addr);
++	rv = ipmi_register_smi_owner(&handlers,
++				     new_smi,
++				     new_smi->io.dev,
++				     new_smi->io.slave_addr);
+ 	if (rv) {
+ 		dev_err(new_smi->io.dev,
+ 			"Unable to register device: error %d\n",
+--- a/drivers/char/ipmi/ipmi_ssif.c
++++ b/drivers/char/ipmi/ipmi_ssif.c
+@@ -1753,10 +1753,10 @@ static int ssif_probe(struct i2c_client
+ 		}
+ 	}
+ 
+-	rv = ipmi_register_smi(&ssif_info->handlers,
+-			       ssif_info,
+-			       &ssif_info->client->dev,
+-			       slave_addr);
++	rv = ipmi_register_smi_owner(&ssif_info->handlers,
++				     ssif_info,
++				     &ssif_info->client->dev,
++				     slave_addr);
+ 	 if (rv) {
+ 		pr_err(PFX "Unable to register device: error %d\n", rv);
+ 		goto out;
+--- a/include/linux/ipmi_smi.h
++++ b/include/linux/ipmi_smi.h
+@@ -226,9 +226,14 @@ int ipmi_add_smi(struct module
+ 		 struct device            *dev,
+ 		 unsigned char            slave_addr);
+ 
+-#define ipmi_register_smi(handlers, send_info, dev, slave_addr) \
++#define ipmi_register_smi_owner(handlers, send_info, dev, slave_addr) \
+ 	ipmi_add_smi(THIS_MODULE, handlers, send_info, dev, slave_addr)
+ 
++int ipmi_register_smi(const struct ipmi_smi_handlers *handlers,
++		      void                     *send_info,
++		      struct device            *dev,
++		      unsigned char            slave_addr);
++
+ /*
+  * Remove a low-level interface from the IPMI driver.  This will
+  * return an error if the interface is still in use by a user.

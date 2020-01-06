@@ -1,0 +1,54 @@
+From: Farhan Ali <alifm@linux.ibm.com>
+Date: Thu, 11 Jul 2019 10:28:51 -0400
+Subject: vfio-ccw: Fix misleading comment when setting orb.cmd.c64
+Git-commit: c9f597a4d6d7a01590571291f659a2f146111e34
+Patch-mainline: v5.3-rc2
+References: bsc#1051510
+
+The comment is misleading because it tells us that
+we should set orb.cmd.c64 before calling ccwchain_calc_length,
+otherwise the function ccwchain_calc_length would return an
+error. This is not completely accurate.
+
+We want to allow an orb without cmd.c64, and this is fine
+as long as the channel program does not use IDALs. But we do
+want to reject any channel program that uses IDALs and does
+not set the flag, which is what we do in ccwchain_calc_length.
+
+After we have done the ccw processing, we need to set cmd.c64,
+as we use IDALs for all translated channel programs.
+
+Also for better code readability let's move the setting of
+cmd.c64 within the non error path.
+
+Fixes: fb9e7880af35 ("vfio: ccw: push down unsupported IDA check")
+Signed-off-by: Farhan Ali <alifm@linux.ibm.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Message-Id: <f68636106aef0faeb6ce9712584d102d1b315ff8.1562854091.git.alifm@linux.ibm.com>
+Reviewed-by: Eric Farman <farman@linux.ibm.com>
+Signed-off-by: Cornelia Huck <cohuck@redhat.com>
+Acked-by: Petr Tesarik <ptesarik@suse.com>
+---
+ drivers/s390/cio/vfio_ccw_cp.c |   11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+--- a/drivers/s390/cio/vfio_ccw_cp.c
++++ b/drivers/s390/cio/vfio_ccw_cp.c
+@@ -682,10 +682,13 @@ int cp_init(struct channel_program *cp,
+ 	ret = ccwchain_loop_tic(chain, cp);
+ 	if (ret)
+ 		cp_unpin_free(cp);
+-	/* It is safe to force: if not set but idals used
+-	 * ccwchain_calc_length returns an error.
+-	 */
+-	cp->orb.cmd.c64 = 1;
++
++	if (!ret) {
++		/* It is safe to force: if it was not set but idals used
++		 * ccwchain_calc_length would have returned an error.
++		 */
++		cp->orb.cmd.c64 = 1;
++	}
+ 
+ 	return ret;
+ }

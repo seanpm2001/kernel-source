@@ -1,0 +1,36 @@
+From 5f9f0b11f0816b35867f2cf71e54d95f53f03902 Mon Sep 17 00:00:00 2001
+From: Oliver Neukum <oneukum@suse.com>
+Date: Thu, 21 Nov 2019 11:37:10 +0100
+Subject: [PATCH] nfc: port100: handle command failure cleanly
+Git-commit: 5f9f0b11f0816b35867f2cf71e54d95f53f03902
+Patch-mainline: v5.4
+References: git-fixes
+
+If starting the transfer of a command suceeds but the transfer for the reply
+fails, it is not enough to initiate killing the transfer for the
+command may still be running. You need to wait for the killing to finish
+before you can reuse URB and buffer.
+
+Reported-and-tested-by: syzbot+711468aa5c3a1eabf863@syzkaller.appspotmail.com
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ drivers/nfc/port100.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/nfc/port100.c b/drivers/nfc/port100.c
+index 145ddf3f0a45..604dba4f18af 100644
+--- a/drivers/nfc/port100.c
++++ b/drivers/nfc/port100.c
+@@ -783,7 +783,7 @@ static int port100_send_frame_async(struct port100 *dev, struct sk_buff *out,
+ 
+ 	rc = port100_submit_urb_for_ack(dev, GFP_KERNEL);
+ 	if (rc)
+-		usb_unlink_urb(dev->out_urb);
++		usb_kill_urb(dev->out_urb);
+ 
+ exit:
+ 	mutex_unlock(&dev->out_urb_lock);
+-- 
+2.16.4
+

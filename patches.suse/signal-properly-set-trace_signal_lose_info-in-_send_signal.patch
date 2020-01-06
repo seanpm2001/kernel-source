@@ -1,0 +1,62 @@
+From: "Eric W. Biederman" <ebiederm@xmission.com>
+Date: Wed, 15 May 2019 22:56:17 -0500
+Subject: signal: Properly set TRACE_SIGNAL_LOSE_INFO in __send_signal
+Git-commit: 8917bef336f5301edd616cfa97b97d0319fd0496
+Patch-mainline: v5.3-rc1
+References: bsc#1157463
+
+Any time siginfo is not stored in the signal queue information is
+lost.  Therefore set TRACE_SIGNAL_LOSE_INFO every time the code does
+not allocate a signal queue entry, and a queue overflow abort is not
+triggered.
+
+Fixes: ba005e1f4172 ("tracepoint: Add signal loss events")
+Signed-off-by: "Eric W. Biederman" <ebiederm@xmission.com>
+Acked-by: Michal Koutný <mkoutny@suse.com>
+---
+ kernel/signal.c |   33 ++++++++++++++++-----------------
+ 1 file changed, 16 insertions(+), 17 deletions(-)
+
+--- a/kernel/signal.c
++++ b/kernel/signal.c
+@@ -1110,23 +1110,22 @@ static int __send_signal(int sig, struct
+ 
+ 		userns_fixup_signal_uid(&q->info, t);
+ 
+-	} else if (!is_si_special(info)) {
+-		if (sig >= SIGRTMIN && info->si_code != SI_USER) {
+-			/*
+-			 * Queue overflow, abort.  We may abort if the
+-			 * signal was rt and sent by user using something
+-			 * other than kill().
+-			 */
+-			result = TRACE_SIGNAL_OVERFLOW_FAIL;
+-			ret = -EAGAIN;
+-			goto ret;
+-		} else {
+-			/*
+-			 * This is a silent loss of information.  We still
+-			 * send the signal, but the *info bits are lost.
+-			 */
+-			result = TRACE_SIGNAL_LOSE_INFO;
+-		}
++	} else if (!is_si_special(info) &&
++		   sig >= SIGRTMIN && info->si_code != SI_USER) {
++		/*
++		 * Queue overflow, abort.  We may abort if the
++		 * signal was rt and sent by user using something
++		 * other than kill().
++		 */
++		result = TRACE_SIGNAL_OVERFLOW_FAIL;
++		ret = -EAGAIN;
++		goto ret;
++	} else {
++		/*
++		 * This is a silent loss of information.  We still
++		 * send the signal, but the *info bits are lost.
++		 */
++		result = TRACE_SIGNAL_LOSE_INFO;
+ 	}
+ 
+ out_set:
+

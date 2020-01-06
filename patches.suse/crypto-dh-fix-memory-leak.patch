@@ -1,0 +1,32 @@
+From: Gustavo A. R. Silva <gustavo@embeddedor.com>
+Subject: crypto: dh - fix memory leak
+Git-commit: 3fd8093b41e745448ffeb0a0d3becc2cd1f9d7ad
+Patch-mainline: v4.19-rc1
+References: bsc#1155331
+
+
+    crypto: dh - fix memory leak
+    
+    In case memory resources for *base* were allocated, release them
+    before return.
+    
+Addresses-Coverity-ID: 1471702 ("Resource leak")
+Fixes: e3fe0ae12962 ("crypto: dh - add public key verification test")
+Signed-off-by: Gustavo A. R. Silva <gustavo@embeddedor.com>
+Reviewed-by: Stephan Müller <smueller@chronox.de>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Acked-by: Torsten Duwe <duwe@suse.de>
+
+diff --git a/crypto/dh.c b/crypto/dh.c
+index 8f79269db2b7..09a44de4209d 100644
+--- a/crypto/dh.c
++++ b/crypto/dh.c
+@@ -174,7 +174,7 @@ static int dh_compute_value(struct kpp_request *req)
+ 		}
+ 		ret = dh_is_pubkey_valid(ctx, base);
+ 		if (ret)
+-			goto err_free_val;
++			goto err_free_base;
+ 	} else {
+ 		base = ctx->g;
+ 	}

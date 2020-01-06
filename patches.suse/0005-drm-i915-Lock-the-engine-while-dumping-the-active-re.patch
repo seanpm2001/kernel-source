@@ -1,0 +1,121 @@
+From 982b1d002f16c2695871e005c4132060c836db56 Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Mon, 15 Jul 2019 09:09:28 +0100
+Subject: drm/i915: Lock the engine while dumping the active request
+Git-commit: 982b1d002f16c2695871e005c4132060c836db56
+Patch-mainline: v5.3-rc3
+References: bsc#1142635
+
+We cannot let the request be retired and freed while we are trying to
+dump it during error capture. It is not sufficient just to grab a
+reference to the request, as during retirement we may free the ring
+which we are also dumping. So take the engine lock to prevent retiring
+and freeing of the request.
+
+Reported-by: Alex Shumsky <alexthreed@gmail.com>
+Fixes: 83c317832eb1 ("drm/i915: Dump the ringbuffer of the active request for debugging")
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+Cc: Tvrtko Ursulin <tvrtko.ursulin@intel.com>
+Cc: Joonas Lahtinen <joonas.lahtinen@linux.intel.com>
+Cc: Alex Shumsky <alexthreed@gmail.com>
+Reviewed-by: Tvrtko Ursulin <tvrtko.ursulin@intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20190715080946.15593-6-chris@chris-wilson.co.uk
+(cherry picked from commit cfe7288c276e359eebf057699fe86c2f8af14224)
+Signed-off-by: Jani Nikula <jani.nikula@intel.com>
+Acked-by: Thomas Zimmermann <tzimmermann@suse.de>
+---
+ drivers/gpu/drm/i915/i915_gem.c        |    4 +---
+ drivers/gpu/drm/i915/i915_gpu_error.c  |    6 ++++--
+ drivers/gpu/drm/i915/intel_engine_cs.c |    6 ++----
+ 3 files changed, 7 insertions(+), 9 deletions(-)
+
+--- a/drivers/gpu/drm/i915/i915_gem.c
++++ b/drivers/gpu/drm/i915/i915_gem.c
+@@ -3033,7 +3033,6 @@ struct i915_request *
+ i915_gem_find_active_request(struct intel_engine_cs *engine)
+ {
+ 	struct i915_request *request, *active = NULL;
+-	unsigned long flags;
+ 
+ 	/*
+ 	 * We are called by the error capture, reset and to dump engine
+@@ -3046,7 +3045,7 @@ i915_gem_find_active_request(struct inte
+ 	 * At all other times, we must assume the GPU is still running, but
+ 	 * we only care about the snapshot of this moment.
+ 	 */
+-	spin_lock_irqsave(&engine->timeline.lock, flags);
++	lockdep_assert_held(&engine->timeline.lock);
+ 	list_for_each_entry(request, &engine->timeline.requests, link) {
+ 		if (__i915_request_completed(request, request->global_seqno))
+ 			continue;
+@@ -3054,7 +3053,6 @@ i915_gem_find_active_request(struct inte
+ 		active = request;
+ 		break;
+ 	}
+-	spin_unlock_irqrestore(&engine->timeline.lock, flags);
+ 
+ 	return active;
+ }
+--- a/drivers/gpu/drm/i915/i915_gpu_error.c
++++ b/drivers/gpu/drm/i915/i915_gpu_error.c
+@@ -1460,6 +1460,7 @@ static void gem_record_rings(struct i915
+ 		struct intel_engine_cs *engine = i915->engine[i];
+ 		struct drm_i915_error_engine *ee = &error->engine[i];
+ 		struct i915_request *request;
++		unsigned long flags;
+ 
+ 		ee->engine_id = -1;
+ 
+@@ -1472,10 +1473,11 @@ static void gem_record_rings(struct i915
+ 		error_record_engine_waiters(engine, ee);
+ 		error_record_engine_execlists(engine, ee);
+ 
++		spin_lock_irqsave(&engine->timeline.lock, flags);
+ 		request = i915_gem_find_active_request(engine);
+ 		if (request) {
+ 			struct i915_gem_context *ctx = request->gem_context;
+-			struct intel_ring *ring;
++			struct intel_ring *ring = request->ring;
+ 
+ 			ee->vm = ctx->ppgtt ? &ctx->ppgtt->vm : &ggtt->vm;
+ 
+@@ -1505,7 +1507,6 @@ static void gem_record_rings(struct i915
+ 			ee->rq_post = request->postfix;
+ 			ee->rq_tail = request->tail;
+ 
+-			ring = request->ring;
+ 			ee->cpu_ring_head = ring->head;
+ 			ee->cpu_ring_tail = ring->tail;
+ 			ee->ringbuffer =
+@@ -1513,6 +1514,7 @@ static void gem_record_rings(struct i915
+ 
+ 			engine_record_requests(engine, request, ee);
+ 		}
++		spin_unlock_irqrestore(&engine->timeline.lock, flags);
+ 
+ 		ee->hws_page =
+ 			i915_error_object_create(i915,
+--- a/drivers/gpu/drm/i915/intel_engine_cs.c
++++ b/drivers/gpu/drm/i915/intel_engine_cs.c
+@@ -1481,10 +1481,9 @@ void intel_engine_dump(struct intel_engi
+ 		   i915_reset_engine_count(error, engine),
+ 		   i915_reset_count(error));
+ 
+-	rcu_read_lock();
+-
+ 	drm_printf(m, "\tRequests:\n");
+ 
++	spin_lock_irqsave(&engine->timeline.lock, flags);
+ 	rq = list_first_entry(&engine->timeline.requests,
+ 			      struct i915_request, link);
+ 	if (&rq->link != &engine->timeline.requests)
+@@ -1512,8 +1511,7 @@ void intel_engine_dump(struct intel_engi
+ 
+ 		print_request_ring(m, rq);
+ 	}
+-
+-	rcu_read_unlock();
++	spin_unlock_irqrestore(&engine->timeline.lock, flags);
+ 
+ 	if (intel_runtime_pm_get_if_in_use(engine->i915)) {
+ 		intel_engine_print_registers(engine, m);

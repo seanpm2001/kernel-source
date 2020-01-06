@@ -1,0 +1,69 @@
+From: Ming Lei <ming.lei@redhat.com>
+Date: Fri, 11 Jan 2019 09:40:47 -0800
+Subject: scsi: qla2xxx: Use correct number of vectors for online CPUs
+Git-commit: f0783d43dde4bb349fcd667df0afabbdbab8b477
+Patch-mainline: v5.0-rc3
+References: bsc#1137223
+
+When SCSI-MQ is enabled, in some case system would present
+nr_possible_cpus() which is greater than requested vectors by the
+driver. This results into driver being able to get larger number of MSI-X
+vectors than actual online CPUs.  Driver then uses
+pci_alloc_irq_vectors_affinity() to assign 1:1 mapping and affinity for
+each MSI-x vector to CPUs. When the command is submitted using MSI-x
+vector, assigned to offline CPU, it results in an ABTS and system
+hang. This hang is result of a driver not being able to process interrupt
+on a vector assigned to an Off-line CPUs
+
+This patch fixes this issue by setting irq_offset value for the
+blk_mq_pci_map_queues() to use only those CPUs which has CPU mask affinity
+assigned and are online. By using the irq_offset value, driver will allow
+online cpumask to decide which vectors are used in blk_mq_pci_map_queues().
+
+Fixes: 5601236b6f794 ("scsi: qla2xxx: Add Block Multi Queue functionality.")
+Cc: <stable@vger.kernel.org> #4.19
+Signed-off-by: Ming Lei <ming.lei@redhat.com>
+Reviewed-by: Himanshu Madhani <hmadhani@marvell.com>
+Tested-by: Himanshu Madhani <hmadhani@marvell.com>
+Reviewed-by: Ewan D. Milne <emilne@redhat.com>
+Signed-off-by: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Martin Wilck <mwilck@suse.com>
+---
+ drivers/scsi/qla2xxx/qla_def.h |    2 ++
+ drivers/scsi/qla2xxx/qla_isr.c |    1 +
+ drivers/scsi/qla2xxx/qla_os.c  |    2 +-
+ 3 files changed, 4 insertions(+), 1 deletion(-)
+
+--- a/drivers/scsi/qla2xxx/qla_def.h
++++ b/drivers/scsi/qla2xxx/qla_def.h
+@@ -4394,6 +4394,8 @@ typedef struct scsi_qla_host {
+ 	uint16_t	n2n_id;
+ 	struct list_head gpnid_list;
+ 	struct fab_scan scan;
++
++	unsigned int irq_offset;
+ } scsi_qla_host_t;
+ 
+ struct qla27xx_image_status {
+--- a/drivers/scsi/qla2xxx/qla_isr.c
++++ b/drivers/scsi/qla2xxx/qla_isr.c
+@@ -3446,6 +3446,7 @@ qla24xx_enable_msix(struct qla_hw_data *
+ 			    "Adjusted Max no of queues pairs: %d.\n", ha->max_qpairs);
+ 		}
+ 	}
++	vha->irq_offset = desc.pre_vectors;
+ 	ha->msix_entries = kzalloc(sizeof(struct qla_msix_entry) *
+ 				ha->msix_count, GFP_KERNEL);
+ 	if (!ha->msix_entries) {
+--- a/drivers/scsi/qla2xxx/qla_os.c
++++ b/drivers/scsi/qla2xxx/qla_os.c
+@@ -6945,7 +6945,7 @@ static int qla2xxx_map_queues(struct Scs
+ 	if (USER_CTRL_IRQ(vha->hw))
+ 		rc = blk_mq_map_queues(&shost->tag_set);
+ 	else
+-		rc = blk_mq_pci_map_queues(&shost->tag_set, vha->hw->pdev, 0);
++		rc = blk_mq_pci_map_queues(&shost->tag_set, vha->hw->pdev, vha->irq_offset);
+ 	return rc;
+ }
+ 

@@ -1,0 +1,117 @@
+From 65a576e27309120e0621f54d5c81eb9128bd56be Mon Sep 17 00:00:00 2001
+From: Adrian Bunk <bunk@kernel.org>
+Date: Wed, 13 Feb 2019 15:59:38 +0200
+Subject: [PATCH] mwifiex: Fix NL80211_TX_POWER_LIMITED
+Git-commit: 65a576e27309120e0621f54d5c81eb9128bd56be
+Patch-mainline: v5.1-rc1
+References: bsc#1051510
+
+NL80211_TX_POWER_LIMITED was treated as NL80211_TX_POWER_AUTOMATIC,
+which is the opposite of what should happen and can cause nasty
+regulatory problems.
+
+if/else converted to a switch without default to make gcc warn
+on unhandled enum values.
+
+Signed-off-by: Adrian Bunk <bunk@kernel.org>
+Signed-off-by: Kalle Valo <kvalo@codeaurora.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/net/wireless/marvell/mwifiex/cfg80211.c  | 13 +++++++++++--
+ drivers/net/wireless/marvell/mwifiex/ioctl.h     |  1 +
+ drivers/net/wireless/marvell/mwifiex/sta_ioctl.c | 11 +++++++----
+ 3 files changed, 19 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/net/wireless/marvell/mwifiex/cfg80211.c b/drivers/net/wireless/marvell/mwifiex/cfg80211.c
+index 1467af22e394..9ef0fc108641 100644
+--- a/drivers/net/wireless/marvell/mwifiex/cfg80211.c
++++ b/drivers/net/wireless/marvell/mwifiex/cfg80211.c
+@@ -376,11 +376,20 @@ mwifiex_cfg80211_set_tx_power(struct wiphy *wiphy,
+ 	struct mwifiex_power_cfg power_cfg;
+ 	int dbm = MBM_TO_DBM(mbm);
+ 
+-	if (type == NL80211_TX_POWER_FIXED) {
++	switch (type) {
++	case NL80211_TX_POWER_FIXED:
+ 		power_cfg.is_power_auto = 0;
++		power_cfg.is_power_fixed = 1;
+ 		power_cfg.power_level = dbm;
+-	} else {
++		break;
++	case NL80211_TX_POWER_LIMITED:
++		power_cfg.is_power_auto = 0;
++		power_cfg.is_power_fixed = 0;
++		power_cfg.power_level = dbm;
++		break;
++	case NL80211_TX_POWER_AUTOMATIC:
+ 		power_cfg.is_power_auto = 1;
++		break;
+ 	}
+ 
+ 	priv = mwifiex_get_priv(adapter, MWIFIEX_BSS_ROLE_ANY);
+diff --git a/drivers/net/wireless/marvell/mwifiex/ioctl.h b/drivers/net/wireless/marvell/mwifiex/ioctl.h
+index 48e154e1865d..0dd592ea6e83 100644
+--- a/drivers/net/wireless/marvell/mwifiex/ioctl.h
++++ b/drivers/net/wireless/marvell/mwifiex/ioctl.h
+@@ -267,6 +267,7 @@ struct mwifiex_ds_encrypt_key {
+ 
+ struct mwifiex_power_cfg {
+ 	u32 is_power_auto;
++	u32 is_power_fixed;
+ 	u32 power_level;
+ };
+ 
+diff --git a/drivers/net/wireless/marvell/mwifiex/sta_ioctl.c b/drivers/net/wireless/marvell/mwifiex/sta_ioctl.c
+index b454b5f85503..ebc0e41e5d3b 100644
+--- a/drivers/net/wireless/marvell/mwifiex/sta_ioctl.c
++++ b/drivers/net/wireless/marvell/mwifiex/sta_ioctl.c
+@@ -688,6 +688,9 @@ int mwifiex_set_tx_power(struct mwifiex_private *priv,
+ 	txp_cfg = (struct host_cmd_ds_txpwr_cfg *) buf;
+ 	txp_cfg->action = cpu_to_le16(HostCmd_ACT_GEN_SET);
+ 	if (!power_cfg->is_power_auto) {
++		u16 dbm_min = power_cfg->is_power_fixed ?
++			      dbm : priv->min_tx_power_level;
++
+ 		txp_cfg->mode = cpu_to_le32(1);
+ 		pg_tlv = (struct mwifiex_types_power_group *)
+ 			 (buf + sizeof(struct host_cmd_ds_txpwr_cfg));
+@@ -702,7 +705,7 @@ int mwifiex_set_tx_power(struct mwifiex_private *priv,
+ 		pg->last_rate_code = 0x03;
+ 		pg->modulation_class = MOD_CLASS_HR_DSSS;
+ 		pg->power_step = 0;
+-		pg->power_min = (s8) dbm;
++		pg->power_min = (s8) dbm_min;
+ 		pg->power_max = (s8) dbm;
+ 		pg++;
+ 		/* Power group for modulation class OFDM */
+@@ -710,7 +713,7 @@ int mwifiex_set_tx_power(struct mwifiex_private *priv,
+ 		pg->last_rate_code = 0x07;
+ 		pg->modulation_class = MOD_CLASS_OFDM;
+ 		pg->power_step = 0;
+-		pg->power_min = (s8) dbm;
++		pg->power_min = (s8) dbm_min;
+ 		pg->power_max = (s8) dbm;
+ 		pg++;
+ 		/* Power group for modulation class HTBW20 */
+@@ -718,7 +721,7 @@ int mwifiex_set_tx_power(struct mwifiex_private *priv,
+ 		pg->last_rate_code = 0x20;
+ 		pg->modulation_class = MOD_CLASS_HT;
+ 		pg->power_step = 0;
+-		pg->power_min = (s8) dbm;
++		pg->power_min = (s8) dbm_min;
+ 		pg->power_max = (s8) dbm;
+ 		pg->ht_bandwidth = HT_BW_20;
+ 		pg++;
+@@ -727,7 +730,7 @@ int mwifiex_set_tx_power(struct mwifiex_private *priv,
+ 		pg->last_rate_code = 0x20;
+ 		pg->modulation_class = MOD_CLASS_HT;
+ 		pg->power_step = 0;
+-		pg->power_min = (s8) dbm;
++		pg->power_min = (s8) dbm_min;
+ 		pg->power_max = (s8) dbm;
+ 		pg->ht_bandwidth = HT_BW_40;
+ 	}
+-- 
+2.16.4
+

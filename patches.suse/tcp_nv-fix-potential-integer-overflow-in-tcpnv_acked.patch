@@ -1,0 +1,46 @@
+From e4823fbd229bfbba368b40cdadb8f4eeb20604cc Mon Sep 17 00:00:00 2001
+From: "Gustavo A. R. Silva" <gustavo@embeddedor.com>
+Date: Tue, 30 Jan 2018 22:21:48 -0600
+Subject: [PATCH] tcp_nv: fix potential integer overflow in tcpnv_acked
+Git-commit: e4823fbd229bfbba368b40cdadb8f4eeb20604cc
+Patch-mainline: v4.16-rc1
+References: bsc#1051510
+
+Add suffix ULL to constant 80000 in order to avoid a potential integer
+overflow and give the compiler complete information about the proper
+arithmetic to use. Notice that this constant is used in a context that
+expects an expression of type u64.
+
+The current cast to u64 effectively applies to the whole expression
+as an argument of type u64 to be passed to div64_u64, but it does
+not prevent it from being evaluated using 32-bit arithmetic instead
+of 64-bit arithmetic.
+
+Also, once the expression is properly evaluated using 64-bit arithmentic,
+there is no need for the parentheses and the external cast to u64.
+
+Addresses-coverity-id: 1357588 ("Unintentional integer overflow")
+Signed-off-by: Gustavo A. R. Silva <gustavo@embeddedor.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ net/ipv4/tcp_nv.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/net/ipv4/tcp_nv.c b/net/ipv4/tcp_nv.c
+index ddbce73edae8..764298e52577 100644
+--- a/net/ipv4/tcp_nv.c
++++ b/net/ipv4/tcp_nv.c
+@@ -364,7 +364,7 @@ static void tcpnv_acked(struct sock *sk, const struct ack_sample *sample)
+ 		 */
+ 		cwnd_by_slope = (u32)
+ 			div64_u64(((u64)ca->nv_rtt_max_rate) * ca->nv_min_rtt,
+-				  (u64)(80000 * tp->mss_cache));
++				  80000ULL * tp->mss_cache);
+ 		max_win = cwnd_by_slope + nv_pad;
+ 
+ 		/* If cwnd > max_win, decrease cwnd
+-- 
+2.16.4
+

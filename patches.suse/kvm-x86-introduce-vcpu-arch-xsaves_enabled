@@ -1,0 +1,65 @@
+From: Aaron Lewis <aaronlewis@google.com>
+Date: Mon, 21 Oct 2019 16:30:20 -0700
+Subject: KVM: x86: Introduce vcpu->arch.xsaves_enabled
+Git-commit: 7204160eb7809345d10c983d9d1dfbd98060a56d
+Patch-mainline: v5.5-rc1
+References: bsc#1158066
+
+Cache whether XSAVES is enabled in the guest by adding xsaves_enabled to
+vcpu->arch.
+
+Reviewed-by: Jim Mattson <jmattson@google.com>
+Signed-off-by: Aaron Lewis <aaronlewis@google.com>
+Change-Id: If4638e0901c28a4494dad2e103e2c075e8ab5d68
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Joerg Roedel <jroedel@suse.de>
+---
+ arch/x86/include/asm/kvm_host.h | 1 +
+ arch/x86/kvm/svm.c              | 3 +++
+ arch/x86/kvm/vmx/vmx.c          | 5 +++++
+ 3 files changed, 9 insertions(+)
+
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -509,6 +509,7 @@ struct kvm_vcpu_arch {
+ 	u64 ia32_misc_enable_msr;
+ 	u64 smbase;
+ 	bool tpr_access_reporting;
++	bool xsaves_enabled;
+ 	u64 ia32_xss;
+ 
+ 	/*
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -5809,6 +5809,9 @@ static void svm_cpuid_update(struct kvm_
+ {
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+ 
++	vcpu->arch.xsaves_enabled = guest_cpuid_has(vcpu, X86_FEATURE_XSAVE) &&
++				    boot_cpu_has(X86_FEATURE_XSAVES);
++
+ 	/* Update nrips enabled cache */
+ 	svm->nrips_enabled = !!guest_cpuid_has(&svm->vcpu, X86_FEATURE_NRIPS);
+ 
+--- a/arch/x86/kvm/vmx.c
++++ b/arch/x86/kvm/vmx.c
+@@ -5718,6 +5718,8 @@ static void vmx_compute_secondary_exec_c
+ 			guest_cpuid_has(vcpu, X86_FEATURE_XSAVE) &&
+ 			guest_cpuid_has(vcpu, X86_FEATURE_XSAVES);
+ 
++		vcpu->arch.xsaves_enabled = xsaves_enabled;
++
+ 		if (!xsaves_enabled)
+ 			exec_control &= ~SECONDARY_EXEC_XSAVES;
+ 
+@@ -10287,6 +10289,9 @@ static void vmx_cpuid_update(struct kvm_
+ {
+ 	struct vcpu_vmx *vmx = to_vmx(vcpu);
+ 
++	/* xsaves_enabled is recomputed in vmx_compute_secondary_exec_control(). */
++	vcpu->arch.xsaves_enabled = false;
++
+ 	if (cpu_has_secondary_exec_ctrls()) {
+ 		vmx_compute_secondary_exec_control(vmx);
+ 		vmcs_set_secondary_exec_control(vmx->secondary_exec_control);
+

@@ -1,0 +1,279 @@
+From 1eecbcdca2bd8d96881cace19ad105dc0f0263f5 Mon Sep 17 00:00:00 2001
+From: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+Date: Fri, 7 Jun 2019 15:54:31 -0300
+Subject: [PATCH] docs: move protection-keys.rst to the core-api book
+
+References: FATE#322447, bsc#1078248
+Patch-mainline: v5.3-rc1
+Git-commit: 1eecbcdca2bd8d96881cace19ad105dc0f0263f5
+
+This document is used by multiple architectures:
+
+	$ echo $(git grep -l  pkey_mprotect arch|cut -d'/' -f 2|sort|uniq)
+	alpha arm arm64 ia64 m68k microblaze mips parisc powerpc s390 sh sparc x86 xtensa
+
+So, let's move it to the core book and adjust the links to it
+accordingly.
+
+Signed-off-by: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+Signed-off-by: Jonathan Corbet <corbet@lwn.net>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ Documentation/core-api/index.rst              |  1 +
+ Documentation/core-api/protection-keys.rst    | 99 +++++++++++++++++++
+ Documentation/x86/index.rst                   |  1 -
+ Documentation/x86/protection-keys.rst         | 99 -------------------
+ arch/powerpc/Kconfig                          |  2 +-
+ arch/x86/Kconfig                              |  2 +-
+ tools/testing/selftests/x86/protection_keys.c |  2 +-
+ 7 files changed, 103 insertions(+), 103 deletions(-)
+ create mode 100644 Documentation/core-api/protection-keys.rst
+ delete mode 100644 Documentation/x86/protection-keys.rst
+
+--- a/Documentation/core-api/index.rst
++++ b/Documentation/core-api/index.rst
+@@ -20,6 +20,9 @@ Core utilities
+    genericirq
+    flexible-arrays
+    errseq
++   protection-keys
++
++
+ 
+ Interfaces for kernel debugging
+ ===============================
+--- /dev/null
++++ b/Documentation/core-api/protection-keys.rst
+@@ -0,0 +1,99 @@
++.. SPDX-License-Identifier: GPL-2.0
++
++======================
++Memory Protection Keys
++======================
++
++Memory Protection Keys for Userspace (PKU aka PKEYs) is a feature
++which is found on Intel's Skylake "Scalable Processor" Server CPUs.
++It will be avalable in future non-server parts.
++
++For anyone wishing to test or use this feature, it is available in
++Amazon's EC2 C5 instances and is known to work there using an Ubuntu
++17.04 image.
++
++Memory Protection Keys provides a mechanism for enforcing page-based
++protections, but without requiring modification of the page tables
++when an application changes protection domains.  It works by
++dedicating 4 previously ignored bits in each page table entry to a
++"protection key", giving 16 possible keys.
++
++There is also a new user-accessible register (PKRU) with two separate
++bits (Access Disable and Write Disable) for each key.  Being a CPU
++register, PKRU is inherently thread-local, potentially giving each
++thread a different set of protections from every other thread.
++
++There are two new instructions (RDPKRU/WRPKRU) for reading and writing
++to the new register.  The feature is only available in 64-bit mode,
++even though there is theoretically space in the PAE PTEs.  These
++permissions are enforced on data access only and have no effect on
++instruction fetches.
++
++Syscalls
++========
++
++There are 3 system calls which directly interact with pkeys::
++
++	int pkey_alloc(unsigned long flags, unsigned long init_access_rights)
++	int pkey_free(int pkey);
++	int pkey_mprotect(unsigned long start, size_t len,
++			  unsigned long prot, int pkey);
++
++Before a pkey can be used, it must first be allocated with
++pkey_alloc().  An application calls the WRPKRU instruction
++directly in order to change access permissions to memory covered
++with a key.  In this example WRPKRU is wrapped by a C function
++called pkey_set().
++::
++
++	int real_prot = PROT_READ|PROT_WRITE;
++	pkey = pkey_alloc(0, PKEY_DISABLE_WRITE);
++	ptr = mmap(NULL, PAGE_SIZE, PROT_NONE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
++	ret = pkey_mprotect(ptr, PAGE_SIZE, real_prot, pkey);
++	... application runs here
++
++Now, if the application needs to update the data at 'ptr', it can
++gain access, do the update, then remove its write access::
++
++	pkey_set(pkey, 0); // clear PKEY_DISABLE_WRITE
++	*ptr = foo; // assign something
++	pkey_set(pkey, PKEY_DISABLE_WRITE); // set PKEY_DISABLE_WRITE again
++
++Now when it frees the memory, it will also free the pkey since it
++is no longer in use::
++
++	munmap(ptr, PAGE_SIZE);
++	pkey_free(pkey);
++
++.. note:: pkey_set() is a wrapper for the RDPKRU and WRPKRU instructions.
++          An example implementation can be found in
++          tools/testing/selftests/x86/protection_keys.c.
++
++Behavior
++========
++
++The kernel attempts to make protection keys consistent with the
++behavior of a plain mprotect().  For instance if you do this::
++
++	mprotect(ptr, size, PROT_NONE);
++	something(ptr);
++
++you can expect the same effects with protection keys when doing this::
++
++	pkey = pkey_alloc(0, PKEY_DISABLE_WRITE | PKEY_DISABLE_READ);
++	pkey_mprotect(ptr, size, PROT_READ|PROT_WRITE, pkey);
++	something(ptr);
++
++That should be true whether something() is a direct access to 'ptr'
++like::
++
++	*ptr = foo;
++
++or when the kernel does the access on the application's behalf like
++with a read()::
++
++	read(fd, ptr, 1);
++
++The kernel will send a SIGSEGV in both cases, but si_code will be set
++to SEGV_PKERR when violating protection keys versus SEGV_ACCERR when
++the plain mprotect() permissions are violated.
+--- a/Documentation/x86/protection-keys.rst
++++ /dev/null
+@@ -1,99 +0,0 @@
+-.. SPDX-License-Identifier: GPL-2.0
+-
+-======================
+-Memory Protection Keys
+-======================
+-
+-Memory Protection Keys for Userspace (PKU aka PKEYs) is a feature
+-which is found on Intel's Skylake "Scalable Processor" Server CPUs.
+-It will be avalable in future non-server parts.
+-
+-For anyone wishing to test or use this feature, it is available in
+-Amazon's EC2 C5 instances and is known to work there using an Ubuntu
+-17.04 image.
+-
+-Memory Protection Keys provides a mechanism for enforcing page-based
+-protections, but without requiring modification of the page tables
+-when an application changes protection domains.  It works by
+-dedicating 4 previously ignored bits in each page table entry to a
+-"protection key", giving 16 possible keys.
+-
+-There is also a new user-accessible register (PKRU) with two separate
+-bits (Access Disable and Write Disable) for each key.  Being a CPU
+-register, PKRU is inherently thread-local, potentially giving each
+-thread a different set of protections from every other thread.
+-
+-There are two new instructions (RDPKRU/WRPKRU) for reading and writing
+-to the new register.  The feature is only available in 64-bit mode,
+-even though there is theoretically space in the PAE PTEs.  These
+-permissions are enforced on data access only and have no effect on
+-instruction fetches.
+-
+-Syscalls
+-========
+-
+-There are 3 system calls which directly interact with pkeys::
+-
+-	int pkey_alloc(unsigned long flags, unsigned long init_access_rights)
+-	int pkey_free(int pkey);
+-	int pkey_mprotect(unsigned long start, size_t len,
+-			  unsigned long prot, int pkey);
+-
+-Before a pkey can be used, it must first be allocated with
+-pkey_alloc().  An application calls the WRPKRU instruction
+-directly in order to change access permissions to memory covered
+-with a key.  In this example WRPKRU is wrapped by a C function
+-called pkey_set().
+-::
+-
+-	int real_prot = PROT_READ|PROT_WRITE;
+-	pkey = pkey_alloc(0, PKEY_DISABLE_WRITE);
+-	ptr = mmap(NULL, PAGE_SIZE, PROT_NONE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
+-	ret = pkey_mprotect(ptr, PAGE_SIZE, real_prot, pkey);
+-	... application runs here
+-
+-Now, if the application needs to update the data at 'ptr', it can
+-gain access, do the update, then remove its write access::
+-
+-	pkey_set(pkey, 0); // clear PKEY_DISABLE_WRITE
+-	*ptr = foo; // assign something
+-	pkey_set(pkey, PKEY_DISABLE_WRITE); // set PKEY_DISABLE_WRITE again
+-
+-Now when it frees the memory, it will also free the pkey since it
+-is no longer in use::
+-
+-	munmap(ptr, PAGE_SIZE);
+-	pkey_free(pkey);
+-
+-.. note:: pkey_set() is a wrapper for the RDPKRU and WRPKRU instructions.
+-          An example implementation can be found in
+-          tools/testing/selftests/x86/protection_keys.c.
+-
+-Behavior
+-========
+-
+-The kernel attempts to make protection keys consistent with the
+-behavior of a plain mprotect().  For instance if you do this::
+-
+-	mprotect(ptr, size, PROT_NONE);
+-	something(ptr);
+-
+-you can expect the same effects with protection keys when doing this::
+-
+-	pkey = pkey_alloc(0, PKEY_DISABLE_WRITE | PKEY_DISABLE_READ);
+-	pkey_mprotect(ptr, size, PROT_READ|PROT_WRITE, pkey);
+-	something(ptr);
+-
+-That should be true whether something() is a direct access to 'ptr'
+-like::
+-
+-	*ptr = foo;
+-
+-or when the kernel does the access on the application's behalf like
+-with a read()::
+-
+-	read(fd, ptr, 1);
+-
+-The kernel will send a SIGSEGV in both cases, but si_code will be set
+-to SEGV_PKERR when violating protection keys versus SEGV_ACCERR when
+-the plain mprotect() permissions are violated.
+--- a/arch/powerpc/Kconfig
++++ b/arch/powerpc/Kconfig
+@@ -865,7 +865,7 @@ config PPC_MEM_KEYS
+ 	  page-based protections, but without requiring modification of the
+ 	  page tables when an application changes protection domains.
+ 
+-	  For details, see Documentation/vm/protection-keys.txt
++	  For details, see Documentation/core-api/protection-keys.rst
+ 
+ 	  If unsure, say y.
+ 
+--- a/arch/x86/Kconfig
++++ b/arch/x86/Kconfig
+@@ -1829,7 +1829,7 @@ config X86_INTEL_MEMORY_PROTECTION_KEYS
+ 	  page-based protections, but without requiring modification of the
+ 	  page tables when an application changes protection domains.
+ 
+-	  For details, see Documentation/x86/protection-keys.txt
++	  For details, see Documentation/core-api/protection-keys.rst
+ 
+ 	  If unsure, say y.
+ 
+--- a/tools/testing/selftests/x86/protection_keys.c
++++ b/tools/testing/selftests/x86/protection_keys.c
+@@ -1,5 +1,5 @@
+ /*
+- * Tests x86 Memory Protection Keys (see Documentation/x86/protection-keys.txt)
++ * Tests x86 Memory Protection Keys (see Documentation/core-api/protection-keys.rst)
+  *
+  * There are examples in here of:
+  *  * how to set protection keys on memory

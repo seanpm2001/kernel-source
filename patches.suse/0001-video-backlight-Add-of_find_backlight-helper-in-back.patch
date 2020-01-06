@@ -1,0 +1,115 @@
+From c2adda27d202fa8f70a5d6e8b0c12b449c8868b8 Mon Sep 17 00:00:00 2001
+From: Meghana Madhyastha <meghana.madhyastha@gmail.com>
+Date: Wed, 24 Jan 2018 16:35:30 +0000
+Subject: video: backlight: Add of_find_backlight helper in backlight.c
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Git-commit: c2adda27d202fa8f70a5d6e8b0c12b449c8868b8
+Patch-mainline: v4.17-rc1
+References: FATE#326289 FATE#326079 FATE#326049 FATE#322398 FATE#326166 bsc#1090888
+
+Add of_find_backlight, a helper function which is a generic version
+of tinydrm_of_find_backlight that can be used by other drivers to avoid
+repetition of code and simplify things.
+
+Acked-by: Daniel Thompson <daniel.thompson@linaro.org>
+Reviewed-by: Noralf Trønnes <noralf@tronnes.org>
+Reviewed-by: Sean Paul <seanpaul@chromium.org>
+Reviewed-by: Thierry Reding <treding@nvidia.com>
+Signed-off-by: Meghana Madhyastha <meghana.madhyastha@gmail.com>
+Signed-off-by: Sean Paul <seanpaul@chromium.org>
+Link: https://patchwork.freedesktop.org/patch/msgid/116d160ba78be2e6dcbdcb6855622bce67da9472.1516810725.git.meghana.madhyastha@gmail.com
+Acked-by: Thomas Zimmermann <tzimmermann@suse.de>
+---
+ drivers/video/backlight/backlight.c |   43 ++++++++++++++++++++++++++++++++++++
+ include/linux/backlight.h           |   19 +++++++++++++++
+ 2 files changed, 62 insertions(+)
+
+--- a/drivers/video/backlight/backlight.c
++++ b/drivers/video/backlight/backlight.c
+@@ -575,6 +575,49 @@ struct backlight_device *of_find_backlig
+ EXPORT_SYMBOL(of_find_backlight_by_node);
+ #endif
+ 
++/**
++ * of_find_backlight - Get backlight device
++ * @dev: Device
++ *
++ * This function looks for a property named 'backlight' on the DT node
++ * connected to @dev and looks up the backlight device.
++ *
++ * Call backlight_put() to drop the reference on the backlight device.
++ *
++ * Returns:
++ * A pointer to the backlight device if found.
++ * Error pointer -EPROBE_DEFER if the DT property is set, but no backlight
++ * device is found.
++ * NULL if there's no backlight property.
++ */
++struct backlight_device *of_find_backlight(struct device *dev)
++{
++	struct backlight_device *bd = NULL;
++	struct device_node *np;
++
++	if (!dev)
++		return NULL;
++
++	if (IS_ENABLED(CONFIG_OF) && dev->of_node) {
++		np = of_parse_phandle(dev->of_node, "backlight", 0);
++		if (np) {
++			bd = of_find_backlight_by_node(np);
++			of_node_put(np);
++			if (!bd)
++				return ERR_PTR(-EPROBE_DEFER);
++			/*
++			 * Note: gpio_backlight uses brightness as
++			 * power state during probe
++			 */
++			if (!bd->props.brightness)
++				bd->props.brightness = bd->props.max_brightness;
++		}
++	}
++
++	return bd;
++}
++EXPORT_SYMBOL(of_find_backlight);
++
+ static void __exit backlight_class_exit(void)
+ {
+ 	class_destroy(backlight_class);
+--- a/include/linux/backlight.h
++++ b/include/linux/backlight.h
+@@ -129,6 +129,16 @@ static inline int backlight_disable(stru
+ 	return backlight_update_status(bd);
+ }
+ 
++/**
++ * backlight_put - Drop backlight reference
++ * @bd: the backlight device to put
++ */
++static inline void backlight_put(struct backlight_device *bd)
++{
++	if (bd)
++		put_device(&bd->dev);
++}
++
+ extern struct backlight_device *backlight_device_register(const char *name,
+ 	struct device *dev, void *devdata, const struct backlight_ops *ops,
+ 	const struct backlight_properties *props);
+@@ -170,6 +180,15 @@ of_find_backlight_by_node(struct device_
+ {
+ 	return NULL;
+ }
++#endif
++
++#if IS_ENABLED(CONFIG_BACKLIGHT_CLASS_DEVICE)
++struct backlight_device *of_find_backlight(struct device *dev);
++#else
++static inline struct backlight_device *of_find_backlight(struct device *dev)
++{
++	return NULL;
++}
+ #endif
+ 
+ #endif

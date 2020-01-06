@@ -1,0 +1,86 @@
+From: Julian Wiedmann <jwi@linux.vnet.ibm.com>
+Date: Wed, 18 Oct 2017 17:40:21 +0200
+Subject: s390/qeth: clean up page frag creation
+Git-commit: b6f72f9698ab8bd79cd0b72a8d9f25dacd786563
+Patch-mainline: v4.15-rc1
+References: FATE#326350, LTC#169511, bsc#1113509, git-fixes
+
+Replace the open-coded skb_add_rx_frag(), and use a fall-through
+to remove some duplicated code.
+
+Signed-off-by: Julian Wiedmann <jwi@linux.vnet.ibm.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Petr Tesarik <ptesarik@suse.com>
+---
+ drivers/s390/net/qeth_core_main.c |   31 +++++++++++--------------------
+ 1 file changed, 11 insertions(+), 20 deletions(-)
+
+--- a/drivers/s390/net/qeth_core_main.c
++++ b/drivers/s390/net/qeth_core_main.c
+@@ -5211,10 +5211,11 @@ EXPORT_SYMBOL_GPL(qeth_core_hardsetup_ca
+ 
+ static int qeth_create_skb_frag(struct qeth_qdio_buffer *qethbuffer,
+ 				struct qdio_buffer_element *element,
+-				struct sk_buff **pskb, int offset, int *pfrag,
+-				int data_len)
++				struct sk_buff **pskb, int offset, int data_len)
+ {
+ 	struct page *page = virt_to_page(element->addr);
++	unsigned int next_frag;
++
+ 	if (*pskb == NULL) {
+ 		if (qethbuffer->rx_skb) {
+ 			/* only if qeth_card.options.cq == QETH_CQ_ENABLED */
+@@ -5229,28 +5230,19 @@ static int qeth_create_skb_frag(struct q
+ 		skb_reserve(*pskb, ETH_HLEN);
+ 		if (data_len <= QETH_RX_PULL_LEN) {
+ 			skb_put_data(*pskb, element->addr + offset, data_len);
++			return 0;
+ 		} else {
+-			get_page(page);
+ 			skb_put_data(*pskb, element->addr + offset,
+ 				     QETH_RX_PULL_LEN);
+-			skb_fill_page_desc(*pskb, *pfrag, page,
+-				offset + QETH_RX_PULL_LEN,
+-				data_len - QETH_RX_PULL_LEN);
+-			(*pskb)->data_len += data_len - QETH_RX_PULL_LEN;
+-			(*pskb)->len      += data_len - QETH_RX_PULL_LEN;
+-			(*pskb)->truesize += data_len - QETH_RX_PULL_LEN;
+-			(*pfrag)++;
++			data_len -= QETH_RX_PULL_LEN;
++			offset += QETH_RX_PULL_LEN;
++			/* fall through to add page frag for remaining data */
+ 		}
+-	} else {
+-		get_page(page);
+-		skb_fill_page_desc(*pskb, *pfrag, page, offset, data_len);
+-		(*pskb)->data_len += data_len;
+-		(*pskb)->len      += data_len;
+-		(*pskb)->truesize += data_len;
+-		(*pfrag)++;
+ 	}
+ 
+-
++	next_frag = skb_shinfo(*pskb)->nr_frags;
++	get_page(page);
++	skb_add_rx_frag(*pskb, next_frag, page, offset, data_len, data_len);
+ 	return 0;
+ }
+ 
+@@ -5273,7 +5265,6 @@ struct sk_buff *qeth_core_get_next_skb(s
+ 	int data_len;
+ 	int headroom = 0;
+ 	int use_rx_sg = 0;
+-	int frag = 0;
+ 
+ 	/* qeth_hdr must not cross element boundaries */
+ 	if (element->length < offset + sizeof(struct qeth_hdr)) {
+@@ -5325,7 +5316,7 @@ struct sk_buff *qeth_core_get_next_skb(s
+ 		if (data_len) {
+ 			if (use_rx_sg) {
+ 				if (qeth_create_skb_frag(qethbuffer, element,
+-				    &skb, offset, &frag, data_len))
++				    &skb, offset, data_len))
+ 					goto no_mem;
+ 			} else {
+ 				skb_put_data(skb, data_ptr, data_len);

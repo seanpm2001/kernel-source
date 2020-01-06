@@ -1,0 +1,85 @@
+From: Julian Wiedmann <jwi@linux.ibm.com>
+Date: Thu, 5 Dec 2019 14:33:02 +0100
+Subject: s390/qeth: guard against runt packets
+Git-commit: 5b55633f20ee1bb253dc7d915ec2fd35fd865d5a
+Patch-mainline: v5.5-rc1
+References: git-fixes
+
+Depending on a packet's type, the RX path needs to access fields in the
+packet headers and thus requires a minimum packet length.
+Enforce this length when building the skb.
+
+On the other hand a single runt packet is no reason to drop the whole
+RX buffer. So just skip it, and continue processing on the next packet.
+
+Fixes: 4a71df50047f ("qeth: new qeth device driver")
+Signed-off-by: Julian Wiedmann <jwi@linux.ibm.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+[ ptesarik: Since SLE15 does not contain upstream commit
+  845ef9047b1f4e8ea3b8865140066b08fe93d05c, I have removed all
+  references to rx_dropped_runt and instead increase the generic
+  "dropped" counter.
+  Upstream commit 7d4faee7c6db9ddfb2b4de637dc6f1576f780bd7 is
+  also missing, so the whole RX buffer must be dropped when
+  a runt packet is encountered.
+  I had to change the break statement in the case block for
+  unknown header type to make sure that the function returns
+  NULL in that case. ]
+Signed-off-by: Petr Tesarik <ptesarik@suse.com>
+---
+ drivers/s390/net/qeth_core_main.c |   21 +++++++++++++++++++--
+ 1 file changed, 19 insertions(+), 2 deletions(-)
+
+--- a/drivers/s390/net/qeth_core_main.c
++++ b/drivers/s390/net/qeth_core_main.c
+@@ -5269,6 +5269,7 @@ struct sk_buff *qeth_core_get_next_skb(s
+ {
+ 	struct qdio_buffer_element *element = *__element;
+ 	struct qdio_buffer *buffer = qethbuffer->buffer;
++	unsigned int linear_len;
+ 	int offset = *__offset;
+ 	struct sk_buff *skb;
+ 	int skb_len = 0;
+@@ -5289,24 +5290,40 @@ struct sk_buff *qeth_core_get_next_skb(s
+ 	*hdr = element->addr + offset;
+ 
+ 	offset += sizeof(struct qeth_hdr);
++	skb = NULL;
++
+ 	switch ((*hdr)->hdr.l2.id) {
+ 	case QETH_HEADER_TYPE_LAYER2:
+ 		skb_len = (*hdr)->hdr.l2.pkt_length;
++		linear_len = ETH_HLEN;
+ 		break;
+ 	case QETH_HEADER_TYPE_LAYER3:
+ 		skb_len = (*hdr)->hdr.l3.length;
++		if ((*hdr)->hdr.l3.flags & QETH_HDR_PASSTHRU) {
++			linear_len = ETH_HLEN;
++			headroom = 0;
++			break;
++		}
++
++		if ((*hdr)->hdr.l3.flags & QETH_HDR_IPV6)
++			linear_len = sizeof(struct ipv6hdr);
++		else
++			linear_len = sizeof(struct iphdr);
+ 		headroom = ETH_HLEN;
+ 		break;
+ 	case QETH_HEADER_TYPE_OSN:
+ 		skb_len = (*hdr)->hdr.osn.pdu_length;
++		linear_len = skb_len;
+ 		headroom = sizeof(struct qeth_hdr);
+ 		break;
+ 	default:
+-		break;
++		return NULL;
+ 	}
+ 
+-	if (!skb_len)
++	if (skb_len < linear_len) {
++		card->stats.rx_dropped++;
+ 		return NULL;
++	}
+ 
+ 	if (((skb_len >= card->options.rx_sg_cb) &&
+ 	     (!(card->info.type == QETH_CARD_TYPE_OSN)) &&

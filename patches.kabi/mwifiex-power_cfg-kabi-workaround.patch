@@ -1,0 +1,30 @@
+From: Takashi Iwai <tiwai@suse.de>
+Subject: kABI workaround for struct mwifiex_power_cfg change
+Patch-mainline: Never, kABI workaround
+References: bsc#1051510
+
+Merged two bolean fields into one with bit fields for keeping the
+kABI compatibility.
+
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/net/wireless/marvell/mwifiex/ioctl.h |    6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/wireless/marvell/mwifiex/ioctl.h
++++ b/drivers/net/wireless/marvell/mwifiex/ioctl.h
+@@ -267,8 +267,12 @@ struct mwifiex_ds_encrypt_key {
+ 
+ struct mwifiex_power_cfg {
+ 	u32 is_power_auto;
++#ifdef __GENKSYMS__
+ 	u32 is_power_fixed;
+-	u32 power_level;
++#else
++	u32 is_power_fixed:1;
++	u32 power_level:1;
++#endif
+ };
+ 
+ struct mwifiex_ds_hs_cfg {

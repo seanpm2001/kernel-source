@@ -1,0 +1,58 @@
+From d7f064ead9c4e00ec1a23a7fd62fea2e1dd7892f Mon Sep 17 00:00:00 2001
+From: Roman Bolshakov <r.bolshakov@yadro.com>
+Date: Mon, 25 Nov 2019 19:56:55 +0300
+Subject: [PATCH 06/15] scsi: qla2xxx: Allow PLOGI in target mode
+References: bsc#1157424, bsc#1157908, bsc#1157169, bsc#1151548
+Git-commit: a9ed06d4e640a8dc978a4649ab78dac8b16d2db6
+Patch-mainline: v5.5 or v5.5-rc2 (next release)
+
+According to FC-LS-3 (Fibre Channel Link Services) 6.3.2.4
+"N_Port Login - No Fabric present", if both parties in the point-to-point
+connection know N_Port_Names of each other, Nx_Port with the highest
+N_Port_name shall transmit PLOGI. The specification sets no restrictions
+on the port role that should send PLOGI.
+
+However, FCP-4 (Fibre Channel Protocol for SCSI, Fourth Version) 6.2
+"Overview of Process Login and Process Logout", instructs that in
+point-to-point topology, initiator shall send explicit PRLI ELS.
+
+The change fixes stuck P2P login, when target WWPN is higher than
+initiator WWPN.
+
+Cc: Quinn Tran <qutran@marvell.com>
+Cc: Himanshu Madhani <hmadhani@marvell.com>
+Signed-off-by: Roman Bolshakov <r.bolshakov@yadro.com>
+Acked-by: Martin Wilck <mwilck@suse.com>
+---
+ drivers/scsi/qla2xxx/qla_init.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/scsi/qla2xxx/qla_init.c b/drivers/scsi/qla2xxx/qla_init.c
+index fc2ff16..d2c1f80 100644
+--- a/drivers/scsi/qla2xxx/qla_init.c
++++ b/drivers/scsi/qla2xxx/qla_init.c
+@@ -1527,8 +1527,8 @@ int qla24xx_fcport_handle_login(struct scsi_qla_host *vha, fc_port_t *fcport)
+ 		}
+ 	}
+ 
+-	/* for pure Target Mode. Login will not be initiated */
+-	if (vha->host->active_mode == MODE_TARGET)
++	/* Target won't initiate port login if fabric is present */
++	if (vha->host->active_mode == MODE_TARGET && !N2N_TOPO(vha->hw))
+ 		return 0;
+ 
+ 	if (fcport->flags & FCF_ASYNC_SENT) {
+@@ -1720,6 +1720,10 @@ void qla24xx_handle_relogin_event(scsi_qla_host_t *vha,
+ void qla_handle_els_plogi_done(scsi_qla_host_t *vha,
+ 				      struct event_arg *ea)
+ {
++	/* for pure Target Mode, PRLI will not be initiated */
++	if (vha->host->active_mode == MODE_TARGET)
++		return;
++
+ 	ql_dbg(ql_dbg_disc, vha, 0x2118,
+ 	    "%s %d %8phC post PRLI\n",
+ 	    __func__, __LINE__, ea->fcport->port_name);
+-- 
+2.24.0
+

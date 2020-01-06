@@ -1,0 +1,49 @@
+From eaecce12f5f0d2c35d278e41e1bc4522393861ab Mon Sep 17 00:00:00 2001
+From: Tony Lindgren <tony@atomide.com>
+Date: Sat, 14 Sep 2019 14:02:56 -0700
+Subject: [PATCH] hwrng: omap3-rom - Call clk_disable_unprepare() on exit only if not idled
+Mime-version: 1.0
+Content-type: text/plain; charset=UTF-8
+Content-transfer-encoding: 8bit
+Git-commit: eaecce12f5f0d2c35d278e41e1bc4522393861ab
+Patch-mainline: v5.5-rc1
+References: bsc#1051510
+
+When unloading omap3-rom-rng, we'll get the following:
+
+Warning: CPU: 0 PID: 100 at drivers/clk/clk.c:948 clk_core_disable
+
+This is because the clock may be already disabled by omap3_rom_rng_idle().
+Let's fix the issue by checking for rng_idle on exit.
+
+Cc: Aaro Koskinen <aaro.koskinen@iki.fi>
+Cc: Adam Ford <aford173@gmail.com>
+Cc: Pali Rohár <pali.rohar@gmail.com>
+Cc: Sebastian Reichel <sre@kernel.org>
+Cc: Tero Kristo <t-kristo@ti.com>
+Fixes: 1c6b7c2108bd ("hwrng: OMAP3 ROM Random Number Generator support")
+Signed-off-by: Tony Lindgren <tony@atomide.com>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/char/hw_random/omap3-rom-rng.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/char/hw_random/omap3-rom-rng.c b/drivers/char/hw_random/omap3-rom-rng.c
+index 34e10f05545a..8df3cad7c97a 100644
+--- a/drivers/char/hw_random/omap3-rom-rng.c
++++ b/drivers/char/hw_random/omap3-rom-rng.c
+@@ -127,7 +127,8 @@ static int omap3_rom_rng_remove(struct platform_device *pdev)
+ {
+ 	cancel_delayed_work_sync(&idle_work);
+ 	hwrng_unregister(&omap3_rom_rng_ops);
+-	clk_disable_unprepare(rng_clk);
++	if (!rng_idle)
++		clk_disable_unprepare(rng_clk);
+ 	return 0;
+ }
+ 
+-- 
+2.16.4
+

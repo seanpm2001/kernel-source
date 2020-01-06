@@ -1,0 +1,28 @@
+From: Petr Tesarik <ptesarik@suse.com>
+Subject: kabi: s390: struct subchannel
+Patch-mainline: never, kabi
+References: git-fixes
+
+Upstream commit 05668e1d74b84c53fbe0f28565e4c9502a6b8a67 adds dma_mask
+to struct subchannel. The size of this structure is not used outside of
+css_alloc_subchannel(), so the new member can be added at the end without
+breaking existing binary modules.
+
+Signed-off-by: Petr Tesarik <ptesarik@suse.com>
+
+---
+ drivers/s390/cio/cio.h |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/drivers/s390/cio/cio.h
++++ b/drivers/s390/cio/cio.h
+@@ -112,7 +112,9 @@ struct subchannel {
+ 	enum sch_todo todo;
+ 	struct work_struct todo_work;
+ 	struct schib_config config;
++#ifndef __GENKSYMS__
+ 	u64 dma_mask;
++#endif
+ } __attribute__ ((aligned(8)));
+ 
+ DECLARE_PER_CPU(struct irb, cio_irb);

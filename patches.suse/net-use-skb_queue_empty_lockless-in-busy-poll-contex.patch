@@ -1,0 +1,69 @@
+From: Eric Dumazet <edumazet@google.com>
+Date: Wed, 23 Oct 2019 22:44:51 -0700
+Subject: net: use skb_queue_empty_lockless() in busy poll contexts
+Git-commit: 3f926af3f4d688e2e11e7f8ed04e277a14d4d4a4
+Patch-mainline: 5.4-rc6
+References: networking-stable-19_11_05
+
+Busy polling usually runs without locks.
+Let's use skb_queue_empty_lockless() instead of skb_queue_empty()
+
+Also uses READ_ONCE() in __skb_try_recv_datagram() to address
+a similar potential problem.
+
+[js] no nvme and chelsio in 4.12 yet.
+
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ net/core/datagram.c |    2 +-
+ net/core/sock.c     |    2 +-
+ net/ipv4/tcp.c      |    2 +-
+ net/sctp/socket.c   |    2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+--- a/net/core/datagram.c
++++ b/net/core/datagram.c
+@@ -274,7 +274,7 @@ struct sk_buff *__skb_try_recv_datagram(
+ 			break;
+ 
+ 		sk_busy_loop(sk, flags & MSG_DONTWAIT);
+-	} while (sk->sk_receive_queue.prev != *last);
++	} while (READ_ONCE(sk->sk_receive_queue.prev) != *last);
+ 
+ 	error = -EAGAIN;
+ 
+--- a/net/core/sock.c
++++ b/net/core/sock.c
+@@ -3289,7 +3289,7 @@ bool sk_busy_loop_end(void *p, unsigned
+ {
+ 	struct sock *sk = p;
+ 
+-	return !skb_queue_empty(&sk->sk_receive_queue) ||
++	return !skb_queue_empty_lockless(&sk->sk_receive_queue) ||
+ 	       sk_busy_loop_timeout(sk, start_time);
+ }
+ EXPORT_SYMBOL(sk_busy_loop_end);
+--- a/net/ipv4/tcp.c
++++ b/net/ipv4/tcp.c
+@@ -1653,7 +1653,7 @@ int tcp_recvmsg(struct sock *sk, struct
+ 	if (unlikely(flags & MSG_ERRQUEUE))
+ 		return inet_recv_error(sk, msg, len, addr_len);
+ 
+-	if (sk_can_busy_loop(sk) && skb_queue_empty(&sk->sk_receive_queue) &&
++	if (sk_can_busy_loop(sk) && skb_queue_empty_lockless(&sk->sk_receive_queue) &&
+ 	    (sk->sk_state == TCP_ESTABLISHED))
+ 		sk_busy_loop(sk, nonblock);
+ 
+--- a/net/sctp/socket.c
++++ b/net/sctp/socket.c
+@@ -7645,7 +7645,7 @@ struct sk_buff *sctp_skb_recv_datagram(s
+ 		if (sk_can_busy_loop(sk)) {
+ 			sk_busy_loop(sk, noblock);
+ 
+-			if (!skb_queue_empty(&sk->sk_receive_queue))
++			if (!skb_queue_empty_lockless(&sk->sk_receive_queue))
+ 				continue;
+ 		}
+ 

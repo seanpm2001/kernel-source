@@ -17,8 +17,8 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  samples/sockmap/sockmap_user.c            |   67 +++++++++++++++++++++++++++---
  tools/include/uapi/linux/bpf.h            |   13 +++++
  tools/lib/bpf/libbpf.c                    |    1 
- tools/testing/selftests/bpf/bpf_helpers.h |    3 +
- 6 files changed, 135 insertions(+), 9 deletions(-)
+ tools/testing/selftests/bpf/bpf_helpers.h |    3 -
+ 6 files changed, 134 insertions(+), 10 deletions(-)
 
 --- a/samples/bpf/bpf_load.c
 +++ b/samples/bpf/bpf_load.c
@@ -248,10 +248,10 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  	else if (test == SENDMSG)
 --- a/tools/include/uapi/linux/bpf.h
 +++ b/tools/include/uapi/linux/bpf.h
-@@ -718,6 +718,15 @@ union bpf_attr {
-  * int bpf_override_return(pt_regs, rc)
-  *	@pt_regs: pointer to struct pt_regs
-  *	@rc: the return value to set
+@@ -716,6 +716,15 @@ union bpf_attr {
+  *     @buf: buf to fill
+  *     @buf_size: size of the buf
+  *     Return : 0 on success or negative error code
 + *
 + * int bpf_msg_redirect_map(map, key, flags)
 + *     Redirect msg to a sock in map using key as a lookup key for the
@@ -264,10 +264,10 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
   */
  #define __BPF_FUNC_MAPPER(FN)		\
  	FN(unspec),			\
-@@ -779,7 +788,9 @@ union bpf_attr {
+@@ -776,7 +785,9 @@ union bpf_attr {
+ 	FN(perf_event_read_value),	\
  	FN(perf_prog_read_value),	\
  	FN(getsockopt),			\
- 	FN(override_return),		\
 -	FN(sock_ops_cb_flags_set),
 +	FN(sock_ops_cb_flags_set),	\
 +	FN(msg_redirect_map),		\
@@ -287,13 +287,13 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  
 --- a/tools/testing/selftests/bpf/bpf_helpers.h
 +++ b/tools/testing/selftests/bpf/bpf_helpers.h
-@@ -85,6 +85,9 @@ static int (*bpf_perf_prog_read_value)(v
+@@ -83,7 +83,8 @@ static int (*bpf_perf_event_read_value)(
+ static int (*bpf_perf_prog_read_value)(void *ctx, void *buf,
+ 				       unsigned int buf_size) =
  	(void *) BPF_FUNC_perf_prog_read_value;
- static int (*bpf_override_return)(void *ctx, unsigned long rc) =
- 	(void *) BPF_FUNC_override_return;
+-
 +static int (*bpf_msg_redirect_map)(void *ctx, void *map, int key, int flags) =
 +	(void *) BPF_FUNC_msg_redirect_map;
-+
  
  /* llvm builtin functions that eBPF C program may use to
   * emit BPF_LD_ABS and BPF_LD_IND instructions

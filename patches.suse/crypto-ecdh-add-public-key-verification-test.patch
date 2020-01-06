@@ -1,0 +1,155 @@
+Git-commit: ea169a30a6bf6782a05a51d2b9cf73db151eab8b
+From: Stephan Mueller <smueller@chronox.de>
+Date: Mon, 25 Jun 2018 12:00:18 +0200
+Subject: [PATCH] crypto: ecdh - add public key verification test
+Patch-mainline: v4.19-rc1
+References: bsc#1155331
+
+According to SP800-56A section 5.6.2.1, the public key to be processed
+for the ECDH operation shall be checked for appropriateness. When the
+public key is considered to be an ephemeral key, the partial validation
+test as defined in SP800-56A section 5.6.2.3.4 can be applied.
+
+The partial verification test requires the presence of the field
+elements of a and b. For the implemented NIST curves, b is defined in
+FIPS 186-4 appendix D.1.2. The element a is implicitly given with the
+Weierstrass equation given in D.1.2 where a = p - 3.
+
+Without the test, the NIST ACVP testing fails. After adding this check,
+the NIST ACVP testing passes.
+
+Signed-off-by: Stephan Mueller <smueller@chronox.de>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Signed-off-by: Torsten Duwe <duwe@suse.de>
+---
+ crypto/ecc.c            | 42 ++++++++++++++++++++++++++++++++++++++----
+ crypto/ecc_curve_defs.h | 22 ++++++++++++++++++----
+ 2 files changed, 56 insertions(+), 8 deletions(-)
+
+--- a/crypto/ecc.c
++++ b/crypto/ecc.c
+@@ -966,6 +966,36 @@ out:
+ 	return ret;
+ }
+ 
++/* SP800-56A section 5.6.2.3.4 partial verification: ephemeral keys only */
++static int ecc_is_pubkey_valid_partial(const struct ecc_curve *curve,
++				       struct ecc_point *pk)
++{
++	u64 yy[ECC_MAX_DIGITS], xxx[ECC_MAX_DIGITS], w[ECC_MAX_DIGITS];
++
++	/* Check 1: Verify key is not the zero point. */
++	if (ecc_point_is_zero(pk))
++		return -EINVAL;
++
++	/* Check 2: Verify key is in the range [1, p-1]. */
++	if (vli_cmp(curve->p, pk->x, pk->ndigits) != 1)
++		return -EINVAL;
++	if (vli_cmp(curve->p, pk->y, pk->ndigits) != 1)
++		return -EINVAL;
++
++	/* Check 3: Verify that y^2 == (x^3 + a·x + b) mod p */
++	vli_mod_square_fast(yy, pk->y, curve->p, pk->ndigits); /* y^2 */
++	vli_mod_square_fast(xxx, pk->x, curve->p, pk->ndigits); /* x^2 */
++	vli_mod_mult_fast(xxx, xxx, pk->x, curve->p, pk->ndigits); /* x^3 */
++	vli_mod_mult_fast(w, curve->a, pk->x, curve->p, pk->ndigits); /* a·x */
++	vli_mod_add(w, w, curve->b, curve->p, pk->ndigits); /* a·x + b */
++	vli_mod_add(w, w, xxx, curve->p, pk->ndigits); /* x^3 + a·x + b */
++	if (vli_cmp(yy, w, pk->ndigits) != 0) /* Equation */
++		return -EINVAL;
++
++	return 0;
++
++}
++
+ int crypto_ecdh_shared_secret(unsigned int curve_id, unsigned int ndigits,
+ 		       const u8 *private_key, unsigned int private_key_len,
+ 		       const u8 *public_key, unsigned int public_key_len,
+@@ -993,16 +1023,20 @@ int crypto_ecdh_shared_secret(unsigned i
+ 		goto out;
+ 	}
+ 
++	ecc_swap_digits((const u64 *)public_key, pk->x, ndigits);
++	ecc_swap_digits((const u64 *)&public_key[nbytes], pk->y, ndigits);
++	ret = ecc_is_pubkey_valid_partial(curve, pk);
++	if (ret)
++		goto err_alloc_product;
++
++	ecc_swap_digits((const u64 *)private_key, priv, ndigits);
++
+ 	product = ecc_alloc_point(ndigits);
+ 	if (!product) {
+ 		ret = -ENOMEM;
+ 		goto err_alloc_product;
+ 	}
+ 
+-	ecc_swap_digits((const u64 *)public_key, pk->x, ndigits);
+-	ecc_swap_digits((const u64 *)&public_key[nbytes], pk->y, ndigits);
+-	ecc_swap_digits((const u64 *)private_key, priv, ndigits);
+-
+ 	ecc_point_mult(product, pk, priv, rand_z, curve->p, ndigits);
+ 
+ 	ecc_swap_digits(product->x, (u64 *)secret, ndigits);
+--- a/crypto/ecc_curve_defs.h
++++ b/crypto/ecc_curve_defs.h
+@@ -12,9 +12,11 @@ struct ecc_curve {
+ 	struct ecc_point g;
+ 	u64 *p;
+ 	u64 *n;
++	u64 *a;
++	u64 *b;
+ };
+ 
+-/* NIST P-192 */
++/* NIST P-192: a = p - 3 */
+ static u64 nist_p192_g_x[] = { 0xF4FF0AFD82FF1012ull, 0x7CBF20EB43A18800ull,
+ 				0x188DA80EB03090F6ull };
+ static u64 nist_p192_g_y[] = { 0x73F977A11E794811ull, 0x631011ED6B24CDD5ull,
+@@ -23,6 +25,10 @@ static u64 nist_p192_p[] = { 0xFFFFFFFFF
+ 				0xFFFFFFFFFFFFFFFFull };
+ static u64 nist_p192_n[] = { 0x146BC9B1B4D22831ull, 0xFFFFFFFF99DEF836ull,
+ 				0xFFFFFFFFFFFFFFFFull };
++static u64 nist_p192_a[] = { 0xFFFFFFFFFFFFFFFCull, 0xFFFFFFFFFFFFFFFEull,
++				0xFFFFFFFFFFFFFFFEull };
++static u64 nist_p192_b[] = { 0xFEB8DEECC146B9B1ull, 0x0FA7E9AB72243049ull,
++				0x64210519E59C80E7ull };
+ static struct ecc_curve nist_p192 = {
+ 	.name = "nist_192",
+ 	.g = {
+@@ -31,10 +37,12 @@ static struct ecc_curve nist_p192 = {
+ 		.ndigits = 3,
+ 	},
+ 	.p = nist_p192_p,
+-	.n = nist_p192_n
++	.n = nist_p192_n,
++	.a = nist_p192_a,
++	.b = nist_p192_b
+ };
+ 
+-/* NIST P-256 */
++/* NIST P-256: a = p - 3 */
+ static u64 nist_p256_g_x[] = { 0xF4A13945D898C296ull, 0x77037D812DEB33A0ull,
+ 				0xF8BCE6E563A440F2ull, 0x6B17D1F2E12C4247ull };
+ static u64 nist_p256_g_y[] = { 0xCBB6406837BF51F5ull, 0x2BCE33576B315ECEull,
+@@ -43,6 +51,10 @@ static u64 nist_p256_p[] = { 0xFFFFFFFFF
+ 				0x0000000000000000ull, 0xFFFFFFFF00000001ull };
+ static u64 nist_p256_n[] = { 0xF3B9CAC2FC632551ull, 0xBCE6FAADA7179E84ull,
+ 				0xFFFFFFFFFFFFFFFFull, 0xFFFFFFFF00000000ull };
++static u64 nist_p256_a[] = { 0xFFFFFFFFFFFFFFFCull, 0x00000000FFFFFFFFull,
++				0x0000000000000000ull, 0xFFFFFFFF00000001ull };
++static u64 nist_p256_b[] = { 0x3BCE3C3E27D2604Bull, 0x651D06B0CC53B0F6ull,
++				0xB3EBBD55769886BCull, 0x5AC635D8AA3A93E7ull };
+ static struct ecc_curve nist_p256 = {
+ 	.name = "nist_256",
+ 	.g = {
+@@ -51,7 +63,9 @@ static struct ecc_curve nist_p256 = {
+ 		.ndigits = 4,
+ 	},
+ 	.p = nist_p256_p,
+-	.n = nist_p256_n
++	.n = nist_p256_n,
++	.a = nist_p256_a,
++	.b = nist_p256_b
+ };
+ 
+ #endif

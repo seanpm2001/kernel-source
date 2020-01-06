@@ -1,0 +1,41 @@
+From 98409b2bbca36b578be8e66758e6acb96e4c91da Mon Sep 17 00:00:00 2001
+From: Florian Fainelli <f.fainelli@gmail.com>
+Date: Fri, 2 Mar 2018 15:08:37 -0800
+Subject: [PATCH] net: phy: marvell: Use strlcpy() for ethtool::get_strings
+Git-commit: 98409b2bbca36b578be8e66758e6acb96e4c91da
+Patch-mainline: v4.16-rc7
+References: bsc#1051510
+
+Our statistics strings are allocated at initialization without being
+bound to a specific size, yet, we would copy ETH_GSTRING_LEN bytes using
+memcpy() which would create out of bounds accesses, this was flagged by
+KASAN. Replace this with strlcpy() to make sure we are bound the source
+buffer size and we also always NUL-terminate strings.
+
+Fixes: d2fa47d9dd5c ("phy: marvell: Add ethtool statistics counters")
+Signed-off-by: Florian Fainelli <f.fainelli@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/net/phy/marvell.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/phy/marvell.c b/drivers/net/phy/marvell.c
+index 22d9bc9c33a4..0e0978d8a0eb 100644
+--- a/drivers/net/phy/marvell.c
++++ b/drivers/net/phy/marvell.c
+@@ -1452,8 +1452,8 @@ static void marvell_get_strings(struct phy_device *phydev, u8 *data)
+ 	int i;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(marvell_hw_stats); i++) {
+-		memcpy(data + i * ETH_GSTRING_LEN,
+-		       marvell_hw_stats[i].string, ETH_GSTRING_LEN);
++		strlcpy(data + i * ETH_GSTRING_LEN,
++			marvell_hw_stats[i].string, ETH_GSTRING_LEN);
+ 	}
+ }
+ 
+-- 
+2.16.4
+

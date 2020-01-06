@@ -1,0 +1,30 @@
+From: Takashi Iwai <tiwai@suse.de>
+Subject: kABI workaround for ath10k last_wmi_vdev_start_status field
+Patch-mainline: Never, kABI workaround
+References: bsc#1051510
+
+The newly added fireld last_wmi_vdev_start_status in struct ath10k
+broke kABI.  Move it to the free space for padding.
+
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/net/wireless/ath/ath10k/core.h |    5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/wireless/ath/ath10k/core.h
++++ b/drivers/net/wireless/ath/ath10k/core.h
+@@ -872,9 +872,12 @@ struct ath10k {
+ 	u8 cfg_tx_chainmask;
+ 	u8 cfg_rx_chainmask;
+ 
++#ifndef __GENKSYMS__
++	int last_wmi_vdev_start_status; /* moved here for kABI compatibility */
++#endif
++
+ 	struct completion install_key_done;
+ 
+-	int last_wmi_vdev_start_status;
+ 	struct completion vdev_setup_done;
+ 
+ 	struct workqueue_struct *workqueue;

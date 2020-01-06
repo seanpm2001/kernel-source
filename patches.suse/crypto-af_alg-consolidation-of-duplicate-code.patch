@@ -2,9 +2,10 @@ From 2d97591ef43d0587be22ad1b0d758d6df4999a0b Mon Sep 17 00:00:00 2001
 From: Stephan Mueller <smueller@chronox.de>
 Date: Wed, 2 Aug 2017 07:56:19 +0200
 Subject: [PATCH] crypto: af_alg - consolidation of duplicate code
-Git-commit: 2d97591ef43d0587be22ad1b0d758d6df4999a0b
-Patch-mainline: v4.14-rc1
+
 References: bsc#1154737
+Patch-mainline: v4.14-rc1
+Git-commit: 2d97591ef43d0587be22ad1b0d758d6df4999a0b
 
 Consolidate following data structures:
 
@@ -34,10 +35,10 @@ aead_poll, skcipher_poll -> af_alg_poll
 
 Split out the following common code from recvmsg:
 
-Af_alg_alloc_areq: allocation of the request data structure for the
+af_alg_alloc_areq: allocation of the request data structure for the
 cipher operation
 
-Af_alg_get_rsgl: creation of the RX SGL anchored in the request data
+af_alg_get_rsgl: creation of the RX SGL anchored in the request data
 structure
 
 The following changes to the implementation without affecting the
@@ -74,14 +75,15 @@ during decryption.
 Signed-off-by: Stephan Mueller <smueller@chronox.de>
 Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
 Acked-by: Takashi Iwai <tiwai@suse.de>
-
 ---
- crypto/af_alg.c         |  693 +++++++++++++++++++++++++++++++++++++++++++++++
- crypto/algif_aead.c     |  701 ++----------------------------------------------
- crypto/algif_skcipher.c |  640 ++-----------------------------------------
- include/crypto/if_alg.h |  170 +++++++++++
- 4 files changed, 940 insertions(+), 1264 deletions(-)
+ crypto/af_alg.c         | 693 +++++++++++++++++++++++++++++++++++++++
+ crypto/algif_aead.c     | 701 +++-------------------------------------
+ crypto/algif_skcipher.c | 638 +++---------------------------------
+ include/crypto/if_alg.h | 170 ++++++++++
+ 4 files changed, 940 insertions(+), 1262 deletions(-)
 
+diff --git a/crypto/af_alg.c b/crypto/af_alg.c
+index 92a3d540d920..d6936c0e08d9 100644
 --- a/crypto/af_alg.c
 +++ b/crypto/af_alg.c
 @@ -21,6 +21,7 @@
@@ -92,7 +94,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  #include <linux/security.h>
  
  struct alg_type_list {
-@@ -507,6 +508,698 @@ void af_alg_complete(struct crypto_async
+@@ -507,6 +508,698 @@ void af_alg_complete(struct crypto_async_request *req, int err)
  }
  EXPORT_SYMBOL_GPL(af_alg_complete);
  
@@ -791,6 +793,8 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  static int __init af_alg_init(void)
  {
  	int err = proto_register(&alg_proto, 0);
+diff --git a/crypto/algif_aead.c b/crypto/algif_aead.c
+index 1f0696dd64f4..48d46e74ed0d 100644
 --- a/crypto/algif_aead.c
 +++ b/crypto/algif_aead.c
 @@ -35,101 +35,23 @@
@@ -896,7 +900,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  	struct aead_tfm *aeadc = pask->private;
  	struct crypto_aead *tfm = aeadc->aead;
  	unsigned int as = crypto_aead_authsize(tfm);
-@@ -141,490 +63,17 @@ static inline bool aead_sufficient_data(
+@@ -141,490 +63,17 @@ static inline bool aead_sufficient_data(struct sock *sk)
  	return ctx->used >= ctx->aead_assoclen + (ctx->enc ? 0 : as);
  }
  
@@ -1355,7 +1359,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
 -	ctx->used += size;
 -
 -	err = 0;
--
+ 
 -done:
 -	ctx->more = flags & MSG_MORE;
 -unlock:
@@ -1376,7 +1380,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
 -
 -	/* Buffer size written by crypto operation. */
 -	resultlen = areq->outlen;
- 
+-
 -	aead_free_areq_sgls(areq);
 -	sock_kfree_s(sk, areq, areq->areqlen);
 -	__sock_put(sk);
@@ -1388,7 +1392,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  }
  
  static int crypto_aead_copy_sgl(struct crypto_skcipher *null_tfm,
-@@ -648,16 +97,13 @@ static int _aead_recvmsg(struct socket *
+@@ -648,16 +97,13 @@ static int _aead_recvmsg(struct socket *sock, struct msghdr *msg,
  	struct alg_sock *ask = alg_sk(sk);
  	struct sock *psk = ask->parent;
  	struct alg_sock *pask = alg_sk(psk);
@@ -1408,7 +1412,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  	struct scatterlist *src;
  	int err = 0;
  	size_t used = 0;		/* [in]  TX bufs to be en/decrypted */
-@@ -703,61 +149,15 @@ static int _aead_recvmsg(struct socket *
+@@ -703,61 +149,15 @@ static int _aead_recvmsg(struct socket *sock, struct msghdr *msg,
  	used -= ctx->aead_assoclen;
  
  	/* Allocate cipher request for current operation. */
@@ -1477,7 +1481,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  
  	/*
  	 * Ensure output buffer is sufficiently large. If the caller provides
-@@ -778,7 +178,7 @@ static int _aead_recvmsg(struct socket *
+@@ -778,7 +178,7 @@ static int _aead_recvmsg(struct socket *sock, struct msghdr *msg,
  	}
  
  	processed = used + ctx->aead_assoclen;
@@ -1486,7 +1490,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  
  	/*
  	 * Copy of AAD from source to destination
-@@ -811,7 +211,7 @@ static int _aead_recvmsg(struct socket *
+@@ -811,7 +211,7 @@ static int _aead_recvmsg(struct socket *sock, struct msghdr *msg,
  					   areq->first_rsgl.sgl.sg, processed);
  		if (err)
  			goto free;
@@ -1495,7 +1499,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  	} else {
  		/*
  		 * Decryption operation - To achieve an in-place cipher
-@@ -831,8 +231,8 @@ static int _aead_recvmsg(struct socket *
+@@ -831,8 +231,8 @@ static int _aead_recvmsg(struct socket *sock, struct msghdr *msg,
  			goto free;
  
  		/* Create TX SGL for tag and chain it to RX SGL. */
@@ -1506,7 +1510,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  		if (!areq->tsgl_entries)
  			areq->tsgl_entries = 1;
  		areq->tsgl = sock_kmalloc(sk, sizeof(*areq->tsgl) *
-@@ -845,12 +245,12 @@ static int _aead_recvmsg(struct socket *
+@@ -845,12 +245,12 @@ static int _aead_recvmsg(struct socket *sock, struct msghdr *msg,
  		sg_init_table(areq->tsgl, areq->tsgl_entries);
  
  		/* Release TX SGL, except for tag data and reassign tag data. */
@@ -1522,7 +1526,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  
  			sg_unmark_end(sgl_prev->sg + sgl_prev->npages - 1);
  			sg_chain(sgl_prev->sg, sgl_prev->npages + 1,
-@@ -861,28 +261,28 @@ static int _aead_recvmsg(struct socket *
+@@ -861,28 +261,28 @@ static int _aead_recvmsg(struct socket *sock, struct msghdr *msg,
  	}
  
  	/* Initialize the crypto operation */
@@ -1562,7 +1566,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  	}
  
  	/* AIO operation in progress */
-@@ -896,9 +296,8 @@ static int _aead_recvmsg(struct socket *
+@@ -896,9 +296,8 @@ static int _aead_recvmsg(struct socket *sock, struct msghdr *msg,
  	}
  
  free:
@@ -1574,7 +1578,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  
  	return err ? err : outlen;
  }
-@@ -931,31 +330,11 @@ static int aead_recvmsg(struct socket *s
+@@ -931,31 +330,11 @@ static int aead_recvmsg(struct socket *sock, struct msghdr *msg,
  	}
  
  out:
@@ -1607,7 +1611,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  static struct proto_ops algif_aead_ops = {
  	.family		=	PF_ALG,
  
-@@ -973,9 +352,9 @@ static struct proto_ops algif_aead_ops =
+@@ -973,9 +352,9 @@ static struct proto_ops algif_aead_ops = {
  
  	.release	=	af_alg_release,
  	.sendmsg	=	aead_sendmsg,
@@ -1619,7 +1623,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  };
  
  static int aead_check_key(struct socket *sock)
-@@ -1037,7 +416,7 @@ static ssize_t aead_sendpage_nokey(struc
+@@ -1037,7 +416,7 @@ static ssize_t aead_sendpage_nokey(struct socket *sock, struct page *page,
  	if (err)
  		return err;
  
@@ -1628,7 +1632,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  }
  
  static int aead_recvmsg_nokey(struct socket *sock, struct msghdr *msg,
-@@ -1071,7 +450,7 @@ static struct proto_ops algif_aead_ops_n
+@@ -1071,7 +450,7 @@ static struct proto_ops algif_aead_ops_nokey = {
  	.sendmsg	=	aead_sendmsg_nokey,
  	.sendpage	=	aead_sendpage_nokey,
  	.recvmsg	=	aead_recvmsg_nokey,
@@ -1637,7 +1641,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  };
  
  static void *aead_bind(const char *name, u32 type, u32 mask)
-@@ -1132,14 +511,14 @@ static int aead_setkey(void *private, co
+@@ -1132,14 +511,14 @@ static int aead_setkey(void *private, const u8 *key, unsigned int keylen)
  static void aead_sock_destruct(struct sock *sk)
  {
  	struct alg_sock *ask = alg_sk(sk);
@@ -1654,7 +1658,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  	crypto_put_default_null_skcipher2();
  	sock_kzfree_s(sk, ctx->iv, ivlen);
  	sock_kfree_s(sk, ctx, ctx->len);
-@@ -1148,7 +527,7 @@ static void aead_sock_destruct(struct so
+@@ -1148,7 +527,7 @@ static void aead_sock_destruct(struct sock *sk)
  
  static int aead_accept_parent_nokey(void *private, struct sock *sk)
  {
@@ -1663,9 +1667,11 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  	struct alg_sock *ask = alg_sk(sk);
  	struct aead_tfm *tfm = private;
  	struct crypto_aead *aead = tfm->aead;
+diff --git a/crypto/algif_skcipher.c b/crypto/algif_skcipher.c
+index ce3b5fba2279..8ae4170aaeb4 100644
 --- a/crypto/algif_skcipher.c
 +++ b/crypto/algif_skcipher.c
-@@ -33,322 +33,16 @@
+@@ -33,320 +33,16 @@
  #include <linux/init.h>
  #include <linux/list.h>
  #include <linux/kernel.h>
@@ -1775,10 +1781,8 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
 -		sg_init_table(sgl->sg, MAX_SGL_ENTS + 1);
 -		sgl->cur = 0;
 -
--		if (sg) {
+-		if (sg)
 -			sg_chain(sg, MAX_SGL_ENTS + 1, sgl->sg);
--			sg_unmark_end(sg + (MAX_SGL_ENTS - 1));
--		}
 -
 -		list_add_tail(&sgl->list, &ctx->tsgl_list);
 -	}
@@ -1988,7 +1992,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  static int skcipher_sendmsg(struct socket *sock, struct msghdr *msg,
  			    size_t size)
  {
-@@ -356,208 +50,11 @@ static int skcipher_sendmsg(struct socke
+@@ -354,208 +50,11 @@ static int skcipher_sendmsg(struct socket *sock, struct msghdr *msg,
  	struct alg_sock *ask = alg_sk(sk);
  	struct sock *psk = ask->parent;
  	struct alg_sock *pask = alg_sk(psk);
@@ -2120,7 +2124,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
 -unlock:
 -	skcipher_data_wakeup(sk);
 -	release_sock(sk);
--
+ 
 -	return copied ?: err;
 -}
 -
@@ -2142,7 +2146,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
 -
 -	if (!size)
 -		goto done;
- 
+-
 -	if (!skcipher_writable(sk)) {
 -		err = skcipher_wait_for_wmem(sk, flags);
 -		if (err)
@@ -2198,7 +2202,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  }
  
  static int _skcipher_recvmsg(struct socket *sock, struct msghdr *msg,
-@@ -567,72 +64,24 @@ static int _skcipher_recvmsg(struct sock
+@@ -565,72 +64,24 @@ static int _skcipher_recvmsg(struct socket *sock, struct msghdr *msg,
  	struct alg_sock *ask = alg_sk(sk);
  	struct sock *psk = ask->parent;
  	struct alg_sock *pask = alg_sk(psk);
@@ -2280,7 +2284,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  
  	/* Process only as much RX buffers for which we have TX data */
  	if (len > ctx->used)
-@@ -649,7 +98,7 @@ static int _skcipher_recvmsg(struct sock
+@@ -647,7 +98,7 @@ static int _skcipher_recvmsg(struct socket *sock, struct msghdr *msg,
  	 * Create a per request TX SGL for this request which tracks the
  	 * SG entries from the global TX SGL.
  	 */
@@ -2289,7 +2293,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  	if (!areq->tsgl_entries)
  		areq->tsgl_entries = 1;
  	areq->tsgl = sock_kmalloc(sk, sizeof(*areq->tsgl) * areq->tsgl_entries,
-@@ -659,44 +108,48 @@ static int _skcipher_recvmsg(struct sock
+@@ -657,44 +108,48 @@ static int _skcipher_recvmsg(struct socket *sock, struct msghdr *msg,
  		goto free;
  	}
  	sg_init_table(areq->tsgl, areq->tsgl_entries);
@@ -2352,7 +2356,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  
  	return err ? err : len;
  }
-@@ -729,30 +182,11 @@ static int skcipher_recvmsg(struct socke
+@@ -727,30 +182,11 @@ static int skcipher_recvmsg(struct socket *sock, struct msghdr *msg,
  	}
  
  out:
@@ -2384,7 +2388,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  
  static struct proto_ops algif_skcipher_ops = {
  	.family		=	PF_ALG,
-@@ -771,9 +205,9 @@ static struct proto_ops algif_skcipher_o
+@@ -769,9 +205,9 @@ static struct proto_ops algif_skcipher_ops = {
  
  	.release	=	af_alg_release,
  	.sendmsg	=	skcipher_sendmsg,
@@ -2396,7 +2400,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  };
  
  static int skcipher_check_key(struct socket *sock)
-@@ -835,7 +269,7 @@ static ssize_t skcipher_sendpage_nokey(s
+@@ -833,7 +269,7 @@ static ssize_t skcipher_sendpage_nokey(struct socket *sock, struct page *page,
  	if (err)
  		return err;
  
@@ -2405,7 +2409,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  }
  
  static int skcipher_recvmsg_nokey(struct socket *sock, struct msghdr *msg,
-@@ -869,7 +303,7 @@ static struct proto_ops algif_skcipher_o
+@@ -867,7 +303,7 @@ static struct proto_ops algif_skcipher_ops_nokey = {
  	.sendmsg	=	skcipher_sendmsg_nokey,
  	.sendpage	=	skcipher_sendpage_nokey,
  	.recvmsg	=	skcipher_recvmsg_nokey,
@@ -2414,7 +2418,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  };
  
  static void *skcipher_bind(const char *name, u32 type, u32 mask)
-@@ -914,13 +348,13 @@ static int skcipher_setkey(void *private
+@@ -912,13 +348,13 @@ static int skcipher_setkey(void *private, const u8 *key, unsigned int keylen)
  static void skcipher_sock_destruct(struct sock *sk)
  {
  	struct alg_sock *ask = alg_sk(sk);
@@ -2430,7 +2434,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  	sock_kzfree_s(sk, ctx->iv, crypto_skcipher_ivsize(tfm));
  	sock_kfree_s(sk, ctx, ctx->len);
  	af_alg_release_parent(sk);
-@@ -928,7 +362,7 @@ static void skcipher_sock_destruct(struc
+@@ -926,7 +362,7 @@ static void skcipher_sock_destruct(struct sock *sk)
  
  static int skcipher_accept_parent_nokey(void *private, struct sock *sk)
  {
@@ -2439,6 +2443,8 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  	struct alg_sock *ask = alg_sk(sk);
  	struct skcipher_tfm *tfm = private;
  	struct crypto_skcipher *skcipher = tfm->skcipher;
+diff --git a/include/crypto/if_alg.h b/include/crypto/if_alg.h
+index e2b9c6fe2714..75ec9c662268 100644
 --- a/include/crypto/if_alg.h
 +++ b/include/crypto/if_alg.h
 @@ -20,6 +20,9 @@
@@ -2551,7 +2557,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  int af_alg_register_type(const struct af_alg_type *type);
  int af_alg_unregister_type(const struct af_alg_type *type);
  
-@@ -94,4 +190,78 @@ static inline void af_alg_init_completio
+@@ -94,4 +190,78 @@ static inline void af_alg_init_completion(struct af_alg_completion *completion)
  	init_completion(&completion->completion);
  }
  
@@ -2630,3 +2636,6 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
 +		    size_t *outlen);
 +
  #endif	/* _CRYPTO_IF_ALG_H */
+-- 
+2.23.0
+

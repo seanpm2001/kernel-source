@@ -1,0 +1,56 @@
+From a93a676b079144009f55fff2ab0e34c3b7258c8a Mon Sep 17 00:00:00 2001
+From: Christophe JAILLET <christophe.jaillet@wanadoo.fr>
+Date: Tue, 16 Oct 2018 08:22:28 +0200
+Subject: [PATCH] pinctrl: sunxi: Fix a memory leak in 'sunxi_pinctrl_build_state()'
+Git-commit: a93a676b079144009f55fff2ab0e34c3b7258c8a
+Patch-mainline: v4.20-rc1
+References: bsc#1051510
+
+If 'krealloc()' fails, 'pctl->functions' is set to NULL.
+We should instead use a temp variable in order to be able to free the
+previously allocated memeory, in case of OOM.
+
+Signed-off-by: Christophe JAILLET <christophe.jaillet@wanadoo.fr>
+Acked-by: Maxime Ripard <maxime.ripard@bootlin.com>
+Signed-off-by: Linus Walleij <linus.walleij@linaro.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/pinctrl/sunxi/pinctrl-sunxi.c | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/pinctrl/sunxi/pinctrl-sunxi.c b/drivers/pinctrl/sunxi/pinctrl-sunxi.c
+index 213a5d5d73f0..34e17376ef99 100644
+--- a/drivers/pinctrl/sunxi/pinctrl-sunxi.c
++++ b/drivers/pinctrl/sunxi/pinctrl-sunxi.c
+@@ -1042,6 +1042,7 @@ static int sunxi_pinctrl_add_function(struct sunxi_pinctrl *pctl,
+ static int sunxi_pinctrl_build_state(struct platform_device *pdev)
+ {
+ 	struct sunxi_pinctrl *pctl = platform_get_drvdata(pdev);
++	void *ptr;
+ 	int i;
+ 
+ 	/*
+@@ -1108,13 +1109,15 @@ static int sunxi_pinctrl_build_state(struct platform_device *pdev)
+ 	}
+ 
+ 	/* And now allocated and fill the array for real */
+-	pctl->functions = krealloc(pctl->functions,
+-				   pctl->nfunctions * sizeof(*pctl->functions),
+-				   GFP_KERNEL);
+-	if (!pctl->functions) {
++	ptr = krealloc(pctl->functions,
++		       pctl->nfunctions * sizeof(*pctl->functions),
++		       GFP_KERNEL);
++	if (!ptr) {
+ 		kfree(pctl->functions);
++		pctl->functions = NULL;
+ 		return -ENOMEM;
+ 	}
++	pctl->functions = ptr;
+ 
+ 	for (i = 0; i < pctl->desc->npins; i++) {
+ 		const struct sunxi_desc_pin *pin = pctl->desc->pins + i;
+-- 
+2.16.4
+
