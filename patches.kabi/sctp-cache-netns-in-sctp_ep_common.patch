@@ -1,0 +1,31 @@
+From: Jiri Slaby <jslaby@suse.cz>
+Subject: kABI: protect struct sctp_ep_common
+Patch-mainline: never, kabi
+References: kabi
+
+In networking-stable-19_12_03, commit
+312434617cb16be5166316cf9d08ba760b1042a1 (sctp: cache netns in
+sctp_ep_common) added a member to struct sctp_ep_common.  This indeed
+changed the layour of the structure and the kABI checker complains now.
+
+sctp_ep_common is embedded to structs sctp_association and
+sctp_endpoint. But all these are sctp internal, so workaround the
+breakage by the usual __GENKSYMS__ trick.
+
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ include/net/sctp/structs.h |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/include/net/sctp/structs.h
++++ b/include/net/sctp/structs.h
+@@ -1179,7 +1179,9 @@ struct sctp_ep_common {
+ 	struct sock *sk;
+ 
+ 	/* Cache netns and it won't change once set */
++#ifndef __GENKSYMS__
+ 	struct net *net;
++#endif
+ 
+ 	/* This is where we receive inbound chunks.  */
+ 	struct sctp_inq	  inqueue;

@@ -1,0 +1,92 @@
+From: Vasily Gorbik <gor@linux.ibm.com>
+Date: Thu, 20 Jun 2019 10:18:31 +0200
+Subject: s390/kasan: avoid false positives during stack unwind
+Git-commit: 20955746320e252b41c6b3505587766012e3e06d
+Patch-mainline: v5.3-rc1
+References: jsc#SLE-11178
+
+Avoid kasan false positive when current task is interrupted in-between
+stack frame allocation and backchain write instructions leaving new stack
+frame backchain invalid. In particular if backchain is 0 the unwinder
+tries to read pt_regs from the stack and might hit kasan poisoned bytes,
+leading to kasan "stack-out-of-bounds" report.
+
+Disable kasan instrumentation of unwinder stack reads, since this
+limitation couldn't be handled otherwise with current backchain unwinder
+implementation.
+
+Fixes: 78c98f907413 ("s390/unwind: introduce stack unwind API")
+Reported-by: Julian Wiedmann <jwi@linux.ibm.com>
+Tested-by: Benjamin Block <bblock@linux.ibm.com>
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+[
+  mb: not strictly necessary, because kasan support was not backported, but there
+  are also other changes involved and it will make things easier in the future
+]
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ arch/s390/kernel/unwind_bc.c | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/arch/s390/kernel/unwind_bc.c b/arch/s390/kernel/unwind_bc.c
+index 57fd4e902f1f..3ce8a0808059 100644
+--- a/arch/s390/kernel/unwind_bc.c
++++ b/arch/s390/kernel/unwind_bc.c
+@@ -46,18 +46,18 @@ bool unwind_next_frame(struct unwind_state *state)
+ 
+ 	regs = state->regs;
+ 	if (unlikely(regs)) {
+-		sp = READ_ONCE_TASK_STACK(state->task, regs->gprs[15]);
++		sp = READ_ONCE_NOCHECK(regs->gprs[15]);
+ 		if (unlikely(outside_of_stack(state, sp))) {
+ 			if (!update_stack_info(state, sp))
+ 				goto out_err;
+ 		}
+ 		sf = (struct stack_frame *) sp;
+-		ip = READ_ONCE_TASK_STACK(state->task, sf->gprs[8]);
++		ip = READ_ONCE_NOCHECK(sf->gprs[8]);
+ 		reliable = false;
+ 		regs = NULL;
+ 	} else {
+ 		sf = (struct stack_frame *) state->sp;
+-		sp = READ_ONCE_TASK_STACK(state->task, sf->back_chain);
++		sp = READ_ONCE_NOCHECK(sf->back_chain);
+ 		if (likely(sp)) {
+ 			/* Non-zero back-chain points to the previous frame */
+ 			if (unlikely(outside_of_stack(state, sp))) {
+@@ -65,7 +65,7 @@ bool unwind_next_frame(struct unwind_state *state)
+ 					goto out_err;
+ 			}
+ 			sf = (struct stack_frame *) sp;
+-			ip = READ_ONCE_TASK_STACK(state->task, sf->gprs[8]);
++			ip = READ_ONCE_NOCHECK(sf->gprs[8]);
+ 			reliable = true;
+ 		} else {
+ 			/* No back-chain, look for a pt_regs structure */
+@@ -73,9 +73,9 @@ bool unwind_next_frame(struct unwind_state *state)
+ 			if (!on_stack(info, sp, sizeof(struct pt_regs)))
+ 				goto out_stop;
+ 			regs = (struct pt_regs *) sp;
+-			if (user_mode(regs))
++			if (READ_ONCE_NOCHECK(regs->psw.mask) & PSW_MASK_PSTATE)
+ 				goto out_stop;
+-			ip = READ_ONCE_TASK_STACK(state->task, regs->psw.addr);
++			ip = READ_ONCE_NOCHECK(regs->psw.addr);
+ 			reliable = true;
+ 		}
+ 	}
+@@ -132,11 +132,11 @@ void __unwind_start(struct unwind_state *state, struct task_struct *task,
+ 
+ 	/* Get the instruction pointer from pt_regs or the stack frame */
+ 	if (regs) {
+-		ip = READ_ONCE_TASK_STACK(state->task, regs->psw.addr);
++		ip = READ_ONCE_NOCHECK(regs->psw.addr);
+ 		reliable = true;
+ 	} else {
+ 		sf = (struct stack_frame *) sp;
+-		ip = READ_ONCE_TASK_STACK(state->task, sf->gprs[8]);
++		ip = READ_ONCE_NOCHECK(sf->gprs[8]);
+ 		reliable = false;
+ 	}
+ 
+

@@ -1,0 +1,46 @@
+From: Vasily Gorbik <gor@linux.ibm.com>
+Date: Mon, 5 Aug 2019 15:07:19 +0200
+Subject: s390/unwind: remove stack recursion warning
+Git-commit: fd0c7435d7bfd46161ef43b185f55d759022238c
+Patch-mainline: v5.3-rc4
+References: jsc#SLE-11178
+
+Remove pointless stack recursion on stack type ... warning, which
+only confuses people. There is no way to make backchain unwinder 100%
+reliable. When a task is interrupted in-between stack frame allocation
+and backchain write instructions new stack frame backchain pointer is
+left uninitialized (there are also sometimes additional instruction
+in-between stack frame allocation and backchain write instructions due
+to gcc shrink-wrapping). In attempt to unwind such stack the unwinder
+would still try to use that invalid backchain value and perform all kind
+of sanity checks on it to make sure we are not pointed out of stack. In
+some cases that invalid backchain value would be 0 and we would falsely
+treat next stackframe as pt_regs and again gprs[15] in those pt_regs
+might happen to point at some address within the task's stack.
+
+Acked-by: Heiko Carstens <heiko.carstens@de.ibm.com>
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ arch/s390/kernel/dumpstack.c | 6 +-----
+ 1 file changed, 1 insertion(+), 5 deletions(-)
+
+diff --git a/arch/s390/kernel/dumpstack.c b/arch/s390/kernel/dumpstack.c
+index ac06c3949ab3..34bdc60c0b11 100644
+--- a/arch/s390/kernel/dumpstack.c
++++ b/arch/s390/kernel/dumpstack.c
+@@ -114,12 +114,8 @@ int get_stack_info(unsigned long sp, struct task_struct *task,
+ 	 * If it comes up a second time then there's something wrong going on:
+ 	 * just break out and report an unknown stack type.
+ 	 */
+-	if (*visit_mask & (1UL << info->type)) {
+-		printk_deferred_once(KERN_WARNING
+-			"WARNING: stack recursion on stack type %d\n",
+-			info->type);
++	if (*visit_mask & (1UL << info->type))
+ 		goto unknown;
+-	}
+ 	*visit_mask |= 1UL << info->type;
+ 	return 0;
+ unknown:
+

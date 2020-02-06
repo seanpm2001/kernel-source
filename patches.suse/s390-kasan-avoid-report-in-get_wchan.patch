@@ -1,0 +1,43 @@
+From: Vasily Gorbik <gor@linux.ibm.com>
+Date: Tue, 13 Aug 2019 19:23:51 +0200
+Subject: s390/kasan: avoid report in get_wchan
+Git-commit: 2c7fa8a11cc528e49e88352fce8cf083104b3797
+Patch-mainline: v5.4-rc1
+References: jsc#SLE-11178
+
+Reading other running task's stack can be a dangerous endeavor. Kasan
+stack memory access instrumentation includes special prologue and epilogue
+to mark/remove red zones in shadow memory between stack variables. For
+that reason there is always a race between a task reading value in other
+task's stack and that other task returning from a function and entering
+another one generating different red zones pattern.
+
+To avoid kasan reports simply perform uninstrumented memory reads.
+
+Acked-by: Ilya Leoshkevich <iii@linux.ibm.com>
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ arch/s390/kernel/process.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/s390/kernel/process.c b/arch/s390/kernel/process.c
+index 9f2727bf3cbe..b0afec673f77 100644
+--- a/arch/s390/kernel/process.c
++++ b/arch/s390/kernel/process.c
+@@ -196,12 +196,12 @@ unsigned long get_wchan(struct task_struct *p)
+ 		goto out;
+ 	}
+ 	for (count = 0; count < 16; count++) {
+-		sf = (struct stack_frame *) sf->back_chain;
++		sf = (struct stack_frame *)READ_ONCE_NOCHECK(sf->back_chain);
+ 		if (sf <= low || sf > high) {
+ 			return_address = 0;
+ 			goto out;
+ 		}
+-		return_address = sf->gprs[8];
++		return_address = READ_ONCE_NOCHECK(sf->gprs[8]);
+ 		if (!in_sched_functions(return_address))
+ 			goto out;
+ 	}
+

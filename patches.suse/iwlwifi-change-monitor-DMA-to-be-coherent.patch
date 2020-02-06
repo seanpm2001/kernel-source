@@ -1,0 +1,174 @@
+From c5f97542aa06bd6ef34a87f0c8bcb924899cf861 Mon Sep 17 00:00:00 2001
+From: Shahar S Matityahu <shahar.s.matityahu@intel.com>
+Date: Thu, 3 May 2018 09:41:11 +0300
+Subject: [PATCH] iwlwifi: change monitor DMA to be coherent
+Git-commit: c5f97542aa06bd6ef34a87f0c8bcb924899cf861
+Patch-mainline: v4.20-rc1
+References: bsc#1161243
+
+Allow access to the memory by the host and the device simultaneously.
+This will be needed in some future patches.
+
+Signed-off-by: Shahar S Matityahu <shahar.s.matityahu@intel.com>
+Signed-off-by: Luca Coelho <luciano.coelho@intel.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/net/wireless/intel/iwlwifi/pcie/internal.h |  4 +-
+ drivers/net/wireless/intel/iwlwifi/pcie/trans.c    | 62 +++++++---------------
+ 2 files changed, 21 insertions(+), 45 deletions(-)
+
+diff --git a/drivers/net/wireless/intel/iwlwifi/pcie/internal.h b/drivers/net/wireless/intel/iwlwifi/pcie/internal.h
+index a7896fcc44cf..98d8da03ccfc 100644
+--- a/drivers/net/wireless/intel/iwlwifi/pcie/internal.h
++++ b/drivers/net/wireless/intel/iwlwifi/pcie/internal.h
+@@ -464,7 +464,7 @@ struct iwl_self_init_dram {
+  * @mutex: to protect stop_device / start_fw / start_hw
+  * @cmd_in_flight: true when we have a host command in flight
+  * @fw_mon_phys: physical address of the buffer for the firmware monitor
+- * @fw_mon_page: points to the first page of the buffer for the firmware monitor
++ * @fw_mon_cpu_addr: address of the buffer for the firmware monitor
+  * @fw_mon_size: size of the buffer for the firmware monitor
+  * @msix_entries: array of MSI-X entries
+  * @msix_enabled: true if managed to enable MSI-X
+@@ -554,7 +554,7 @@ struct iwl_trans_pcie {
+ 	bool ref_cmd_in_flight;
+ 
+ 	dma_addr_t fw_mon_phys;
+-	struct page *fw_mon_page;
++	void *fw_mon_cpu_addr;
+ 	u32 fw_mon_size;
+ 
+ 	struct msix_entry msix_entries[IWL_MAX_RX_HW_QUEUES];
+diff --git a/drivers/net/wireless/intel/iwlwifi/pcie/trans.c b/drivers/net/wireless/intel/iwlwifi/pcie/trans.c
+index 8925b10217d7..d8aca7291614 100644
+--- a/drivers/net/wireless/intel/iwlwifi/pcie/trans.c
++++ b/drivers/net/wireless/intel/iwlwifi/pcie/trans.c
+@@ -187,14 +187,13 @@ static void iwl_pcie_free_fw_monitor(struct iwl_trans *trans)
+ {
+ 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
+ 
+-	if (!trans_pcie->fw_mon_page)
++	if (!trans_pcie->fw_mon_cpu_addr)
+ 		return;
+ 
+-	dma_unmap_page(trans->dev, trans_pcie->fw_mon_phys,
+-		       trans_pcie->fw_mon_size, DMA_FROM_DEVICE);
+-	__free_pages(trans_pcie->fw_mon_page,
+-		     get_order(trans_pcie->fw_mon_size));
+-	trans_pcie->fw_mon_page = NULL;
++	dma_free_coherent(trans->dev, trans_pcie->fw_mon_size,
++			  trans_pcie->fw_mon_cpu_addr,
++			  trans_pcie->fw_mon_phys);
++	trans_pcie->fw_mon_cpu_addr = NULL;
+ 	trans_pcie->fw_mon_phys = 0;
+ 	trans_pcie->fw_mon_size = 0;
+ }
+@@ -202,7 +201,7 @@ static void iwl_pcie_free_fw_monitor(struct iwl_trans *trans)
+ void iwl_pcie_alloc_fw_monitor(struct iwl_trans *trans, u8 max_power)
+ {
+ 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
+-	struct page *page = NULL;
++	void *cpu_addr = NULL;
+ 	dma_addr_t phys;
+ 	u32 size = 0;
+ 	u8 power;
+@@ -219,38 +218,25 @@ void iwl_pcie_alloc_fw_monitor(struct iwl_trans *trans, u8 max_power)
+ 		 max_power))
+ 		return;
+ 
+-	if (trans_pcie->fw_mon_page) {
+-		dma_sync_single_for_device(trans->dev, trans_pcie->fw_mon_phys,
+-					   trans_pcie->fw_mon_size,
+-					   DMA_FROM_DEVICE);
++	if (trans_pcie->fw_mon_cpu_addr)
+ 		return;
+-	}
+ 
+ 	phys = 0;
+ 	for (power = max_power; power >= 11; power--) {
+-		int order;
+-
+ 		size = BIT(power);
+-		order = get_order(size);
+-		page = alloc_pages(__GFP_COMP | __GFP_NOWARN | __GFP_ZERO,
+-				   order);
+-		if (!page)
++		cpu_addr = dma_alloc_coherent(trans->dev, size, &phys,
++					      GFP_KERNEL | __GFP_NOWARN |
++					      __GFP_ZERO | __GFP_COMP);
++		if (!cpu_addr)
+ 			continue;
+ 
+-		phys = dma_map_page(trans->dev, page, 0, PAGE_SIZE << order,
+-				    DMA_FROM_DEVICE);
+-		if (dma_mapping_error(trans->dev, phys)) {
+-			__free_pages(page, order);
+-			page = NULL;
+-			continue;
+-		}
+ 		IWL_INFO(trans,
+-			 "Allocated 0x%08x bytes (order %d) for firmware monitor.\n",
+-			 size, order);
++			 "Allocated 0x%08x bytes for firmware monitor.\n",
++			 size);
+ 		break;
+ 	}
+ 
+-	if (WARN_ON_ONCE(!page))
++	if (WARN_ON_ONCE(!cpu_addr))
+ 		return;
+ 
+ 	if (power != max_power)
+@@ -259,7 +245,7 @@ void iwl_pcie_alloc_fw_monitor(struct iwl_trans *trans, u8 max_power)
+ 			(unsigned long)BIT(power - 10),
+ 			(unsigned long)BIT(max_power - 10));
+ 
+-	trans_pcie->fw_mon_page = page;
++	trans_pcie->fw_mon_cpu_addr = cpu_addr;
+ 	trans_pcie->fw_mon_phys = phys;
+ 	trans_pcie->fw_mon_size = size;
+ }
+@@ -2863,7 +2849,7 @@ iwl_trans_pcie_dump_monitor(struct iwl_trans *trans,
+ 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
+ 	u32 len = 0;
+ 
+-	if ((trans_pcie->fw_mon_page &&
++	if ((trans_pcie->fw_mon_cpu_addr &&
+ 	     trans->cfg->device_family == IWL_DEVICE_FAMILY_7000) ||
+ 	    trans->dbg_dest_tlv) {
+ 		struct iwl_fw_error_dump_fw_mon *fw_mon_data;
+@@ -2891,19 +2877,9 @@ iwl_trans_pcie_dump_monitor(struct iwl_trans *trans,
+ 			cpu_to_le32(iwl_read_prph(trans, base));
+ 
+ 		len += sizeof(**data) + sizeof(*fw_mon_data);
+-		if (trans_pcie->fw_mon_page) {
+-			/*
+-			 * The firmware is now asserted, it won't write anything
+-			 * to the buffer. CPU can take ownership to fetch the
+-			 * data. The buffer will be handed back to the device
+-			 * before the firmware will be restarted.
+-			 */
+-			dma_sync_single_for_cpu(trans->dev,
+-						trans_pcie->fw_mon_phys,
+-						trans_pcie->fw_mon_size,
+-						DMA_FROM_DEVICE);
++		if (trans_pcie->fw_mon_cpu_addr) {
+ 			memcpy(fw_mon_data->data,
+-			       page_address(trans_pcie->fw_mon_page),
++			       trans_pcie->fw_mon_cpu_addr,
+ 			       trans_pcie->fw_mon_size);
+ 
+ 			monitor_len = trans_pcie->fw_mon_size;
+@@ -2966,7 +2942,7 @@ static struct iwl_trans_dump_data
+ 		cmdq->n_window * (sizeof(*txcmd) + TFD_MAX_PAYLOAD_SIZE);
+ 
+ 	/* FW monitor */
+-	if (trans_pcie->fw_mon_page) {
++	if (trans_pcie->fw_mon_cpu_addr) {
+ 		len += sizeof(*data) + sizeof(struct iwl_fw_error_dump_fw_mon) +
+ 		       trans_pcie->fw_mon_size;
+ 		monitor_len = trans_pcie->fw_mon_size;
+-- 
+2.16.4
+

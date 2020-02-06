@@ -1,0 +1,51 @@
+From e2ccd361ef06d18eaba488a568ed4d3664f2d4a7 Mon Sep 17 00:00:00 2001
+From: David Sterba <dsterba@suse.com>
+Date: Wed, 20 Mar 2019 16:22:58 +0100
+Git-commit: e2ccd361ef06d18eaba488a568ed4d3664f2d4a7
+References: dependency for bsc#1157692
+Patch-mainline: v5.2
+Subject: [PATCH 18/22] btrfs: tree-checker: get fs_info from eb in check_leaf
+
+We can read fs_info from extent buffer and can drop it from the
+parameters.
+
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/tree-checker.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/fs/btrfs/tree-checker.c b/fs/btrfs/tree-checker.c
+index 8cae930a666d..65e2906d133e 100644
+--- a/fs/btrfs/tree-checker.c
++++ b/fs/btrfs/tree-checker.c
+@@ -807,9 +807,9 @@ static int check_leaf_item(struct extent_buffer *leaf,
+ 	return ret;
+ }
+ 
+-static int check_leaf(struct btrfs_fs_info *fs_info, struct extent_buffer *leaf,
+-		      bool check_item_data)
++static int check_leaf(struct extent_buffer *leaf, bool check_item_data)
+ {
++	struct btrfs_fs_info *fs_info = leaf->fs_info;
+ 	/* No valid key type is 0, so all key should be larger than this key */
+ 	struct btrfs_key prev_key = {0, 0, 0};
+ 	struct btrfs_key key;
+@@ -967,13 +967,13 @@ static int check_leaf(struct btrfs_fs_info *fs_info, struct extent_buffer *leaf,
+ int btrfs_check_leaf_full(struct btrfs_fs_info *fs_info,
+ 			  struct extent_buffer *leaf)
+ {
+-	return check_leaf(fs_info, leaf, true);
++	return check_leaf(leaf, true);
+ }
+ 
+ int btrfs_check_leaf_relaxed(struct btrfs_fs_info *fs_info,
+ 			     struct extent_buffer *leaf)
+ {
+-	return check_leaf(fs_info, leaf, false);
++	return check_leaf(leaf, false);
+ }
+ 
+ int btrfs_check_node(struct btrfs_fs_info *fs_info, struct extent_buffer *node)
+-- 
+2.24.1
+

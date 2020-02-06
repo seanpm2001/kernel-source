@@ -1,0 +1,158 @@
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Thu, 25 Apr 2019 11:44:54 +0200
+Subject: tracing: Cleanup stack trace code
+Git-commit: 3d9a8072915366b5932beeed97f158f8d4955768 (partial)
+Patch-mainline: v5.2-rc1
+References: jsc#SLE-11178
+
+- Remove the extra array member of stack_dump_trace[] along with the
+  ARRAY_SIZE - 1 initialization for struct stack_trace :: max_entries.
+
+  Both are historical leftovers of no value. The stack tracer never exceeds
+  the array and there is no extra storage requirement either.
+
+- Make variables which are only used in trace_stack.c static.
+
+- Simplify the enable/disable logic.
+
+- Rename stack_trace_print() as it's using the stack_trace_ namespace. Free
+  the name up for stack trace related functions.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Reviewed-by: Steven Rostedt <rostedt@goodmis.org>
+Reviewed-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Cc: Andy Lutomirski <luto@kernel.org>
+Cc: Alexander Potapenko <glider@google.com>
+Cc: Alexey Dobriyan <adobriyan@gmail.com>
+Cc: Andrew Morton <akpm@linux-foundation.org>
+Cc: Christoph Lameter <cl@linux.com>
+Cc: Pekka Enberg <penberg@kernel.org>
+Cc: linux-mm@kvack.org
+Cc: David Rientjes <rientjes@google.com>
+Cc: Catalin Marinas <catalin.marinas@arm.com>
+Cc: Dmitry Vyukov <dvyukov@google.com>
+Cc: Andrey Ryabinin <aryabinin@virtuozzo.com>
+Cc: kasan-dev@googlegroups.com
+Cc: Mike Rapoport <rppt@linux.vnet.ibm.com>
+Cc: Akinobu Mita <akinobu.mita@gmail.com>
+Cc: Christoph Hellwig <hch@lst.de>
+Cc: iommu@lists.linux-foundation.org
+Cc: Robin Murphy <robin.murphy@arm.com>
+Cc: Marek Szyprowski <m.szyprowski@samsung.com>
+Cc: Johannes Thumshirn <jthumshirn@suse.de>
+Cc: David Sterba <dsterba@suse.com>
+Cc: Chris Mason <clm@fb.com>
+Cc: Josef Bacik <josef@toxicpanda.com>
+Cc: linux-btrfs@vger.kernel.org
+Cc: dm-devel@redhat.com
+Cc: Mike Snitzer <snitzer@redhat.com>
+Cc: Alasdair Kergon <agk@redhat.com>
+Cc: Daniel Vetter <daniel@ffwll.ch>
+Cc: intel-gfx@lists.freedesktop.org
+Cc: Joonas Lahtinen <joonas.lahtinen@linux.intel.com>
+Cc: Maarten Lankhorst <maarten.lankhorst@linux.intel.com>
+Cc: dri-devel@lists.freedesktop.org
+Cc: David Airlie <airlied@linux.ie>
+Cc: Jani Nikula <jani.nikula@linux.intel.com>
+Cc: Rodrigo Vivi <rodrigo.vivi@intel.com>
+Cc: Tom Zanussi <tom.zanussi@linux.intel.com>
+Cc: Miroslav Benes <mbenes@suse.cz>
+Cc: linux-arch@vger.kernel.org
+Link: https://lkml.kernel.org/r/20190425094801.230654524@linutronix.de
+[ mb: only necessary things backported, almost no cleanups ]
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ include/linux/ftrace.h     |   18 ++++--------------
+ kernel/trace/trace_stack.c |   32 +++++++++++---------------------
+ 2 files changed, 15 insertions(+), 35 deletions(-)
+
+--- a/include/linux/ftrace.h
++++ b/include/linux/ftrace.h
+@@ -271,21 +271,11 @@ static inline void ftrace_free_init_mem(
+ 
+ #ifdef CONFIG_STACK_TRACER
+ 
+-#define STACK_TRACE_ENTRIES 500
+-
+-struct stack_trace;
+-
+-extern unsigned stack_trace_index[];
+-extern struct stack_trace stack_trace_max;
+-extern unsigned long stack_trace_max_size;
+-extern arch_spinlock_t stack_trace_max_lock;
+-
+ extern int stack_tracer_enabled;
+-void stack_trace_print(void);
+-int
+-stack_trace_sysctl(struct ctl_table *table, int write,
+-		   void __user *buffer, size_t *lenp,
+-		   loff_t *ppos);
++
++int stack_trace_sysctl(struct ctl_table *table, int write,
++		       void __user *buffer, size_t *lenp,
++		       loff_t *ppos);
+ 
+ /* DO NOT MODIFY THIS VARIABLE DIRECTLY! */
+ DECLARE_PER_CPU(int, disable_stack_tracer);
+--- a/kernel/trace/trace_stack.c
++++ b/kernel/trace/trace_stack.c
+@@ -17,9 +17,11 @@
+ 
+ #include "trace.h"
+ 
++#define STACK_TRACE_ENTRIES 500
++
+ static unsigned long stack_dump_trace[STACK_TRACE_ENTRIES+1] =
+ 	 { [0 ... (STACK_TRACE_ENTRIES)] = ULONG_MAX };
+-unsigned stack_trace_index[STACK_TRACE_ENTRIES];
++static unsigned stack_trace_index[STACK_TRACE_ENTRIES];
+ 
+ /*
+  * Reserve one entry for the passed in ip. This will allow
+@@ -31,8 +33,8 @@ struct stack_trace stack_trace_max = {
+ 	.entries		= &stack_dump_trace[0],
+ };
+ 
+-unsigned long stack_trace_max_size;
+-arch_spinlock_t stack_trace_max_lock =
++static unsigned long stack_trace_max_size;
++static arch_spinlock_t stack_trace_max_lock =
+ 	(arch_spinlock_t)__ARCH_SPIN_LOCK_UNLOCKED;
+ 
+ DEFINE_PER_CPU(int, disable_stack_tracer);
+@@ -41,7 +43,7 @@ static DEFINE_MUTEX(stack_sysctl_mutex);
+ int stack_tracer_enabled;
+ static int last_stack_tracer_enabled;
+ 
+-void stack_trace_print(void)
++static void print_max_stack(void)
+ {
+ 	long i;
+ 	int size;
+@@ -64,16 +66,7 @@ void stack_trace_print(void)
+ 	}
+ }
+ 
+-/*
+- * When arch-specific code overrides this function, the following
+- * data should be filled up, assuming stack_trace_max_lock is held to
+- * prevent concurrent updates.
+- *     stack_trace_index[]
+- *     stack_trace_max
+- *     stack_trace_max_size
+- */
+-void __weak
+-check_stack(unsigned long ip, unsigned long *stack)
++static void check_stack(unsigned long ip, unsigned long *stack)
+ {
+ 	unsigned long this_size, flags; unsigned long *p, *top, *start;
+ 	static int tracer_frame;
+@@ -186,7 +179,7 @@ check_stack(unsigned long ip, unsigned l
+ 		stack_dump_trace[x] = ULONG_MAX;
+ 
+ 	if (task_stack_end_corrupted(current)) {
+-		stack_trace_print();
++		print_max_stack();
+ 		BUG();
+ 	}
+ 

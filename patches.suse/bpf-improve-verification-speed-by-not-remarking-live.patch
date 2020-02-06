@@ -1,0 +1,44 @@
+From: Alexei Starovoitov <ast@kernel.org>
+Date: Mon, 1 Apr 2019 21:27:42 -0700
+Subject: bpf: improve verification speed by not remarking live_read
+Patch-mainline: v5.2
+Git-commit: 25af32dad8047d180e70e233c85b909dd6587cc5
+References: bsc#1160618
+
+With large verifier speed improvement brought by the previous patch
+mark_reg_read() becomes the hottest function during verification.
+On a typical program it consumes 40% of cpu.
+mark_reg_read() walks parentage chain of registers to mark parents as LIVE_READ.
+Once the register is marked there is no need to remark it again in the future.
+Hence stop walking the chain once first LIVE_READ is seen.
+This optimization drops mark_reg_read() time from 40% of cpu to <1%
+and overall 2x improvement of verification speed.
+For some programs the longest_mark_read_walk counter improves from ~500 to ~5
+
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Reviewed-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Reviewed-by: Edward Cree <ecree@solarflare.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Acked-by: Michal Rostecki <mrostecki@suse.de>
+---
+ kernel/bpf/verifier.c |    9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -925,6 +925,15 @@ static int mark_reg_read(struct bpf_veri
+ 				parent->var_off.value, parent->off);
+ 			return -EFAULT;
+ 		}
++		if (parent->live & REG_LIVE_READ)
++			/* The parentage chain never changes and
++			 * this parent was already marked as LIVE_READ.
++			 * There is no need to keep walking the chain again and
++			 * keep re-marking all parents as LIVE_READ.
++			 * This case happens when the same register is read
++			 * multiple times without writes into it in-between.
++			 */
++			break;
+ 		/* ... then we depend on parent's value */
+ 		parent->live |= REG_LIVE_READ;
+ 		state = parent;

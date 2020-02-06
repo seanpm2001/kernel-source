@@ -1,0 +1,36 @@
+From: Vasily Gorbik <gor@linux.ibm.com>
+Date: Mon, 8 Jul 2019 14:24:38 +0200
+Subject: s390/unwind: avoid int overflow in outside_of_stack
+Git-commit: 9a159190414d461fdac7ae5bb749c2d532b35419
+Patch-mainline: v5.3-rc1
+References: jsc#SLE-11178
+
+When current task is interrupted in-between stack frame allocation
+and backchain write instructions new stack frame backchain pointer
+is left uninitialized. That invalid backchain value is passed into
+outside_of_stack for sanity check. Make sure int overflow does not happen
+by subtracting stack_frame size from the stack "end" rather than adding
+it to "random" backchain value.
+
+Fixes: 41b0474c1b1c ("s390/unwind: introduce stack unwind API")
+Reviewed-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ arch/s390/kernel/unwind_bc.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/s390/kernel/unwind_bc.c b/arch/s390/kernel/unwind_bc.c
+index 3ce8a0808059..8fc9daae47a2 100644
+--- a/arch/s390/kernel/unwind_bc.c
++++ b/arch/s390/kernel/unwind_bc.c
+@@ -20,7 +20,7 @@ EXPORT_SYMBOL_GPL(unwind_get_return_address);
+ static bool outside_of_stack(struct unwind_state *state, unsigned long sp)
+ {
+ 	return (sp <= state->sp) ||
+-		(sp + sizeof(struct stack_frame) > state->stack_info.end);
++		(sp > state->stack_info.end - sizeof(struct stack_frame));
+ }
+ 
+ static bool update_stack_info(struct unwind_state *state, unsigned long sp)
+

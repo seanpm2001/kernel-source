@@ -1,0 +1,972 @@
+From: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Date: Mon, 28 Jan 2019 08:33:08 +0100
+Subject: s390/unwind: introduce stack unwind API
+Git-commit: 78c98f9074135d3dab4e39544e0a537f92388fce
+Patch-mainline: v5.2-rc1
+References: jsc#SLE-11178
+
+Rework the dump_trace() stack unwinder interface to support different
+unwinding algorithms. The new interface looks like this:
+
+	struct unwind_state state;
+	unwind_for_each_frame(&state, task, regs, start_stack)
+		do_something(state.sp, state.ip, state.reliable);
+
+The unwind_bc.c file contains the implementation for the classic
+back-chain unwinder.
+
+One positive side effect of the new code is it now handles ftraced
+functions gracefully. It prints the real name of the return function
+instead of 'return_to_handler'.
+
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ arch/s390/include/asm/processor.h  |   72 ---------------
+ arch/s390/include/asm/stacktrace.h |  114 ++++++++++++++++++++++++
+ arch/s390/include/asm/unwind.h     |  101 +++++++++++++++++++++
+ arch/s390/kernel/Makefile          |    3 
+ arch/s390/kernel/asm-offsets.c     |    1 
+ arch/s390/kernel/dumpstack.c       |  175 +++++++++++++++++++++----------------
+ arch/s390/kernel/irq.c             |    1 
+ arch/s390/kernel/machine_kexec.c   |    1 
+ arch/s390/kernel/perf_event.c      |   16 +--
+ arch/s390/kernel/process.c         |    1 
+ arch/s390/kernel/setup.c           |    1 
+ arch/s390/kernel/smp.c             |    1 
+ arch/s390/kernel/stacktrace.c      |   69 ++++++--------
+ arch/s390/kernel/unwind_bc.c       |  155 ++++++++++++++++++++++++++++++++
+ arch/s390/mm/maccess.c             |    1 
+ arch/s390/oprofile/init.c          |   22 +---
+ 16 files changed, 526 insertions(+), 208 deletions(-)
+
+--- a/arch/s390/include/asm/processor.h
++++ b/arch/s390/include/asm/processor.h
+@@ -161,25 +161,6 @@ struct thread_struct {
+ 
+ typedef struct thread_struct thread_struct;
+ 
+-/*
+- * Stack layout of a C stack frame.
+- */
+-#ifndef __PACK_STACK
+-struct stack_frame {
+-	unsigned long back_chain;
+-	unsigned long empty1[5];
+-	unsigned long gprs[10];
+-	unsigned int  empty2[8];
+-};
+-#else
+-struct stack_frame {
+-	unsigned long empty1[5];
+-	unsigned int  empty2[8];
+-	unsigned long gprs[10];
+-	unsigned long back_chain;
+-};
+-#endif
+-
+ #define ARCH_MIN_TASKALIGN	8
+ 
+ #define INIT_THREAD {							\
+@@ -211,11 +192,7 @@ struct mm_struct;
+ struct seq_file;
+ struct pt_regs;
+ 
+-typedef int (*dump_trace_func_t)(void *data, unsigned long address, int reliable);
+-void dump_trace(dump_trace_func_t func, void *data,
+-		struct task_struct *task, unsigned long sp);
+ void show_registers(struct pt_regs *regs);
+-
+ void show_cacheinfo(struct seq_file *m);
+ 
+ /* Free all resources held by a thread. */
+@@ -249,55 +226,6 @@ static inline unsigned short stap(void)
+ 	return cpu_address;
+ }
+ 
+-#define CALL_ARGS_0()							\
+-	register unsigned long r2 asm("2")
+-#define CALL_ARGS_1(arg1)						\
+-	register unsigned long r2 asm("2") = (unsigned long)(arg1)
+-#define CALL_ARGS_2(arg1, arg2)						\
+-	CALL_ARGS_1(arg1);						\
+-	register unsigned long r3 asm("3") = (unsigned long)(arg2)
+-#define CALL_ARGS_3(arg1, arg2, arg3)					\
+-	CALL_ARGS_2(arg1, arg2);					\
+-	register unsigned long r4 asm("4") = (unsigned long)(arg3)
+-#define CALL_ARGS_4(arg1, arg2, arg3, arg4)				\
+-	CALL_ARGS_3(arg1, arg2, arg3);					\
+-	register unsigned long r4 asm("5") = (unsigned long)(arg4)
+-#define CALL_ARGS_5(arg1, arg2, arg3, arg4, arg5)			\
+-	CALL_ARGS_4(arg1, arg2, arg3, arg4);				\
+-	register unsigned long r4 asm("6") = (unsigned long)(arg5)
+-
+-#define CALL_FMT_0 "=&d" (r2) :
+-#define CALL_FMT_1 "+&d" (r2) :
+-#define CALL_FMT_2 CALL_FMT_1 "d" (r3),
+-#define CALL_FMT_3 CALL_FMT_2 "d" (r4),
+-#define CALL_FMT_4 CALL_FMT_3 "d" (r5),
+-#define CALL_FMT_5 CALL_FMT_4 "d" (r6),
+-
+-#define CALL_CLOBBER_5 "0", "1", "14", "cc", "memory"
+-#define CALL_CLOBBER_4 CALL_CLOBBER_5
+-#define CALL_CLOBBER_3 CALL_CLOBBER_4, "5"
+-#define CALL_CLOBBER_2 CALL_CLOBBER_3, "4"
+-#define CALL_CLOBBER_1 CALL_CLOBBER_2, "3"
+-#define CALL_CLOBBER_0 CALL_CLOBBER_1
+-
+-#define CALL_ON_STACK(fn, stack, nr, args...)				\
+-({									\
+-	CALL_ARGS_##nr(args);						\
+-	unsigned long prev;						\
+-									\
+-	asm volatile(							\
+-		"	la	%[_prev],0(15)\n"			\
+-		"	la	15,0(%[_stack])\n"			\
+-		"	stg	%[_prev],%[_bc](15)\n"			\
+-		"	brasl	14,%[_fn]\n"				\
+-		"	la	15,0(%[_prev])\n"			\
+-		: [_prev] "=&a" (prev), CALL_FMT_##nr			\
+-		  [_stack] "a" (stack),					\
+-		  [_bc] "i" (offsetof(struct stack_frame, back_chain)),	\
+-		  [_fn] "X" (fn) : CALL_CLOBBER_##nr);			\
+-	r2;								\
+-})
+-
+ /*
+  * Give up the time slice of the virtual PU.
+  */
+--- /dev/null
++++ b/arch/s390/include/asm/stacktrace.h
+@@ -0,0 +1,114 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++#ifndef _ASM_S390_STACKTRACE_H
++#define _ASM_S390_STACKTRACE_H
++
++#include <linux/uaccess.h>
++#include <linux/ptrace.h>
++#include <asm/switch_to.h>
++
++enum stack_type {
++	STACK_TYPE_UNKNOWN,
++	STACK_TYPE_TASK,
++	STACK_TYPE_IRQ,
++	STACK_TYPE_NODAT,
++	STACK_TYPE_RESTART,
++};
++
++struct stack_info {
++	enum stack_type type;
++	unsigned long begin, end;
++};
++
++const char *stack_type_name(enum stack_type type);
++int get_stack_info(unsigned long sp, struct task_struct *task,
++		   struct stack_info *info, unsigned long *visit_mask);
++
++static inline bool on_stack(struct stack_info *info,
++			    unsigned long addr, size_t len)
++{
++	if (info->type == STACK_TYPE_UNKNOWN)
++		return false;
++	if (addr + len < addr)
++		return false;
++	return addr >= info->begin && addr + len < info->end;
++}
++
++static inline unsigned long get_stack_pointer(struct task_struct *task,
++					      struct pt_regs *regs)
++{
++	if (regs)
++		return (unsigned long) kernel_stack_pointer(regs);
++	if (task == current)
++		return current_stack_pointer();
++	return (unsigned long) task->thread.ksp;
++}
++
++/*
++ * Stack layout of a C stack frame.
++ */
++#ifndef __PACK_STACK
++struct stack_frame {
++	unsigned long back_chain;
++	unsigned long empty1[5];
++	unsigned long gprs[10];
++	unsigned int  empty2[8];
++};
++#else
++struct stack_frame {
++	unsigned long empty1[5];
++	unsigned int  empty2[8];
++	unsigned long gprs[10];
++	unsigned long back_chain;
++};
++#endif
++
++#define CALL_ARGS_0()							\
++	register unsigned long r2 asm("2")
++#define CALL_ARGS_1(arg1)						\
++	register unsigned long r2 asm("2") = (unsigned long)(arg1)
++#define CALL_ARGS_2(arg1, arg2)						\
++	CALL_ARGS_1(arg1);						\
++	register unsigned long r3 asm("3") = (unsigned long)(arg2)
++#define CALL_ARGS_3(arg1, arg2, arg3)					\
++	CALL_ARGS_2(arg1, arg2);					\
++	register unsigned long r4 asm("4") = (unsigned long)(arg3)
++#define CALL_ARGS_4(arg1, arg2, arg3, arg4)				\
++	CALL_ARGS_3(arg1, arg2, arg3);					\
++	register unsigned long r4 asm("5") = (unsigned long)(arg4)
++#define CALL_ARGS_5(arg1, arg2, arg3, arg4, arg5)			\
++	CALL_ARGS_4(arg1, arg2, arg3, arg4);				\
++	register unsigned long r4 asm("6") = (unsigned long)(arg5)
++
++#define CALL_FMT_0 "=&d" (r2) :
++#define CALL_FMT_1 "+&d" (r2) :
++#define CALL_FMT_2 CALL_FMT_1 "d" (r3),
++#define CALL_FMT_3 CALL_FMT_2 "d" (r4),
++#define CALL_FMT_4 CALL_FMT_3 "d" (r5),
++#define CALL_FMT_5 CALL_FMT_4 "d" (r6),
++
++#define CALL_CLOBBER_5 "0", "1", "14", "cc", "memory"
++#define CALL_CLOBBER_4 CALL_CLOBBER_5
++#define CALL_CLOBBER_3 CALL_CLOBBER_4, "5"
++#define CALL_CLOBBER_2 CALL_CLOBBER_3, "4"
++#define CALL_CLOBBER_1 CALL_CLOBBER_2, "3"
++#define CALL_CLOBBER_0 CALL_CLOBBER_1
++
++#define CALL_ON_STACK(fn, stack, nr, args...)				\
++({									\
++	CALL_ARGS_##nr(args);						\
++	unsigned long prev;						\
++									\
++	asm volatile(							\
++		"	la	%[_prev],0(15)\n"			\
++		"	la	15,0(%[_stack])\n"			\
++		"	stg	%[_prev],%[_bc](15)\n"			\
++		"	brasl	14,%[_fn]\n"				\
++		"	la	15,0(%[_prev])\n"			\
++		: [_prev] "=&a" (prev), CALL_FMT_##nr			\
++		  [_stack] "a" (stack),					\
++		  [_bc] "i" (offsetof(struct stack_frame, back_chain)),	\
++		  [_fn] "X" (fn) : CALL_CLOBBER_##nr);			\
++	r2;								\
++})
++
++#endif /* _ASM_S390_STACKTRACE_H */
+--- /dev/null
++++ b/arch/s390/include/asm/unwind.h
+@@ -0,0 +1,101 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++#ifndef _ASM_S390_UNWIND_H
++#define _ASM_S390_UNWIND_H
++
++#include <linux/sched.h>
++#include <linux/ftrace.h>
++#include <asm/ptrace.h>
++#include <asm/stacktrace.h>
++
++/*
++ * To use the stack unwinder it has to be initialized with unwind_start.
++ * There four combinations for task and regs:
++ * 1) task==NULL, regs==NULL: the unwind starts for the task that is currently
++ *    running, sp/ip picked up from the CPU registers
++ * 2) task==NULL, regs!=NULL: the unwind starts from the sp/ip found in
++ *    the struct pt_regs of an interrupt frame for the current task
++ * 3) task!=NULL, regs==NULL: the unwind starts for an inactive task with
++ *    the sp picked up from task->thread.ksp and the ip picked up from the
++ *    return address stored by __switch_to
++ * 4) task!=NULL, regs!=NULL: the sp/ip are picked up from the interrupt
++ *    frame 'regs' of a inactive task
++ * If 'first_frame' is not zero unwind_start skips unwind frames until it
++ * reaches the specified stack pointer.
++ * The end of the unwinding is indicated with unwind_done, this can be true
++ * right after unwind_start, e.g. with first_frame!=0 that can not be found.
++ * unwind_next_frame skips to the next frame.
++ * Once the unwind is completed unwind_error() can be used to check if there
++ * has been a situation where the unwinder could not correctly understand
++ * the tasks call chain.
++ */
++
++struct unwind_state {
++	struct stack_info stack_info;
++	unsigned long stack_mask;
++	struct task_struct *task;
++	struct pt_regs *regs;
++	unsigned long sp, ip;
++	int graph_idx;
++	bool reliable;
++	bool error;
++};
++
++void __unwind_start(struct unwind_state *state, struct task_struct *task,
++		    struct pt_regs *regs, unsigned long first_frame);
++bool unwind_next_frame(struct unwind_state *state);
++unsigned long unwind_get_return_address(struct unwind_state *state);
++
++static inline bool unwind_done(struct unwind_state *state)
++{
++	return state->stack_info.type == STACK_TYPE_UNKNOWN;
++}
++
++static inline bool unwind_error(struct unwind_state *state)
++{
++	return state->error;
++}
++
++static inline void unwind_start(struct unwind_state *state,
++				struct task_struct *task,
++				struct pt_regs *regs,
++				unsigned long sp)
++{
++	sp = sp ? : get_stack_pointer(task, regs);
++	__unwind_start(state, task, regs, sp);
++}
++
++static inline struct pt_regs *unwind_get_entry_regs(struct unwind_state *state)
++{
++	return unwind_done(state) ? NULL : state->regs;
++}
++
++#define unwind_for_each_frame(state, task, regs, first_frame)	\
++	for (unwind_start(state, task, regs, first_frame);	\
++	     !unwind_done(state);				\
++	     unwind_next_frame(state))
++
++static inline void unwind_init(void) {}
++static inline void unwind_module_init(struct module *mod, void *orc_ip,
++				      size_t orc_ip_size, void *orc,
++				      size_t orc_size) {}
++
++#ifdef CONFIG_KASAN
++/*
++ * This disables KASAN checking when reading a value from another task's stack,
++ * since the other task could be running on another CPU and could have poisoned
++ * the stack in the meantime.
++ */
++#define READ_ONCE_TASK_STACK(task, x)			\
++({							\
++	unsigned long val;				\
++	if (task == current)				\
++		val = READ_ONCE(x);			\
++	else						\
++		val = READ_ONCE_NOCHECK(x);		\
++	val;						\
++})
++#else
++#define READ_ONCE_TASK_STACK(task, x) READ_ONCE(x)
++#endif
++
++#endif /* _ASM_S390_UNWIND_H */
+--- a/arch/s390/kernel/Makefile
++++ b/arch/s390/kernel/Makefile
+@@ -46,6 +46,7 @@ CFLAGS_smp.o		:= -Wno-nonnull
+ #
+ CFLAGS_stacktrace.o	+= -fno-optimize-sibling-calls
+ CFLAGS_dumpstack.o	+= -fno-optimize-sibling-calls
++CFLAGS_unwind_bc.o	+= -fno-optimize-sibling-calls
+ 
+ #
+ # Pass UTS_MACHINE for user_regset definition
+@@ -58,7 +59,7 @@ obj-y	+= debug.o irq.o ipl.o dis.o diag.
+ obj-y	+= sysinfo.o jump_label.o lgr.o os_info.o machine_kexec.o pgm_check.o
+ obj-y	+= runtime_instr.o cache.o fpu.o dumpstack.o guarded_storage.o sthyi.o
+ obj-y	+= entry.o reipl.o relocate_kernel.o kdebugfs.o alternative.o
+-obj-y	+= nospec-branch.o
++obj-y	+= nospec-branch.o unwind_bc.o
+ 
+ extra-y				+= head.o head64.o vmlinux.lds
+ 
+--- a/arch/s390/kernel/asm-offsets.c
++++ b/arch/s390/kernel/asm-offsets.c
+@@ -13,6 +13,7 @@
+ #include <asm/vdso.h>
+ #include <asm/pgtable.h>
+ #include <asm/gmap.h>
++#include <asm/stacktrace.h>
+ 
+ /*
+  * Make sure that the compiler is new enough. We want a compiler that
+--- a/arch/s390/kernel/dumpstack.c
++++ b/arch/s390/kernel/dumpstack.c
+@@ -20,93 +20,124 @@
+ #include <asm/debug.h>
+ #include <asm/dis.h>
+ #include <asm/ipl.h>
++#include <asm/unwind.h>
+ 
+-/*
+- * For dump_trace we have tree different stack to consider:
+- *   - the panic stack which is used if the kernel stack has overflown
+- *   - the asynchronous interrupt stack (cpu related)
+- *   - the synchronous kernel stack (process related)
+- * The stack trace can start at any of the three stacks and can potentially
+- * touch all of them. The order is: panic stack, async stack, sync stack.
+- */
+-static unsigned long
+-__dump_trace(dump_trace_func_t func, void *data, unsigned long sp,
+-	     unsigned long low, unsigned long high)
+-{
+-	struct stack_frame *sf;
+-	struct pt_regs *regs;
+-
+-	while (1) {
+-		if (sp < low || sp > high - sizeof(*sf))
+-			return sp;
+-		sf = (struct stack_frame *) sp;
+-		if (func(data, sf->gprs[8], 0))
+-			return sp;
+-		/* Follow the backchain. */
+-		while (1) {
+-			low = sp;
+-			sp = sf->back_chain;
+-			if (!sp)
+-				break;
+-			if (sp <= low || sp > high - sizeof(*sf))
+-				return sp;
+-			sf = (struct stack_frame *) sp;
+-			if (func(data, sf->gprs[8], 1))
+-				return sp;
+-		}
+-		/* Zero backchain detected, check for interrupt frame. */
+-		sp = (unsigned long) (sf + 1);
+-		if (sp <= low || sp > high - sizeof(*regs))
+-			return sp;
+-		regs = (struct pt_regs *) sp;
+-		if (!user_mode(regs)) {
+-			if (func(data, regs->psw.addr, 1))
+-				return sp;
+-		}
+-		low = sp;
+-		sp = regs->gprs[15];
++const char *stack_type_name(enum stack_type type)
++{
++	switch (type) {
++	case STACK_TYPE_TASK:
++		return "task";
++	case STACK_TYPE_IRQ:
++		return "irq";
++	case STACK_TYPE_NODAT:
++		return "nodat";
++	case STACK_TYPE_RESTART:
++		return "restart";
++	default:
++		return "unknown";
+ 	}
+ }
+ 
+-void dump_trace(dump_trace_func_t func, void *data, struct task_struct *task,
+-		unsigned long sp)
++static inline bool in_stack(unsigned long sp, struct stack_info *info,
++			    enum stack_type type, unsigned long low,
++			    unsigned long high)
++{
++	if (sp < low || sp >= high)
++		return false;
++	info->type = type;
++	info->begin = low;
++	info->end = high;
++	return true;
++}
++
++static bool in_task_stack(unsigned long sp, struct task_struct *task,
++			  struct stack_info *info)
++{
++	unsigned long stack;
++
++	stack = (unsigned long) task_stack_page(task);
++	return in_stack(sp, info, STACK_TYPE_TASK, stack, stack + THREAD_SIZE);
++}
++
++static bool in_irq_stack(unsigned long sp, struct stack_info *info)
+ {
+-	unsigned long frame_size;
++	unsigned long frame_size, top;
+ 
+ 	frame_size = STACK_FRAME_OVERHEAD + sizeof(struct pt_regs);
+-#ifdef CONFIG_CHECK_STACK
+-	sp = __dump_trace(func, data, sp,
+-			  S390_lowcore.nodat_stack + frame_size - THREAD_SIZE,
+-			  S390_lowcore.nodat_stack + frame_size);
+-#endif
+-	sp = __dump_trace(func, data, sp,
+-			  S390_lowcore.async_stack + frame_size - THREAD_SIZE,
+-			  S390_lowcore.async_stack + frame_size);
+-	task = task ?: current;
+-	__dump_trace(func, data, sp,
+-		     (unsigned long)task_stack_page(task),
+-		     (unsigned long)task_stack_page(task) + THREAD_SIZE);
+-}
+-EXPORT_SYMBOL_GPL(dump_trace);
+-
+-static int show_address(void *data, unsigned long address, int reliable)
+-{
+-	if (reliable)
+-		printk(" [<%016lx>] %pSR \n", address, (void *)address);
+-	else
+-		printk("([<%016lx>] %pSR)\n", address, (void *)address);
++	top = S390_lowcore.async_stack + frame_size;
++	return in_stack(sp, info, STACK_TYPE_IRQ, top - THREAD_SIZE, top);
++}
++
++static bool in_nodat_stack(unsigned long sp, struct stack_info *info)
++{
++	unsigned long frame_size, top;
++
++	frame_size = STACK_FRAME_OVERHEAD + sizeof(struct pt_regs);
++	top = S390_lowcore.nodat_stack + frame_size;
++	return in_stack(sp, info, STACK_TYPE_NODAT, top - THREAD_SIZE, top);
++}
++
++static bool in_restart_stack(unsigned long sp, struct stack_info *info)
++{
++	unsigned long frame_size, top;
++
++	frame_size = STACK_FRAME_OVERHEAD + sizeof(struct pt_regs);
++	top = S390_lowcore.restart_stack + frame_size;
++	return in_stack(sp, info, STACK_TYPE_RESTART, top - THREAD_SIZE, top);
++}
++
++int get_stack_info(unsigned long sp, struct task_struct *task,
++		   struct stack_info *info, unsigned long *visit_mask)
++{
++	if (!sp)
++		goto unknown;
++
++	task = task ? : current;
++
++	/* Check per-task stack */
++	if (in_task_stack(sp, task, info))
++		goto recursion_check;
++
++	if (task != current)
++		goto unknown;
++
++	/* Check per-cpu stacks */
++	if (!in_irq_stack(sp, info) &&
++	    !in_nodat_stack(sp, info) &&
++	    !in_restart_stack(sp, info))
++		goto unknown;
++
++recursion_check:
++	/*
++	 * Make sure we don't iterate through any given stack more than once.
++	 * If it comes up a second time then there's something wrong going on:
++	 * just break out and report an unknown stack type.
++	 */
++	if (*visit_mask & (1UL << info->type)) {
++		printk_deferred_once(KERN_WARNING
++			"WARNING: stack recursion on stack type %d\n",
++			info->type);
++		goto unknown;
++	}
++	*visit_mask |= 1UL << info->type;
+ 	return 0;
++unknown:
++	info->type = STACK_TYPE_UNKNOWN;
++	return -EINVAL;
+ }
+ 
+ static void show_trace(struct task_struct *task, unsigned long sp)
+ {
+-	if (!sp)
+-		sp = task ? task->thread.ksp : current_stack_pointer();
++	struct unwind_state state;
++
+ 	printk("Call Trace:\n");
+-	dump_trace(show_address, NULL, task, sp);
+ 	if (!task)
+ 		task = current;
+-	debug_show_held_locks(task);
++	unwind_for_each_frame(&state, task, NULL, sp)
++		printk(state.reliable ? " [<%016lx>] %pSR \n" :
++					"([<%016lx>] %pSR)\n",
++		       state.ip, (void *) state.ip);
++	debug_show_held_locks(task ? : current);
+ }
+ 
+ void show_stack(struct task_struct *task, unsigned long *sp)
+--- a/arch/s390/kernel/irq.c
++++ b/arch/s390/kernel/irq.c
+@@ -25,6 +25,7 @@
+ #include <asm/lowcore.h>
+ #include <asm/irq.h>
+ #include <asm/hw_irq.h>
++#include <asm/stacktrace.h>
+ #include "entry.h"
+ 
+ DEFINE_PER_CPU_SHARED_ALIGNED(struct irq_stat, irq_stat);
+--- a/arch/s390/kernel/machine_kexec.c
++++ b/arch/s390/kernel/machine_kexec.c
+@@ -27,6 +27,7 @@
+ #include <asm/cacheflush.h>
+ #include <asm/os_info.h>
+ #include <asm/set_memory.h>
++#include <asm/stacktrace.h>
+ #include <asm/switch_to.h>
+ #include <asm/nmi.h>
+ 
+--- a/arch/s390/kernel/perf_event.c
++++ b/arch/s390/kernel/perf_event.c
+@@ -24,6 +24,7 @@
+ #include <asm/lowcore.h>
+ #include <asm/processor.h>
+ #include <asm/sysinfo.h>
++#include <asm/unwind.h>
+ 
+ const char *perf_pmu_name(void)
+ {
+@@ -222,20 +223,13 @@ static int __init service_level_perf_reg
+ }
+ arch_initcall(service_level_perf_register);
+ 
+-static int __perf_callchain_kernel(void *data, unsigned long address, int reliable)
+-{
+-	struct perf_callchain_entry_ctx *entry = data;
+-
+-	perf_callchain_store(entry, address);
+-	return 0;
+-}
+-
+ void perf_callchain_kernel(struct perf_callchain_entry_ctx *entry,
+ 			   struct pt_regs *regs)
+ {
+-	if (user_mode(regs))
+-		return;
+-	dump_trace(__perf_callchain_kernel, entry, NULL, regs->gprs[15]);
++	struct unwind_state state;
++
++	unwind_for_each_frame(&state, current, regs, 0)
++		perf_callchain_store(entry, state.ip);
+ }
+ 
+ /* Perf definitions for PMU event attributes in sysfs */
+--- a/arch/s390/kernel/process.c
++++ b/arch/s390/kernel/process.c
+@@ -35,6 +35,7 @@
+ #include <asm/irq.h>
+ #include <asm/nmi.h>
+ #include <asm/smp.h>
++#include <asm/stacktrace.h>
+ #include <asm/switch_to.h>
+ #include <asm/runtime_instr.h>
+ #include "entry.h"
+--- a/arch/s390/kernel/setup.c
++++ b/arch/s390/kernel/setup.c
+@@ -65,6 +65,7 @@
+ #include <asm/diag.h>
+ #include <asm/os_info.h>
+ #include <asm/sclp.h>
++#include <asm/stacktrace.h>
+ #include <asm/sysinfo.h>
+ #include <asm/numa.h>
+ #include <asm/alternative.h>
+--- a/arch/s390/kernel/smp.c
++++ b/arch/s390/kernel/smp.c
+@@ -52,6 +52,7 @@
+ #include <asm/sigp.h>
+ #include <asm/idle.h>
+ #include <asm/nmi.h>
++#include <asm/stacktrace.h>
+ #include "entry.h"
+ 
+ enum {
+--- a/arch/s390/kernel/stacktrace.c
++++ b/arch/s390/kernel/stacktrace.c
+@@ -10,40 +10,21 @@
+ #include <linux/stacktrace.h>
+ #include <linux/kallsyms.h>
+ #include <linux/export.h>
+-
+-static int __save_address(void *data, unsigned long address, int nosched)
+-{
+-	struct stack_trace *trace = data;
+-
+-	if (nosched && in_sched_functions(address))
+-		return 0;
+-	if (trace->skip > 0) {
+-		trace->skip--;
+-		return 0;
+-	}
+-	if (trace->nr_entries < trace->max_entries) {
+-		trace->entries[trace->nr_entries++] = address;
+-		return 0;
+-	}
+-	return 1;
+-}
+-
+-static int save_address(void *data, unsigned long address, int reliable)
+-{
+-	return __save_address(data, address, 0);
+-}
+-
+-static int save_address_nosched(void *data, unsigned long address, int reliable)
+-{
+-	return __save_address(data, address, 1);
+-}
++#include <asm/stacktrace.h>
++#include <asm/unwind.h>
+ 
+ void save_stack_trace(struct stack_trace *trace)
+ {
+-	unsigned long sp;
++	struct unwind_state state;
+ 
+-	sp = current_stack_pointer();
+-	dump_trace(save_address, trace, NULL, sp);
++	unwind_for_each_frame(&state, current, NULL, 0) {
++		if (trace->nr_entries >= trace->max_entries)
++			break;
++		if (trace->skip > 0)
++			trace->skip--;
++		else
++			trace->entries[trace->nr_entries++] = state.ip;
++	}
+ 	if (trace->nr_entries < trace->max_entries)
+ 		trace->entries[trace->nr_entries++] = ULONG_MAX;
+ }
+@@ -51,12 +32,18 @@ EXPORT_SYMBOL_GPL(save_stack_trace);
+ 
+ void save_stack_trace_tsk(struct task_struct *tsk, struct stack_trace *trace)
+ {
+-	unsigned long sp;
++	struct unwind_state state;
+ 
+-	sp = tsk->thread.ksp;
+-	if (tsk == current)
+-		sp = current_stack_pointer();
+-	dump_trace(save_address_nosched, trace, tsk, sp);
++	unwind_for_each_frame(&state, tsk, NULL, 0) {
++		if (trace->nr_entries >= trace->max_entries)
++			break;
++		if (in_sched_functions(state.ip))
++			continue;
++		if (trace->skip > 0)
++			trace->skip--;
++		else
++			trace->entries[trace->nr_entries++] = state.ip;
++	}
+ 	if (trace->nr_entries < trace->max_entries)
+ 		trace->entries[trace->nr_entries++] = ULONG_MAX;
+ }
+@@ -64,10 +51,16 @@ EXPORT_SYMBOL_GPL(save_stack_trace_tsk);
+ 
+ void save_stack_trace_regs(struct pt_regs *regs, struct stack_trace *trace)
+ {
+-	unsigned long sp;
++	struct unwind_state state;
+ 
+-	sp = kernel_stack_pointer(regs);
+-	dump_trace(save_address, trace, NULL, sp);
++	unwind_for_each_frame(&state, current, regs, 0) {
++		if (trace->nr_entries >= trace->max_entries)
++			break;
++		if (trace->skip > 0)
++			trace->skip--;
++		else
++			trace->entries[trace->nr_entries++] = state.ip;
++	}
+ 	if (trace->nr_entries < trace->max_entries)
+ 		trace->entries[trace->nr_entries++] = ULONG_MAX;
+ }
+--- /dev/null
++++ b/arch/s390/kernel/unwind_bc.c
+@@ -0,0 +1,155 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++#include <linux/sched.h>
++#include <linux/sched/task.h>
++#include <linux/sched/task_stack.h>
++#include <linux/interrupt.h>
++#include <asm/sections.h>
++#include <asm/ptrace.h>
++#include <asm/bitops.h>
++#include <asm/stacktrace.h>
++#include <asm/unwind.h>
++
++unsigned long unwind_get_return_address(struct unwind_state *state)
++{
++	if (unwind_done(state))
++		return 0;
++	return __kernel_text_address(state->ip) ? state->ip : 0;
++}
++EXPORT_SYMBOL_GPL(unwind_get_return_address);
++
++static bool outside_of_stack(struct unwind_state *state, unsigned long sp)
++{
++	return (sp <= state->sp) ||
++		(sp + sizeof(struct stack_frame) > state->stack_info.end);
++}
++
++static bool update_stack_info(struct unwind_state *state, unsigned long sp)
++{
++	struct stack_info *info = &state->stack_info;
++	unsigned long *mask = &state->stack_mask;
++
++	/* New stack pointer leaves the current stack */
++	if (get_stack_info(sp, state->task, info, mask) != 0 ||
++	    !on_stack(info, sp, sizeof(struct stack_frame)))
++		/* 'sp' does not point to a valid stack */
++		return false;
++	return true;
++}
++
++bool unwind_next_frame(struct unwind_state *state)
++{
++	struct stack_info *info = &state->stack_info;
++	struct stack_frame *sf;
++	struct pt_regs *regs;
++	unsigned long sp, ip;
++	bool reliable;
++
++	regs = state->regs;
++	if (unlikely(regs)) {
++		sp = READ_ONCE_TASK_STACK(state->task, regs->gprs[15]);
++		if (unlikely(outside_of_stack(state, sp))) {
++			if (!update_stack_info(state, sp))
++				goto out_err;
++		}
++		sf = (struct stack_frame *) sp;
++		ip = READ_ONCE_TASK_STACK(state->task, sf->gprs[8]);
++		reliable = false;
++		regs = NULL;
++	} else {
++		sf = (struct stack_frame *) state->sp;
++		sp = READ_ONCE_TASK_STACK(state->task, sf->back_chain);
++		if (likely(sp)) {
++			/* Non-zero back-chain points to the previous frame */
++			if (unlikely(outside_of_stack(state, sp))) {
++				if (!update_stack_info(state, sp))
++					goto out_err;
++			}
++			sf = (struct stack_frame *) sp;
++			ip = READ_ONCE_TASK_STACK(state->task, sf->gprs[8]);
++			reliable = true;
++		} else {
++			/* No back-chain, look for a pt_regs structure */
++			sp = state->sp + STACK_FRAME_OVERHEAD;
++			if (!on_stack(info, sp, sizeof(struct pt_regs)))
++				goto out_stop;
++			regs = (struct pt_regs *) sp;
++			if (user_mode(regs))
++				goto out_stop;
++			ip = READ_ONCE_TASK_STACK(state->task, regs->psw.addr);
++			reliable = true;
++		}
++	}
++
++#ifdef CONFIG_FUNCTION_GRAPH_TRACER
++	/* Decode any ftrace redirection */
++	if (ip == (unsigned long) return_to_handler)
++		ip = ftrace_graph_ret_addr(state->task, &state->graph_idx,
++					   ip, NULL);
++#endif
++
++	/* Update unwind state */
++	state->sp = sp;
++	state->ip = ip;
++	state->regs = regs;
++	state->reliable = reliable;
++	return true;
++
++out_err:
++	state->error = true;
++out_stop:
++	state->stack_info.type = STACK_TYPE_UNKNOWN;
++	return false;
++}
++EXPORT_SYMBOL_GPL(unwind_next_frame);
++
++void __unwind_start(struct unwind_state *state, struct task_struct *task,
++		    struct pt_regs *regs, unsigned long sp)
++{
++	struct stack_info *info = &state->stack_info;
++	unsigned long *mask = &state->stack_mask;
++	struct stack_frame *sf;
++	unsigned long ip;
++	bool reliable;
++
++	memset(state, 0, sizeof(*state));
++	state->task = task;
++	state->regs = regs;
++
++	/* Don't even attempt to start from user mode regs: */
++	if (regs && user_mode(regs)) {
++		info->type = STACK_TYPE_UNKNOWN;
++		return;
++	}
++
++	/* Get current stack pointer and initialize stack info */
++	if (get_stack_info(sp, task, info, mask) != 0 ||
++	    !on_stack(info, sp, sizeof(struct stack_frame))) {
++		/* Something is wrong with the stack pointer */
++		info->type = STACK_TYPE_UNKNOWN;
++		state->error = true;
++		return;
++	}
++
++	/* Get the instruction pointer from pt_regs or the stack frame */
++	if (regs) {
++		ip = READ_ONCE_TASK_STACK(state->task, regs->psw.addr);
++		reliable = true;
++	} else {
++		sf = (struct stack_frame *) sp;
++		ip = READ_ONCE_TASK_STACK(state->task, sf->gprs[8]);
++		reliable = false;
++	}
++
++#ifdef CONFIG_FUNCTION_GRAPH_TRACER
++	/* Decode any ftrace redirection */
++	if (ip == (unsigned long) return_to_handler)
++		ip = ftrace_graph_ret_addr(state->task, &state->graph_idx,
++					   ip, NULL);
++#endif
++
++	/* Update unwind state */
++	state->sp = sp;
++	state->ip = ip;
++	state->reliable = reliable;
++}
++EXPORT_SYMBOL_GPL(__unwind_start);
+--- a/arch/s390/mm/maccess.c
++++ b/arch/s390/mm/maccess.c
+@@ -15,6 +15,7 @@
+ #include <linux/cpu.h>
+ #include <asm/ctl_reg.h>
+ #include <asm/io.h>
++#include <asm/stacktrace.h>
+ 
+ static notrace long s390_kernel_write_odd(void *dst, const void *src, size_t size)
+ {
+--- a/arch/s390/oprofile/init.c
++++ b/arch/s390/oprofile/init.c
+@@ -12,23 +12,17 @@
+ #include <linux/oprofile.h>
+ #include <linux/init.h>
+ #include <asm/processor.h>
+-
+-static int __s390_backtrace(void *data, unsigned long address, int reliable)
+-{
+-	unsigned int *depth = data;
+-
+-	if (*depth == 0)
+-		return 1;
+-	(*depth)--;
+-	oprofile_add_trace(address);
+-	return 0;
+-}
++#include <asm/unwind.h>
+ 
+ static void s390_backtrace(struct pt_regs *regs, unsigned int depth)
+ {
+-	if (user_mode(regs))
+-		return;
+-	dump_trace(__s390_backtrace, &depth, NULL, regs->gprs[15]);
++	struct unwind_state state;
++
++	unwind_for_each_frame(&state, current, regs, 0) {
++		if (depth-- == 0)
++			break;
++		oprofile_add_trace(state.ip);
++	}
+ }
+ 
+ int __init oprofile_arch_init(struct oprofile_operations *ops)

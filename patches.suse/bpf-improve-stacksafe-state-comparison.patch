@@ -1,0 +1,93 @@
+From: Alexei Starovoitov <ast@kernel.org>
+Date: Thu, 13 Dec 2018 11:42:33 -0800
+Subject: bpf: improve stacksafe state comparison
+Patch-mainline: v5.0
+Git-commit: 19e2dbb7dd978d24505e918ac54d6f7dfdc88b1d
+References: bsc#1160618
+
+"if (old->allocated_stack > cur->allocated_stack)" check is too conservative.
+In some cases explored stack could have allocated more space,
+but that stack space was not live.
+The test case improves from 19 to 15 processed insns
+and improvement on real programs is significant as well:
+
+                       before    after
+bpf_lb-DLB_L3.o        1940      1831
+bpf_lb-DLB_L4.o        3089      3029
+bpf_lb-DUNKNOWN.o      1065      1064
+bpf_lxc-DDROP_ALL.o    28052     26309
+bpf_lxc-DUNKNOWN.o     35487     33517
+bpf_netdev.o           10864     9713
+bpf_overlay.o          6643      6184
+bpf_lcx_jit.o          38437     37335
+
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Acked-by: Edward Cree <ecree@solarflare.com>
+Acked-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Acked-by: Michal Rostecki <mrostecki@suse.de>
+---
+ kernel/bpf/verifier.c                       |   13 +++++++------
+ tools/testing/selftests/bpf/test_verifier.c |   22 ++++++++++++++++++++++
+ 2 files changed, 29 insertions(+), 6 deletions(-)
+
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -4645,12 +4645,6 @@ static bool stacksafe(struct bpf_func_st
+ {
+ 	int i, spi;
+ 
+-	/* if explored stack has more populated slots than current stack
+-	 * such stacks are not equivalent
+-	 */
+-	if (old->allocated_stack > cur->allocated_stack)
+-		return false;
+-
+ 	/* walk slots of the explored stack and ignore any additional
+ 	 * slots in the current stack, since explored(safe) state
+ 	 * didn't use them
+@@ -4666,6 +4660,13 @@ static bool stacksafe(struct bpf_func_st
+ 
+ 		if (old->stack[spi].slot_type[i % BPF_REG_SIZE] == STACK_INVALID)
+ 			continue;
++
++		/* explored stack has more populated slots than current stack
++		 * and these slots were used
++		 */
++		if (i >= cur->allocated_stack)
++			return false;
++
+ 		/* if old state was safe with misc data in the stack
+ 		 * it will be safe with zero-initialized stack.
+ 		 * The opposite is not true
+--- a/tools/testing/selftests/bpf/test_verifier.c
++++ b/tools/testing/selftests/bpf/test_verifier.c
+@@ -12535,6 +12535,28 @@ static struct bpf_test tests[] = {
+ 		.result = ACCEPT,
+ 	},
+ 	{
++		"allocated_stack",
++		.insns = {
++			BPF_ALU64_REG(BPF_MOV, BPF_REG_6, BPF_REG_1),
++			BPF_RAW_INSN(BPF_JMP | BPF_CALL, 0, 0, 0, BPF_FUNC_get_prandom_u32),
++			BPF_ALU64_REG(BPF_MOV, BPF_REG_7, BPF_REG_0),
++			BPF_JMP_IMM(BPF_JEQ, BPF_REG_0, 0, 5),
++			BPF_MOV64_IMM(BPF_REG_0, 0),
++			BPF_STX_MEM(BPF_DW, BPF_REG_10, BPF_REG_6, -8),
++			BPF_LDX_MEM(BPF_DW, BPF_REG_6, BPF_REG_10, -8),
++			BPF_STX_MEM(BPF_B, BPF_REG_10, BPF_REG_7, -9),
++			BPF_LDX_MEM(BPF_B, BPF_REG_7, BPF_REG_10, -9),
++			BPF_JMP_IMM(BPF_JNE, BPF_REG_0, 0, 0),
++			BPF_JMP_IMM(BPF_JNE, BPF_REG_0, 0, 0),
++			BPF_JMP_IMM(BPF_JNE, BPF_REG_0, 0, 0),
++			BPF_JMP_IMM(BPF_JNE, BPF_REG_0, 0, 0),
++			BPF_EXIT_INSN(),
++		},
++		.result = ACCEPT,
++		.result_unpriv = ACCEPT,
++		.insn_processed = 15,
++	},
++	{
+ 		"calls: cross frame pruning",
+ 		.insns = {
+ 			/* r8 = !!random();

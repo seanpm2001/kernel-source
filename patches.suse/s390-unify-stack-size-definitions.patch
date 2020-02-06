@@ -1,0 +1,174 @@
+From: Vasily Gorbik <gor@linux.ibm.com>
+Date: Tue, 18 Sep 2018 18:23:40 +0200
+Subject: s390: unify stack size definitions
+Git-commit: 32ce55a6592fc3e117e70953001a9ea1931f7941
+Patch-mainline: v4.20-rc1
+References: jsc#SLE-11178
+
+Remove STACK_ORDER and STACK_SIZE in favour of identical THREAD_SIZE_ORDER
+and THREAD_SIZE definitions. THREAD_SIZE and THREAD_SIZE_ORDER naming is
+misleading since it is used as general kernel stack size information. But
+both those definitions are used in the common code and throughout
+architectures specific code, so changing the naming is problematic.
+
+Reviewed-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ arch/s390/include/asm/processor.h   |    8 --------
+ arch/s390/include/asm/thread_info.h |    5 ++++-
+ arch/s390/kernel/dumpstack.c        |    4 ++--
+ arch/s390/kernel/irq.c              |    2 +-
+ arch/s390/kernel/setup.c            |   12 ++++++------
+ arch/s390/kernel/smp.c              |    6 +++---
+ 6 files changed, 16 insertions(+), 21 deletions(-)
+
+--- a/arch/s390/include/asm/processor.h
++++ b/arch/s390/include/asm/processor.h
+@@ -162,14 +162,6 @@ struct thread_struct {
+ typedef struct thread_struct thread_struct;
+ 
+ /*
+- * General size of a stack
+- */
+-#define STACK_ORDER 2
+-#define STACK_SIZE (PAGE_SIZE << STACK_ORDER)
+-#define STACK_INIT_OFFSET \
+-	(STACK_SIZE - STACK_FRAME_OVERHEAD - sizeof(struct pt_regs))
+-
+-/*
+  * Stack layout of a C stack frame.
+  */
+ #ifndef __PACK_STACK
+--- a/arch/s390/include/asm/thread_info.h
++++ b/arch/s390/include/asm/thread_info.h
+@@ -10,7 +10,7 @@
+ #include <linux/const.h>
+ 
+ /*
+- * Size of kernel stack for each process
++ * General size of kernel stacks
+  */
+ #define THREAD_SIZE_ORDER 2
+ #define THREAD_SIZE (PAGE_SIZE << THREAD_SIZE_ORDER)
+@@ -20,6 +20,9 @@
+ #include <asm/page.h>
+ #include <asm/processor.h>
+ 
++#define STACK_INIT_OFFSET \
++	(THREAD_SIZE - STACK_FRAME_OVERHEAD - sizeof(struct pt_regs))
++
+ /*
+  * low level task data that entry.S needs immediate access to
+  * - this struct should fit entirely inside of one cache line
+--- a/arch/s390/kernel/dumpstack.c
++++ b/arch/s390/kernel/dumpstack.c
+@@ -76,11 +76,11 @@ void dump_trace(dump_trace_func_t func,
+ 	frame_size = STACK_FRAME_OVERHEAD + sizeof(struct pt_regs);
+ #ifdef CONFIG_CHECK_STACK
+ 	sp = __dump_trace(func, data, sp,
+-			  S390_lowcore.nodat_stack + frame_size - STACK_SIZE,
++			  S390_lowcore.nodat_stack + frame_size - THREAD_SIZE,
+ 			  S390_lowcore.nodat_stack + frame_size);
+ #endif
+ 	sp = __dump_trace(func, data, sp,
+-			  S390_lowcore.async_stack + frame_size - STACK_SIZE,
++			  S390_lowcore.async_stack + frame_size - THREAD_SIZE,
+ 			  S390_lowcore.async_stack + frame_size);
+ 	task = task ?: current;
+ 	__dump_trace(func, data, sp,
+--- a/arch/s390/kernel/irq.c
++++ b/arch/s390/kernel/irq.c
+@@ -170,7 +170,7 @@ void do_softirq_own_stack(void)
+ 	old = current_stack_pointer();
+ 	/* Check against async. stack address range. */
+ 	new = S390_lowcore.async_stack;
+-	if (((new - old) >> (PAGE_SHIFT + STACK_ORDER)) != 0) {
++	if (((new - old) >> (PAGE_SHIFT + THREAD_SIZE_ORDER)) != 0) {
+ 		CALL_ON_STACK(__do_softirq, new, 0);
+ 	} else {
+ 		/* We are already on the async stack. */
+--- a/arch/s390/kernel/setup.c
++++ b/arch/s390/kernel/setup.c
+@@ -307,13 +307,13 @@ unsigned long stack_alloc(void)
+ {
+ #ifdef CONFIG_VMAP_STACK
+ 	return (unsigned long)
+-		__vmalloc_node_range(STACK_SIZE, STACK_SIZE,
++		__vmalloc_node_range(THREAD_SIZE, THREAD_SIZE,
+ 				     VMALLOC_START, VMALLOC_END,
+ 				     THREADINFO_GFP,
+ 				     PAGE_KERNEL, 0, NUMA_NO_NODE,
+ 				     __builtin_return_address(0));
+ #else
+-	return __get_free_pages(GFP_KERNEL, STACK_ORDER);
++	return __get_free_pages(GFP_KERNEL, THREAD_SIZE_ORDER);
+ #endif
+ }
+ 
+@@ -322,7 +322,7 @@ void stack_free(unsigned long stack)
+ #ifdef CONFIG_VMAP_STACK
+ 	vfree((void *) stack);
+ #else
+-	free_pages(stack, STACK_ORDER);
++	free_pages(stack, THREAD_SIZE_ORDER);
+ #endif
+ }
+ 
+@@ -330,7 +330,7 @@ int __init arch_early_irq_init(void)
+ {
+ 	unsigned long stack;
+ 
+-	stack = __get_free_pages(GFP_KERNEL, STACK_ORDER);
++	stack = __get_free_pages(GFP_KERNEL, THREAD_SIZE_ORDER);
+ 	if (!stack)
+ 		panic("Couldn't allocate async stack");
+ 	S390_lowcore.async_stack = stack + STACK_INIT_OFFSET;
+@@ -346,7 +346,7 @@ static int __init async_stack_realloc(vo
+ 	if (!new)
+ 		panic("Couldn't allocate async stack");
+ 	S390_lowcore.async_stack = new + STACK_INIT_OFFSET;
+-	free_pages(old, STACK_ORDER);
++	free_pages(old, THREAD_SIZE_ORDER);
+ 	return 0;
+ }
+ early_initcall(async_stack_realloc);
+@@ -435,7 +435,7 @@ static void __init setup_lowcore(void)
+ 	 * Allocate the global restart stack which is the same for
+ 	 * all CPUs in cast *one* of them does a PSW restart.
+ 	 */
+-	restart_stack = memblock_virt_alloc(STACK_SIZE, STACK_SIZE);
++	restart_stack = memblock_virt_alloc(THREAD_SIZE, THREAD_SIZE);
+ 	restart_stack += STACK_INIT_OFFSET;
+ 
+ 	/*
+--- a/arch/s390/kernel/smp.c
++++ b/arch/s390/kernel/smp.c
+@@ -195,7 +195,7 @@ static int pcpu_alloc_lowcore(struct pcp
+ 	if (pcpu != &pcpu_devices[0]) {
+ 		pcpu->lowcore =	(struct lowcore *)
+ 			__get_free_pages(GFP_KERNEL | GFP_DMA, LC_ORDER);
+-		nodat_stack = __get_free_pages(GFP_KERNEL, STACK_ORDER);
++		nodat_stack = __get_free_pages(GFP_KERNEL, THREAD_SIZE_ORDER);
+ 		if (!pcpu->lowcore || !nodat_stack)
+ 			goto out;
+ 		if (MACHINE_HAS_VX || MACHINE_HAS_GS) {
+@@ -234,7 +234,7 @@ out:
+ 		if (mcesa_origin)
+ 			kmem_cache_free(pcpu_mcesa_cache,
+ 					(void *) mcesa_origin);
+-		free_pages(nodat_stack, STACK_ORDER);
++		free_pages(nodat_stack, THREAD_SIZE_ORDER);
+ 		free_pages((unsigned long) pcpu->lowcore, LC_ORDER);
+ 	}
+ 	return -ENOMEM;
+@@ -261,7 +261,7 @@ static void pcpu_free_lowcore(struct pcp
+ 		mcesa_origin = pcpu->lowcore->mcesad & MCESA_ORIGIN_MASK;
+ 		kmem_cache_free(pcpu_mcesa_cache, (void *) mcesa_origin);
+ 	}
+-	free_pages(nodat_stack, STACK_ORDER);
++	free_pages(nodat_stack, THREAD_SIZE_ORDER);
+ 	free_pages(lowcore, LC_ORDER);
+ }
+ 

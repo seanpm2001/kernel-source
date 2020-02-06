@@ -29,16 +29,16 @@ Acked-by: Petr Tesarik <ptesarik@suse.com>
 
 --- a/arch/s390/kernel/setup.c
 +++ b/arch/s390/kernel/setup.c
-@@ -300,7 +300,7 @@ early_param("vmalloc", parse_vmalloc);
- 
- void *restart_stack __section(.data);
+@@ -375,7 +375,7 @@ void __init arch_call_rest_init(void)
+ 		: : [_frame] "a" (frame));
+ }
  
 -static void __init setup_lowcore(void)
 +static void __init setup_lowcore_dat_off(void)
  {
  	struct lowcore *lc;
  
-@@ -311,19 +311,16 @@ static void __init setup_lowcore(void)
+@@ -386,19 +386,16 @@ static void __init setup_lowcore(void)
  	lc = memblock_virt_alloc_low(sizeof(*lc), sizeof(*lc));
  	lc->restart_psw.mask = PSW_KERNEL_BITS;
  	lc->restart_psw.addr = (unsigned long) restart_int_handler;
@@ -61,8 +61,8 @@ Acked-by: Petr Tesarik <ptesarik@suse.com>
 +	lc->io_new_psw.mask = PSW_KERNEL_BITS | PSW_MASK_MCHECK;
  	lc->io_new_psw.addr = (unsigned long) io_int_handler;
  	lc->clock_comparator = clock_comparator_max;
- 	lc->kernel_stack = ((unsigned long) &init_thread_union)
-@@ -391,6 +388,17 @@ static void __init setup_lowcore(void)
+ 	lc->nodat_stack = ((unsigned long) &init_thread_union)
+@@ -464,6 +461,17 @@ static void __init setup_lowcore(void)
  	lowcore_ptr[0] = lc;
  }
  
@@ -80,7 +80,7 @@ Acked-by: Petr Tesarik <ptesarik@suse.com>
  static struct resource code_resource = {
  	.name  = "Kernel code",
  	.flags = IORESOURCE_BUSY | IORESOURCE_SYSTEM_RAM,
-@@ -945,7 +953,7 @@ void __init setup_arch(char **cmdline_p)
+@@ -1042,7 +1050,7 @@ void __init setup_arch(char **cmdline_p)
  #endif
  
  	setup_resources();
@@ -89,7 +89,7 @@ Acked-by: Petr Tesarik <ptesarik@suse.com>
  	smp_fill_possible_mask();
  	cpu_detect_mhz_feature();
          cpu_init();
-@@ -958,6 +966,12 @@ void __init setup_arch(char **cmdline_p)
+@@ -1055,6 +1063,12 @@ void __init setup_arch(char **cmdline_p)
  	 */
          paging_init();
  

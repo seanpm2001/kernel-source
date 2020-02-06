@@ -1,0 +1,46 @@
+From ae2a19d8ad2ec18ef61a186ebd768d3a6fef14eb Mon Sep 17 00:00:00 2001
+From: David Sterba <dsterba@suse.com>
+Date: Wed, 20 Mar 2019 16:21:10 +0100
+Git-commit: ae2a19d8ad2ec18ef61a186ebd768d3a6fef14eb
+References: dependency for bsc#1157692
+Patch-mainline: v5.2
+Subject: [PATCH 16/22] btrfs: tree-checker: get fs_info from eb in
+ check_extent_data_item
+
+We can read fs_info from extent buffer and can drop it from the
+parameters.
+
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/tree-checker.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/fs/btrfs/tree-checker.c b/fs/btrfs/tree-checker.c
+index 9513ffd73453..c5dd7adea306 100644
+--- a/fs/btrfs/tree-checker.c
++++ b/fs/btrfs/tree-checker.c
+@@ -104,10 +104,10 @@ static void file_extent_err(const struct extent_buffer *eb, int slot,
+ 	(!IS_ALIGNED(btrfs_file_extent_##name((leaf), (fi)), (alignment)));   \
+ })
+ 
+-static int check_extent_data_item(struct btrfs_fs_info *fs_info,
+-				  struct extent_buffer *leaf,
++static int check_extent_data_item(struct extent_buffer *leaf,
+ 				  struct btrfs_key *key, int slot)
+ {
++	struct btrfs_fs_info *fs_info = leaf->fs_info;
+ 	struct btrfs_file_extent_item *fi;
+ 	u32 sectorsize = fs_info->sectorsize;
+ 	u32 item_size = btrfs_item_size_nr(leaf, slot);
+@@ -780,7 +780,7 @@ static int check_leaf_item(struct btrfs_fs_info *fs_info,
+ 
+ 	switch (key->type) {
+ 	case BTRFS_EXTENT_DATA_KEY:
+-		ret = check_extent_data_item(fs_info, leaf, key, slot);
++		ret = check_extent_data_item(leaf, key, slot);
+ 		break;
+ 	case BTRFS_EXTENT_CSUM_KEY:
+ 		ret = check_csum_item(leaf, key, slot);
+-- 
+2.24.1
+

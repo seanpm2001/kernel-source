@@ -1,0 +1,28 @@
+From: Miroslav Benes <mbenes@suse.cz>
+Subject: s390: kabi workaround for lowcore changes due to vmap stack
+Patch-mainline: Never, kABI workaround
+References: jsc#SLE-11178
+
+The patch
+patches.suse/s390-add-support-for-virtually-mapped-kernel-stacks.patch changed
+arch-specific lowcore struct. Add standard ifdef wrap around the change.
+
+Signed-off-by: Miroslav Benes <mbenes@suse.cz>
+---
+ arch/s390/include/asm/lowcore.h |    4 ++++
+ 1 file changed, 4 insertions(+)
+
+--- a/arch/s390/include/asm/lowcore.h
++++ b/arch/s390/include/asm/lowcore.h
+@@ -103,7 +103,11 @@ struct lowcore {
+ 
+ 	/* Interrupt, DAT-off and restartstack. */
+ 	__u64	async_stack;			/* 0x0340 */
++#ifndef __GENKSYMS__
+ 	__u64	nodat_stack;			/* 0x0348 */
++#else
++	__u64	panic_stack;			/* 0x0348 */
++#endif
+ 	__u64	restart_stack;			/* 0x0350 */
+ 
+ 	/* Restart function and parameter. */

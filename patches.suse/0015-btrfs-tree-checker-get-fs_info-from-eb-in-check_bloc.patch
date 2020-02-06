@@ -1,0 +1,43 @@
+From af60ce2b9354e6aeea36965f10be3d31f1710582 Mon Sep 17 00:00:00 2001
+From: David Sterba <dsterba@suse.com>
+Date: Wed, 20 Mar 2019 16:19:31 +0100
+Git-commit: af60ce2b9354e6aeea36965f10be3d31f1710582
+References: dependency for bsc#1157692
+Patch-mainline: v5.2
+Subject: [PATCH 15/22] btrfs: tree-checker: get fs_info from eb in
+ check_block_group_item
+
+We can read fs_info from extent buffer and can drop it from the
+parameters.
+
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/tree-checker.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/fs/btrfs/tree-checker.c b/fs/btrfs/tree-checker.c
+index b7201f4a12a6..9513ffd73453 100644
+--- a/fs/btrfs/tree-checker.c
++++ b/fs/btrfs/tree-checker.c
+@@ -378,8 +378,7 @@ static void block_group_err(const struct extent_buffer *eb, int slot,
+ 	va_end(args);
+ }
+ 
+-static int check_block_group_item(struct btrfs_fs_info *fs_info,
+-				  struct extent_buffer *leaf,
++static int check_block_group_item(struct extent_buffer *leaf,
+ 				  struct btrfs_key *key, int slot)
+ {
+ 	struct btrfs_block_group_item bgi;
+@@ -792,7 +791,7 @@ static int check_leaf_item(struct btrfs_fs_info *fs_info,
+ 		ret = check_dir_item(leaf, key, slot);
+ 		break;
+ 	case BTRFS_BLOCK_GROUP_ITEM_KEY:
+-		ret = check_block_group_item(fs_info, leaf, key, slot);
++		ret = check_block_group_item(leaf, key, slot);
+ 		break;
+ 	case BTRFS_CHUNK_ITEM_KEY:
+ 		chunk = btrfs_item_ptr(leaf, slot, struct btrfs_chunk);
+-- 
+2.24.1
+

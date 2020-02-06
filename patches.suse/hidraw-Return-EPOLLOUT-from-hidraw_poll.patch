@@ -1,0 +1,35 @@
+From 378b80370aa1fe50f9c48a3ac8af3e416e73b89f Mon Sep 17 00:00:00 2001
+From: Fabian Henneke <fabian.henneke@gmail.com>
+Date: Tue, 9 Jul 2019 13:03:37 +0200
+Subject: [PATCH] hidraw: Return EPOLLOUT from hidraw_poll
+Git-commit: 378b80370aa1fe50f9c48a3ac8af3e416e73b89f
+Patch-mainline: v5.4-rc1
+References: bsc#1051510
+
+Always return EPOLLOUT from hidraw_poll when a device is connected.
+This is safe since writes are always possible (but will always block).
+
+hidraw does not support non-blocking writes and instead always calls
+blocking backend functions on write requests. Hence, so far, a call to
+poll never returned EPOLLOUT, which confuses tools like socat.
+
+Signed-off-by: Fabian Henneke <fabian.henneke@gmail.com>
+In-reply-to: <CA+hv5qkyis03CgYTWeWX9cr0my-d2Oe+aZo+mjmWRXgjrGqyrw@mail.gmail.com>
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/hid/hidraw.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/hid/hidraw.c
++++ b/drivers/hid/hidraw.c
+@@ -260,7 +260,7 @@ static unsigned int hidraw_poll(struct f
+ 
+ 	poll_wait(file, &list->hidraw->wait, wait);
+ 	if (list->head != list->tail)
+-		return POLLIN | POLLRDNORM;
++		return POLLIN | POLLRDNORM | POLLOUT;
+ 	if (!list->hidraw->exist)
+ 		return POLLERR | POLLHUP;
+ 	return 0;

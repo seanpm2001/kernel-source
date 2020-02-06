@@ -1,0 +1,161 @@
+From: Alexei Starovoitov <ast@kernel.org>
+Date: Mon, 1 Apr 2019 21:27:41 -0700
+Subject: bpf: improve verification speed by droping states
+Patch-mainline: v5.2
+Git-commit: 9f4686c41bdff051f557accb531af79dd1773687
+References: bsc#1160618
+
+Branch instructions, branch targets and calls in a bpf program are
+the places where the verifier remembers states that led to successful
+verification of the program.
+These states are used to prune brute force program analysis.
+For unprivileged programs there is a limit of 64 states per such
+'branching' instructions (maximum length is tracked by max_states_per_insn
+counter introduced in the previous patch).
+Simply reducing this threshold to 32 or lower increases insn_processed
+metric to the point that small valid programs get rejected.
+For root programs there is no limit and cilium programs can have
+max_states_per_insn to be 100 or higher.
+Walking 100+ states multiplied by number of 'branching' insns during
+verification consumes significant amount of cpu time.
+Turned out simple LRU-like mechanism can be used to remove states
+that unlikely will be helpful in future search pruning.
+This patch introduces hit_cnt and miss_cnt counters:
+hit_cnt - this many times this state successfully pruned the search
+miss_cnt - this many times this state was not equivalent to other states
+(and that other states were added to state list)
+
+The heuristic introduced in this patch is:
+if (sl->miss_cnt > sl->hit_cnt * 3 + 3)
+  /* drop this state from future considerations */
+
+Higher numbers increase max_states_per_insn (allow more states to be
+considered for pruning) and slow verification speed, but do not meaningfully
+reduce insn_processed metric.
+Lower numbers drop too many states and insn_processed increases too much.
+Many different formulas were considered.
+This one is simple and works well enough in practice.
+(the analysis was done on selftests/progs/* and on cilium programs)
+
+The end result is this heuristic improves verification speed by 10 times.
+Large synthetic programs that used to take a second more now take
+1/10 of a second.
+In cases where max_states_per_insn used to be 100 or more, now it's ~10.
+
+There is a slight increase in insn_processed for cilium progs:
+                       before   after
+bpf_lb-DLB_L3.o 	1831	1838
+bpf_lb-DLB_L4.o 	3029	3218
+bpf_lb-DUNKNOWN.o 	1064	1064
+bpf_lxc-DDROP_ALL.o	26309	26935
+bpf_lxc-DUNKNOWN.o	33517	34439
+bpf_netdev.o		9713	9721
+bpf_overlay.o		6184	6184
+bpf_lcx_jit.o		37335	39389
+And 2-3 times improvement in the verification speed.
+
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Reviewed-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: Michal Rostecki <mrostecki@suse.de>
+---
+ include/linux/bpf_verifier.h |    2 +
+ kernel/bpf/verifier.c        |   44 ++++++++++++++++++++++++++++++++++++++++---
+ 2 files changed, 43 insertions(+), 3 deletions(-)
+
+--- a/include/linux/bpf_verifier.h
++++ b/include/linux/bpf_verifier.h
+@@ -151,6 +151,7 @@ struct bpf_verifier_state {
+ struct bpf_verifier_state_list {
+ 	struct bpf_verifier_state state;
+ 	struct bpf_verifier_state_list *next;
++	int miss_cnt, hit_cnt;
+ };
+ 
+ /* Possible states for alu_state member. */
+@@ -230,6 +231,7 @@ struct bpf_verifier_env {
+ 	struct bpf_insn_aux_data *insn_aux_data; /* array of per-insn state */
+ 	struct bpf_verifier_log log;
+ 	struct bpf_subprog_info subprog_info[BPF_MAX_SUBPROGS + 1];
++	struct bpf_verifier_state_list *free_list;
+ 	u32 subprog_cnt;
+ 	/* number of instructions analyzed by the verifier */
+ 	u32 insn_processed;
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -4998,11 +4998,13 @@ static int propagate_liveness(struct bpf
+ static int is_state_visited(struct bpf_verifier_env *env, int insn_idx)
+ {
+ 	struct bpf_verifier_state_list *new_sl;
+-	struct bpf_verifier_state_list *sl;
++	struct bpf_verifier_state_list *sl, **pprev;
+ 	struct bpf_verifier_state *cur = env->cur_state, *new;
+ 	int i, j, err, states_cnt = 0;
+ 
+-	sl = env->explored_states[insn_idx];
++	pprev = &env->explored_states[insn_idx];
++	sl = *pprev;
++
+ 	if (!sl)
+ 		/* this 'insn_idx' instruction wasn't marked, so we will not
+ 		 * be doing state search here
+@@ -5013,6 +5015,7 @@ static int is_state_visited(struct bpf_v
+ 
+ 	while (sl != STATE_LIST_MARK) {
+ 		if (states_equal(env, &sl->state, cur)) {
++			sl->hit_cnt++;
+ 			/* reached equivalent register/stack state,
+ 			 * prune the search.
+ 			 * Registers read by the continuation are read by us.
+@@ -5028,8 +5031,35 @@ static int is_state_visited(struct bpf_v
+ 				return err;
+ 			return 1;
+ 		}
+-		sl = sl->next;
+ 		states_cnt++;
++		sl->miss_cnt++;
++		/* heuristic to determine whether this state is beneficial
++		 * to keep checking from state equivalence point of view.
++		 * Higher numbers increase max_states_per_insn and verification time,
++		 * but do not meaningfully decrease insn_processed.
++		 */
++		if (sl->miss_cnt > sl->hit_cnt * 3 + 3) {
++			/* the state is unlikely to be useful. Remove it to
++			 * speed up verification
++			 */
++			*pprev = sl->next;
++			if (sl->state.frame[0]->regs[0].live & REG_LIVE_DONE) {
++				free_verifier_state(&sl->state, false);
++				kfree(sl);
++				env->peak_states--;
++			} else {
++				/* cannot free this state, since parentage chain may
++				 * walk it later. Add it for free_list instead to
++				 * be freed at the end of verification
++				 */
++				sl->next = env->free_list;
++				env->free_list = sl;
++			}
++			sl = *pprev;
++			continue;
++		}
++		pprev = &sl->next;
++		sl = *pprev;
+ 	}
+ 
+ 	if (env->max_states_per_insn < states_cnt)
+@@ -6292,6 +6322,14 @@ static void free_states(struct bpf_verif
+ 	struct bpf_verifier_state_list *sl, *sln;
+ 	int i;
+ 
++	sl = env->free_list;
++	while (sl) {
++		sln = sl->next;
++		free_verifier_state(&sl->state, false);
++		kfree(sl);
++		sl = sln;
++	}
++
+ 	if (!env->explored_states)
+ 		return;
+ 

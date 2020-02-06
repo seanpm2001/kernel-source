@@ -1,0 +1,29 @@
+From: Miroslav Benes <mbenes@suse.cz>
+Subject: s390: kabi workaround for ftrace_ret_stack
+Patch-mainline: Never, kABI workaround
+References: jsc#SLE-11178
+
+The patch patches.suse/s390-ftrace-use-have_function_graph_ret_addr_ptr.patch
+newly defined HAVE_FUNCTION_GRAPH_RET_ADDR_PTR, which adds another member of
+struct ftrace_ret_stack. Fortunately, the member is the last one there and the
+structure is not embedded anywhere. Add standard ifdef wrap around the change.
+Also preserve the current behaviour for the other archs.
+
+Signed-off-by: Miroslav Benes <mbenes@suse.cz>
+---
+ include/linux/ftrace.h |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/include/linux/ftrace.h
++++ b/include/linux/ftrace.h
+@@ -797,8 +797,10 @@ struct ftrace_ret_stack {
+ 	unsigned long fp;
+ #endif
+ #ifdef HAVE_FUNCTION_GRAPH_RET_ADDR_PTR
++#if !(defined(__GENKSYMS__) && defined(CONFIG_S390))
+ 	unsigned long *retp;
+ #endif
++#endif
+ };
+ 
+ /*

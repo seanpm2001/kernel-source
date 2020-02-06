@@ -1,0 +1,214 @@
+From: Miroslav Benes <mbenes@suse.cz>
+Subject: s390: preserve kabi for stack unwind API
+Patch-mainline: Never, kABI workaround
+References: jsc#SLE-11178
+
+The patch
+patches.suse/s390-unwind-introduce-stack-unwind-api.patch introduced new stack
+unwind API. Add necessary workarounds and/or return the original code to
+preserve kABI.
+
+Signed-off-by: Miroslav Benes <mbenes@suse.cz>
+---
+ arch/s390/include/asm/processor.h  |   23 ++++++++++++
+ arch/s390/include/asm/stacktrace.h |   19 ----------
+ arch/s390/kernel/asm-offsets.c     |    1 
+ arch/s390/kernel/dumpstack.c       |   70 +++++++++++++++++++++++++++++++++++++
+ arch/s390/kernel/process.c         |    1 
+ arch/s390/kernel/setup.c           |    2 +
+ arch/s390/kernel/stacktrace.c      |    2 +
+ 7 files changed, 97 insertions(+), 21 deletions(-)
+
+--- a/arch/s390/include/asm/processor.h
++++ b/arch/s390/include/asm/processor.h
+@@ -161,6 +161,25 @@ struct thread_struct {
+ 
+ typedef struct thread_struct thread_struct;
+ 
++/*
++ * Stack layout of a C stack frame.
++ */
++#ifndef __PACK_STACK
++struct stack_frame {
++	unsigned long back_chain;
++	unsigned long empty1[5];
++	unsigned long gprs[10];
++	unsigned int  empty2[8];
++};
++#else
++struct stack_frame {
++	unsigned long empty1[5];
++	unsigned int  empty2[8];
++	unsigned long gprs[10];
++	unsigned long back_chain;
++};
++#endif
++
+ #define ARCH_MIN_TASKALIGN	8
+ 
+ #define INIT_THREAD {							\
+@@ -192,7 +211,11 @@ struct mm_struct;
+ struct seq_file;
+ struct pt_regs;
+ 
++typedef int (*dump_trace_func_t)(void *data, unsigned long address, int reliable);
++void dump_trace(dump_trace_func_t func, void *data,
++		struct task_struct *task, unsigned long sp);
+ void show_registers(struct pt_regs *regs);
++
+ void show_cacheinfo(struct seq_file *m);
+ 
+ /* Free all resources held by a thread. */
+--- a/arch/s390/include/asm/stacktrace.h
++++ b/arch/s390/include/asm/stacktrace.h
+@@ -44,25 +44,6 @@ static __always_inline unsigned long get
+ }
+ 
+ /*
+- * Stack layout of a C stack frame.
+- */
+-#ifndef __PACK_STACK
+-struct stack_frame {
+-	unsigned long back_chain;
+-	unsigned long empty1[5];
+-	unsigned long gprs[10];
+-	unsigned int  empty2[8];
+-};
+-#else
+-struct stack_frame {
+-	unsigned long empty1[5];
+-	unsigned int  empty2[8];
+-	unsigned long gprs[10];
+-	unsigned long back_chain;
+-};
+-#endif
+-
+-/*
+  * Unlike current_stack_pointer() which simply returns current value of %r15
+  * current_frame_address() returns function stack frame address, which matches
+  * %r15 upon function invocation. It may differ from %r15 later if function
+--- a/arch/s390/kernel/asm-offsets.c
++++ b/arch/s390/kernel/asm-offsets.c
+@@ -13,7 +13,6 @@
+ #include <asm/vdso.h>
+ #include <asm/pgtable.h>
+ #include <asm/gmap.h>
+-#include <asm/stacktrace.h>
+ 
+ /*
+  * Make sure that the compiler is new enough. We want a compiler that
+--- a/arch/s390/kernel/dumpstack.c
++++ b/arch/s390/kernel/dumpstack.c
+@@ -20,7 +20,77 @@
+ #include <asm/debug.h>
+ #include <asm/dis.h>
+ #include <asm/ipl.h>
++#ifndef __GENKSYMS__
+ #include <asm/unwind.h>
++#endif
++
++/*
++ * For dump_trace we have tree different stack to consider:
++ *   - the panic stack which is used if the kernel stack has overflown
++ *   - the asynchronous interrupt stack (cpu related)
++ *   - the synchronous kernel stack (process related)
++ * The stack trace can start at any of the three stacks and can potentially
++ * touch all of them. The order is: panic stack, async stack, sync stack.
++ */
++static unsigned long
++__dump_trace(dump_trace_func_t func, void *data, unsigned long sp,
++	     unsigned long low, unsigned long high)
++{
++	struct stack_frame *sf;
++	struct pt_regs *regs;
++
++	while (1) {
++		if (sp < low || sp > high - sizeof(*sf))
++			return sp;
++		sf = (struct stack_frame *) sp;
++		if (func(data, sf->gprs[8], 0))
++			return sp;
++		/* Follow the backchain. */
++		while (1) {
++			low = sp;
++			sp = sf->back_chain;
++			if (!sp)
++				break;
++			if (sp <= low || sp > high - sizeof(*sf))
++				return sp;
++			sf = (struct stack_frame *) sp;
++			if (func(data, sf->gprs[8], 1))
++				return sp;
++		}
++		/* Zero backchain detected, check for interrupt frame. */
++		sp = (unsigned long) (sf + 1);
++		if (sp <= low || sp > high - sizeof(*regs))
++			return sp;
++		regs = (struct pt_regs *) sp;
++		if (!user_mode(regs)) {
++			if (func(data, regs->psw.addr, 1))
++				return sp;
++		}
++		low = sp;
++		sp = regs->gprs[15];
++	}
++}
++
++void dump_trace(dump_trace_func_t func, void *data, struct task_struct *task,
++		unsigned long sp)
++{
++	unsigned long frame_size;
++
++	frame_size = STACK_FRAME_OVERHEAD + sizeof(struct pt_regs);
++#ifdef CONFIG_CHECK_STACK
++	sp = __dump_trace(func, data, sp,
++			  S390_lowcore.nodat_stack + frame_size - THREAD_SIZE,
++			  S390_lowcore.nodat_stack + frame_size);
++#endif
++	sp = __dump_trace(func, data, sp,
++			  S390_lowcore.async_stack + frame_size - THREAD_SIZE,
++			  S390_lowcore.async_stack + frame_size);
++	task = task ?: current;
++	__dump_trace(func, data, sp,
++		     (unsigned long)task_stack_page(task),
++		     (unsigned long)task_stack_page(task) + THREAD_SIZE);
++}
++EXPORT_SYMBOL_GPL(dump_trace);
+ 
+ const char *stack_type_name(enum stack_type type)
+ {
+--- a/arch/s390/kernel/process.c
++++ b/arch/s390/kernel/process.c
+@@ -35,7 +35,6 @@
+ #include <asm/irq.h>
+ #include <asm/nmi.h>
+ #include <asm/smp.h>
+-#include <asm/stacktrace.h>
+ #include <asm/switch_to.h>
+ #include <asm/runtime_instr.h>
+ #include <asm/unwind.h>
+--- a/arch/s390/kernel/setup.c
++++ b/arch/s390/kernel/setup.c
+@@ -65,7 +65,9 @@
+ #include <asm/diag.h>
+ #include <asm/os_info.h>
+ #include <asm/sclp.h>
++#ifndef __GENKSYMS__
+ #include <asm/stacktrace.h>
++#endif
+ #include <asm/sysinfo.h>
+ #include <asm/numa.h>
+ #include <asm/alternative.h>
+--- a/arch/s390/kernel/stacktrace.c
++++ b/arch/s390/kernel/stacktrace.c
+@@ -10,8 +10,10 @@
+ #include <linux/stacktrace.h>
+ #include <linux/kallsyms.h>
+ #include <linux/export.h>
++#ifndef __GENKSYMS__
+ #include <asm/stacktrace.h>
+ #include <asm/unwind.h>
++#endif
+ #include <asm/kprobes.h>
+ 
+ void arch_stack_walk(stack_trace_consume_fn consume_entry, void *cookie,

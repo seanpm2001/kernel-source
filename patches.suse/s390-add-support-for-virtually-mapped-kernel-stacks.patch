@@ -1,0 +1,720 @@
+From: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Date: Tue, 12 Sep 2017 16:37:33 +0200
+Subject: s390: add support for virtually mapped kernel stacks
+Git-commit: ce3dc447493ff4186b192b38d723ab5e8c1eb52f
+Patch-mainline: v4.20-rc1
+References: jsc#SLE-11178
+
+With virtually mapped kernel stacks the kernel stack overflow detection
+is now fault based, every stack has a guard page in the vmalloc space.
+The panic_stack is renamed to nodat_stack and is used for all function
+that need to run without DAT, e.g. memcpy_real or do_start_kdump.
+
+The main effect is a reduction in the kernel image size as with vmap
+stacks the old style overflow checking that adds two instructions per
+function is not needed anymore. Result from bloat-o-meter:
+
+add/remove: 20/1 grow/shrink: 13/26854 up/down: 2198/-216240 (-214042)
+
+In regard to performance the micro-benchmark for fork has a hit of a
+few microseconds, allocating 4 pages in vmalloc space is more expensive
+compare to an order-2 page allocation. But with real workload I could
+not find a noticeable difference.
+
+Acked-by: Heiko Carstens <heiko.carstens@de.ibm.com>
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+[
+  mb: VMAP_STACK is not intended to be enabled. Necessary preparatory patches
+  are missing (were not backported).
+]
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ arch/s390/Kconfig                   |    2 
+ arch/s390/include/asm/lowcore.h     |    4 -
+ arch/s390/include/asm/processor.h   |    8 +++
+ arch/s390/include/asm/thread_info.h |    3 -
+ arch/s390/kernel/asm-offsets.c      |    2 
+ arch/s390/kernel/base.S             |    2 
+ arch/s390/kernel/dumpstack.c        |    6 +-
+ arch/s390/kernel/entry.S            |   51 ++++++++++++++------
+ arch/s390/kernel/entry.h            |    3 +
+ arch/s390/kernel/head64.S           |    4 -
+ arch/s390/kernel/ipl.c              |    2 
+ arch/s390/kernel/irq.c              |    2 
+ arch/s390/kernel/machine_kexec.c    |   17 +++++-
+ arch/s390/kernel/setup.c            |   89 ++++++++++++++++++++++++++++++++----
+ arch/s390/kernel/smp.c              |   77 ++++++++++++++++++-------------
+ arch/s390/kernel/swsusp.S           |    7 +-
+ arch/s390/mm/maccess.c              |   25 ++++++++--
+ 17 files changed, 220 insertions(+), 84 deletions(-)
+
+--- a/arch/s390/Kconfig
++++ b/arch/s390/Kconfig
+@@ -132,6 +132,7 @@ config S390
+ 	select HAVE_ARCH_SOFT_DIRTY
+ 	select HAVE_ARCH_TRACEHOOK
+ 	select HAVE_ARCH_TRANSPARENT_HUGEPAGE
++	select HAVE_ARCH_VMAP_STACK
+ 	select HAVE_EBPF_JIT if PACK_STACK && HAVE_MARCH_Z196_FEATURES
+ 	select HAVE_CMPXCHG_DOUBLE
+ 	select HAVE_CMPXCHG_LOCAL
+@@ -639,6 +640,7 @@ config PACK_STACK
+ 
+ config CHECK_STACK
+ 	def_bool y
++	depends on !VMAP_STACK
+ 	prompt "Detect kernel stack overflow"
+ 	help
+ 	  This option enables the compiler option -mstack-guard and
+--- a/arch/s390/include/asm/lowcore.h
++++ b/arch/s390/include/asm/lowcore.h
+@@ -101,9 +101,9 @@ struct lowcore {
+ 	__u8	pad_0x318[0x320-0x318];		/* 0x0330 */
+ 	__u64	kernel_stack;			/* 0x0338 */
+ 
+-	/* Interrupt, panic and restart stack. */
++	/* Interrupt, DAT-off and restartstack. */
+ 	__u64	async_stack;			/* 0x0340 */
+-	__u64	panic_stack;			/* 0x0348 */
++	__u64	nodat_stack;			/* 0x0348 */
+ 	__u64	restart_stack;			/* 0x0350 */
+ 
+ 	/* Restart function and parameter. */
+--- a/arch/s390/include/asm/processor.h
++++ b/arch/s390/include/asm/processor.h
+@@ -162,6 +162,14 @@ struct thread_struct {
+ typedef struct thread_struct thread_struct;
+ 
+ /*
++ * General size of a stack
++ */
++#define STACK_ORDER 2
++#define STACK_SIZE (PAGE_SIZE << STACK_ORDER)
++#define STACK_INIT_OFFSET \
++	(STACK_SIZE - STACK_FRAME_OVERHEAD - sizeof(struct pt_regs))
++
++/*
+  * Stack layout of a C stack frame.
+  */
+ #ifndef __PACK_STACK
+--- a/arch/s390/include/asm/thread_info.h
++++ b/arch/s390/include/asm/thread_info.h
+@@ -13,10 +13,7 @@
+  * Size of kernel stack for each process
+  */
+ #define THREAD_SIZE_ORDER 2
+-#define ASYNC_ORDER  2
+-
+ #define THREAD_SIZE (PAGE_SIZE << THREAD_SIZE_ORDER)
+-#define ASYNC_SIZE  (PAGE_SIZE << ASYNC_ORDER)
+ 
+ #ifndef __ASSEMBLY__
+ #include <asm/lowcore.h>
+--- a/arch/s390/kernel/asm-offsets.c
++++ b/arch/s390/kernel/asm-offsets.c
+@@ -162,7 +162,7 @@ int main(void)
+ 	OFFSET(__LC_CURRENT, lowcore, current_task);
+ 	OFFSET(__LC_KERNEL_STACK, lowcore, kernel_stack);
+ 	OFFSET(__LC_ASYNC_STACK, lowcore, async_stack);
+-	OFFSET(__LC_PANIC_STACK, lowcore, panic_stack);
++	OFFSET(__LC_NODAT_STACK, lowcore, nodat_stack);
+ 	OFFSET(__LC_RESTART_STACK, lowcore, restart_stack);
+ 	OFFSET(__LC_RESTART_FN, lowcore, restart_fn);
+ 	OFFSET(__LC_RESTART_DATA, lowcore, restart_data);
+--- a/arch/s390/kernel/base.S
++++ b/arch/s390/kernel/base.S
+@@ -17,7 +17,7 @@
+ 
+ ENTRY(s390_base_mcck_handler)
+ 	basr	%r13,0
+-0:	lg	%r15,__LC_PANIC_STACK	# load panic stack
++0:	lg	%r15,__LC_NODAT_STACK	# load panic stack
+ 	aghi	%r15,-STACK_FRAME_OVERHEAD
+ 	larl	%r1,s390_base_mcck_handler_fn
+ 	lg	%r9,0(%r1)
+--- a/arch/s390/kernel/dumpstack.c
++++ b/arch/s390/kernel/dumpstack.c
+@@ -76,11 +76,11 @@ void dump_trace(dump_trace_func_t func,
+ 	frame_size = STACK_FRAME_OVERHEAD + sizeof(struct pt_regs);
+ #ifdef CONFIG_CHECK_STACK
+ 	sp = __dump_trace(func, data, sp,
+-			  S390_lowcore.panic_stack + frame_size - 4096,
+-			  S390_lowcore.panic_stack + frame_size);
++			  S390_lowcore.nodat_stack + frame_size - STACK_SIZE,
++			  S390_lowcore.nodat_stack + frame_size);
+ #endif
+ 	sp = __dump_trace(func, data, sp,
+-			  S390_lowcore.async_stack + frame_size - ASYNC_SIZE,
++			  S390_lowcore.async_stack + frame_size - STACK_SIZE,
+ 			  S390_lowcore.async_stack + frame_size);
+ 	task = task ?: current;
+ 	__dump_trace(func, data, sp,
+--- a/arch/s390/kernel/entry.S
++++ b/arch/s390/kernel/entry.S
+@@ -80,14 +80,34 @@ _PIF_WORK	= (_PIF_PER_TRAP | _PIF_SYSCAL
+ #endif
+ 	.endm
+ 
+-	.macro	CHECK_STACK stacksize,savearea
++	.macro	CHECK_STACK savearea
+ #ifdef CONFIG_CHECK_STACK
+-	tml	%r15,\stacksize - CONFIG_STACK_GUARD
++	tml	%r15,STACK_SIZE - CONFIG_STACK_GUARD
+ 	lghi	%r14,\savearea
+ 	jz	stack_overflow
+ #endif
+ 	.endm
+ 
++	.macro	CHECK_VMAP_STACK savearea,oklabel
++#ifdef CONFIG_VMAP_STACK
++	lgr	%r14,%r15
++	nill	%r14,0x10000 - STACK_SIZE
++	oill	%r14,STACK_INIT
++	clg	%r14,__LC_KERNEL_STACK
++	je	\oklabel
++	clg	%r14,__LC_ASYNC_STACK
++	je	\oklabel
++	clg	%r14,__LC_NODAT_STACK
++	je	\oklabel
++	clg	%r14,__LC_RESTART_STACK
++	je	\oklabel
++	lghi	%r14,\savearea
++	j	stack_overflow
++#else
++	j	\oklabel
++#endif
++	.endm
++
+ 	.macro	SWITCH_ASYNC savearea,timer
+ 	tmhh	%r8,0x0001		# interrupting from user ?
+ 	jnz	1f
+@@ -99,11 +119,11 @@ _PIF_WORK	= (_PIF_PER_TRAP | _PIF_SYSCAL
+ 	brasl	%r14,cleanup_critical
+ 	tmhh	%r8,0x0001		# retest problem state after cleanup
+ 	jnz	1f
+-0:	lg	%r14,__LC_ASYNC_STACK	# are we already on the async stack?
++0:	lg	%r14,__LC_ASYNC_STACK	# are we already on the target stack?
+ 	slgr	%r14,%r15
+ 	srag	%r14,%r14,STACK_SHIFT
+ 	jnz	2f
+-	CHECK_STACK 1<<STACK_SHIFT,\savearea
++	CHECK_STACK \savearea
+ 	aghi	%r15,-(STACK_FRAME_OVERHEAD + __PT_SIZE)
+ 	j	3f
+ 1:	UPDATE_VTIME %r14,%r15,\timer
+@@ -584,9 +604,10 @@ ENTRY(pgm_check_handler)
+ 	jnz	1f			# -> enabled, can't be a double fault
+ 	tm	__LC_PGM_ILC+3,0x80	# check for per exception
+ 	jnz	.Lpgm_svcper		# -> single stepped svc
+-1:	CHECK_STACK STACK_SIZE,__LC_SAVE_AREA_SYNC
++1:	CHECK_STACK __LC_SAVE_AREA_SYNC
+ 	aghi	%r15,-(STACK_FRAME_OVERHEAD + __PT_SIZE)
+-	j	4f
++	# CHECK_VMAP_STACK branches to stack_overflow or 4f
++	CHECK_VMAP_STACK __LC_SAVE_AREA_SYNC,4f
+ 2:	UPDATE_VTIME %r14,%r15,__LC_SYNC_ENTER_TIMER
+ 	BPENTER __TI_flags(%r12),_TIF_ISOLATE_BP
+ 	lg	%r15,__LC_KERNEL_STACK
+@@ -1068,6 +1089,7 @@ ENTRY(mcck_int_handler)
+ 	mvc	__LC_MCCK_ENTER_TIMER(8),0(%r14)
+ 3:	TSTMSK	__LC_MCCK_CODE,(MCCK_CODE_PSW_MWP_VALID|MCCK_CODE_PSW_IA_VALID)
+ 	jno	.Lmcck_panic		# no -> skip cleanup critical
++	ssm	__LC_PGM_NEW_PSW	# turn dat on, keep irqs off
+ 	SWITCH_ASYNC __LC_GPREGS_SAVE_AREA+64,__LC_MCCK_ENTER_TIMER
+ .Lmcck_skip:
+ 	lghi	%r14,__LC_GPREGS_SAVE_AREA+64
+@@ -1095,7 +1117,6 @@ ENTRY(mcck_int_handler)
+ 	xc	__SF_BACKCHAIN(8,%r1),__SF_BACKCHAIN(%r1)
+ 	la	%r11,STACK_FRAME_OVERHEAD(%r1)
+ 	lgr	%r15,%r1
+-	ssm	__LC_PGM_NEW_PSW	# turn dat on, keep irqs off
+ 	TSTMSK	__LC_CPU_FLAGS,_CIF_MCCK_PENDING
+ 	jno	.Lmcck_return
+ 	TRACE_IRQS_OFF
+@@ -1114,7 +1135,7 @@ ENTRY(mcck_int_handler)
+ 	lpswe	__LC_RETURN_MCCK_PSW
+ 
+ .Lmcck_panic:
+-	lg	%r15,__LC_PANIC_STACK
++	lg	%r15,__LC_NODAT_STACK
+ 	la	%r11,STACK_FRAME_OVERHEAD(%r15)
+ 	j	.Lmcck_skip
+ 
+@@ -1127,12 +1148,10 @@ ENTRY(restart_int_handler)
+ 	.insn	s,0xb2800000,__LC_LPP
+ 0:	stg	%r15,__LC_SAVE_AREA_RESTART
+ 	lg	%r15,__LC_RESTART_STACK
+-	aghi	%r15,-__PT_SIZE			# create pt_regs on stack
+-	xc	0(__PT_SIZE,%r15),0(%r15)
+-	stmg	%r0,%r14,__PT_R0(%r15)
+-	mvc	__PT_R15(8,%r15),__LC_SAVE_AREA_RESTART
+-	mvc	__PT_PSW(16,%r15),__LC_RST_OLD_PSW # store restart old psw
+-	aghi	%r15,-STACK_FRAME_OVERHEAD	# create stack frame on stack
++	xc	STACK_FRAME_OVERHEAD(__PT_SIZE,%r15),STACK_FRAME_OVERHEAD(%r15)
++	stmg	%r0,%r14,STACK_FRAME_OVERHEAD+__PT_R0(%r15)
++	mvc	STACK_FRAME_OVERHEAD+__PT_R15(8,%r15),__LC_SAVE_AREA_RESTART
++	mvc	STACK_FRAME_OVERHEAD+__PT_PSW(16,%r15),__LC_RST_OLD_PSW
+ 	xc	0(STACK_FRAME_OVERHEAD,%r15),0(%r15)
+ 	lg	%r1,__LC_RESTART_FN		# load fn, parm & source cpu
+ 	lg	%r2,__LC_RESTART_DATA
+@@ -1150,14 +1169,14 @@ ENTRY(restart_int_handler)
+ 
+ 	.section .kprobes.text, "ax"
+ 
+-#ifdef CONFIG_CHECK_STACK
++#if defined(CONFIG_CHECK_STACK) || defined(CONFIG_VMAP_STACK)
+ /*
+  * The synchronous or the asynchronous stack overflowed. We are dead.
+  * No need to properly save the registers, we are going to panic anyway.
+  * Setup a pt_regs so that show_trace can provide a good call trace.
+  */
+ stack_overflow:
+-	lg	%r15,__LC_PANIC_STACK	# change to panic stack
++	lg	%r15,__LC_NODAT_STACK	# change to panic stack
+ 	la	%r11,STACK_FRAME_OVERHEAD(%r15)
+ 	stmg	%r0,%r7,__PT_R0(%r11)
+ 	stmg	%r8,%r9,__PT_PSW(%r11)
+--- a/arch/s390/kernel/entry.h
++++ b/arch/s390/kernel/entry.h
+@@ -85,4 +85,7 @@ void verify_facilities(void);
+ void gs_load_bc_cb(struct pt_regs *regs);
+ void set_fs_fixup(void);
+ 
++unsigned long stack_alloc(void);
++void stack_free(unsigned long stack);
++
+ #endif /* _ENTRY_H */
+--- a/arch/s390/kernel/head64.S
++++ b/arch/s390/kernel/head64.S
+@@ -35,9 +35,7 @@ ENTRY(startup_continue)
+ #
+ 	larl	%r14,init_task
+ 	stg	%r14,__LC_CURRENT
+-	larl	%r15,init_thread_union+THREAD_SIZE
+-	stg	%r15,__LC_KERNEL_STACK	# set end of kernel stack
+-	aghi	%r15,-STACK_FRAME_OVERHEAD
++	larl	%r15,init_thread_union+THREAD_SIZE-STACK_FRAME_OVERHEAD
+ #
+ # Save ipl parameters, clear bss memory, initialize storage key for kernel pages,
+ # and create a kernel NSS if the SAVESYS= parm is defined
+--- a/arch/s390/kernel/ipl.c
++++ b/arch/s390/kernel/ipl.c
+@@ -2045,7 +2045,7 @@ void s390_reset_system(void)
+ 	lc = (struct lowcore *)(unsigned long) store_prefix();
+ 
+ 	/* Stack for interrupt/machine check handler */
+-	lc->panic_stack = S390_lowcore.panic_stack;
++	lc->nodat_stack = S390_lowcore.nodat_stack;
+ 
+ 	/* Disable prefixing */
+ 	set_prefix(0);
+--- a/arch/s390/kernel/irq.c
++++ b/arch/s390/kernel/irq.c
+@@ -170,7 +170,7 @@ void do_softirq_own_stack(void)
+ 	old = current_stack_pointer();
+ 	/* Check against async. stack address range. */
+ 	new = S390_lowcore.async_stack;
+-	if (((new - old) >> (PAGE_SHIFT + THREAD_SIZE_ORDER)) != 0) {
++	if (((new - old) >> (PAGE_SHIFT + STACK_ORDER)) != 0) {
+ 		CALL_ON_STACK(__do_softirq, new, 0);
+ 	} else {
+ 		/* We are already on the async stack. */
+--- a/arch/s390/kernel/machine_kexec.c
++++ b/arch/s390/kernel/machine_kexec.c
+@@ -141,18 +141,27 @@ static noinline void __machine_kdump(voi
+ }
+ #endif
+ 
++static unsigned long do_start_kdump(unsigned long addr)
++{
++	struct kimage *image = (struct kimage *) addr;
++	int (*start_kdump)(int) = (void *)image->start;
++	int rc;
++
++	__arch_local_irq_stnsm(0xfb); /* disable DAT */
++	rc = start_kdump(0);
++	__arch_local_irq_stosm(0x04); /* enable DAT */
++	return rc;
++}
++
+ /*
+  * Check if kdump checksums are valid: We call purgatory with parameter "0"
+  */
+ static int kdump_csum_valid(struct kimage *image)
+ {
+ #ifdef CONFIG_CRASH_DUMP
+-	int (*start_kdump)(int) = (void *)image->start;
+ 	int rc;
+ 
+-	__arch_local_irq_stnsm(0xfb); /* disable DAT */
+-	rc = start_kdump(0);
+-	__arch_local_irq_stosm(0x04); /* enable DAT */
++	rc = CALL_ON_STACK(do_start_kdump, S390_lowcore.nodat_stack, 1, image);
+ 	return rc ? 0 : -EINVAL;
+ #else
+ 	return -EINVAL;
+--- a/arch/s390/kernel/setup.c
++++ b/arch/s390/kernel/setup.c
+@@ -48,6 +48,7 @@
+ #include <linux/crash_dump.h>
+ #include <linux/memory.h>
+ #include <linux/compat.h>
++#include <linux/start_kernel.h>
+ 
+ #include <asm/ipl.h>
+ #include <asm/facility.h>
+@@ -302,6 +303,78 @@ early_param("vmalloc", parse_vmalloc);
+ 
+ void *restart_stack __section(.data);
+ 
++unsigned long stack_alloc(void)
++{
++#ifdef CONFIG_VMAP_STACK
++	return (unsigned long)
++		__vmalloc_node_range(STACK_SIZE, STACK_SIZE,
++				     VMALLOC_START, VMALLOC_END,
++				     THREADINFO_GFP,
++				     PAGE_KERNEL, 0, NUMA_NO_NODE,
++				     __builtin_return_address(0));
++#else
++	return __get_free_pages(GFP_KERNEL, STACK_ORDER);
++#endif
++}
++
++void stack_free(unsigned long stack)
++{
++#ifdef CONFIG_VMAP_STACK
++	vfree((void *) stack);
++#else
++	free_pages(stack, STACK_ORDER);
++#endif
++}
++
++int __init arch_early_irq_init(void)
++{
++	unsigned long stack;
++
++	stack = __get_free_pages(GFP_KERNEL, STACK_ORDER);
++	if (!stack)
++		panic("Couldn't allocate async stack");
++	S390_lowcore.async_stack = stack + STACK_INIT_OFFSET;
++	return 0;
++}
++
++static int __init async_stack_realloc(void)
++{
++	unsigned long old, new;
++
++	old = S390_lowcore.async_stack - STACK_INIT_OFFSET;
++	new = stack_alloc();
++	if (!new)
++		panic("Couldn't allocate async stack");
++	S390_lowcore.async_stack = new + STACK_INIT_OFFSET;
++	free_pages(old, STACK_ORDER);
++	return 0;
++}
++early_initcall(async_stack_realloc);
++
++void __init arch_call_rest_init(void)
++{
++	struct stack_frame *frame;
++	unsigned long stack;
++
++	stack = stack_alloc();
++	if (!stack)
++		panic("Couldn't allocate kernel stack");
++	current->stack = (void *) stack;
++#ifdef CONFIG_VMAP_STACK
++	current->stack_vm_area = (void *) stack;
++#endif
++	set_task_stack_end_magic(current);
++	stack += STACK_INIT_OFFSET;
++	S390_lowcore.kernel_stack = stack;
++	frame = (struct stack_frame *) stack;
++	memset(frame, 0, sizeof(*frame));
++	/* Branch to rest_init on the new stack, never returns */
++	asm volatile(
++		"	la	15,0(%[_frame])\n"
++		"	jg	rest_init\n"
++		: : [_frame] "a" (frame));
++}
++
+ static void __init setup_lowcore(void)
+ {
+ 	struct lowcore *lc;
+@@ -328,14 +401,8 @@ static void __init setup_lowcore(void)
+ 		PSW_MASK_DAT | PSW_MASK_MCHECK;
+ 	lc->io_new_psw.addr = (unsigned long) io_int_handler;
+ 	lc->clock_comparator = clock_comparator_max;
+-	lc->kernel_stack = ((unsigned long) &init_thread_union)
++	lc->nodat_stack = ((unsigned long) &init_thread_union)
+ 		+ THREAD_SIZE - STACK_FRAME_OVERHEAD - sizeof(struct pt_regs);
+-	lc->async_stack = (unsigned long)
+-		memblock_virt_alloc(ASYNC_SIZE, ASYNC_SIZE)
+-		+ ASYNC_SIZE - STACK_FRAME_OVERHEAD - sizeof(struct pt_regs);
+-	lc->panic_stack = (unsigned long)
+-		memblock_virt_alloc(PAGE_SIZE, PAGE_SIZE)
+-		+ PAGE_SIZE - STACK_FRAME_OVERHEAD - sizeof(struct pt_regs);
+ 	lc->current_task = (unsigned long)&init_task;
+ 	lc->lpp = LPP_MAGIC;
+ 	lc->machine_flags = S390_lowcore.machine_flags;
+@@ -364,8 +431,12 @@ static void __init setup_lowcore(void)
+ 	lc->last_update_timer = S390_lowcore.last_update_timer;
+ 	lc->last_update_clock = S390_lowcore.last_update_clock;
+ 
+-	restart_stack = memblock_virt_alloc(ASYNC_SIZE, ASYNC_SIZE);
+-	restart_stack += ASYNC_SIZE;
++	/*
++	 * Allocate the global restart stack which is the same for
++	 * all CPUs in cast *one* of them does a PSW restart.
++	 */
++	restart_stack = memblock_virt_alloc(STACK_SIZE, STACK_SIZE);
++	restart_stack += STACK_INIT_OFFSET;
+ 
+ 	/*
+ 	 * Set up PSW restart to call ipl.c:do_restart(). Copy the relevant
+--- a/arch/s390/kernel/smp.c
++++ b/arch/s390/kernel/smp.c
+@@ -185,12 +185,9 @@ static void pcpu_ec_call(struct pcpu *pc
+ 	pcpu_sigp_retry(pcpu, order, 0);
+ }
+ 
+-#define ASYNC_FRAME_OFFSET (ASYNC_SIZE - STACK_FRAME_OVERHEAD - __PT_SIZE)
+-#define PANIC_FRAME_OFFSET (PAGE_SIZE - STACK_FRAME_OVERHEAD - __PT_SIZE)
+-
+ static int pcpu_alloc_lowcore(struct pcpu *pcpu, int cpu)
+ {
+-	unsigned long async_stack, panic_stack;
++	unsigned long async_stack, nodat_stack;
+ 	unsigned long mcesa_origin, mcesa_bits;
+ 	struct lowcore *lc;
+ 
+@@ -198,9 +195,8 @@ static int pcpu_alloc_lowcore(struct pcp
+ 	if (pcpu != &pcpu_devices[0]) {
+ 		pcpu->lowcore =	(struct lowcore *)
+ 			__get_free_pages(GFP_KERNEL | GFP_DMA, LC_ORDER);
+-		async_stack = __get_free_pages(GFP_KERNEL, ASYNC_ORDER);
+-		panic_stack = __get_free_page(GFP_KERNEL);
+-		if (!pcpu->lowcore || !panic_stack || !async_stack)
++		nodat_stack = __get_free_pages(GFP_KERNEL, STACK_ORDER);
++		if (!pcpu->lowcore || !nodat_stack)
+ 			goto out;
+ 		if (MACHINE_HAS_VX || MACHINE_HAS_GS) {
+ 			mcesa_origin = (unsigned long)
+@@ -210,32 +206,35 @@ static int pcpu_alloc_lowcore(struct pcp
+ 			mcesa_bits = MACHINE_HAS_GS ? 11 : 0;
+ 		}
+ 	} else {
+-		async_stack = pcpu->lowcore->async_stack - ASYNC_FRAME_OFFSET;
+-		panic_stack = pcpu->lowcore->panic_stack - PANIC_FRAME_OFFSET;
++		nodat_stack = pcpu->lowcore->nodat_stack - STACK_INIT_OFFSET;
+ 		mcesa_origin = pcpu->lowcore->mcesad & MCESA_ORIGIN_MASK;
+ 		mcesa_bits = pcpu->lowcore->mcesad & MCESA_LC_MASK;
+ 	}
++	async_stack = stack_alloc();
++	if (!async_stack)
++		goto out;
+ 	lc = pcpu->lowcore;
+ 	memcpy(lc, &S390_lowcore, 512);
+ 	memset((char *) lc + 512, 0, sizeof(*lc) - 512);
+-	lc->async_stack = async_stack + ASYNC_FRAME_OFFSET;
+-	lc->panic_stack = panic_stack + PANIC_FRAME_OFFSET;
++	lc->async_stack = async_stack + STACK_INIT_OFFSET;
++	lc->nodat_stack = nodat_stack + STACK_INIT_OFFSET;
+ 	lc->mcesad = mcesa_origin | mcesa_bits;
+ 	lc->cpu_nr = cpu;
+ 	lc->spinlock_lockval = arch_spin_lockval(cpu);
+ 	lc->br_r1_trampoline = 0x07f1;	/* br %r1 */
+ 	if (vdso_alloc_per_cpu(lc))
+-		goto out;
++		goto out_async;
+ 	lowcore_ptr[cpu] = lc;
+ 	pcpu_sigp_retry(pcpu, SIGP_SET_PREFIX, (u32)(unsigned long) lc);
+ 	return 0;
++out_async:
++	stack_free(async_stack);
+ out:
+ 	if (pcpu != &pcpu_devices[0]) {
+ 		if (mcesa_origin)
+ 			kmem_cache_free(pcpu_mcesa_cache,
+ 					(void *) mcesa_origin);
+-		free_page(panic_stack);
+-		free_pages(async_stack, ASYNC_ORDER);
++		free_pages(nodat_stack, STACK_ORDER);
+ 		free_pages((unsigned long) pcpu->lowcore, LC_ORDER);
+ 	}
+ 	return -ENOMEM;
+@@ -246,19 +245,24 @@ out:
+ static void pcpu_free_lowcore(struct pcpu *pcpu)
+ {
+ 	unsigned long mcesa_origin;
++	unsigned long async_stack, nodat_stack, lowcore;
++
++	nodat_stack = pcpu->lowcore->nodat_stack - STACK_INIT_OFFSET;
++	async_stack = pcpu->lowcore->async_stack - STACK_INIT_OFFSET;
++	lowcore = (unsigned long) pcpu->lowcore;
+ 
+ 	pcpu_sigp_retry(pcpu, SIGP_SET_PREFIX, 0);
+ 	lowcore_ptr[pcpu - pcpu_devices] = NULL;
+ 	vdso_free_per_cpu(pcpu->lowcore);
++	stack_free(async_stack);
+ 	if (pcpu == &pcpu_devices[0])
+ 		return;
+ 	if (MACHINE_HAS_VX || MACHINE_HAS_GS) {
+ 		mcesa_origin = pcpu->lowcore->mcesad & MCESA_ORIGIN_MASK;
+ 		kmem_cache_free(pcpu_mcesa_cache, (void *) mcesa_origin);
+ 	}
+-	free_page(pcpu->lowcore->panic_stack-PANIC_FRAME_OFFSET);
+-	free_pages(pcpu->lowcore->async_stack-ASYNC_FRAME_OFFSET, ASYNC_ORDER);
+-	free_pages((unsigned long) pcpu->lowcore, LC_ORDER);
++	free_pages(nodat_stack, STACK_ORDER);
++	free_pages(lowcore, LC_ORDER);
+ }
+ 
+ #endif /* CONFIG_HOTPLUG_CPU */
+@@ -304,7 +308,7 @@ static void pcpu_start_fn(struct pcpu *p
+ {
+ 	struct lowcore *lc = pcpu->lowcore;
+ 
+-	lc->restart_stack = lc->kernel_stack;
++	lc->restart_stack = lc->nodat_stack;
+ 	lc->restart_fn = (unsigned long) func;
+ 	lc->restart_data = (unsigned long) data;
+ 	lc->restart_source = -1UL;
+@@ -314,15 +318,20 @@ static void pcpu_start_fn(struct pcpu *p
+ /*
+  * Call function via PSW restart on pcpu and stop the current cpu.
+  */
++static void __pcpu_delegate(void (*func)(void*), void *data)
++{
++	func(data);	/* should not return */
++}
++
+ static void pcpu_delegate(struct pcpu *pcpu, void (*func)(void *),
+ 			  void *data, unsigned long stack)
+ {
+ 	struct lowcore *lc = lowcore_ptr[pcpu - pcpu_devices];
+ 	unsigned long source_cpu = stap();
+ 
+-	__load_psw_mask(PSW_KERNEL_BITS);
++	__load_psw_mask(PSW_KERNEL_BITS | PSW_MASK_DAT);
+ 	if (pcpu->address == source_cpu)
+-		func(data);	/* should not return */
++		CALL_ON_STACK(__pcpu_delegate, stack, 2, func, data);
+ 	/* Stop target cpu (if func returns this stops the current cpu). */
+ 	pcpu_sigp_retry(pcpu, SIGP_STOP, 0);
+ 	/* Restart func on the target cpu and stop the current cpu. */
+@@ -383,8 +392,7 @@ void smp_call_online_cpu(void (*func)(vo
+ void smp_call_ipl_cpu(void (*func)(void *), void *data)
+ {
+ 	pcpu_delegate(&pcpu_devices[0], func, data,
+-		      pcpu_devices->lowcore->panic_stack -
+-		      PANIC_FRAME_OFFSET + PAGE_SIZE);
++		      pcpu_devices->lowcore->nodat_stack);
+ }
+ 
+ int smp_find_processor_id(u16 address)
+@@ -799,6 +807,20 @@ void __init smp_detect_cpus(void)
+ 	memblock_free_early((unsigned long)info, sizeof(*info));
+ }
+ 
++static void smp_init_secondary(void)
++{
++	cpu_init();
++	preempt_disable();
++	init_cpu_timer();
++	vtime_init();
++	pfault_init();
++	notify_cpu_starting(smp_processor_id());
++	set_cpu_online(smp_processor_id(), true);
++	inc_irq_stat(CPU_RST);
++	local_irq_enable();
++	cpu_startup_entry(CPUHP_AP_ONLINE_IDLE);
++}
++
+ /*
+  *	Activate a secondary processor.
+  */
+@@ -812,16 +834,7 @@ static void smp_start_secondary(void *cp
+ 	restore_access_regs(S390_lowcore.access_regs_save_area);
+ 	__ctl_load(S390_lowcore.cregs_save_area, 0, 15);
+ 	__load_psw_mask(PSW_KERNEL_BITS | PSW_MASK_DAT);
+-	cpu_init();
+-	preempt_disable();
+-	init_cpu_timer();
+-	vtime_init();
+-	pfault_init();
+-	notify_cpu_starting(smp_processor_id());
+-	set_cpu_online(smp_processor_id(), true);
+-	inc_irq_stat(CPU_RST);
+-	local_irq_enable();
+-	cpu_startup_entry(CPUHP_AP_ONLINE_IDLE);
++	CALL_ON_STACK(smp_init_secondary, S390_lowcore.kernel_stack, 0);
+ }
+ 
+ /* Upping and downing of CPUs */
+--- a/arch/s390/kernel/swsusp.S
++++ b/arch/s390/kernel/swsusp.S
+@@ -28,10 +28,11 @@
+ 
+ 	.section .text
+ ENTRY(swsusp_arch_suspend)
+-	stmg	%r6,%r15,__SF_GPRS(%r15)
++	lg	%r1,__LC_NODAT_STACK
++	aghi	%r1,-STACK_FRAME_OVERHEAD
++	stmg	%r6,%r15,__SF_GPRS(%r1)
++	stg	%r15,__SF_BACKCHAIN(%r1)
+ 	lgr	%r1,%r15
+-	aghi	%r15,-STACK_FRAME_OVERHEAD
+-	stg	%r1,__SF_BACKCHAIN(%r15)
+ 
+ 	/* Store FPU registers */
+ 	brasl	%r14,save_fpu_regs
+--- a/arch/s390/mm/maccess.c
++++ b/arch/s390/mm/maccess.c
+@@ -88,10 +88,8 @@ static int __memcpy_real(void *dest, voi
+ 	return rc;
+ }
+ 
+-/*
+- * Copy memory in real mode (kernel to kernel)
+- */
+-int memcpy_real(void *dest, void *src, size_t count)
++static unsigned long _memcpy_real(unsigned long dest, unsigned long src,
++				  unsigned long count)
+ {
+ 	int irqs_disabled, rc;
+ 	unsigned long flags;
+@@ -102,7 +100,7 @@ int memcpy_real(void *dest, void *src, s
+ 	irqs_disabled = arch_irqs_disabled_flags(flags);
+ 	if (!irqs_disabled)
+ 		trace_hardirqs_off();
+-	rc = __memcpy_real(dest, src, count);
++	rc = __memcpy_real((void *) dest, (void *) src, (size_t) count);
+ 	if (!irqs_disabled)
+ 		trace_hardirqs_on();
+ 	__arch_local_irq_ssm(flags);
+@@ -110,6 +108,23 @@ int memcpy_real(void *dest, void *src, s
+ }
+ 
+ /*
++ * Copy memory in real mode (kernel to kernel)
++ */
++int memcpy_real(void *dest, void *src, size_t count)
++{
++	if (S390_lowcore.nodat_stack != 0)
++		return CALL_ON_STACK(_memcpy_real, S390_lowcore.nodat_stack,
++				     3, dest, src, count);
++	/*
++	 * This is a really early memcpy_real call, the stacks are
++	 * not set up yet. Just call _memcpy_real on the early boot
++	 * stack
++	 */
++	return _memcpy_real((unsigned long) dest,(unsigned long) src,
++			    (unsigned long) count);
++}
++
++/*
+  * Copy memory in absolute mode (kernel to kernel)
+  */
+ void memcpy_absolute(void *dest, void *src, size_t count)

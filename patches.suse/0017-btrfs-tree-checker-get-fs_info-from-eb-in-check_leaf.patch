@@ -1,0 +1,61 @@
+From 0076bc89a77a62bb765a32c6ab6013ea7f9f1eb0 Mon Sep 17 00:00:00 2001
+From: David Sterba <dsterba@suse.com>
+Date: Wed, 20 Mar 2019 16:22:00 +0100
+Git-commit: 0076bc89a77a62bb765a32c6ab6013ea7f9f1eb0
+References: dependency for bsc#1157692
+Patch-mainline: v5.2
+Subject: [PATCH 17/22] btrfs: tree-checker: get fs_info from eb in
+ check_leaf_item
+
+We can read fs_info from extent buffer and can drop it from the
+parameters.
+
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/tree-checker.c | 11 +++++------
+ 1 file changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/fs/btrfs/tree-checker.c b/fs/btrfs/tree-checker.c
+index c5dd7adea306..8cae930a666d 100644
+--- a/fs/btrfs/tree-checker.c
++++ b/fs/btrfs/tree-checker.c
+@@ -771,8 +771,7 @@ static int check_inode_item(struct btrfs_fs_info *fs_info,
+ /*
+  * Common point to switch the item-specific validation.
+  */
+-static int check_leaf_item(struct btrfs_fs_info *fs_info,
+-			   struct extent_buffer *leaf,
++static int check_leaf_item(struct extent_buffer *leaf,
+ 			   struct btrfs_key *key, int slot)
+ {
+ 	int ret = 0;
+@@ -795,14 +794,14 @@ static int check_leaf_item(struct btrfs_fs_info *fs_info,
+ 		break;
+ 	case BTRFS_CHUNK_ITEM_KEY:
+ 		chunk = btrfs_item_ptr(leaf, slot, struct btrfs_chunk);
+-		ret = btrfs_check_chunk_valid(fs_info, leaf, chunk,
++		ret = btrfs_check_chunk_valid(leaf->fs_info, leaf, chunk,
+ 					      key->offset);
+ 		break;
+ 	case BTRFS_DEV_ITEM_KEY:
+-		ret = check_dev_item(fs_info, leaf, key, slot);
++		ret = check_dev_item(leaf->fs_info, leaf, key, slot);
+ 		break;
+ 	case BTRFS_INODE_ITEM_KEY:
+-		ret = check_inode_item(fs_info, leaf, key, slot);
++		ret = check_inode_item(leaf->fs_info, leaf, key, slot);
+ 		break;
+ 	}
+ 	return ret;
+@@ -952,7 +951,7 @@ static int check_leaf(struct btrfs_fs_info *fs_info, struct extent_buffer *leaf,
+ 			 * Check if the item size and content meet other
+ 			 * criteria
+ 			 */
+-			ret = check_leaf_item(fs_info, leaf, &key, slot);
++			ret = check_leaf_item(leaf, &key, slot);
+ 			if (ret < 0)
+ 				return ret;
+ 		}
+-- 
+2.24.1
+

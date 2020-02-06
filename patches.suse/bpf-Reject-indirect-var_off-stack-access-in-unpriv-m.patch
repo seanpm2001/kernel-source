@@ -1,0 +1,71 @@
+From: Andrey Ignatov <rdna@fb.com>
+Date: Wed, 3 Apr 2019 23:22:39 -0700
+Subject: bpf: Reject indirect var_off stack access in unpriv mode
+Patch-mainline: v5.2
+Git-commit: 088ec26d9c2da9d879ab73e3f4117f9df6c566ee
+References: bsc#1160618
+
+Proper support of indirect stack access with variable offset in
+unprivileged mode (!root) requires corresponding support in Spectre
+masking for stack ALU in retrieve_ptr_limit().
+
+There are no use-case for variable offset in unprivileged mode though so
+make verifier reject such accesses for simplicity.
+
+Pointer arithmetics is one (and only?) way to cause variable offset and
+it's already rejected in unpriv mode so that verifier won't even get to
+helper function whose argument contains variable offset, e.g.:
+
+  0: (7a) *(u64 *)(r10 -16) = 0
+  1: (7a) *(u64 *)(r10 -8) = 0
+  2: (61) r2 = *(u32 *)(r1 +0)
+  3: (57) r2 &= 4
+  4: (17) r2 -= 16
+  5: (0f) r2 += r10
+  variable stack access var_off=(0xfffffffffffffff0; 0x4) off=-16 size=1R2
+  stack pointer arithmetic goes out of range, prohibited for !root
+
+Still it looks like a good idea to reject variable offset indirect stack
+access for unprivileged mode in check_stack_boundary() explicitly.
+
+Fixes: 2011fccfb61b ("bpf: Support variable offset stack access from helpers")
+Reported-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: Andrey Ignatov <rdna@fb.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Acked-by: Michal Rostecki <mrostecki@suse.de>
+---
+ kernel/bpf/verifier.c |   16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -1850,6 +1850,19 @@ static int check_stack_boundary(struct b
+ 		if (err)
+ 			return err;
+ 	} else {
++		/* Variable offset is prohibited for unprivileged mode for
++		 * simplicity since it requires corresponding support in
++		 * Spectre masking for stack ALU.
++		 * See also retrieve_ptr_limit().
++		 */
++		if (!env->allow_ptr_leaks) {
++			char tn_buf[48];
++
++			tnum_strn(tn_buf, sizeof(tn_buf), reg->var_off);
++			verbose(env, "R%d indirect variable offset stack access prohibited for !root, var_off=%s\n",
++				regno, tn_buf);
++			return -EACCES;
++		}
+ 		/* Only initialized buffer on stack is allowed to be accessed
+ 		 * with variable offset. With uninitialized buffer it's hard to
+ 		 * guarantee that whole memory is marked as initialized on
+@@ -2689,6 +2702,9 @@ static int retrieve_ptr_limit(const stru
+ 
+ 	switch (ptr_reg->type) {
+ 	case PTR_TO_STACK:
++		/* Indirect variable offset stack access is prohibited in
++		 * unprivileged mode so it's not handled here.
++		 */
+ 		off = ptr_reg->off + ptr_reg->var_off.value;
+ 		if (mask_to_left)
+ 			*ptr_limit = MAX_BPF_STACK + off;

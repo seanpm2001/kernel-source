@@ -22,13 +22,12 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 ---
  fs/dcache.c        |   12 +++++++-----
  fs/inode.c         |    2 +-
- fs/libfs.c         |    6 ++++--
  include/linux/fs.h |    2 +-
- 4 files changed, 13 insertions(+), 9 deletions(-)
+ 3 files changed, 9 insertions(+), 7 deletions(-)
 
 --- a/fs/dcache.c
 +++ b/fs/dcache.c
-@@ -2460,9 +2460,10 @@ EXPORT_SYMBOL(d_rehash);
+@@ -2456,9 +2456,10 @@ EXPORT_SYMBOL(d_rehash);
  static inline unsigned start_dir_add(struct inode *dir)
  {
  
@@ -41,7 +40,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			return n;
  		cpu_relax();
  	}
-@@ -2470,7 +2471,8 @@ static inline unsigned start_dir_add(str
+@@ -2466,7 +2467,8 @@ static inline unsigned start_dir_add(str
  
  static inline void end_dir_add(struct inode *dir, unsigned n)
  {
@@ -51,7 +50,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  static void d_wait_lookup(struct dentry *dentry)
-@@ -2506,7 +2508,7 @@ struct dentry *d_alloc_parallel(struct d
+@@ -2502,7 +2504,7 @@ struct dentry *d_alloc_parallel(struct d
  
  retry:
  	rcu_read_lock();
@@ -60,7 +59,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	r_seq = read_seqbegin(&rename_lock);
  	dentry = __d_lookup_rcu(parent, name, &d_seq);
  	if (unlikely(dentry)) {
-@@ -2534,7 +2536,7 @@ struct dentry *d_alloc_parallel(struct d
+@@ -2530,7 +2532,7 @@ retry:
  	}
  
  	hlist_bl_lock(b);
@@ -80,39 +79,9 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	inode->i_rdev = 0;
  	inode->dirtied_when = 0;
  
---- a/fs/libfs.c
-+++ b/fs/libfs.c
-@@ -90,7 +90,7 @@ static struct dentry *next_positive(stru
- 				    struct list_head *from,
- 				    int count)
- {
--	unsigned *seq = &parent->d_inode->i_dir_seq, n;
-+	unsigned *seq = &parent->d_inode->__i_dir_seq, n;
- 	struct dentry *res;
- 	struct list_head *p;
- 	bool skipped;
-@@ -123,8 +123,9 @@ static struct dentry *next_positive(stru
- static void move_cursor(struct dentry *cursor, struct list_head *after)
- {
- 	struct dentry *parent = cursor->d_parent;
--	unsigned n, *seq = &parent->d_inode->i_dir_seq;
-+	unsigned n, *seq = &parent->d_inode->__i_dir_seq;
- 	spin_lock(&parent->d_lock);
-+	preempt_disable_rt();
- 	for (;;) {
- 		n = *seq;
- 		if (!(n & 1) && cmpxchg(seq, n, n + 1) == n)
-@@ -137,6 +138,7 @@ static void move_cursor(struct dentry *c
- 	else
- 		list_add_tail(&cursor->d_child, &parent->d_subdirs);
- 	smp_store_release(seq, n + 2);
-+	preempt_enable_rt();
- 	spin_unlock(&parent->d_lock);
- }
- 
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
-@@ -652,7 +652,7 @@ struct inode {
+@@ -654,7 +654,7 @@ struct inode {
  		struct block_device	*i_bdev;
  		struct cdev		*i_cdev;
  		char			*i_link;

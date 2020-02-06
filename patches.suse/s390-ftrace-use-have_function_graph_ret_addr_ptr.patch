@@ -1,0 +1,95 @@
+From: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Date: Mon, 18 Feb 2019 16:51:28 +0100
+Subject: s390/ftrace: use HAVE_FUNCTION_GRAPH_RET_ADDR_PTR
+Git-commit: ec7bf4789d95a0053bac0dfa36fbefd8cc584eea
+Patch-mainline: v5.2-rc1
+References: jsc#SLE-11178
+
+Make the call chain more reliable by tagging the ftrace stack entries
+with the stack pointer that is associated with the return address.
+
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ arch/s390/include/asm/ftrace.h |    2 ++
+ arch/s390/kernel/entry.h       |    2 +-
+ arch/s390/kernel/ftrace.c      |   11 ++++++-----
+ arch/s390/kernel/mcount.S      |    4 ++--
+ arch/s390/kernel/unwind_bc.c   |    2 +-
+ 5 files changed, 12 insertions(+), 9 deletions(-)
+
+--- a/arch/s390/include/asm/ftrace.h
++++ b/arch/s390/include/asm/ftrace.h
+@@ -10,6 +10,8 @@
+ #define MCOUNT_RETURN_FIXUP	18
+ #endif
+ 
++#define HAVE_FUNCTION_GRAPH_RET_ADDR_PTR
++
+ #ifndef __ASSEMBLY__
+ 
+ #define ftrace_return_address(n) __builtin_return_address(n)
+--- a/arch/s390/kernel/entry.h
++++ b/arch/s390/kernel/entry.h
+@@ -63,7 +63,7 @@ int setup_profiling_timer(unsigned int m
+ void __init time_init(void);
+ int pfn_is_nosave(unsigned long);
+ void s390_early_resume(void);
+-unsigned long prepare_ftrace_return(unsigned long parent, unsigned long ip);
++unsigned long prepare_ftrace_return(unsigned long parent, unsigned long sp, unsigned long ip);
+ 
+ struct s390_mmap_arg_struct;
+ struct fadvise64_64_args;
+--- a/arch/s390/kernel/ftrace.c
++++ b/arch/s390/kernel/ftrace.c
+@@ -200,7 +200,8 @@ device_initcall(ftrace_plt_init);
+  * Hook the return address and push it in the stack of return addresses
+  * in current thread info.
+  */
+-unsigned long prepare_ftrace_return(unsigned long parent, unsigned long ip)
++unsigned long prepare_ftrace_return(unsigned long ra, unsigned long sp,
++				    unsigned long ip)
+ {
+ 	struct ftrace_graph_ent trace;
+ 
+@@ -214,12 +215,12 @@ unsigned long prepare_ftrace_return(unsi
+ 	/* Only trace if the calling function expects to. */
+ 	if (!ftrace_graph_entry(&trace))
+ 		goto out;
+-	if (ftrace_push_return_trace(parent, ip, &trace.depth, 0,
+-				     NULL) == -EBUSY)
++	if (ftrace_push_return_trace(ra, ip, &trace.depth, 0,
++				     (void *) sp) == -EBUSY)
+ 		goto out;
+-	parent = (unsigned long) return_to_handler;
++	ra = (unsigned long) return_to_handler;
+ out:
+-	return parent;
++	return ra;
+ }
+ NOKPROBE_SYMBOL(prepare_ftrace_return);
+ 
+--- a/arch/s390/kernel/mcount.S
++++ b/arch/s390/kernel/mcount.S
+@@ -62,8 +62,8 @@ ENTRY(ftrace_caller)
+ # See ftrace_enable_ftrace_graph_caller.
+ ENTRY(ftrace_graph_caller)
+ 	j	ftrace_graph_caller_end
+-	lg	%r2,(STACK_PTREGS_GPRS+14*8)(%r15)
+-	lg	%r3,(STACK_PTREGS_PSW+8)(%r15)
++	lmg	%r2,%r3,(STACK_PTREGS_GPRS+14*8)(%r15)
++	lg	%r4,(STACK_PTREGS_PSW+8)(%r15)
+ 	brasl	%r14,prepare_ftrace_return
+ 	stg	%r2,(STACK_PTREGS_GPRS+14*8)(%r15)
+ ftrace_graph_caller_end:
+--- a/arch/s390/kernel/unwind_bc.c
++++ b/arch/s390/kernel/unwind_bc.c
+@@ -84,7 +84,7 @@ bool unwind_next_frame(struct unwind_sta
+ 	/* Decode any ftrace redirection */
+ 	if (ip == (unsigned long) return_to_handler)
+ 		ip = ftrace_graph_ret_addr(state->task, &state->graph_idx,
+-					   ip, NULL);
++					   ip, (void *) sp);
+ #endif
+ 
+ 	/* Update unwind state */

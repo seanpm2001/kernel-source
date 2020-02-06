@@ -1,0 +1,106 @@
+From: Vasily Gorbik <gor@linux.ibm.com>
+Date: Fri, 14 Sep 2018 17:35:46 +0200
+Subject: s390: clean up stacks setup
+Git-commit: 4e62d458850069c9f05e03f99be1a817967e201f
+Patch-mainline: v4.20-rc1
+References: jsc#SLE-11178
+
+Replace hard coded stack frame overhead values with STACK_FRAME_OVERHEAD
+definition. Avoid unnecessary arithmetic instructions.
+
+[mb:
+  As a side effect, also hunk changing asm code in arch/s390/kernel/swsusp.S
+  from upstream commit 55a5542a546238354d1f209f794414168cf8c71d is backported.
+]
+
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ arch/s390/boot/compressed/head.S |    4 ++--
+ arch/s390/kernel/head.S          |    3 +--
+ arch/s390/kernel/head64.S        |    6 +++---
+ arch/s390/kernel/swsusp.S        |    3 +--
+ 4 files changed, 7 insertions(+), 9 deletions(-)
+
+--- a/arch/s390/boot/compressed/head.S
++++ b/arch/s390/boot/compressed/head.S
+@@ -11,6 +11,7 @@
+ #include <asm/asm-offsets.h>
+ #include <asm/thread_info.h>
+ #include <asm/page.h>
++#include <asm/ptrace.h>
+ #include "sizes.h"
+ 
+ __HEAD
+@@ -19,7 +20,6 @@ ENTRY(startup_continue)
+ .LPG1:
+ 	# setup stack
+ 	lg	%r15,.Lstack-.LPG1(%r13)
+-	aghi	%r15,-160
+ 	brasl	%r14,decompress_kernel
+ 	# Set up registers for memory mover. We move the decompressed image to
+ 	# 0x11000, starting at offset 0x11000 in the decompressed image so
+@@ -46,7 +46,7 @@ mover_end:
+ 
+ 	.align	8
+ .Lstack:
+-	.quad	0x8000 + (1<<(PAGE_SHIFT+THREAD_SIZE_ORDER))
++	.quad	0x8000 + THREAD_SIZE - STACK_FRAME_OVERHEAD
+ .Loffset:
+ 	.quad	0x11000
+ .Lmvsize:
+--- a/arch/s390/kernel/head.S
++++ b/arch/s390/kernel/head.S
+@@ -307,7 +307,6 @@ ENTRY(startup_kdump)
+ 	spt	6f-.LPG0(%r13)
+ 	mvc	__LC_LAST_UPDATE_TIMER(8),6f-.LPG0(%r13)
+ 	l	%r15,.Lstack-.LPG0(%r13)
+-	ahi	%r15,-STACK_FRAME_OVERHEAD
+ 	brasl	%r14,verify_facilities
+ # For uncompressed images, continue in
+ # arch/s390/kernel/head64.S. For compressed images, continue in
+@@ -315,7 +314,7 @@ ENTRY(startup_kdump)
+ 	jg	startup_continue
+ 
+ .Lstack:
+-	.long	0x8000 + (1<<(PAGE_SHIFT+THREAD_SIZE_ORDER))
++	.long	0x8000 + THREAD_SIZE - STACK_FRAME_OVERHEAD
+ 	.align	8
+ 6:	.long	0x7fffffff,0xffffffff
+ 
+--- a/arch/s390/kernel/head64.S
++++ b/arch/s390/kernel/head64.S
+@@ -13,6 +13,7 @@
+ #include <asm/asm-offsets.h>
+ #include <asm/thread_info.h>
+ #include <asm/page.h>
++#include <asm/ptrace.h>
+ 
+ __HEAD
+ ENTRY(startup_continue)
+@@ -34,10 +35,9 @@ ENTRY(startup_continue)
+ #
+ 	larl	%r14,init_task
+ 	stg	%r14,__LC_CURRENT
+-	larl	%r15,init_thread_union
+-	aghi	%r15,1<<(PAGE_SHIFT+THREAD_SIZE_ORDER) # init_task_union + THREAD_SIZE
++	larl	%r15,init_thread_union+THREAD_SIZE
+ 	stg	%r15,__LC_KERNEL_STACK	# set end of kernel stack
+-	aghi	%r15,-160
++	aghi	%r15,-STACK_FRAME_OVERHEAD
+ #
+ # Save ipl parameters, clear bss memory, initialize storage key for kernel pages,
+ # and create a kernel NSS if the SAVESYS= parm is defined
+--- a/arch/s390/kernel/swsusp.S
++++ b/arch/s390/kernel/swsusp.S
+@@ -196,8 +196,7 @@ pgm_check_entry:
+ 	brc	2,3b				/* busy, try again */
+ 
+ 	/* Suspend CPU not available -> panic */
+-	larl	%r15,init_thread_union
+-	ahi	%r15,1<<(PAGE_SHIFT+THREAD_SIZE_ORDER)
++	larl	%r15,init_thread_union+THREAD_SIZE-STACK_FRAME_OVERHEAD
+ 	larl	%r2,.Lpanic_string
+ 	lghi	%r1,0
+ 	sam31

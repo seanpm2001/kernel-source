@@ -1,0 +1,34 @@
+From: Alexei Starovoitov <ast@kernel.org>
+Date: Thu, 13 Dec 2018 11:42:31 -0800
+Subject: bpf: speed up stacksafe check
+Patch-mainline: v5.0
+Git-commit: b233920c97a6201eb47fbafd78365c6946e6d7b6
+References: bsc#1160618
+
+Don't check the same stack liveness condition 8 times.
+once is enough.
+
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Acked-by: Edward Cree <ecree@solarflare.com>
+Acked-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Acked-by: Michal Rostecki <mrostecki@suse.de>
+---
+ kernel/bpf/verifier.c |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -4658,9 +4658,11 @@ static bool stacksafe(struct bpf_func_st
+ 	for (i = 0; i < old->allocated_stack; i++) {
+ 		spi = i / BPF_REG_SIZE;
+ 
+-		if (!(old->stack[spi].spilled_ptr.live & REG_LIVE_READ))
++		if (!(old->stack[spi].spilled_ptr.live & REG_LIVE_READ)) {
++			i += BPF_REG_SIZE - 1;
+ 			/* explored state didn't use this */
+ 			continue;
++		}
+ 
+ 		if (old->stack[spi].slot_type[i % BPF_REG_SIZE] == STACK_INVALID)
+ 			continue;

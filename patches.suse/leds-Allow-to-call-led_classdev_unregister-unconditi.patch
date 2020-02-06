@@ -1,0 +1,51 @@
+From 1dbb9fb4082ce2a2f1cf9596881ddece062d15d0 Mon Sep 17 00:00:00 2001
+From: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+Date: Fri, 16 Aug 2019 13:52:29 +0300
+Subject: [PATCH] leds: Allow to call led_classdev_unregister() unconditionally
+Git-commit: 1dbb9fb4082ce2a2f1cf9596881ddece062d15d0
+Patch-mainline: v5.4-rc1
+References: bsc#1161674
+
+If in the certain driver the LED is optional, and it's a majority of them,
+the call of led_classdev_unregister() still requires some additional
+checks.
+
+The usual pattern on unregistering is to check for NULL, but we also check
+for IS_ERR() in case device_create_with_groups() fails.
+
+The change will reduce a burden in a lot of drivers to repeatedly check
+for above conditions.
+
+Signed-off-by: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+Signed-off-by: Jacek Anaszewski <jacek.anaszewski@gmail.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/leds/led-class.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/leds/led-class.c b/drivers/leds/led-class.c
+index 052c7571e188..647b1263c579 100644
+--- a/drivers/leds/led-class.c
++++ b/drivers/leds/led-class.c
+@@ -287,6 +287,7 @@ int led_classdev_register_ext(struct device *parent,
+ 		ret = led_add_brightness_hw_changed(led_cdev);
+ 		if (ret) {
+ 			device_unregister(led_cdev->dev);
++			led_cdev->dev = NULL;
+ 			mutex_unlock(&led_cdev->led_access);
+ 			return ret;
+ 		}
+@@ -332,6 +333,9 @@ EXPORT_SYMBOL_GPL(led_classdev_register_ext);
+  */
+ void led_classdev_unregister(struct led_classdev *led_cdev)
+ {
++	if (IS_ERR_OR_NULL(led_cdev->dev))
++		return;
++
+ #ifdef CONFIG_LEDS_TRIGGERS
+ 	down_write(&led_cdev->trigger_lock);
+ 	if (led_cdev->trigger)
+-- 
+2.16.4
+

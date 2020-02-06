@@ -1,0 +1,67 @@
+From: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Date: Fri, 31 Aug 2018 10:42:24 +0200
+Subject: init: add arch_call_rest_init to allow stack switching
+Git-commit: 53c99bd665a2649341ed6aed358ab56a3eedcd00
+Patch-mainline: v4.20-rc1
+References: jsc#SLE-11178
+
+With CONFIG_VMAP_STACK=y the kernel stack of all tasks should be
+allocated in the vmalloc space. The initial stack used for all
+the early init code is in the init_thread_union. To be able to
+switch from this early stack to a properly allocated stack
+from vmalloc the architecture needs a switch-over point.
+
+Introduce the arch_call_rest_init() function with a weak definition
+in init/main.c with the only purpose to call rest_init() from the
+end of start_kernel(). The architecture override can then do the
+necessary magic to switch to the new vmalloc'ed stack.
+
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ include/linux/start_kernel.h |    2 ++
+ init/main.c                  |    9 +++++++--
+ 2 files changed, 9 insertions(+), 2 deletions(-)
+
+--- a/include/linux/start_kernel.h
++++ b/include/linux/start_kernel.h
+@@ -8,5 +8,7 @@
+    up something else. */
+ 
+ extern asmlinkage void __init start_kernel(void);
++extern void __init arch_call_rest_init(void);
++extern void __ref rest_init(void);
+ 
+ #endif /* _LINUX_START_KERNEL_H */
+--- a/init/main.c
++++ b/init/main.c
+@@ -388,7 +388,7 @@ static void __init setup_command_line(ch
+ 
+ static __initdata DECLARE_COMPLETION(kthreadd_done);
+ 
+-static noinline void __ref rest_init(void)
++noinline void __ref rest_init(void)
+ {
+ 	int pid;
+ 
+@@ -492,6 +492,11 @@ static void __init mm_init(void)
+ 	pti_init();
+ }
+ 
++void __init __weak arch_call_rest_init(void)
++{
++	rest_init();
++}
++
+ asmlinkage __visible void __init start_kernel(void)
+ {
+ 	char *command_line;
+@@ -688,7 +693,7 @@ asmlinkage __visible void __init start_k
+ 	}
+ 
+ 	/* Do the rest non-__init'ed, we're now alive */
+-	rest_init();
++	arch_call_rest_init();
+ }
+ 
+ /* Call all constructor functions linked into the kernel. */

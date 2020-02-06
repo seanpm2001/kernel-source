@@ -1,0 +1,81 @@
+From 6d9175b95504d28045909631514d06660b4b1a9a Mon Sep 17 00:00:00 2001
+From: Eric Dumazet <edumazet@google.com>
+Date: Fri, 6 Dec 2019 10:20:16 -0800
+Subject: [PATCH] tcp: exit if nothing to retransmit on RTO timeout
+References: bsc#1160560, stable 4.14.159
+Git-commit: 88f8598d0a302a08380eadefd09b9f5cb1c4c428
+No-fix: 0d580fbd2db084a5c96ee9c00492236a279d5e0f
+No-fix: 6d9175b95504d28045909631514d06660b4b1a9a
+Patch-mainline: v5.1-rc1
+
+Two upstream commits squashed together for v4.14 stable :
+
+ commit 88f8598d0a302a08380eadefd09b9f5cb1c4c428 upstream.
+
+  Previously TCP only warns if its RTO timer fires and the
+  retransmission queue is empty, but it'll cause null pointer
+  reference later on. It's better to avoid such catastrophic failure
+  and simply exit with a warning.
+
+Squashed with "tcp: refactor tcp_retransmit_timer()" :
+
+ commit 0d580fbd2db084a5c96ee9c00492236a279d5e0f upstream.
+
+  It appears linux-4.14 stable needs a backport of commit
+  88f8598d0a30 ("tcp: exit if nothing to retransmit on RTO timeout")
+
+  Since tcp_rtx_queue_empty() is not in pre 4.15 kernels,
+  let's refactor tcp_retransmit_timer() to only use tcp_rtx_queue_head()
+
+Signed-off-by: Yuchung Cheng <ycheng@google.com>
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Reviewed-by: Neal Cardwell <ncardwell@google.com>
+Reviewed-by: Soheil Hassas Yeganeh <soheil@google.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ net/ipv4/tcp_timer.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/net/ipv4/tcp_timer.c b/net/ipv4/tcp_timer.c
+index 65f66bd585e6..895129b0928c 100644
+--- a/net/ipv4/tcp_timer.c
++++ b/net/ipv4/tcp_timer.c
+@@ -413,6 +413,7 @@ void tcp_retransmit_timer(struct sock *sk)
+ 	struct tcp_sock *tp = tcp_sk(sk);
+ 	struct net *net = sock_net(sk);
+ 	struct inet_connection_sock *icsk = inet_csk(sk);
++	struct sk_buff *skb;
+ 
+ 	if (tp->fastopen_rsk) {
+ 		WARN_ON_ONCE(sk->sk_state != TCP_SYN_RECV &&
+@@ -423,10 +424,13 @@ void tcp_retransmit_timer(struct sock *sk)
+ 		 */
+ 		return;
+ 	}
++
+ 	if (!tp->packets_out)
+-		goto out;
++		return;
+ 
+-	WARN_ON(tcp_write_queue_empty(sk));
++	skb = tcp_rtx_queue_head(sk);
++	if (WARN_ON_ONCE(!skb))
++		return;
+ 
+ 	tp->tlp_high_seq = 0;
+ 
+@@ -459,7 +463,7 @@ void tcp_retransmit_timer(struct sock *sk)
+ 			goto out;
+ 		}
+ 		tcp_enter_loss(sk);
+-		tcp_retransmit_skb(sk, tcp_write_queue_head(sk), 1);
++		tcp_retransmit_skb(sk, skb, 1);
+ 		__sk_dst_reset(sk);
+ 		goto out_reset_timer;
+ 	}
+-- 
+2.16.4
+

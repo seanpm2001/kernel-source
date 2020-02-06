@@ -1,0 +1,46 @@
+From 412a23127c58c54f709015342af5e724681a5b2d Mon Sep 17 00:00:00 2001
+From: David Sterba <dsterba@suse.com>
+Date: Wed, 20 Mar 2019 16:22:58 +0100
+Git-commit: 412a23127c58c54f709015342af5e724681a5b2d
+References: dependency for bsc#1157692
+Patch-mainline: v5.2
+Subject: [PATCH 21/22] btrfs: tree-checker: get fs_info from eb in
+ check_dev_item
+
+We can read fs_info from extent buffer and can drop it from the
+parameters.
+
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/tree-checker.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/fs/btrfs/tree-checker.c b/fs/btrfs/tree-checker.c
+index 03bee2b0e1d5..752ac3bc2587 100644
+--- a/fs/btrfs/tree-checker.c
++++ b/fs/btrfs/tree-checker.c
+@@ -629,10 +629,10 @@ static void dev_item_err(const struct extent_buffer *eb, int slot,
+ 	va_end(args);
+ }
+ 
+-static int check_dev_item(struct btrfs_fs_info *fs_info,
+-			  struct extent_buffer *leaf,
++static int check_dev_item(struct extent_buffer *leaf,
+ 			  struct btrfs_key *key, int slot)
+ {
++	struct btrfs_fs_info *fs_info = leaf->fs_info;
+ 	struct btrfs_dev_item *ditem;
+ 	u64 max_devid = max(BTRFS_MAX_DEVS(fs_info), BTRFS_MAX_DEVS_SYS_CHUNK);
+ 
+@@ -797,7 +797,7 @@ static int check_leaf_item(struct extent_buffer *leaf,
+ 					      key->offset);
+ 		break;
+ 	case BTRFS_DEV_ITEM_KEY:
+-		ret = check_dev_item(leaf->fs_info, leaf, key, slot);
++		ret = check_dev_item(leaf, key, slot);
+ 		break;
+ 	case BTRFS_INODE_ITEM_KEY:
+ 		ret = check_inode_item(leaf->fs_info, leaf, key, slot);
+-- 
+2.24.1
+

@@ -1,0 +1,69 @@
+From e66b39af00f426b3356b96433d620cb3367ba1ff Mon Sep 17 00:00:00 2001
+From: Tejun Heo <tj@kernel.org>
+Date: Wed, 25 Sep 2019 06:59:15 -0700
+Subject: [PATCH] workqueue: Fix pwq ref leak in rescuer_thread()
+Git-commit: e66b39af00f426b3356b96433d620cb3367ba1ff
+Patch-mainline: v5.5-rc1
+References: bsc#1160211
+
+008847f66c3 ("workqueue: allow rescuer thread to do more work.") made
+the rescuer worker requeue the pwq immediately if there may be more
+work items which need rescuing instead of waiting for the next mayday
+timer expiration.  Unfortunately, it doesn't check whether the pwq is
+already on the mayday list and unconditionally gets the ref and moves
+it onto the list.  This doesn't corrupt the list but creates an
+additional reference to the pwq.  It got queued twice but will only be
+removed once.
+
+This leak later can trigger pwq refcnt warning on workqueue
+destruction and prevent freeing of the workqueue.
+
+[pmladek: Removed 2nd hunk. The message was added by the commit
+	c29eb8538688075013 ("workqueue: more destroy_workqueue()
+	fixes") that looks too intrusive.
+]
+
+Signed-off-by: Tejun Heo <tj@kernel.org>
+Cc: "Williams, Gerald S" <gerald.s.williams@intel.com>
+Cc: NeilBrown <neilb@suse.de>
+Cc: stable@vger.kernel.org # v3.19+
+Acked-by: Petr Mladek <pmladek@suse.com>
+
+---
+ kernel/workqueue.c | 17 ++++++++++++-----
+ 1 file changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/kernel/workqueue.c b/kernel/workqueue.c
+index 4a3c30177b94..4dc8270326d7 100644
+--- a/kernel/workqueue.c
++++ b/kernel/workqueue.c
+@@ -2533,8 +2533,14 @@ static int rescuer_thread(void *__rescuer)
+ 			 */
+ 			if (need_to_create_worker(pool)) {
+ 				spin_lock(&wq_mayday_lock);
+-				get_pwq(pwq);
+-				list_move_tail(&pwq->mayday_node, &wq->maydays);
++				/*
++				 * Queue iff we aren't racing destruction
++				 * and somebody else hasn't queued it already.
++				 */
++				if (wq->rescuer && list_empty(&pwq->mayday_node)) {
++					get_pwq(pwq);
++					list_add_tail(&pwq->mayday_node, &wq->maydays);
++				}
+ 				spin_unlock(&wq_mayday_lock);
+ 			}
+ 		}
+@@ -4670,7 +4676,8 @@ static void show_pwq(struct pool_workqueue *pwq)
+ 	pr_info("  pwq %d:", pool->id);
+ 	pr_cont_pool_info(pool);
+ 
+-	pr_cont(" active=%d/%d%s\n", pwq->nr_active, pwq->max_active,
++	pr_cont(" active=%d/%d refcnt=%d%s\n",
++		pwq->nr_active, pwq->max_active, pwq->refcnt,
+ 		!list_empty(&pwq->mayday_node) ? " MAYDAY" : "");
+ 
+ 	hash_for_each(pool->busy_hash, bkt, worker, hentry) {
+-- 
+2.16.4
+

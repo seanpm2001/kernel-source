@@ -13,13 +13,11 @@ The average is updated every tick.
 Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
 Acked-by: Liang Yan <lyan@suse.com>
 ---
- arch/s390/include/asm/lowcore.h |  4 ++--
- arch/s390/kernel/smp.c          |  3 ++-
- arch/s390/kernel/vtime.c        | 19 ++++++++++++-------
+ arch/s390/include/asm/lowcore.h |    4 ++--
+ arch/s390/kernel/smp.c          |    3 ++-
+ arch/s390/kernel/vtime.c        |   19 ++++++++++++-------
  3 files changed, 16 insertions(+), 10 deletions(-)
 
-diff --git a/arch/s390/include/asm/lowcore.h b/arch/s390/include/asm/lowcore.h
-index 4b028396e539..39ed06d0eff0 100644
 --- a/arch/s390/include/asm/lowcore.h
 +++ b/arch/s390/include/asm/lowcore.h
 @@ -98,7 +98,7 @@ struct lowcore {
@@ -30,8 +28,8 @@ index 4b028396e539..39ed06d0eff0 100644
 +	__u64	avg_steal_timer;		/* 0x0330 */
  	__u64	kernel_stack;			/* 0x0338 */
  
- 	/* Interrupt, panic and restart stack. */
-@@ -139,7 +139,7 @@ struct lowcore {
+ 	/* Interrupt, DAT-off and restartstack. */
+@@ -140,7 +140,7 @@ struct lowcore {
  	/* Per cpu primary space access list */
  	__u32	paste[16];			/* 0x0400 */
  
@@ -40,11 +38,9 @@ index 4b028396e539..39ed06d0eff0 100644
  
  	/* br %r1 trampoline */
  	__u16	br_r1_trampoline;		/* 0x0500 */
-diff --git a/arch/s390/kernel/smp.c b/arch/s390/kernel/smp.c
-index 07383496f1d3..0400a8dfc63d 100644
 --- a/arch/s390/kernel/smp.c
 +++ b/arch/s390/kernel/smp.c
-@@ -274,7 +274,8 @@ static void pcpu_prepare_secondary(struct pcpu *pcpu, int cpu)
+@@ -278,7 +278,8 @@ static void pcpu_prepare_secondary(struc
  	lc->percpu_offset = __per_cpu_offset[cpu];
  	lc->kernel_asce = S390_lowcore.kernel_asce;
  	lc->machine_flags = S390_lowcore.machine_flags;
@@ -54,11 +50,9 @@ index 07383496f1d3..0400a8dfc63d 100644
  	__ctl_store(lc->cregs_save_area, 0, 15);
  	save_access_regs((unsigned int *) lc->access_regs_save_area);
  	memcpy(lc->stfle_fac_list, S390_lowcore.stfle_fac_list,
-diff --git a/arch/s390/kernel/vtime.c b/arch/s390/kernel/vtime.c
-index 072d84ba42a3..a6f23238c3b0 100644
 --- a/arch/s390/kernel/vtime.c
 +++ b/arch/s390/kernel/vtime.c
-@@ -124,7 +124,7 @@ static void account_system_index_scaled(struct task_struct *p,
+@@ -124,7 +124,7 @@ static void account_system_index_scaled(
   */
  static int do_account_vtime(struct task_struct *tsk)
  {
@@ -67,7 +61,7 @@ index 072d84ba42a3..a6f23238c3b0 100644
  
  	timer = S390_lowcore.last_update_timer;
  	clock = S390_lowcore.last_update_clock;
-@@ -185,12 +185,6 @@ static int do_account_vtime(struct task_struct *tsk)
+@@ -185,12 +185,6 @@ static int do_account_vtime(struct task_
  		account_system_index_scaled(tsk, softirq, scale_vtime(softirq),
  					    CPUTIME_SOFTIRQ);
  
@@ -80,7 +74,7 @@ index 072d84ba42a3..a6f23238c3b0 100644
  	return virt_timer_forward(user + guest + system + hardirq + softirq);
  }
  
-@@ -216,8 +210,19 @@ void vtime_task_switch(struct task_struct *prev)
+@@ -216,8 +210,19 @@ void vtime_task_switch(struct task_struc
   */
  void vtime_flush(struct task_struct *tsk)
  {
@@ -100,6 +94,3 @@ index 072d84ba42a3..a6f23238c3b0 100644
  }
  
  /*
--- 
-2.22.0
-

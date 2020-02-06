@@ -1,0 +1,123 @@
+From: Vasily Gorbik <gor@linux.ibm.com>
+Date: Wed, 14 Aug 2019 14:27:44 +0200
+Subject: s390/stacktrace: use common arch_stack_walk infrastructure
+Git-commit: e991e5bb11d6eacf8a49867ff9d4ec6e1cde3718
+Patch-mainline: v5.4-rc1
+References: jsc#SLE-11178
+
+Use common arch_stack_walk infrastructure to avoid duplicated code and
+avoid taking care of the stack storage and filtering.
+
+Common code also uses try_get_task_stack/put_task_stack when needed which
+have been missing in our code, which also solves potential problem for us.
+
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+[
+  mb: partial rewrite. We don't want to backport all the commits to keep the
+  code base sane. That is why save_stack_trace*() functions have to be preserved
+  regardless ARCH_STACKWALK being enabled.
+]
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ arch/s390/Kconfig             |    1 
+ arch/s390/kernel/stacktrace.c |   13 +++++++++++
+ include/linux/stacktrace.h    |   49 ++++++++++++++++++++----------------------
+ 3 files changed, 38 insertions(+), 25 deletions(-)
+
+--- a/arch/s390/Kconfig
++++ b/arch/s390/Kconfig
+@@ -111,6 +111,7 @@ config S390
+ 	select ARCH_INLINE_WRITE_UNLOCK_IRQ
+ 	select ARCH_INLINE_WRITE_UNLOCK_IRQRESTORE
+ 	select ARCH_SAVE_PAGE_KEYS if HIBERNATION
++	select ARCH_STACKWALK
+ 	select ARCH_SUPPORTS_ATOMIC_RMW
+ 	select ARCH_SUPPORTS_DEFERRED_STRUCT_PAGE_INIT
+ 	select ARCH_SUPPORTS_NUMA_BALANCING
+--- a/arch/s390/kernel/stacktrace.c
++++ b/arch/s390/kernel/stacktrace.c
+@@ -13,6 +13,19 @@
+ #include <asm/stacktrace.h>
+ #include <asm/unwind.h>
+ 
++void arch_stack_walk(stack_trace_consume_fn consume_entry, void *cookie,
++		     struct task_struct *task, struct pt_regs *regs)
++{
++	struct unwind_state state;
++	unsigned long addr;
++
++	unwind_for_each_frame(&state, task, regs, 0) {
++		addr = unwind_get_return_address(&state);
++		if (!addr || !consume_entry(cookie, addr, false))
++			break;
++	}
++}
++
+ void save_stack_trace(struct stack_trace *trace)
+ {
+ 	struct unwind_state state;
+--- a/include/linux/stacktrace.h
++++ b/include/linux/stacktrace.h
+@@ -21,6 +21,30 @@ unsigned int stack_trace_save_regs(struc
+ 				   unsigned int size, unsigned int skipnr);
+ unsigned int stack_trace_save_user(unsigned long *store, unsigned int size);
+ 
++struct stack_trace {
++	unsigned int nr_entries, max_entries;
++	unsigned long *entries;
++	int skip;	/* input argument: How many entries to skip */
++};
++
++extern void save_stack_trace(struct stack_trace *trace);
++extern void save_stack_trace_regs(struct pt_regs *regs,
++				  struct stack_trace *trace);
++extern void save_stack_trace_tsk(struct task_struct *tsk,
++				struct stack_trace *trace);
++extern int save_stack_trace_tsk_reliable(struct task_struct *tsk,
++					 struct stack_trace *trace);
++
++extern void print_stack_trace(struct stack_trace *trace, int spaces);
++extern int snprint_stack_trace(char *buf, size_t size,
++			struct stack_trace *trace, int spaces);
++
++#ifdef CONFIG_USER_STACKTRACE_SUPPORT
++extern void save_stack_trace_user(struct stack_trace *trace);
++#else
++# define save_stack_trace_user(trace)              do { } while (0)
++#endif
++
+ /* Internal interfaces. Do not use in generic code */
+ #ifdef CONFIG_ARCH_STACKWALK
+ 
+@@ -59,31 +83,6 @@ int arch_stack_walk_reliable(stack_trace
+ void arch_stack_walk_user(stack_trace_consume_fn consume_entry, void *cookie,
+ 			  const struct pt_regs *regs);
+ 
+-#else /* CONFIG_ARCH_STACKWALK */
+-struct stack_trace {
+-	unsigned int nr_entries, max_entries;
+-	unsigned long *entries;
+-	int skip;	/* input argument: How many entries to skip */
+-};
+-
+-extern void save_stack_trace(struct stack_trace *trace);
+-extern void save_stack_trace_regs(struct pt_regs *regs,
+-				  struct stack_trace *trace);
+-extern void save_stack_trace_tsk(struct task_struct *tsk,
+-				struct stack_trace *trace);
+-extern int save_stack_trace_tsk_reliable(struct task_struct *tsk,
+-					 struct stack_trace *trace);
+-
+-extern void print_stack_trace(struct stack_trace *trace, int spaces);
+-extern int snprint_stack_trace(char *buf, size_t size,
+-			struct stack_trace *trace, int spaces);
+-
+-#ifdef CONFIG_USER_STACKTRACE_SUPPORT
+-extern void save_stack_trace_user(struct stack_trace *trace);
+-#else
+-# define save_stack_trace_user(trace)              do { } while (0)
+-#endif
+-
+ #endif /* !CONFIG_ARCH_STACKWALK */
+ 
+ #else /* !CONFIG_STACKTRACE */

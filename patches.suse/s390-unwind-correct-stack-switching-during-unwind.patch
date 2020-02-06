@@ -1,0 +1,35 @@
+From: Vasily Gorbik <gor@linux.ibm.com>
+Date: Thu, 6 Jun 2019 16:58:45 +0200
+Subject: s390/unwind: correct stack switching during unwind
+Git-commit: 0ab0d7ac2090eae30f1c0b01ae981bb7a368f598
+Patch-mainline: v5.2-rc4
+References: jsc#SLE-11178
+
+Adjust conditions in on_stack function. That fixes backchain unwinder
+which was unable to read pt_regs at the very bottom of the stack and
+hence couldn't follow stacks (e.g. from async stack to a task stack).
+
+Fixes: 78c98f907413 ("s390/unwind: introduce stack unwind API")
+Reported-by: Julian Wiedmann <jwi@linux.ibm.com>
+Reviewed-by: Heiko Carstens <heiko.carstens@de.ibm.com>
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Signed-off-by: Heiko Carstens <heiko.carstens@de.ibm.com>
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ arch/s390/include/asm/stacktrace.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/s390/include/asm/stacktrace.h b/arch/s390/include/asm/stacktrace.h
+index 49634bfbecdd..0ae4bbf7779c 100644
+--- a/arch/s390/include/asm/stacktrace.h
++++ b/arch/s390/include/asm/stacktrace.h
+@@ -30,7 +30,7 @@ static inline bool on_stack(struct stack_info *info,
+ 		return false;
+ 	if (addr + len < addr)
+ 		return false;
+-	return addr >= info->begin && addr + len < info->end;
++	return addr >= info->begin && addr + len <= info->end;
+ }
+ 
+ static inline unsigned long get_stack_pointer(struct task_struct *task,
+

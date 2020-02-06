@@ -1,0 +1,33 @@
+From 7a9f5c65abcc9644b11738ca0815510cb5510eaf Mon Sep 17 00:00:00 2001
+From: Alexei Starovoitov <ast@kernel.org>
+Date: Mon, 1 Apr 2019 21:27:46 -0700
+Subject: bpf: increase verifier log limit
+Patch-mainline: v5.2
+Git-commit: 7a9f5c65abcc9644b11738ca0815510cb5510eaf
+References: bsc#1160618
+
+The existing 16Mbyte verifier log limit is not enough for log_level=2
+even for small programs. Increase it to 1Gbyte.
+Note it's not a kernel memory limit.
+It's an amount of memory user space provides to store
+the verifier log. The kernel populates it 1k at a time.
+
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Reviewed-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Acked-by: Michal Rostecki <mrostecki@suse.de>
+---
+ kernel/bpf/verifier.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -6422,7 +6422,7 @@ int bpf_check(struct bpf_prog **prog, un
+ 
+ 		ret = -EINVAL;
+ 		/* log attributes have to be sane */
+-		if (log->len_total < 128 || log->len_total > UINT_MAX >> 8 ||
++		if (log->len_total < 128 || log->len_total > UINT_MAX >> 2 ||
+ 		    !log->level || !log->ubuf || log->level & ~BPF_LOG_MASK)
+ 			goto err_unlock;
+ 	}

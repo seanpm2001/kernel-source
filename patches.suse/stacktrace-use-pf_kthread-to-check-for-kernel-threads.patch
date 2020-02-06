@@ -1,0 +1,36 @@
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Tue, 2 Jul 2019 17:53:35 +0200
+Subject: stacktrace: Use PF_KTHREAD to check for kernel threads
+Git-commit: 7e8e6816c6495a1168f9a7a50125d82c23e59300
+Patch-mainline: v5.3-rc1
+References: jsc#SLE-11178
+
+!current->mm is not a reliable indicator for kernel threads as they might
+temporarily use a user mm. Check for PF_KTHREAD instead.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Acked-by: Mark Rutland <mark.rutland@arm.com>
+Cc: Josh Poimboeuf <jpoimboe@redhat.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Steven Rostedt <rostedt@goodmis.org>
+Link: https://lkml.kernel.org/r/alpine.DEB.2.21.1907021750100.1802@nanos.tec.linutronix.de
+
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ kernel/stacktrace.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/stacktrace.c b/kernel/stacktrace.c
+index 36139de0a3c4..c8d0f05721a1 100644
+--- a/kernel/stacktrace.c
++++ b/kernel/stacktrace.c
+@@ -228,7 +228,7 @@ unsigned int stack_trace_save_user(unsigned long *store, unsigned int size)
+ 	};
+ 
+ 	/* Trace user stack if not a kernel thread */
+-	if (!current->mm)
++	if (current->flags & PF_KTHREAD)
+ 		return 0;
+ 
+ 	arch_stack_walk_user(consume_entry, &c, task_pt_regs(current));
+

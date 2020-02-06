@@ -18,14 +18,12 @@ Reviewed-by: Qu Wenruo <wqu@suse.com>
 Signed-off-by: Filipe Manana <fdmanana@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 ---
- fs/btrfs/tree-checker.c | 49 +++++++++++++++++++++++++++++++++++++----
+ fs/btrfs/tree-checker.c |   49 ++++++++++++++++++++++++++++++++++++++++++++----
  1 file changed, 45 insertions(+), 4 deletions(-)
 
-diff --git a/fs/btrfs/tree-checker.c b/fs/btrfs/tree-checker.c
-index 60a70af16b06..b6caebc636c3 100644
 --- a/fs/btrfs/tree-checker.c
 +++ b/fs/btrfs/tree-checker.c
-@@ -114,9 +114,27 @@ static void file_extent_err(const struct btrfs_fs_info *fs_info,
+@@ -114,8 +114,26 @@ static void file_extent_err(const struct
  	(!IS_ALIGNED(btrfs_file_extent_##name((leaf), (fi)), (alignment)));   \
  })
  
@@ -46,15 +44,14 @@ index 60a70af16b06..b6caebc636c3 100644
 +	return end;
 +}
 +
- static int check_extent_data_item(struct btrfs_fs_info *fs_info,
- 				  struct extent_buffer *leaf,
+ static int check_extent_data_item(struct extent_buffer *leaf,
 -				  struct btrfs_key *key, int slot)
 +				  struct btrfs_key *key, int slot,
 +				  struct btrfs_key *prev_key)
  {
+ 	struct btrfs_fs_info *fs_info = leaf->fs_info;
  	struct btrfs_file_extent_item *fi;
- 	u32 sectorsize = fs_info->sectorsize;
-@@ -195,6 +213,28 @@ static int check_extent_data_item(struct btrfs_fs_info *fs_info,
+@@ -195,6 +213,28 @@ static int check_extent_data_item(struct
  	    CHECK_FE_ALIGNED(fs_info, leaf, slot, fi, offset, sectorsize) ||
  	    CHECK_FE_ALIGNED(fs_info, leaf, slot, fi, num_bytes, sectorsize))
  		return -EUCLEAN;
@@ -73,7 +70,7 @@ index 60a70af16b06..b6caebc636c3 100644
 +					 struct btrfs_file_extent_item);
 +		prev_end = file_extent_end(leaf, prev_key, prev_fi);
 +		if (prev_end > key->offset) {
-+			file_extent_err(fs_info, leaf, slot - 1,
++			file_extent_err(leaf, slot - 1,
 +"file extent end range (%llu) goes beyond start offset (%llu) of the next file extent",
 +					prev_end, key->offset);
 +			return -EUCLEAN;
@@ -83,32 +80,30 @@ index 60a70af16b06..b6caebc636c3 100644
  	return 0;
  }
  
-@@ -461,13 +501,14 @@ static int check_block_group_item(struct btrfs_fs_info *fs_info,
+@@ -780,14 +820,15 @@ static int check_inode_item(struct btrfs
+  * Common point to switch the item-specific validation.
   */
- static int check_leaf_item(struct btrfs_fs_info *fs_info,
- 			   struct extent_buffer *leaf,
+ static int check_leaf_item(struct extent_buffer *leaf,
 -			   struct btrfs_key *key, int slot)
 +			   struct btrfs_key *key, int slot,
 +			   struct btrfs_key *prev_key)
  {
  	int ret = 0;
+ 	struct btrfs_chunk *chunk;
  
  	switch (key->type) {
  	case BTRFS_EXTENT_DATA_KEY:
--		ret = check_extent_data_item(fs_info, leaf, key, slot);
-+		ret = check_extent_data_item(fs_info, leaf, key, slot, prev_key);
+-		ret = check_extent_data_item(leaf, key, slot);
++		ret = check_extent_data_item(leaf, key, slot, prev_key);
  		break;
  	case BTRFS_EXTENT_CSUM_KEY:
- 		ret = check_csum_item(fs_info, leaf, key, slot);
-@@ -621,7 +662,7 @@ static int check_leaf(struct btrfs_fs_info *fs_info, struct extent_buffer *leaf,
+ 		ret = check_csum_item(leaf, key, slot);
+@@ -959,7 +1000,7 @@ static int check_leaf(struct btrfs_fs_in
  			 * Check if the item size and content meet other
  			 * criteria
  			 */
--			ret = check_leaf_item(fs_info, leaf, &key, slot);
-+			ret = check_leaf_item(fs_info, leaf, &key, slot, &prev_key);
+-			ret = check_leaf_item(leaf, &key, slot);
++			ret = check_leaf_item(leaf, &key, slot, &prev_key);
  			if (ret < 0)
  				return ret;
  		}
--- 
-2.19.0
-
