@@ -1,0 +1,154 @@
+From fbfee12274e8dd45b4597b873bda88403179b45b Mon Sep 17 00:00:00 2001
+From: imititel <ionel-catalin.mititelu@intel.com>
+Date: Fri, 15 Feb 2019 11:32:56 +0100
+Subject: [PATCH 8/8] mfd-lpc_ich-Add-a-platform-device-for-pinctrl-denver
+
+This is to cater the need in non-ACPI system whereby a platform device
+has to be created in order to bind with the Denverton pinctrl driver.
+
+Signed-off-by: Chuah, Kim Tatt <kim.tatt.chuah@intel.com>
+Signed-off-by: Mititelu, Ionel Catalin <ionel-catalin.mititelu@intel.com>
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
+---
+ drivers/mfd/lpc_ich.c | 76 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 76 insertions(+)
+
+diff --git a/drivers/mfd/lpc_ich.c b/drivers/mfd/lpc_ich.c
+index cf1120abbf52..9d478a936ac4 100644
+--- a/drivers/mfd/lpc_ich.c
++++ b/drivers/mfd/lpc_ich.c
+@@ -41,6 +41,7 @@
+  *	document number 322169-001, 322170-003: 5 Series, 3400 Series (PCH)
+  *	document number 320066-003, 320257-008: EP80597 (IICH)
+  *	document number 324645-001, 324646-001: Cougar Point (CPT)
++ *      document number TBD : Denverton SoC (DNV}
+  */
+ 
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+@@ -135,6 +136,24 @@ static struct resource intel_spi_res[] = {
+ 	}
+ };
+ 
++static struct resource dnv_gpio_res[] = {
++	/* North GPIO community */
++	{
++		.flags = IORESOURCE_MEM | IORESOURCE_MEM_64,
++	},
++	/* South GPIO community */
++	{
++		.flags = IORESOURCE_MEM | IORESOURCE_MEM_64,
++	},
++	/* IRQ */
++	{
++		.flags = IORESOURCE_IRQ,
++		.start = 14,
++		.end = 14,
++	},
++};
++
++
+ static struct mfd_cell lpc_ich_wdt_cell = {
+ 	.name = "iTCO_wdt",
+ 	.num_resources = ARRAY_SIZE(wdt_ich_res),
+@@ -157,6 +176,13 @@ static struct mfd_cell lpc_ich_spi_cell = {
+ 	.ignore_resource_conflicts = true,
+ };
+ 
++static struct mfd_cell dnv_gpio_cell = {
++	.name = "denverton-pinctrl",
++	.num_resources = ARRAY_SIZE(dnv_gpio_res),
++	.resources = dnv_gpio_res,
++	.ignore_resource_conflicts = true,
++};
++
+ /* chipset related info */
+ enum lpc_chipsets {
+ 	LPC_ICH = 0,	/* ICH */
+@@ -229,6 +255,7 @@ enum lpc_chipsets {
+ 	LPC_APL,	/* Apollo Lake SoC */
+ 	LPC_GLK,	/* Gemini Lake SoC */
+ 	LPC_COUGARMOUNTAIN,/* Cougar Mountain SoC*/
++	LPC_DNV,	/* Denverton SoC */
+ };
+ 
+ static struct lpc_ich_info lpc_chipset_info[] = {
+@@ -565,6 +592,9 @@ static struct lpc_ich_info lpc_chipset_info[] = {
+ 		.name = "Cougar Mountain SoC",
+ 		.iTCO_version = 3,
+ 	},
++	[LPC_DNV] = {
++		.name = "Denverton SoC",
++	},
+ };
+ 
+ /*
+@@ -809,6 +839,7 @@ static const struct pci_device_id lpc_ich_ids[] = {
+ 	{ PCI_VDEVICE(INTEL, 0xa1c7), LPC_LEWISBURG},
+ 	{ PCI_VDEVICE(INTEL, 0xa242), LPC_LEWISBURG},
+ 	{ PCI_VDEVICE(INTEL, 0xa243), LPC_LEWISBURG},
++	{ PCI_VDEVICE(INTEL, 0x19dc), LPC_DNV},
+ 	{ 0, },			/* End of list */
+ };
+ MODULE_DEVICE_TABLE(pci, lpc_ich_ids);
+@@ -1169,6 +1200,48 @@ static int lpc_ich_init_spi(struct pci_dev *dev)
+ 			       &lpc_ich_spi_cell, 1, NULL, 0, NULL);
+ }
+ 
++static int lpc_ich_init_pinctrl(struct pci_dev *dev)
++{
++	struct lpc_ich_priv *priv = pci_get_drvdata(dev);
++	u32 val;
++
++	switch (priv->chipset) {
++	case LPC_DNV: {
++		unsigned int p2sb = PCI_DEVFN(31, 1);
++		struct pci_bus *bus = dev->bus;
++		/*
++		 * The P2SB is hidden by BIOS and we need to unhide it in
++		 * order to read BAR of the GPIO controllers. Once that is
++		 * done we hide it again.
++		 */
++		pci_bus_write_config_byte(bus, p2sb, 0xe1, 0x0);
++		pci_bus_read_config_dword(bus, p2sb, PCI_BASE_ADDRESS_0, &val);
++
++		if (val == ~0)
++			return -ENODEV;
++
++		dnv_gpio_res[0].start = (val & 0xfffffff0) + (0xC2 << 16);
++		dnv_gpio_res[0].end = dnv_gpio_res[0].start + (41 * 0x8) - 1;
++
++		dnv_gpio_res[1].start = (val & 0xfffffff0) + (0xC5 << 16);
++		dnv_gpio_res[1].end = dnv_gpio_res[1].start + (113 * 0x8) - 1;
++
++		pci_bus_read_config_dword(bus, p2sb, PCI_BASE_ADDRESS_1, &val);
++		dnv_gpio_res[0].start |= ((u64)val) << 32;
++		dnv_gpio_res[1].start |= ((u64)val) << 32;
++
++		pci_bus_write_config_byte(bus, p2sb, 0xe1, 0x1);
++		break;
++	}
++
++	default:
++		return -EINVAL;
++	}
++
++	return mfd_add_devices(&dev->dev, PLATFORM_DEVID_NONE,
++			       &dnv_gpio_cell, 1, NULL, 0, NULL);
++}
++
+ static int lpc_ich_probe(struct pci_dev *dev,
+ 				const struct pci_device_id *id)
+ {
+@@ -1218,6 +1291,9 @@ static int lpc_ich_probe(struct pci_dev *dev,
+ 			cell_added = true;
+ 	}
+ 
++	if (!lpc_ich_init_pinctrl(dev))
++		cell_added = true;
++
+ 	/*
+ 	 * We only care if at least one or none of the cells registered
+ 	 * successfully.
+-- 
+2.11.0
+

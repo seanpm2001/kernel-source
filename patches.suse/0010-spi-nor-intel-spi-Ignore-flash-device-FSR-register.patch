@@ -1,0 +1,32 @@
+From a95a646480c3dd1fd48f6aad7b38d852f4ad08d4 Mon Sep 17 00:00:00 2001
+From: "Chuah, Kim Tatt" <kim.tatt.chuah@intel.com>
+Date: Wed, 12 Jul 2017 10:48:47 +0800
+Subject: [PATCH 10/11] spi-nor: intel-spi: Ignore flash device FSR register
+
+Some flash devices have USE_FSR flag set. Current intel-spi driver does
+not support SPINOR_OP_RDFSR opcode. Thus, for Intel SPI flash
+controllers, always ignore flash device FSR register.
+
+Signed-off-by: Chuah, Kim Tatt <kim.tatt.chuah@intel.com>
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
+---
+ drivers/mtd/spi-nor/intel-spi.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/mtd/spi-nor/intel-spi.c b/drivers/mtd/spi-nor/intel-spi.c
+index a10f602..1a03772 100644
+--- a/drivers/mtd/spi-nor/intel-spi.c
++++ b/drivers/mtd/spi-nor/intel-spi.c
+@@ -752,6 +752,9 @@ struct intel_spi *intel_spi_probe(struct device *dev,
+ 		return ERR_PTR(ret);
+ 	}
+ 
++	/* Ignore flash device FSR register */
++	ispi->nor.flags &= ~SNOR_F_USE_FSR;
++
+ 	intel_spi_fill_partition(ispi, &part);
+ 
+ 	/* Prevent writes if not explicitly enabled */
+-- 
+1.9.1
+
