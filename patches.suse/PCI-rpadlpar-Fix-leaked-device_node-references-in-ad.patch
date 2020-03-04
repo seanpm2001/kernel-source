@@ -1,10 +1,12 @@
 From fb26228bfc4ce3951544848555c0278e2832e618 Mon Sep 17 00:00:00 2001
 From: Tyrel Datwyler <tyreld@linux.vnet.ibm.com>
 Date: Fri, 22 Mar 2019 13:27:21 -0500
-Subject: [PATCH] PCI: rpadlpar: Fix leaked device_node references in add/remove paths
-Git-commit: fb26228bfc4ce3951544848555c0278e2832e618
-Patch-mainline: v5.2-rc1
+Subject: [PATCH] PCI: rpadlpar: Fix leaked device_node references in
+ add/remove paths
+
 References: bsc#1051510
+Patch-mainline: v5.2-rc1
+Git-commit: fb26228bfc4ce3951544848555c0278e2832e618
 
 The find_dlpar_node() helper returns a device node with its reference
 incremented.  Both the add and remove paths use this helper for find the
@@ -18,23 +20,24 @@ iterate over its children.
 
 Signed-off-by: Tyrel Datwyler <tyreld@linux.vnet.ibm.com>
 Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
-Acked-by: Takashi Iwai <tiwai@suse.de>
-
+Acked-by: Michal Suchanek <msuchanek@suse.de>
 ---
- drivers/pci/hotplug/rpadlpar_core.c |    4 ++++
+ drivers/pci/hotplug/rpadlpar_core.c | 4 ++++
  1 file changed, 4 insertions(+)
 
+diff --git a/drivers/pci/hotplug/rpadlpar_core.c b/drivers/pci/hotplug/rpadlpar_core.c
+index e2356a9c7088..182f9e3443ee 100644
 --- a/drivers/pci/hotplug/rpadlpar_core.c
 +++ b/drivers/pci/hotplug/rpadlpar_core.c
-@@ -55,6 +55,7 @@ static struct device_node *find_vio_slot
- 		if ((rc == 0) && (!strcmp(drc_name, name)))
+@@ -51,6 +51,7 @@ static struct device_node *find_vio_slot_node(char *drc_name)
+ 		if (rc == 0)
  			break;
  	}
 +	of_node_put(parent);
  
  	return dn;
  }
-@@ -78,6 +79,7 @@ static struct device_node *find_php_slot
+@@ -71,6 +72,7 @@ static struct device_node *find_php_slot_pci_node(char *drc_name,
  	return np;
  }
  
@@ -42,7 +45,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  static struct device_node *find_dlpar_node(char *drc_name, int *node_type)
  {
  	struct device_node *dn;
-@@ -313,6 +315,7 @@ int dlpar_add_slot(char *drc_name)
+@@ -306,6 +308,7 @@ int dlpar_add_slot(char *drc_name)
  			rc = dlpar_add_phb(drc_name, dn);
  			break;
  	}
@@ -50,7 +53,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  
  	printk(KERN_INFO "%s: slot %s added\n", DLPAR_MODULE_NAME, drc_name);
  exit:
-@@ -446,6 +449,7 @@ int dlpar_remove_slot(char *drc_name)
+@@ -439,6 +442,7 @@ int dlpar_remove_slot(char *drc_name)
  			rc = dlpar_remove_pci_slot(drc_name, dn);
  			break;
  	}
@@ -58,3 +61,6 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  	vm_unmap_aliases();
  
  	printk(KERN_INFO "%s: slot %s removed\n", DLPAR_MODULE_NAME, drc_name);
+-- 
+2.23.0
+

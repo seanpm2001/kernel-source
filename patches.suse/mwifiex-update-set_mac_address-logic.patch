@@ -1,0 +1,45 @@
+From 7afb94da3cd8a28ed7ae268143117bf1ac8a3371 Mon Sep 17 00:00:00 2001
+From: Sharvari Harisangam <sharvari@marvell.com>
+Date: Wed, 12 Jun 2019 20:42:11 +0530
+Subject: [PATCH] mwifiex: update set_mac_address logic
+Git-commit: 7afb94da3cd8a28ed7ae268143117bf1ac8a3371
+Patch-mainline: v5.3-rc1
+References: bsc#1111666
+
+In set_mac_address, driver check for interfaces with same bss_type
+For first STA entry, this would return 3 interfaces since all priv's have
+bss_type as 0 due to kzalloc. Thus mac address gets changed for STA
+unexpected. This patch adds check for first STA and avoids mac address
+change. This patch also adds mac_address change for p2p based on bss_num
+type.
+
+Signed-off-by: Sharvari Harisangam <sharvari@marvell.com>
+Signed-off-by: Ganapathi Bhat <gbhat@marvell.com>
+Signed-off-by: Kalle Valo <kvalo@codeaurora.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/net/wireless/marvell/mwifiex/main.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/wireless/marvell/mwifiex/main.c b/drivers/net/wireless/marvell/mwifiex/main.c
+index f6da8edab7f1..4c14b4865367 100644
+--- a/drivers/net/wireless/marvell/mwifiex/main.c
++++ b/drivers/net/wireless/marvell/mwifiex/main.c
+@@ -960,10 +960,10 @@ int mwifiex_set_mac_address(struct mwifiex_private *priv,
+ 
+ 		mac_addr = old_mac_addr;
+ 
+-		if (priv->bss_type == MWIFIEX_BSS_TYPE_P2P)
++		if (priv->bss_type == MWIFIEX_BSS_TYPE_P2P) {
+ 			mac_addr |= BIT_ULL(MWIFIEX_MAC_LOCAL_ADMIN_BIT);
+-
+-		if (mwifiex_get_intf_num(priv->adapter, priv->bss_type) > 1) {
++			mac_addr += priv->bss_num;
++		} else if (priv->adapter->priv[0] != priv) {
+ 			/* Set mac address based on bss_type/bss_num */
+ 			mac_addr ^= BIT_ULL(priv->bss_type + 8);
+ 			mac_addr += priv->bss_num;
+-- 
+2.16.4
+

@@ -1,0 +1,52 @@
+From: Johannes Berg <johannes.berg@intel.com>
+Date: Wed, 26 Sep 2018 11:15:31 +0200
+Subject: [PATCH] netlink: make validation_data const
+Patch-mainline: v4.20-rc1
+Git-commit: 48fde90a78f8c67e2bec5061f9725fe363519feb
+References: bsc#1152107 CVE-2019-16746
+
+The validation data is only used within the policy that
+should usually already be const, and isn't changed in any
+code that uses it. Therefore, make the validation_data
+pointer const.
+
+While at it, remove the duplicate variable in the bitfield
+validation that I'd otherwise have to change to const.
+
+Reviewed-by: David Ahern <dsahern@gmail.com>
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Cho, Yu-Chen <acho@suse.com>
+---
+ include/net/netlink.h |    2 +-
+ lib/nlattr.c          |    5 ++---
+ 2 files changed, 3 insertions(+), 4 deletions(-)
+
+--- a/include/net/netlink.h
++++ b/include/net/netlink.h
+@@ -232,7 +232,7 @@ enum {
+ struct nla_policy {
+ 	u16		type;
+ 	u16		len;
+-	void            *validation_data;
++	const void     *validation_data;
+ };
+ 
+ /**
+--- a/lib/nlattr.c
++++ b/lib/nlattr.c
+@@ -28,12 +28,11 @@ static const u8 nla_attr_minlen[NLA_TYPE
+ };
+ 
+ static int validate_nla_bitfield32(const struct nlattr *nla,
+-				   u32 *valid_flags_allowed)
++				   const u32 *valid_flags_mask)
+ {
+ 	const struct nla_bitfield32 *bf = nla_data(nla);
+-	u32 *valid_flags_mask = valid_flags_allowed;
+ 
+-	if (!valid_flags_allowed)
++	if (!valid_flags_mask)
+ 		return -EINVAL;
+ 
+ 	/*disallow invalid bit selector */

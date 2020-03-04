@@ -1,0 +1,39 @@
+From b0c41b8b6e43120d7c35e4709508a3d90a09646e Mon Sep 17 00:00:00 2001
+From: Bharata B Rao <bharata@linux.vnet.ibm.com>
+Date: Tue, 6 Mar 2018 13:44:32 +0530
+Subject: [PATCH] powerpc/pseries: Fix vector5 in ibm architecture vector table
+
+References: FATE#326955 bsc#1157480 ltc#181028
+Patch-mainline: v4.16-rc5
+Git-commit: b0c41b8b6e43120d7c35e4709508a3d90a09646e
+
+With ibm,dynamic-memory-v2 and ibm,drc-info coming around the same
+time, byte22 in vector5 of ibm architecture vector table got set twice
+separately. The end result is that guest kernel isn't advertising
+support for ibm,dynamic-memory-v2.
+
+Fix this by removing the duplicate assignment of byte22.
+
+Fixes: 02ef6dd8109b ("powerpc: Enable support for ibm,drc-info devtree property")
+Signed-off-by: Bharata B Rao <bharata@linux.vnet.ibm.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kernel/prom_init.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/arch/powerpc/kernel/prom_init.c b/arch/powerpc/kernel/prom_init.c
+index d22c41c26bb3..acf4b2e0530c 100644
+--- a/arch/powerpc/kernel/prom_init.c
++++ b/arch/powerpc/kernel/prom_init.c
+@@ -874,7 +874,6 @@ struct ibm_arch_vec __cacheline_aligned ibm_architecture_vec = {
+ 		.mmu = 0,
+ 		.hash_ext = 0,
+ 		.radix_ext = 0,
+-		.byte22 = 0,
+ 	},
+ 
+ 	/* option vector 6: IBM PAPR hints */
+-- 
+2.23.0
+

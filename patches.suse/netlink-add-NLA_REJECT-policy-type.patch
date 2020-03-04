@@ -1,0 +1,125 @@
+From: Johannes Berg <johannes.berg@intel.com>
+Date: Mon, 17 Sep 2018 11:57:28 +0200
+Subject: [PATCH] netlink: add NLA_REJECT policy type
+Patch-mainline: v4.20-rc1
+Git-commit: 568b742a9d9888aca876b6ad9fa45490f18bee0a
+References: bsc#1152107 CVE-2019-16746
+
+In some situations some netlink attributes may be used for output
+only (kernel->userspace) or may be reserved for future use. It's
+then helpful to be able to prevent userspace from using them in
+messages sent to the kernel, since they'd otherwise be ignored and
+any future will become impossible if this happens.
+
+Add NLA_REJECT to the policy which does nothing but reject (with
+EINVAL) validation of any messages containing this attribute.
+Allow for returning a specific extended ACK error message in the
+validation_data pointer.
+
+While at it clear up the documentation a bit - the NLA_BITFIELD32
+documentation was added to the list of len field descriptions.
+
+Also, use NL_SET_BAD_ATTR() in one place where it's open-coded.
+
+The specific case I have in mind now is a shared nested attribute
+containing request/response data, and it would be pointless and
+potentially confusing to have userspace include response data in
+the messages that actually contain a request.
+
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+Reviewed-by: Marcelo Ricardo Leitner <marcelo.leitner@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Cho, Yu-Chen <acho@suse.com>
+---
+ include/net/netlink.h |   13 ++++++++++++-
+ lib/nlattr.c          |   23 ++++++++++++++++-------
+ 2 files changed, 28 insertions(+), 8 deletions(-)
+
+--- a/include/net/netlink.h
++++ b/include/net/netlink.h
+@@ -179,6 +179,7 @@ enum {
+ 	NLA_S32,
+ 	NLA_S64,
+ 	NLA_BITFIELD32,
++	NLA_REJECT,
+ 	__NLA_TYPE_MAX,
+ };
+ 
+@@ -207,9 +208,19 @@ enum {
+  *    NLA_MSECS            Leaving the length field zero will verify the
+  *                         given type fits, using it verifies minimum length
+  *                         just like "All other"
+- *    NLA_BITFIELD32      A 32-bit bitmap/bitselector attribute
++ *    NLA_BITFIELD32       Unused
++ *    NLA_REJECT           Unused
+  *    All other            Minimum length of attribute payload
+  *
++ * Meaning of `validation_data' field:
++ *    NLA_BITFIELD32       This is a 32-bit bitmap/bitselector attribute and
++ *                         validation data must point to a u32 value of valid
++ *                         flags
++ *    NLA_REJECT           This attribute is always rejected and validation data
++ *                         may point to a string to report as the error instead
++ *                         of the generic one in extended ACK.
++ *    All other            Unused
++ *
+  * Example:
+  * static const struct nla_policy my_policy[ATTR_MAX+1] = {
+  * 	[ATTR_FOO] = { .type = NLA_U16 },
+--- a/lib/nlattr.c
++++ b/lib/nlattr.c
+@@ -52,7 +52,8 @@ static int validate_nla_bitfield32(const
+ }
+ 
+ static int validate_nla(const struct nlattr *nla, int maxtype,
+-			const struct nla_policy *policy)
++			const struct nla_policy *policy,
++			const char **error_msg)
+ {
+ 	const struct nla_policy *pt;
+ 	int minlen = 0, attrlen = nla_len(nla), type = nla_type(nla);
+@@ -65,6 +66,11 @@ static int validate_nla(const struct nla
+ 	BUG_ON(pt->type > NLA_TYPE_MAX);
+ 
+ 	switch (pt->type) {
++	case NLA_REJECT:
++		if (pt->validation_data && error_msg)
++			*error_msg = pt->validation_data;
++		return -EINVAL;
++
+ 	case NLA_FLAG:
+ 		if (attrlen > 0)
+ 			return -ERANGE;
+@@ -158,11 +164,10 @@ int nla_validate(const struct nlattr *he
+ 	int rem;
+ 
+ 	nla_for_each_attr(nla, head, len, rem) {
+-		int err = validate_nla(nla, maxtype, policy);
++		int err = validate_nla(nla, maxtype, policy, NULL);
+ 
+ 		if (err < 0) {
+-			if (extack)
+-				extack->bad_attr = nla;
++			NL_SET_BAD_ATTR(extack, nla);
+ 			return err;
+ 		}
+ 	}
+@@ -226,11 +231,15 @@ int nla_parse(struct nlattr **tb, int ma
+ 		u16 type = nla_type(nla);
+ 
+ 		if (type > 0 && type <= maxtype) {
++			static const char _msg[] = "Attribute failed policy validation";
++			const char *msg = _msg;
++
+ 			if (policy) {
+-				err = validate_nla(nla, maxtype, policy);
++				err = validate_nla(nla, maxtype, policy, &msg);
+ 				if (err < 0) {
+-					NL_SET_ERR_MSG_ATTR(extack, nla,
+-							    "Attribute failed policy validation");
++					NL_SET_BAD_ATTR(extack, nla);
++					if (extack)
++						extack->_msg = msg;
+ 					goto errout;
+ 				}
+ 			}

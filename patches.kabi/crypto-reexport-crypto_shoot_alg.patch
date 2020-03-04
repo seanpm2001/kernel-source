@@ -1,0 +1,42 @@
+From: Takashi Iwai <tiwai@suse.de>
+Subject: crypto: reexport crypto_shoot_alg()
+Patch-mainline: Never, kABI workaround
+References: bsc#1051510, kABI fix
+
+The patch patches.suse/crypto-api-Fix-race-condition-in-crypto_spawn_alg.patch
+removed the exported symbol.  Revive it for kABI compatibility.
+
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ crypto/api.c      |    3 ++-
+ crypto/internal.h |    1 +
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+--- a/crypto/api.c
++++ b/crypto/api.c
+@@ -339,12 +339,13 @@ static unsigned int crypto_ctxsize(struc
+ 	return len;
+ }
+ 
+-static void crypto_shoot_alg(struct crypto_alg *alg)
++void crypto_shoot_alg(struct crypto_alg *alg)
+ {
+ 	down_write(&crypto_alg_sem);
+ 	alg->cra_flags |= CRYPTO_ALG_DYING;
+ 	up_write(&crypto_alg_sem);
+ }
++EXPORT_SYMBOL_GPL(crypto_shoot_alg);
+ 
+ struct crypto_tfm *__crypto_alloc_tfm(struct crypto_alg *alg, u32 type,
+ 				      u32 mask)
+--- a/crypto/internal.h
++++ b/crypto/internal.h
+@@ -84,6 +84,7 @@ void crypto_alg_tested(const char *name,
+ void crypto_remove_spawns(struct crypto_alg *alg, struct list_head *list,
+ 			  struct crypto_alg *nalg);
+ void crypto_remove_final(struct list_head *list);
++void crypto_shoot_alg(struct crypto_alg *alg);
+ struct crypto_tfm *__crypto_alloc_tfm(struct crypto_alg *alg, u32 type,
+ 				      u32 mask);
+ void *crypto_create_tfm(struct crypto_alg *alg,

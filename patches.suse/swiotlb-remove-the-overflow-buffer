@@ -1,0 +1,169 @@
+From: Christoph Hellwig <hch@lst.de>
+Date: Thu, 16 Aug 2018 15:30:39 +0300
+Subject: swiotlb: remove the overflow buffer
+Git-commit: dff8d6c1ed584de65aac40494d3e7468c50980c3
+Patch-mainline: v4.20-rc1
+References: bsc#1162171
+
+Like all other dma mapping drivers just return an error code instead
+of an actual memory buffer.  The reason for the overflow buffer was
+that at the time swiotlb was invented there was no way to check for
+dma mapping errors, but this has long been fixed.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Acked-by: Catalin Marinas <catalin.marinas@arm.com>
+Reviewed-by: Robin Murphy <robin.murphy@arm.com>
+Reviewed-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Acked-by: Petr Tesarik <ptesarik@suse.com>
+Acked-by: Joerg Roedel <jroedel@suse.de>
+---
+ arch/arm64/mm/dma-mapping.c       |  2 +-
+ arch/powerpc/kernel/dma-swiotlb.c |  4 +--
+ include/linux/dma-direct.h        |  2 ++
+ include/linux/swiotlb.h           |  3 --
+ kernel/dma/direct.c               |  2 --
+ kernel/dma/swiotlb.c              | 59 ++-------------------------------------
+ 6 files changed, 8 insertions(+), 64 deletions(-)
+
+--- a/lib/swiotlb.c
++++ b/lib/swiotlb.c
+@@ -70,13 +70,6 @@ static phys_addr_t io_tlb_start, io_tlb_
+ static unsigned long io_tlb_nslabs;
+ 
+ /*
+- * When the IOMMU overflows we return a fallback buffer. This sets the size.
+- */
+-static unsigned long io_tlb_overflow = 32*1024;
+-
+-static phys_addr_t io_tlb_overflow_buffer;
+-
+-/*
+  * This is a free list describing the number of free entries available from
+  * each index
+  */
+@@ -123,7 +116,6 @@ setup_io_tlb_npages(char *str)
+ 	return 0;
+ }
+ early_param("swiotlb", setup_io_tlb_npages);
+-/* make io_tlb_overflow tunable too? */
+ 
+ unsigned long swiotlb_nr_tbl(void)
+ {
+@@ -211,16 +203,10 @@ void __init swiotlb_update_mem_attribute
+ 	bytes = PAGE_ALIGN(io_tlb_nslabs << IO_TLB_SHIFT);
+ 	swiotlb_set_mem_attributes(vaddr, bytes);
+ 	memset(vaddr, 0, bytes);
+-
+-	vaddr = phys_to_virt(io_tlb_overflow_buffer);
+-	bytes = PAGE_ALIGN(io_tlb_overflow);
+-	swiotlb_set_mem_attributes(vaddr, bytes);
+-	memset(vaddr, 0, bytes);
+ }
+ 
+ int __init swiotlb_init_with_tbl(char *tlb, unsigned long nslabs, int verbose)
+ {
+-	void *v_overflow_buffer;
+ 	unsigned long i, bytes;
+ 
+ 	bytes = nslabs << IO_TLB_SHIFT;
+@@ -230,17 +216,6 @@ int __init swiotlb_init_with_tbl(char *t
+ 	io_tlb_end = io_tlb_start + bytes;
+ 
+ 	/*
+-	 * Get the overflow emergency buffer
+-	 */
+-	v_overflow_buffer = memblock_virt_alloc_low_nopanic(
+-						PAGE_ALIGN(io_tlb_overflow),
+-						PAGE_SIZE);
+-	if (!v_overflow_buffer)
+-		return -ENOMEM;
+-
+-	io_tlb_overflow_buffer = __pa(v_overflow_buffer);
+-
+-	/*
+ 	 * Allocate and initialize the free list array.  This array is used
+ 	 * to find contiguous free memory regions of size up to IO_TLB_SEGSIZE
+ 	 * between io_tlb_start and io_tlb_end.
+@@ -347,7 +322,6 @@ int
+ swiotlb_late_init_with_tbl(char *tlb, unsigned long nslabs)
+ {
+ 	unsigned long i, bytes;
+-	unsigned char *v_overflow_buffer;
+ 
+ 	bytes = nslabs << IO_TLB_SHIFT;
+ 
+@@ -359,18 +333,6 @@ swiotlb_late_init_with_tbl(char *tlb, un
+ 	memset(tlb, 0, bytes);
+ 
+ 	/*
+-	 * Get the overflow emergency buffer
+-	 */
+-	v_overflow_buffer = (void *)__get_free_pages(GFP_DMA,
+-						     get_order(io_tlb_overflow));
+-	if (!v_overflow_buffer)
+-		goto cleanup2;
+-
+-	swiotlb_set_mem_attributes(v_overflow_buffer, io_tlb_overflow);
+-	memset(v_overflow_buffer, 0, io_tlb_overflow);
+-	io_tlb_overflow_buffer = virt_to_phys(v_overflow_buffer);
+-
+-	/*
+ 	 * Allocate and initialize the free list array.  This array is used
+ 	 * to find contiguous free memory regions of size up to IO_TLB_SEGSIZE
+ 	 * between io_tlb_start and io_tlb_end.
+@@ -406,10 +368,6 @@ cleanup4:
+ 	                                                 sizeof(int)));
+ 	io_tlb_list = NULL;
+ cleanup3:
+-	free_pages((unsigned long)v_overflow_buffer,
+-		   get_order(io_tlb_overflow));
+-	io_tlb_overflow_buffer = 0;
+-cleanup2:
+ 	io_tlb_end = 0;
+ 	io_tlb_start = 0;
+ 	io_tlb_nslabs = 0;
+@@ -423,8 +381,6 @@ void __init swiotlb_free(void)
+ 		return;
+ 
+ 	if (late_alloc) {
+-		free_pages((unsigned long)phys_to_virt(io_tlb_overflow_buffer),
+-			   get_order(io_tlb_overflow));
+ 		free_pages((unsigned long)io_tlb_orig_addr,
+ 			   get_order(io_tlb_nslabs * sizeof(phys_addr_t)));
+ 		free_pages((unsigned long)io_tlb_list, get_order(io_tlb_nslabs *
+@@ -432,8 +388,6 @@ void __init swiotlb_free(void)
+ 		free_pages((unsigned long)phys_to_virt(io_tlb_start),
+ 			   get_order(io_tlb_nslabs << IO_TLB_SHIFT));
+ 	} else {
+-		memblock_free_late(io_tlb_overflow_buffer,
+-				   PAGE_ALIGN(io_tlb_overflow));
+ 		memblock_free_late(__pa(io_tlb_orig_addr),
+ 				   PAGE_ALIGN(io_tlb_nslabs * sizeof(phys_addr_t)));
+ 		memblock_free_late(__pa(io_tlb_list),
+@@ -828,7 +782,7 @@ dma_addr_t swiotlb_map_page(struct devic
+ 	/* Oh well, have to allocate and map a bounce buffer. */
+ 	map = map_single(dev, phys, size, dir, attrs);
+ 	if (map == SWIOTLB_MAP_ERROR)
+-		return swiotlb_phys_to_dma(dev, io_tlb_overflow_buffer);
++		return (dma_addr_t)SWIOTLB_MAP_ERROR;
+ 
+ 	dev_addr = swiotlb_phys_to_dma(dev, map);
+ 
+@@ -839,7 +793,7 @@ dma_addr_t swiotlb_map_page(struct devic
+ 	attrs |= DMA_ATTR_SKIP_CPU_SYNC;
+ 	swiotlb_tbl_unmap_single(dev, map, size, dir, attrs);
+ 
+-	return swiotlb_phys_to_dma(dev, io_tlb_overflow_buffer);
++	return (dma_addr_t)SWIOTLB_MAP_ERROR;
+ }
+ EXPORT_SYMBOL_GPL(swiotlb_map_page);
+ 
+@@ -1040,7 +994,7 @@ EXPORT_SYMBOL(swiotlb_sync_sg_for_device
+ int
+ swiotlb_dma_mapping_error(struct device *hwdev, dma_addr_t dma_addr)
+ {
+-	return (dma_addr == swiotlb_phys_to_dma(hwdev, io_tlb_overflow_buffer));
++	return (dma_addr == (dma_addr_t)SWIOTLB_MAP_ERROR);
+ }
+ EXPORT_SYMBOL(swiotlb_dma_mapping_error);
+ 

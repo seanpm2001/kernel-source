@@ -1,0 +1,33 @@
+From: Bryan Tan <bryantan@vmware.com>
+Date: Wed, 10 Apr 2019 12:49:33 +0000
+Subject: watchdog: wdat_wdt: fix get_timeleft call for wdat_wdt
+Patch-mainline: v5.2
+Git-commit: 0a48f239bfce525f4b7de0952aadce89ac2c2689
+References: bsc#1162557
+
+The get_timeleft call for wdat_wdt was using ACPI_WDAT_GET_COUNTDOWN
+when running an action on the device, which would return the configured
+countdown, instead of ACPI_WDAT_GET_CURRENT_COUNTDOWN, which returns the
+time left before the watchdog will fire. This change corrects that.
+
+Signed-off-by: Bryan Tan <bryantan@vmware.com>
+Reviewed-by: Guenter Roeck <linux@roeck-us.net>
+Signed-off-by: Guenter Roeck <linux@roeck-us.net>
+Signed-off-by: Wim Van Sebroeck <wim@linux-watchdog.org>
+Acked-by: Jean Delvare <jdelvare@suse.de>
+
+---
+ drivers/watchdog/wdat_wdt.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/watchdog/wdat_wdt.c
++++ b/drivers/watchdog/wdat_wdt.c
+@@ -287,7 +287,7 @@ static unsigned int wdat_wdt_get_timelef
+ 	struct wdat_wdt *wdat = to_wdat_wdt(wdd);
+ 	u32 periods = 0;
+ 
+-	wdat_wdt_run_action(wdat, ACPI_WDAT_GET_COUNTDOWN, 0, &periods);
++	wdat_wdt_run_action(wdat, ACPI_WDAT_GET_CURRENT_COUNTDOWN, 0, &periods);
+ 	return periods * wdat->period / 1000;
+ }
+ 

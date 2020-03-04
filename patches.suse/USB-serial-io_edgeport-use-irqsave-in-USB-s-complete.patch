@@ -1,0 +1,99 @@
+From dd1fae527612543e560e84f2eba4f6ef2006ac55 Mon Sep 17 00:00:00 2001
+From: John Ogness <john.ogness@linutronix.de>
+Date: Sun, 24 Jun 2018 00:32:06 +0200
+Subject: [PATCH] USB: serial: io_edgeport: use irqsave() in USB's complete callback
+Git-commit: dd1fae527612543e560e84f2eba4f6ef2006ac55
+Patch-mainline: v4.19-rc1
+References: bsc#1051510
+
+The USB completion callback does not disable interrupts while acquiring
+the lock. We want to remove the local_irq_disable() invocation from
+__usb_hcd_giveback_urb() and therefore it is required for the callback
+handler to disable the interrupts while acquiring the lock.
+The callback may be invoked either in IRQ or BH context depending on the
+USB host controller.
+Use the _irqsave() variant of the locking primitives.
+
+Signed-off-by: John Ogness <john.ogness@linutronix.de>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Johan Hovold <johan@kernel.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/usb/serial/io_edgeport.c | 17 +++++++++++------
+ 1 file changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/usb/serial/io_edgeport.c b/drivers/usb/serial/io_edgeport.c
+index 17283f4b4779..97c69d373ca6 100644
+--- a/drivers/usb/serial/io_edgeport.c
++++ b/drivers/usb/serial/io_edgeport.c
+@@ -648,6 +648,7 @@ static void edge_interrupt_callback(struct urb *urb)
+ 	struct usb_serial_port *port;
+ 	unsigned char *data = urb->transfer_buffer;
+ 	int length = urb->actual_length;
++	unsigned long flags;
+ 	int bytes_avail;
+ 	int position;
+ 	int txCredits;
+@@ -679,7 +680,7 @@ static void edge_interrupt_callback(struct urb *urb)
+ 		if (length > 1) {
+ 			bytes_avail = data[0] | (data[1] << 8);
+ 			if (bytes_avail) {
+-				spin_lock(&edge_serial->es_lock);
++				spin_lock_irqsave(&edge_serial->es_lock, flags);
+ 				edge_serial->rxBytesAvail += bytes_avail;
+ 				dev_dbg(dev,
+ 					"%s - bytes_avail=%d, rxBytesAvail=%d, read_in_progress=%d\n",
+@@ -702,7 +703,8 @@ static void edge_interrupt_callback(struct urb *urb)
+ 						edge_serial->read_in_progress = false;
+ 					}
+ 				}
+-				spin_unlock(&edge_serial->es_lock);
++				spin_unlock_irqrestore(&edge_serial->es_lock,
++						       flags);
+ 			}
+ 		}
+ 		/* grab the txcredits for the ports if available */
+@@ -715,9 +717,11 @@ static void edge_interrupt_callback(struct urb *urb)
+ 				port = edge_serial->serial->port[portNumber];
+ 				edge_port = usb_get_serial_port_data(port);
+ 				if (edge_port->open) {
+-					spin_lock(&edge_port->ep_lock);
++					spin_lock_irqsave(&edge_port->ep_lock,
++							  flags);
+ 					edge_port->txCredits += txCredits;
+-					spin_unlock(&edge_port->ep_lock);
++					spin_unlock_irqrestore(&edge_port->ep_lock,
++							       flags);
+ 					dev_dbg(dev, "%s - txcredits for port%d = %d\n",
+ 						__func__, portNumber,
+ 						edge_port->txCredits);
+@@ -758,6 +762,7 @@ static void edge_bulk_in_callback(struct urb *urb)
+ 	int			retval;
+ 	__u16			raw_data_length;
+ 	int status = urb->status;
++	unsigned long flags;
+ 
+ 	if (status) {
+ 		dev_dbg(&urb->dev->dev, "%s - nonzero read bulk status received: %d\n",
+@@ -777,7 +782,7 @@ static void edge_bulk_in_callback(struct urb *urb)
+ 
+ 	usb_serial_debug_data(dev, __func__, raw_data_length, data);
+ 
+-	spin_lock(&edge_serial->es_lock);
++	spin_lock_irqsave(&edge_serial->es_lock, flags);
+ 
+ 	/* decrement our rxBytes available by the number that we just got */
+ 	edge_serial->rxBytesAvail -= raw_data_length;
+@@ -801,7 +806,7 @@ static void edge_bulk_in_callback(struct urb *urb)
+ 		edge_serial->read_in_progress = false;
+ 	}
+ 
+-	spin_unlock(&edge_serial->es_lock);
++	spin_unlock_irqrestore(&edge_serial->es_lock, flags);
+ }
+ 
+ 
+-- 
+2.16.4
+

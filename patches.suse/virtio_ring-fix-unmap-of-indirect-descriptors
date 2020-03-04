@@ -1,0 +1,50 @@
+From: Matthias Lange <matthias.lange@kernkonzept.com>
+Date: Fri, 6 Sep 2019 16:59:01 +0200
+Subject: virtio_ring: fix unmap of indirect descriptors
+Git-commit: cf8f1696709ad5bb3138ed8c771c2eb98950cd8a
+Patch-mainline: v5.3
+References: bsc#1162171
+
+The function virtqueue_add_split() DMA-maps the scatterlist buffers. In
+case a mapping error occurs the already mapped buffers must be unmapped.
+This happens by jumping to the 'unmap_release' label.
+
+In case of indirect descriptors the release is wrong and may leak kernel
+memory. Because the implementation assumes that the head descriptor is
+already mapped it starts iterating over the descriptor list starting
+from the head descriptor. However for indirect descriptors the head
+descriptor is never mapped in case of an error.
+
+The fix is to initialize the start index with zero in case of indirect
+descriptors and use the 'desc' pointer directly for iterating over the
+descriptor chain.
+
+Signed-off-by: Matthias Lange <matthias.lange@kernkonzept.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Acked-by: Joerg Roedel <jroedel@suse.de>
+---
+ drivers/virtio/virtio_ring.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+--- a/drivers/virtio/virtio_ring.c
++++ b/drivers/virtio/virtio_ring.c
+@@ -418,13 +418,17 @@ static inline int virtqueue_add(struct v
+ 
+ unmap_release:
+ 	err_idx = i;
+-	i = head;
++
++	if (indirect)
++		i = 0;
++	else
++		i = head;
+ 
+ 	for (n = 0; n < total_sg; n++) {
+ 		if (i == err_idx)
+ 			break;
+ 		vring_unmap_one(vq, &desc[i]);
+-		i = virtio16_to_cpu(_vq->vdev, vq->vring.desc[i].next);
++		i = virtio16_to_cpu(_vq->vdev, desc[i].next);
+ 	}
+ 
+ 	if (indirect)

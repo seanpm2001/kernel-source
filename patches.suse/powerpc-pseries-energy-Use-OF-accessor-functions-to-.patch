@@ -26,56 +26,50 @@ Reviewed-by: Vaidyanathan Srinivasan <svaidy@linux.vnet.ibm.com>
 Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
 Acked-by: Michal Suchanek <msuchanek@suse.de>
 ---
- .../platforms/pseries/pseries_energy.c        | 28 +++++++++++--------
- 1 file changed, 17 insertions(+), 11 deletions(-)
+ .../platforms/pseries/pseries_energy.c        | 27 ++++++++++++-------
+ 1 file changed, 18 insertions(+), 9 deletions(-)
 
+diff --git a/arch/powerpc/platforms/pseries/pseries_energy.c b/arch/powerpc/platforms/pseries/pseries_energy.c
+index 6ed22127391b..921f12182f3e 100644
 --- a/arch/powerpc/platforms/pseries/pseries_energy.c
 +++ b/arch/powerpc/platforms/pseries/pseries_energy.c
-@@ -38,27 +38,33 @@ static int sysfs_entries;
- static u32 cpu_to_drc_index(int cpu)
- {
- 	struct device_node *dn = NULL;
--	const int *indexes;
-+	u32 nr_drc_indexes, i_drc_index;
- 	int i;
--	int rc = 1;
-+	int rc;
- 	u32 ret = 0;
+@@ -77,18 +77,27 @@ static u32 cpu_to_drc_index(int cpu)
  
- 	dn = of_find_node_by_path("/cpus");
- 	if (dn == NULL)
- 		goto err;
--	indexes = of_get_property(dn, "ibm,drc-indexes", NULL);
--	if (indexes == NULL)
--		goto err_of_node_put;
-+
- 	/* Convert logical cpu number to core number */
- 	i = cpu_core_index_of_thread(cpu);
-+
- 	/*
--	 * The first element indexes[0] is the number of drc_indexes
--	 * returned in the list.  Hence i+1 will get the drc_index
--	 * corresponding to core number i.
-+	 * The first element of "ibm,drc-indexes" is the number of
-+	 * drc_indexes returned in the list.  Hence i + 1 will get the
-+	 * drc_index corresponding to core number i.
- 	 */
--	WARN_ON(i > indexes[0]);
--	ret = indexes[i + 1];
--	rc = 0;
-+	rc = of_property_read_u32_index(dn, "ibm,drc-indexes",
-+					0, &nr_drc_indexes);
-+	if (rc)
-+		goto err_of_node_put;
-+
-+	WARN_ON_ONCE(i > nr_drc_indexes);
-+	rc = of_property_read_u32_index(dn, "ibm,drc-indexes",
-+					i + 1, &i_drc_index);
-+	if (!rc)
-+		ret = i_drc_index;
+ 		ret = drc.drc_index_start + (thread_index * drc.sequential_inc);
+ 	} else {
+-		const __be32 *indexes;
+-
+-		indexes = of_get_property(dn, "ibm,drc-indexes", NULL);
+-		if (indexes == NULL)
+-			goto err_of_node_put;
++		u32 nr_drc_indexes, thread_drc_index;
  
- err_of_node_put:
- 	of_node_put(dn);
+ 		/*
+-		 * The first element indexes[0] is the number of drc_indexes
+-		 * returned in the list.  Hence thread_index+1 will get the
+-		 * drc_index corresponding to core number thread_index.
++		 * The first element of ibm,drc-indexes array is the
++		 * number of drc_indexes returned in the list.  Hence
++		 * thread_index+1 will get the drc_index corresponding
++		 * to core number thread_index.
+ 		 */
+-		ret = indexes[thread_index + 1];
++		rc = of_property_read_u32_index(dn, "ibm,drc-indexes",
++						0, &nr_drc_indexes);
++		if (rc)
++			goto err_of_node_put;
++
++		WARN_ON_ONCE(thread_index > nr_drc_indexes);
++		rc = of_property_read_u32_index(dn, "ibm,drc-indexes",
++						thread_index + 1,
++						&thread_drc_index);
++		if (rc)
++			goto err_of_node_put;
++
++		ret = thread_drc_index;
+ 	}
+ 
+ 	rc = 0;
 -- 
-2.20.1
+2.23.0
 

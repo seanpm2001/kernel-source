@@ -1,0 +1,54 @@
+From c7a3275e0f9e461bb8942132aa6914aae59e7103 Mon Sep 17 00:00:00 2001
+From: Michael Bringmann <mwb@linux.vnet.ibm.com>
+Date: Tue, 13 Feb 2018 14:02:53 -0600
+Subject: [PATCH] powerpc/pseries: Revert support for ibm,drc-info devtree
+ property
+
+References: FATE#326955 bsc#1157480 ltc#181028
+Patch-mainline: v4.16-rc3
+Git-commit: c7a3275e0f9e461bb8942132aa6914aae59e7103
+
+This reverts commit 02ef6dd8109b581343ebeb1c4c973513682535d6.
+
+The earlier patch tried to enable support for a new property
+"ibm,drc-info" on powerpc systems.
+
+Unfortunately, some errors in the associated patch set break things
+in some of the DLPAR operations.  In particular when attempting to
+hot-add a new CPU or set of CPUs, the original patch failed to
+properly calculate the available resources, and aborted the operation.
+In addition, the original set missed several opportunities to compress
+and reuse common code.
+
+As the associated patch set was meant to provide an optimization of
+storage and performance of a set of device-tree properties for future
+systems with large amounts of resources, reverting just restores
+the previous behavior for existing systems.  It seems unnecessary
+to enable this feature and introduce the consequent problems in the
+field that it will cause at this time, so please revert it for now
+until testing of the corrections are finished properly.
+
+Fixes: 02ef6dd8109b ("powerpc: Enable support for ibm,drc-info devtree property")
+Signed-off-by: Michael W. Bringmann <mwb@linux.vnet.ibm.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kernel/prom_init.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/powerpc/kernel/prom_init.c b/arch/powerpc/kernel/prom_init.c
+index adf044daafd7..d22c41c26bb3 100644
+--- a/arch/powerpc/kernel/prom_init.c
++++ b/arch/powerpc/kernel/prom_init.c
+@@ -874,7 +874,7 @@ struct ibm_arch_vec __cacheline_aligned ibm_architecture_vec = {
+ 		.mmu = 0,
+ 		.hash_ext = 0,
+ 		.radix_ext = 0,
+-		.byte22 = OV5_FEAT(OV5_DRC_INFO),
++		.byte22 = 0,
+ 	},
+ 
+ 	/* option vector 6: IBM PAPR hints */
+-- 
+2.23.0
+

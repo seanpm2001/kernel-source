@@ -1,0 +1,84 @@
+From: Jan Kara <jack@suse.cz>
+Subject: libnvdimm: Fix devm_nsio_enable() kabi
+References: bsc#1153535
+Patch-mainline: Never, kABI fix
+
+devm_nsio_enable() and devm_nsio_disable() were exported and devm_nsio_enable()
+had slightly different signature. Create stubs calling new functions to
+maintain kABI.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+
+---
+ drivers/nvdimm/claim.c          |    9 ++++++++-
+ drivers/nvdimm/namespace_devs.c |    2 +-
+ drivers/nvdimm/nd-core.h        |   11 +++++++++--
+ 3 files changed, 18 insertions(+), 4 deletions(-)
+
+--- a/drivers/nvdimm/claim.c
++++ b/drivers/nvdimm/claim.c
+@@ -306,7 +306,7 @@ static int nsio_rw_bytes(struct nd_names
+ 	return rc;
+ }
+ 
+-int devm_nsio_enable(struct device *dev, struct nd_namespace_io *nsio,
++int devm_nsio_enable_size(struct device *dev, struct nd_namespace_io *nsio,
+ 		resource_size_t size)
+ {
+ 	struct resource *res = &nsio->res;
+@@ -330,6 +330,12 @@ int devm_nsio_enable(struct device *dev,
+ 	return PTR_ERR_OR_ZERO(nsio->addr);
+ }
+ 
++int devm_nsio_enable(struct device *dev, struct nd_namespace_io *nsio)
++{
++	return devm_nsio_enable_size(dev, nsio, resource_size(&nsio->res));
++}
++EXPORT_SYMBOL_GPL(devm_nsio_enable);
++
+ void devm_nsio_disable(struct device *dev, struct nd_namespace_io *nsio)
+ {
+ 	struct resource *res = &nsio->res;
+@@ -338,3 +344,4 @@ void devm_nsio_disable(struct device *de
+ 	devm_exit_badblocks(dev, &nsio->bb);
+ 	devm_release_mem_region(dev, res->start, nsio->size);
+ }
++EXPORT_SYMBOL_GPL(devm_nsio_disable);
+--- a/drivers/nvdimm/namespace_devs.c
++++ b/drivers/nvdimm/namespace_devs.c
+@@ -1776,7 +1776,7 @@ int devm_namespace_enable(struct device
+ {
+ 	if (is_namespace_blk(&ndns->dev))
+ 		return 0;
+-	return devm_nsio_enable(dev, to_nd_namespace_io(&ndns->dev), size);
++	return devm_nsio_enable_size(dev, to_nd_namespace_io(&ndns->dev), size);
+ }
+ EXPORT_SYMBOL_GPL(devm_namespace_enable);
+ 
+--- a/drivers/nvdimm/nd-core.h
++++ b/drivers/nvdimm/nd-core.h
+@@ -190,15 +190,22 @@ ssize_t nd_namespace_store(struct device
+ 		size_t len);
+ struct nd_pfn *to_nd_pfn_safe(struct device *dev);
+ #if IS_ENABLED(CONFIG_ND_CLAIM)
+-int devm_nsio_enable(struct device *dev, struct nd_namespace_io *nsio,
++int devm_nsio_enable_size(struct device *dev, struct nd_namespace_io *nsio,
+ 		resource_size_t size);
++int devm_nsio_enable(struct device *dev, struct nd_namespace_io *nsio);
+ void devm_nsio_disable(struct device *dev, struct nd_namespace_io *nsio);
+ #else
+-static inline int devm_nsio_enable(struct device *dev,
++static inline int devm_nsio_enable_size(struct device *dev,
+ 		struct nd_namespace_io *nsio, resource_size_t size)
+ {
+ 	return -ENXIO;
+ }
++
++static inline int devm_nsio_enable(struct device *dev,
++		struct nd_namespace_io *nsio)
++{
++	return -ENXIO;
++}
+ 
+ static inline void devm_nsio_disable(struct device *dev,
+ 		struct nd_namespace_io *nsio)

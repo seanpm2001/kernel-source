@@ -1,0 +1,47 @@
+From 085aa2de568493d7cde52126512d37260077811a Mon Sep 17 00:00:00 2001
+From: Arvind Yadav <arvind.yadav.cs@gmail.com>
+Date: Thu, 26 Apr 2018 21:12:09 +0530
+Subject: [PATCH] mm: memory_hotplug: use put_device() if device_register fail
+Git-commit: 085aa2de568493d7cde52126512d37260077811a
+Patch-mainline: v4.18-rc1
+References: bsc#1159955 ltc#182993
+
+if device_register() returned an error. Always use put_device()
+to give up the initialized reference and release allocated memory.
+
+Signed-off-by: Arvind Yadav <arvind.yadav.cs@gmail.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Acked-by: Michal Hocko <mhocko@suse.com>
+
+---
+ drivers/base/memory.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/base/memory.c b/drivers/base/memory.c
+index bffe8616bd55..f5e560188a18 100644
+--- a/drivers/base/memory.c
++++ b/drivers/base/memory.c
+@@ -649,13 +649,19 @@ static const struct attribute_group *memory_memblk_attr_groups[] = {
+ static
+ int register_memory(struct memory_block *memory)
+ {
++	int ret;
++
+ 	memory->dev.bus = &memory_subsys;
+ 	memory->dev.id = memory->start_section_nr / sections_per_block;
+ 	memory->dev.release = memory_block_release;
+ 	memory->dev.groups = memory_memblk_attr_groups;
+ 	memory->dev.offline = memory->state == MEM_OFFLINE;
+ 
+-	return device_register(&memory->dev);
++	ret = device_register(&memory->dev);
++	if (ret)
++		put_device(&memory->dev);
++
++	return ret;
+ }
+ 
+ static int init_memory_block(struct memory_block **memory,
+-- 
+2.16.4
+

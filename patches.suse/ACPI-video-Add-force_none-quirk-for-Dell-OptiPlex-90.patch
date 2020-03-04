@@ -1,0 +1,49 @@
+From 1f59ab2783aed04f1318b840950801e38b2bebdf Mon Sep 17 00:00:00 2001
+From: Alex Hung <alex.hung@canonical.com>
+Date: Wed, 12 Jul 2017 17:45:57 -0700
+Subject: [PATCH] ACPI / video: Add force_none quirk for Dell OptiPlex 9020M
+Git-commit: 1f59ab2783aed04f1318b840950801e38b2bebdf
+Patch-mainline: v4.14-rc1
+References: bsc#1051510
+
+Dell OptiPlex 9020M is a micro PC desktop that has no built-in
+LCD panel and its acpi_video does not work.
+
+Signed-off-by: Alex Hung <alex.hung@canonical.com>
+Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/acpi/video_detect.c |   14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+--- a/drivers/acpi/video_detect.c
++++ b/drivers/acpi/video_detect.c
+@@ -103,6 +103,12 @@ static int video_detect_force_native(con
+ 	return 0;
+ }
+ 
++static int video_detect_force_none(const struct dmi_system_id *d)
++{
++	acpi_backlight_dmi = acpi_backlight_none;
++	return 0;
++}
++
+ static const struct dmi_system_id video_detect_dmi_table[] = {
+ 	/* On Samsung X360, the BIOS will set a flag (VDRV) if generic
+ 	 * ACPI backlight device is used. This flag will definitively break
+@@ -314,6 +320,14 @@ static const struct dmi_system_id video_
+ 		DMI_MATCH(DMI_PRODUCT_NAME, "Dell System XPS L702X"),
+ 		},
+ 	},
++	{
++	 .callback = video_detect_force_none,
++	 .ident = "Dell OptiPlex 9020M",
++	 .matches = {
++		DMI_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
++		DMI_MATCH(DMI_PRODUCT_NAME, "OptiPlex 9020M"),
++		},
++	},
+ 	{ },
+ };
+ 

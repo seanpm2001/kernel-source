@@ -1,0 +1,43 @@
+From 6714796edcce27f7a1845e2f79783cd51bb4799b Mon Sep 17 00:00:00 2001
+From: Wen Yaxng <wen.yang99@zte.com.cn>
+Date: Wed, 8 Nov 2017 09:55:03 +0800
+Subject: [PATCH] genirq/proc: Return proper error code when irq_set_affinity()
+ fails
+Git-commit: 6714796edcce27f7a1845e2f79783cd51bb4799b
+Patch-mainline: 4.15-rc1
+References: bnc#1105392
+
+write_irq_affinity() returns the number of written bytes, which means
+success, unconditionally whether the actual irq_set_affinity() call
+succeeded or not.
+
+Add proper error handling and pass the error code returned from
+irq_set_affinity() back to user space in case of failure.
+
+[ tglx: Fixed coding style and massaged changelog ]
+
+Signed-off-by: Wen Yang <wen.yang99@zte.com.cn>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Reviewed-by: Jiang Biao <jiang.biao2@zte.com.cn>
+Cc: zhong.weidong@zte.com.cn
+Link: https://lkml.kernel.org/r/1510106103-184761-1-git-send-email-wen.yang99@zte.com.cn
+Acked-by: Michal Hocko <mhocko@suse.com>
+
+---
+ kernel/irq/proc.c |    5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+--- a/kernel/irq/proc.c
++++ b/kernel/irq/proc.c
+@@ -124,8 +124,9 @@ static ssize_t write_irq_affinity(int ty
+ 		   code to set default SMP affinity. */
+ 		err = irq_select_affinity_usr(irq, new_value) ? -EINVAL : count;
+ 	} else {
+-		irq_set_affinity(irq, new_value);
+-		err = count;
++		err = irq_set_affinity(irq, new_value);
++		if (!err)
++			err = count;
+ 	}
+ 
+ free_cpumask:

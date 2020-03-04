@@ -1,0 +1,37 @@
+From: Ryan Kennedy <ryan5544@gmail.com>
+Date: Sat, 15 Jul 2017 17:48:18 -0400
+Subject: ACPI / watchdog: Fix init failure with overlapping register regions
+Patch-mainline: v4.13
+Git-commit: 31e86cb99a3af0653f0e317fdd9c05b530c70af8
+References: bsc#1162557
+
+Partially overlapping regions cause platform device creation
+to fail. The latter of two overlapping resources will fail to be
+reserved. Fix this by merging overlapping resource ranges while
+enumerating WDAT table entries.
+
+Signed-off-by: Ryan Kennedy <ryan5544@gmail.com>
+Acked-by: Mika Westerberg <mika.westerberg@linux.intel.com>
+Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Acked-by: Jean Delvare <jdelvare@suse.de>
+
+---
+ drivers/acpi/acpi_watchdog.c |    7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+--- a/drivers/acpi/acpi_watchdog.c
++++ b/drivers/acpi/acpi_watchdog.c
+@@ -86,7 +86,12 @@ void __init acpi_watchdog_init(void)
+ 
+ 		found = false;
+ 		resource_list_for_each_entry(rentry, &resource_list) {
+-			if (resource_contains(rentry->res, &res)) {
++			if (rentry->res->flags == res.flags &&
++			    resource_overlaps(rentry->res, &res)) {
++				if (res.start < rentry->res->start)
++					rentry->res->start = res.start;
++				if (res.end > rentry->res->end)
++					rentry->res->end = res.end;
+ 				found = true;
+ 				break;
+ 			}
