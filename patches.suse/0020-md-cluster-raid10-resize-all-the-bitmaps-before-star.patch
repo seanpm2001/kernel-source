@@ -1,0 +1,224 @@
+From afd75628608337cf427a1f9ca0e46698a74f25d8 Mon Sep 17 00:00:00 2001
+From: Guoqing Jiang <gqjiang@suse.com>
+Date: Thu, 18 Oct 2018 16:37:41 +0800
+Subject: [PATCH] md-cluster/raid10: resize all the bitmaps before start
+ reshape
+Git-commit: afd75628608337cf427a1f9ca0e46698a74f25d8
+Patch-mainline: v4.20-rc1
+References: bsc#1166003
+
+To support add disk under grow mode, we need to resize
+all the bitmaps of each node before reshape, so that we
+can ensure all nodes have the same view of the bitmap of
+the clustered raid.
+
+So after the master node resized the bitmap, it broadcast
+a message to other slave nodes, and it checks the size of
+each bitmap are same or not by compare pages. We can only
+continue the reshaping after all nodes update the bitmap
+to the same size (by checking the pages), otherwise revert
+bitmap size to previous value.
+
+The resize_bitmaps interface and BITMAP_RESIZE message are
+introduced in md-cluster.c for the purpose.
+
+Reviewed-by: NeilBrown <neilb@suse.com>
+Signed-off-by: Guoqing Jiang <gqjiang@suse.com>
+Signed-off-by: Shaohua Li <shli@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+---
+ drivers/md/md-cluster.c | 81 +++++++++++++++++++++++++++++++++++++++++
+ drivers/md/md-cluster.h |  1 +
+ drivers/md/raid10.c     | 41 +++++++++++++++++++--
+ 3 files changed, 120 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/md/md-cluster.c b/drivers/md/md-cluster.c
+index 0b2af6e74fc3..e223fae80da3 100644
+--- a/drivers/md/md-cluster.c
++++ b/drivers/md/md-cluster.c
+@@ -105,6 +105,7 @@ enum msg_type {
+ 	RE_ADD,
+ 	BITMAP_NEEDS_SYNC,
+ 	CHANGE_CAPACITY,
++	BITMAP_RESIZE,
+ };
+ 
+ struct cluster_msg {
+@@ -612,6 +613,11 @@ static int process_recvd_msg(struct mddev *mddev, struct cluster_msg *msg)
+ 	case BITMAP_NEEDS_SYNC:
+ 		__recover_slot(mddev, le32_to_cpu(msg->slot));
+ 		break;
++	case BITMAP_RESIZE:
++		if (le64_to_cpu(msg->high) != mddev->pers->size(mddev, 0, 0))
++			ret = md_bitmap_resize(mddev->bitmap,
++					    le64_to_cpu(msg->high), 0, 0);
++		break;
+ 	default:
+ 		ret = -1;
+ 		pr_warn("%s:%d Received unknown message from %d\n",
+@@ -1102,6 +1108,80 @@ static void metadata_update_cancel(struct mddev *mddev)
+ 	unlock_comm(cinfo);
+ }
+ 
++static int update_bitmap_size(struct mddev *mddev, sector_t size)
++{
++	struct md_cluster_info *cinfo = mddev->cluster_info;
++	struct cluster_msg cmsg = {0};
++	int ret;
++
++	cmsg.type = cpu_to_le32(BITMAP_RESIZE);
++	cmsg.high = cpu_to_le64(size);
++	ret = sendmsg(cinfo, &cmsg, 0);
++	if (ret)
++		pr_err("%s:%d: failed to send BITMAP_RESIZE message (%d)\n",
++			__func__, __LINE__, ret);
++	return ret;
++}
++
++static int resize_bitmaps(struct mddev *mddev, sector_t newsize, sector_t oldsize)
++{
++	struct bitmap_counts *counts;
++	char str[64];
++	struct dlm_lock_resource *bm_lockres;
++	struct bitmap *bitmap = mddev->bitmap;
++	unsigned long my_pages = bitmap->counts.pages;
++	int i, rv;
++
++	/*
++	 * We need to ensure all the nodes can grow to a larger
++	 * bitmap size before make the reshaping.
++	 */
++	rv = update_bitmap_size(mddev, newsize);
++	if (rv)
++		return rv;
++
++	for (i = 0; i < mddev->bitmap_info.nodes; i++) {
++		if (i == md_cluster_ops->slot_number(mddev))
++			continue;
++
++		bitmap = get_bitmap_from_slot(mddev, i);
++		if (IS_ERR(bitmap)) {
++			pr_err("can't get bitmap from slot %d\n", i);
++			goto out;
++		}
++		counts = &bitmap->counts;
++
++		/*
++		 * If we can hold the bitmap lock of one node then
++		 * the slot is not occupied, update the pages.
++		 */
++		snprintf(str, 64, "bitmap%04d", i);
++		bm_lockres = lockres_init(mddev, str, NULL, 1);
++		if (!bm_lockres) {
++			pr_err("Cannot initialize %s lock\n", str);
++			goto out;
++		}
++		bm_lockres->flags |= DLM_LKF_NOQUEUE;
++		rv = dlm_lock_sync(bm_lockres, DLM_LOCK_PW);
++		if (!rv)
++			counts->pages = my_pages;
++		lockres_free(bm_lockres);
++
++		if (my_pages != counts->pages)
++			/*
++			 * Let's revert the bitmap size if one node
++			 * can't resize bitmap
++			 */
++			goto out;
++	}
++
++	return 0;
++out:
++	md_bitmap_free(bitmap);
++	update_bitmap_size(mddev, oldsize);
++	return -1;
++}
++
+ /*
+  * return 0 if all the bitmaps have the same sync_size
+  */
+@@ -1492,6 +1572,7 @@ static struct md_cluster_operations cluster_ops = {
+ 	.remove_disk = remove_disk,
+ 	.load_bitmaps = load_bitmaps,
+ 	.gather_bitmaps = gather_bitmaps,
++	.resize_bitmaps = resize_bitmaps,
+ 	.lock_all_bitmaps = lock_all_bitmaps,
+ 	.unlock_all_bitmaps = unlock_all_bitmaps,
+ 	.update_size = update_size,
+diff --git a/drivers/md/md-cluster.h b/drivers/md/md-cluster.h
+index c0240708f443..9bd753a6a94e 100644
+--- a/drivers/md/md-cluster.h
++++ b/drivers/md/md-cluster.h
+@@ -26,6 +26,7 @@ struct md_cluster_operations {
+ 	int (*remove_disk)(struct mddev *mddev, struct md_rdev *rdev);
+ 	void (*load_bitmaps)(struct mddev *mddev, int total_slots);
+ 	int (*gather_bitmaps)(struct md_rdev *rdev);
++	int (*resize_bitmaps)(struct mddev *mddev, sector_t newsize, sector_t oldsize);
+ 	int (*lock_all_bitmaps)(struct mddev *mddev);
+ 	void (*unlock_all_bitmaps)(struct mddev *mddev);
+ 	void (*update_size)(struct mddev *mddev, sector_t old_dev_sectors);
+diff --git a/drivers/md/raid10.c b/drivers/md/raid10.c
+index a52f43b151b5..72e52921c545 100644
+--- a/drivers/md/raid10.c
++++ b/drivers/md/raid10.c
+@@ -25,6 +25,7 @@
+ #include <linux/seq_file.h>
+ #include <linux/ratelimit.h>
+ #include <linux/kthread.h>
++#include <linux/raid/md_p.h>
+ #include <trace/events/block.h>
+ #include "md.h"
+ #include "raid10.h"
+@@ -4288,12 +4289,46 @@ static int raid10_start_reshape(struct mddev *mddev)
+ 	spin_unlock_irq(&conf->device_lock);
+ 
+ 	if (mddev->delta_disks && mddev->bitmap) {
+-		ret = md_bitmap_resize(mddev->bitmap,
+-				       raid10_size(mddev, 0, conf->geo.raid_disks),
+-				       0, 0);
++		struct mdp_superblock_1 *sb = NULL;
++		sector_t oldsize, newsize;
++
++		oldsize = raid10_size(mddev, 0, 0);
++		newsize = raid10_size(mddev, 0, conf->geo.raid_disks);
++
++		if (!mddev_is_clustered(mddev)) {
++			ret = md_bitmap_resize(mddev->bitmap, newsize, 0, 0);
++			if (ret)
++				goto abort;
++			else
++				goto out;
++		}
++
++		rdev_for_each(rdev, mddev) {
++			if (rdev->raid_disk > -1 &&
++			    !test_bit(Faulty, &rdev->flags))
++				sb = page_address(rdev->sb_page);
++		}
++
++		/*
++		 * some node is already performing reshape, and no need to
++		 * call md_bitmap_resize again since it should be called when
++		 * receiving BITMAP_RESIZE msg
++		 */
++		if ((sb && (le32_to_cpu(sb->feature_map) &
++			    MD_FEATURE_RESHAPE_ACTIVE)) || (oldsize == newsize))
++			goto out;
++
++		ret = md_bitmap_resize(mddev->bitmap, newsize, 0, 0);
+ 		if (ret)
+ 			goto abort;
++
++		ret = md_cluster_ops->resize_bitmaps(mddev, newsize, oldsize);
++		if (ret) {
++			md_bitmap_resize(mddev->bitmap, oldsize, 0, 0);
++			goto abort;
++		}
+ 	}
++out:
+ 	if (mddev->delta_disks > 0) {
+ 		rdev_for_each(rdev, mddev)
+ 			if (rdev->raid_disk < 0 &&
+-- 
+2.25.0
+

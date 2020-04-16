@@ -1,0 +1,33 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 28 Sep 2018 07:18:03 -0400
+Subject: btrfs: assert on non-empty delayed iputs
+Git-commit: e187831e1875b2754a3ba3c683bd277d4a5f7be8
+Patch-mainline: v4.20-rc1
+References: bsc##1165949
+
+I ran into an issue where there was some reference being held on an
+inode that I couldn't track.  This assert wasn't triggered, but it at
+least rules out we're doing something stupid.
+
+Reviewed-by: Omar Sandoval <osandov@fb.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/disk-io.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fs/btrfs/disk-io.c b/fs/btrfs/disk-io.c
+index 27f6a3348f94..b0ab41da91d1 100644
+--- a/fs/btrfs/disk-io.c
++++ b/fs/btrfs/disk-io.c
+@@ -3976,6 +3976,7 @@ void close_ctree(struct btrfs_fs_info *fs_info)
+ 	kthread_stop(fs_info->transaction_kthread);
+ 	kthread_stop(fs_info->cleaner_kthread);
+ 
++	ASSERT(list_empty(&fs_info->delayed_iputs));
+ 	set_bit(BTRFS_FS_CLOSING_DONE, &fs_info->flags);
+ 
+ 	btrfs_free_qgroup_config(fs_info);
+

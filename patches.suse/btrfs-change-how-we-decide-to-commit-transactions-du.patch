@@ -34,12 +34,12 @@ Tested-by: Nikolay Borisov <nborisov@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 
 ---
- fs/btrfs/extent-tree.c |   45 ++++++++++++++++++++++++++++++---------------
- 1 file changed, 30 insertions(+), 15 deletions(-)
+ fs/btrfs/extent-tree.c |   43 +++++++++++++++++++++++++++++--------------
+ 1 file changed, 29 insertions(+), 14 deletions(-)
 
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -4833,6 +4833,14 @@ skip_async:
+@@ -4911,6 +4911,14 @@ skip_async:
  	}
  }
  
@@ -54,7 +54,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  /**
   * maybe_commit_transaction - possibly commit the transaction if its ok to
   * @root - the root we're allocating for
-@@ -4844,19 +4852,29 @@ skip_async:
+@@ -4922,19 +4930,29 @@ skip_async:
   * will return -ENOSPC.
   */
  static int may_commit_transaction(struct btrfs_fs_info *fs_info,
@@ -88,7 +88,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	/* See if there is enough pinned space to make this reservation */
  	if (percpu_counter_compare(&space_info->total_bytes_pinned,
  				   bytes) >= 0)
-@@ -4870,8 +4888,13 @@ static int may_commit_transaction(struct
+@@ -4948,8 +4966,13 @@ static int may_commit_transaction(struct
  		return -ENOSPC;
  
  	spin_lock(&delayed_rsv->lock);
@@ -103,7 +103,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  		spin_unlock(&delayed_rsv->lock);
  		return -ENOSPC;
  	}
-@@ -4885,13 +4908,6 @@ commit:
+@@ -4963,13 +4986,6 @@ commit:
  	return btrfs_commit_transaction(trans);
  }
  
@@ -116,26 +116,14 @@ Signed-off-by: David Sterba <dsterba@suse.com>
 -
  static int flush_space(struct btrfs_fs_info *fs_info,
  		       struct btrfs_space_info *space_info, u64 num_bytes,
- 		       u64 orig_bytes, int state)
-@@ -4936,8 +4952,7 @@ static int flush_space(struct btrfs_fs_i
+ 		       int state)
+@@ -5014,8 +5030,7 @@ static int flush_space(struct btrfs_fs_i
  			ret = 0;
  		break;
  	case COMMIT_TRANS:
 -		ret = may_commit_transaction(fs_info, space_info,
--					     orig_bytes, 0);
+-					     num_bytes, 0);
 +		ret = may_commit_transaction(fs_info, space_info);
  		break;
  	default:
  		ret = -ENOSPC;
-@@ -5807,7 +5822,7 @@ int btrfs_orphan_reserve_metadata(struct
- 	 */
- 	u64 num_bytes = btrfs_calc_trans_metadata_size(fs_info, 1);
- 
--	trace_btrfs_space_reservation(fs_info, "orphan", btrfs_ino(inode), 
-+	trace_btrfs_space_reservation(fs_info, "orphan", btrfs_ino(inode),
- 			num_bytes, 1);
- 	return btrfs_block_rsv_migrate(src_rsv, dst_rsv, num_bytes, 1);
- }
-
-
-

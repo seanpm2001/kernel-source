@@ -1,0 +1,46 @@
+From f91389c8d2867d10a206273b8eb3b7955b65591e Mon Sep 17 00:00:00 2001
+From: Yue Haibing <yuehaibing@huawei.com>
+Date: Thu, 8 Nov 2018 12:11:06 +0000
+Subject: [PATCH] md: remove set but not used variable 'bi_rdev'
+Git-commit: f91389c8d2867d10a206273b8eb3b7955b65591e
+Patch-mainline: v5.0-rc1
+References: bsc#1166003
+
+Fixes gcc '-Wunused-but-set-variable' warning:
+
+drivers/md/md.c: In function 'md_integrity_add_rdev':
+drivers/md/md.c:2149:24: warning:
+ variable 'bi_rdev' set but not used [-Wunused-but-set-variable]
+
+It not used any more after commit
+  1501efadc524 ("md/raid: only permit hot-add of compatible integrity profiles")
+
+Signed-off-by: Yue Haibing <yuehaibing@huawei.com>
+Signed-off-by: Shaohua Li <shli@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+---
+ drivers/md/md.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/drivers/md/md.c b/drivers/md/md.c
+index fc488cb30a94..69778419aa20 100644
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -2148,14 +2148,12 @@ EXPORT_SYMBOL(md_integrity_register);
+  */
+ int md_integrity_add_rdev(struct md_rdev *rdev, struct mddev *mddev)
+ {
+-	struct blk_integrity *bi_rdev;
+ 	struct blk_integrity *bi_mddev;
+ 	char name[BDEVNAME_SIZE];
+ 
+ 	if (!mddev->gendisk)
+ 		return 0;
+ 
+-	bi_rdev = bdev_get_integrity(rdev->bdev);
+ 	bi_mddev = blk_get_integrity(mddev->gendisk);
+ 
+ 	if (!bi_mddev) /* nothing to do */
+-- 
+2.25.0
+

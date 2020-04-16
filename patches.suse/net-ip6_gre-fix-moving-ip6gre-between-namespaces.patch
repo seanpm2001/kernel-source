@@ -1,0 +1,36 @@
+From: Niko Kortstrom <niko.kortstrom@nokia.com>
+Date: Thu, 16 Jan 2020 11:43:27 +0200
+Subject: net: ip6_gre: fix moving ip6gre between namespaces
+Git-commit: 690afc165bb314354667f67157c1a1aea7dc797a
+Patch-mainline: 5.5
+References: networking-stable-20_01_27
+
+Support for moving IPv4 GRE tunnels between namespaces was added in
+commit b57708add314 ("gre: add x-netns support"). The respective change
+for IPv6 tunnels, commit 22f08069e8b4 ("ip6gre: add x-netns support")
+did not drop NETIF_F_NETNS_LOCAL flag so moving them from one netns to
+another is still denied in IPv6 case. Drop NETIF_F_NETNS_LOCAL flag from
+ip6gre tunnels to allow moving ip6gre tunnel endpoints between network
+namespaces.
+
+[js] no ERSPAN and collect_md support in 4.12
+
+Signed-off-by: Niko Kortstrom <niko.kortstrom@nokia.com>
+Acked-by: Nicolas Dichtel <nicolas.dichtel@6wind.com>
+Acked-by: William Tu <u9012063@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ net/ipv6/ip6_gre.c |    1 -
+ 1 file changed, 1 deletion(-)
+
+--- a/net/ipv6/ip6_gre.c
++++ b/net/ipv6/ip6_gre.c
+@@ -1345,7 +1345,6 @@ static void ip6gre_tap_setup(struct net_
+ 	dev->needs_free_netdev = true;
+ 	dev->priv_destructor = ip6gre_dev_free;
+ 
+-	dev->features |= NETIF_F_NETNS_LOCAL;
+ 	dev->priv_flags &= ~IFF_TX_SKB_SHARING;
+ 	dev->priv_flags |= IFF_LIVE_ADDR_CHANGE;
+ 	netif_keep_dst(dev);

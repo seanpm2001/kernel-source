@@ -1,0 +1,57 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Thu, 11 Oct 2018 15:54:22 -0400
+Subject: btrfs: fix insert_reserved error handling
+Git-commit: 80ee54bfe8a3850015585ebc84e8d207fcae6831
+Patch-mainline: v4.20-rc1
+References: bsc##1165949
+
+We were not handling the reserved byte accounting properly for data
+references.  Metadata was fine, if it errored out the error paths would
+free the bytes_reserved count and pin the extent, but it even missed one
+of the error cases.  So instead move this handling up into
+run_one_delayed_ref so we are sure that both cases are properly cleaned
+up in case of a transaction abort.
+
+CC: stable@vger.kernel.org # 4.18+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/extent-tree.c |   10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -2518,6 +2518,9 @@ static int run_one_delayed_ref(struct bt
+ 					   insert_reserved);
+ 	else
+ 		BUG();
++	if (ret && insert_reserved)
++		btrfs_pin_extent(trans->fs_info, node->bytenr,
++				 node->num_bytes, 1);
+ 	return ret;
+ }
+ 
+@@ -8182,19 +8185,14 @@ static int alloc_reserved_tree_block(str
+ 		size += sizeof(*block_info);
+ 
+ 	path = btrfs_alloc_path();
+-	if (!path) {
+-		btrfs_free_and_pin_reserved_extent(fs_info, ins->objectid,
+-						   fs_info->nodesize);
++	if (!path)
+ 		return -ENOMEM;
+-	}
+ 
+ 	path->leave_spinning = 1;
+ 	ret = btrfs_insert_empty_item(trans, fs_info->extent_root, path,
+ 				      ins, size);
+ 	if (ret) {
+ 		btrfs_free_path(path);
+-		btrfs_free_and_pin_reserved_extent(fs_info, ins->objectid,
+-						   fs_info->nodesize);
+ 		return ret;
+ 	}
+ 

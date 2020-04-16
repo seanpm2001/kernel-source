@@ -1,0 +1,45 @@
+From 368ecade0532982c8916a49e66b8105413d8db59 Mon Sep 17 00:00:00 2001
+From: Christoph Hellwig <hch@lst.de>
+Date: Thu, 4 Apr 2019 18:56:15 +0200
+Subject: [PATCH] md: add __acquires/__releases annotations to
+ (un)lock_two_stripes
+Git-commit: 368ecade0532982c8916a49e66b8105413d8db59
+Patch-mainline: v5.2-rc1
+References: bsc#1166003
+
+This tells sparse that we acquire/release the two stripe locks and
+avoids a warning.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Song Liu <songliubraving@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/raid5.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/md/raid5.c b/drivers/md/raid5.c
+index 364dd2f6fa1b..d794d8745144 100644
+--- a/drivers/md/raid5.c
++++ b/drivers/md/raid5.c
+@@ -711,6 +711,8 @@ static bool is_full_stripe_write(struct stripe_head *sh)
+ }
+ 
+ static void lock_two_stripes(struct stripe_head *sh1, struct stripe_head *sh2)
++		__acquires(&sh1->stripe_lock)
++		__acquires(&sh2->stripe_lock)
+ {
+ 	if (sh1 > sh2) {
+ 		spin_lock_irq(&sh2->stripe_lock);
+@@ -722,6 +724,8 @@ static void lock_two_stripes(struct stripe_head *sh1, struct stripe_head *sh2)
+ }
+ 
+ static void unlock_two_stripes(struct stripe_head *sh1, struct stripe_head *sh2)
++		__releases(&sh1->stripe_lock)
++		__releases(&sh2->stripe_lock)
+ {
+ 	spin_unlock(&sh1->stripe_lock);
+ 	spin_unlock_irq(&sh2->stripe_lock);
+-- 
+2.25.0
+

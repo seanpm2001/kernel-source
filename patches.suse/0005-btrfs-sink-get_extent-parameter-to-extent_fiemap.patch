@@ -1,0 +1,78 @@
+From 2135fb9bb4b8d05d288d994c4f9f8077ce90d890 Mon Sep 17 00:00:00 2001
+From: David Sterba <dsterba@suse.com>
+Date: Fri, 23 Jun 2017 04:09:57 +0200
+Patch-mainline: v4.16
+Git-commit: 2135fb9bb4b8d05d288d994c4f9f8077ce90d890
+References: bsc#1168273
+Subject: [PATCH 5/7] btrfs: sink get_extent parameter to extent_fiemap
+
+All callers pass btrfs_get_extent_fiemap and we don't expect anything
+else in the context of extent_fiemap.
+
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/extent_io.c | 6 +++---
+ fs/btrfs/extent_io.h | 2 +-
+ fs/btrfs/inode.c     | 2 +-
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/fs/btrfs/extent_io.c b/fs/btrfs/extent_io.c
+index 3ecd3ab73981..d62e0194fc3b 100644
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -4441,7 +4441,7 @@ static int emit_last_fiemap_cache(struct btrfs_fs_info *fs_info,
+ }
+ 
+ int extent_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+-		__u64 start, __u64 len, get_extent_t *get_extent)
++		__u64 start, __u64 len)
+ {
+ 	int ret = 0;
+ 	u64 off = start;
+@@ -4524,7 +4524,7 @@ int extent_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+ 			 &cached_state);
+ 
+ 	em = get_extent_skip_holes(inode, start, last_for_get_extent,
+-				   get_extent);
++				   btrfs_get_extent_fiemap);
+ 	if (!em)
+ 		goto out;
+ 	if (IS_ERR(em)) {
+@@ -4613,7 +4613,7 @@ int extent_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+ 
+ 		/* now scan forward to see if this is really the last extent. */
+ 		em = get_extent_skip_holes(inode, off, last_for_get_extent,
+-					   get_extent);
++					   btrfs_get_extent_fiemap);
+ 		if (IS_ERR(em)) {
+ 			ret = PTR_ERR(em);
+ 			goto out;
+diff --git a/fs/btrfs/extent_io.h b/fs/btrfs/extent_io.h
+index abe4feea1539..afc169d04b22 100644
+--- a/fs/btrfs/extent_io.h
++++ b/fs/btrfs/extent_io.h
+@@ -417,7 +417,7 @@ int extent_readpages(struct extent_io_tree *tree,
+ 		     struct list_head *pages, unsigned nr_pages,
+ 		     get_extent_t get_extent);
+ int extent_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+-		__u64 start, __u64 len, get_extent_t *get_extent);
++		__u64 start, __u64 len);
+ void set_page_extent_mapped(struct page *page);
+ 
+ struct extent_buffer *alloc_extent_buffer(struct btrfs_fs_info *fs_info,
+diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
+index 7403ef8856bd..63cf6cd174d1 100644
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -8859,7 +8859,7 @@ static int btrfs_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+ 	if (ret)
+ 		return ret;
+ 
+-	return extent_fiemap(inode, fieinfo, start, len, btrfs_get_extent_fiemap);
++	return extent_fiemap(inode, fieinfo, start, len);
+ }
+ 
+ int btrfs_readpage(struct file *file, struct page *page)
+-- 
+2.26.0
+

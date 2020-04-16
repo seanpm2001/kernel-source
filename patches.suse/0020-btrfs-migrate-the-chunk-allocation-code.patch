@@ -1,0 +1,691 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Thu, 20 Jun 2019 15:38:04 -0400
+Subject: btrfs: migrate the chunk allocation code
+Git-commit: 07730d87ac7872b54efa02da5d20b42fd6bb165a
+Patch-mainline: v5.4-rc1
+References: bsc#1165949
+
+This feels more at home in block-group.c than in extent-tree.c.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>i
+[ refresh ]
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/block-group.c    |  253 +++++++++++++++++++++++++++++++++++++++++++++-
+ fs/btrfs/block-group.h    |   21 +++
+ fs/btrfs/ctree.h          |   26 ----
+ fs/btrfs/delalloc-space.c |    1 
+ fs/btrfs/extent-tree.c    |  250 ---------------------------------------------
+ fs/btrfs/relocation.c     |    3 
+ fs/btrfs/volumes.c        |    4 
+ 7 files changed, 277 insertions(+), 281 deletions(-)
+
+--- a/fs/btrfs/block-group.c
++++ b/fs/btrfs/block-group.c
+@@ -12,6 +12,7 @@
+ #include "sysfs.h"
+ #include "tree-log.h"
+ #include "delalloc-space.h"
++#include "math.h"
+ 
+ void btrfs_get_block_group(struct btrfs_block_group_cache *cache)
+ {
+@@ -1996,7 +1997,7 @@ out:
+ 	if (cache->flags & BTRFS_BLOCK_GROUP_SYSTEM) {
+ 		alloc_flags = update_block_group_flags(fs_info, cache->flags);
+ 		mutex_lock(&fs_info->chunk_mutex);
+-		check_system_chunk(trans, fs_info, alloc_flags);
++		check_system_chunk(trans, alloc_flags);
+ 		mutex_unlock(&fs_info->chunk_mutex);
+ 	}
+ 	mutex_unlock(&fs_info->ro_block_group_mutex);
+@@ -2724,3 +2725,253 @@ void btrfs_free_reserved_bytes(struct bt
+ 	spin_unlock(&cache->lock);
+ 	spin_unlock(&space_info->lock);
+ }
++
++static void force_metadata_allocation(struct btrfs_fs_info *info)
++{
++	struct list_head *head = &info->space_info;
++	struct btrfs_space_info *found;
++
++	rcu_read_lock();
++	list_for_each_entry_rcu(found, head, list) {
++		if (found->flags & BTRFS_BLOCK_GROUP_METADATA)
++			found->force_alloc = CHUNK_ALLOC_FORCE;
++	}
++	rcu_read_unlock();
++}
++
++static int should_alloc_chunk(struct btrfs_fs_info *fs_info,
++			      struct btrfs_space_info *sinfo, int force)
++{
++	u64 num_bytes = sinfo->total_bytes - sinfo->bytes_readonly;
++	u64 num_allocated = sinfo->bytes_used + sinfo->bytes_reserved + sinfo->bytes_pinned;
++	u64 thresh;
++
++	if (force == CHUNK_ALLOC_FORCE)
++		return 1;
++
++	/*
++	 * in limited mode, we want to have some free space up to
++	 * about 1% of the FS size.
++	 */
++	if (force == CHUNK_ALLOC_LIMITED) {
++		thresh = btrfs_super_total_bytes(fs_info->super_copy);
++		thresh = max_t(u64, SZ_64M, div_factor_fine(thresh, 1));
++
++		if (num_bytes - num_allocated < thresh)
++			return 1;
++	}
++
++	if (num_allocated + SZ_2M < div_factor(num_bytes, 8))
++		return 0;
++	return 1;
++}
++
++int btrfs_force_chunk_alloc(struct btrfs_trans_handle *trans, u64 type)
++{
++	u64 alloc_flags = btrfs_get_alloc_profile(trans->fs_info, type);
++
++	return btrfs_chunk_alloc(trans, alloc_flags, CHUNK_ALLOC_FORCE);
++}
++
++/*
++ * If force is CHUNK_ALLOC_FORCE:
++ *    - return 1 if it successfully allocates a chunk,
++ *    - return errors including -ENOSPC otherwise.
++ * If force is NOT CHUNK_ALLOC_FORCE:
++ *    - return 0 if it doesn't need to allocate a new chunk,
++ *    - return 1 if it successfully allocates a chunk,
++ *    - return errors including -ENOSPC otherwise.
++ */
++int btrfs_chunk_alloc(struct btrfs_trans_handle *trans, u64 flags,
++		      enum btrfs_chunk_alloc_enum force)
++{
++	struct btrfs_fs_info *fs_info = trans->fs_info;
++	struct btrfs_space_info *space_info;
++	int wait_for_alloc = 0;
++	int ret = 0;
++
++	/* Don't re-enter if we're already allocating a chunk */
++	if (trans->allocating_chunk)
++		return -ENOSPC;
++
++	space_info = btrfs_find_space_info(fs_info, flags);
++	ASSERT(space_info);
++
++again:
++	spin_lock(&space_info->lock);
++	if (force < space_info->force_alloc)
++		force = space_info->force_alloc;
++	if (space_info->full) {
++		if (should_alloc_chunk(fs_info, space_info, force))
++			ret = -ENOSPC;
++		else
++			ret = 0;
++		spin_unlock(&space_info->lock);
++		return ret;
++	}
++
++	if (!should_alloc_chunk(fs_info, space_info, force)) {
++		spin_unlock(&space_info->lock);
++		return 0;
++	} else if (space_info->chunk_alloc) {
++		wait_for_alloc = 1;
++	} else {
++		space_info->chunk_alloc = 1;
++	}
++
++	spin_unlock(&space_info->lock);
++
++	mutex_lock(&fs_info->chunk_mutex);
++
++	/*
++	 * The chunk_mutex is held throughout the entirety of a chunk
++	 * allocation, so once we've acquired the chunk_mutex we know that the
++	 * other guy is done and we need to recheck and see if we should
++	 * allocate.
++	 */
++	if (wait_for_alloc) {
++		mutex_unlock(&fs_info->chunk_mutex);
++		wait_for_alloc = 0;
++		goto again;
++	}
++
++	trans->allocating_chunk = true;
++
++	/*
++	 * If we have mixed data/metadata chunks we want to make sure we keep
++	 * allocating mixed chunks instead of individual chunks.
++	 */
++	if (btrfs_mixed_space_info(space_info))
++		flags |= (BTRFS_BLOCK_GROUP_DATA | BTRFS_BLOCK_GROUP_METADATA);
++
++	/*
++	 * if we're doing a data chunk, go ahead and make sure that
++	 * we keep a reasonable number of metadata chunks allocated in the
++	 * FS as well.
++	 */
++	if (flags & BTRFS_BLOCK_GROUP_DATA && fs_info->metadata_ratio) {
++		fs_info->data_chunk_allocations++;
++		if (!(fs_info->data_chunk_allocations %
++		      fs_info->metadata_ratio))
++			force_metadata_allocation(fs_info);
++	}
++
++	/*
++	 * Check if we have enough space in SYSTEM chunk because we may need
++	 * to update devices.
++	 */
++	check_system_chunk(trans, flags);
++
++	ret = btrfs_alloc_chunk(trans, fs_info, flags);
++	trans->allocating_chunk = false;
++
++	spin_lock(&space_info->lock);
++	if (ret < 0 && ret != -ENOSPC)
++		goto out;
++	if (ret)
++		space_info->full = 1;
++	else {
++		ret = 1;
++		space_info->max_extent_size = 0;
++	}
++
++	space_info->force_alloc = CHUNK_ALLOC_NO_FORCE;
++out:
++	space_info->chunk_alloc = 0;
++	spin_unlock(&space_info->lock);
++	mutex_unlock(&fs_info->chunk_mutex);
++	/*
++	 * When we allocate a new chunk we reserve space in the chunk block
++	 * reserve to make sure we can COW nodes/leafs in the chunk tree or
++	 * add new nodes/leafs to it if we end up needing to do it when
++	 * inserting the chunk item and updating device items as part of the
++	 * second phase of chunk allocation, performed by
++	 * btrfs_finish_chunk_alloc(). So make sure we don't accumulate a
++	 * large number of new block groups to create in our transaction
++	 * handle's new_bgs list to avoid exhausting the chunk block reserve
++	 * in extreme cases - like having a single transaction create many new
++	 * block groups when starting to write out the free space caches of all
++	 * the block groups that were made dirty during the lifetime of the
++	 * transaction.
++	 */
++	if (trans->chunk_bytes_reserved >= (u64)SZ_2M)
++		btrfs_create_pending_block_groups(trans, fs_info);
++
++	return ret;
++}
++
++static u64 get_profile_num_devs(struct btrfs_fs_info *fs_info, u64 type)
++{
++       u64 num_dev;
++
++       if (type & (BTRFS_BLOCK_GROUP_RAID10 |
++                   BTRFS_BLOCK_GROUP_RAID0 |
++                   BTRFS_BLOCK_GROUP_RAID5 |
++                   BTRFS_BLOCK_GROUP_RAID6))
++               num_dev = fs_info->fs_devices->rw_devices;
++       else if (type & BTRFS_BLOCK_GROUP_RAID1)
++               num_dev = 2;
++       else
++               num_dev = 1;    /* DUP or single */
++
++       return num_dev;
++}
++
++/*
++ * If @is_allocation is true, reserve space in the system space info necessary
++ * for allocating a chunk, otherwise if it's false, reserve space necessary for
++ * removing a chunk.
++ */
++void check_system_chunk(struct btrfs_trans_handle *trans, u64 type)
++{
++	struct btrfs_fs_info *fs_info = trans->fs_info;
++	struct btrfs_space_info *info;
++	u64 left;
++	u64 thresh;
++	int ret = 0;
++	u64 num_devs;
++
++	/*
++	 * Needed because we can end up allocating a system chunk and for an
++	 * atomic and race free space reservation in the chunk block reserve.
++	 */
++	lockdep_assert_held(&fs_info->chunk_mutex);
++
++	info = btrfs_find_space_info(fs_info, BTRFS_BLOCK_GROUP_SYSTEM);
++	spin_lock(&info->lock);
++	left = info->total_bytes - btrfs_space_info_used(info, true);
++	spin_unlock(&info->lock);
++
++	num_devs = get_profile_num_devs(fs_info, type);
++
++	/* num_devs device items to update and 1 chunk item to add or remove */
++	thresh = btrfs_calc_trunc_metadata_size(fs_info, num_devs) +
++		btrfs_calc_trans_metadata_size(fs_info, 1);
++
++	if (left < thresh && btrfs_test_opt(fs_info, ENOSPC_DEBUG)) {
++		btrfs_info(fs_info, "left=%llu, need=%llu, flags=%llu",
++			   left, thresh, type);
++		btrfs_dump_space_info(fs_info, info, 0, 0);
++	}
++
++	if (left < thresh) {
++		u64 flags = btrfs_system_alloc_profile(fs_info);
++
++		/*
++		 * Ignore failure to create system chunk. We might end up not
++		 * needing it, as we might not need to COW all nodes/leafs from
++		 * the paths we visit in the chunk tree (they were already COWed
++		 * or created in the current transaction for example).
++		 */
++		ret = btrfs_alloc_chunk(trans, fs_info, flags);
++	}
++
++	if (!ret) {
++		ret = btrfs_block_rsv_add(fs_info->chunk_root,
++					  &fs_info->chunk_block_rsv,
++					  thresh, BTRFS_RESERVE_NO_FLUSH);
++		if (!ret)
++			trans->chunk_bytes_reserved += thresh;
++	}
++}
++
+--- a/fs/btrfs/block-group.h
++++ b/fs/btrfs/block-group.h
+@@ -10,6 +10,23 @@ enum btrfs_disk_cache_state {
+ 	BTRFS_DC_SETUP,
+ };
+ 
++/*
++ * Control flags for do_chunk_alloc's force field CHUNK_ALLOC_NO_FORCE means to
++ * only allocate a chunk if we really need one.
++ *
++ * CHUNK_ALLOC_LIMITED means to only try and allocate one if we have very few
++ * chunks already allocated.  This is used as part of the clustering code to
++ * help make sure we have a good pool of storage to cluster in, without filling
++ * the FS with empty chunks
++ *
++ * CHUNK_ALLOC_FORCE means it must try to allocate one
++ */
++enum btrfs_chunk_alloc_enum {
++	CHUNK_ALLOC_NO_FORCE,
++	CHUNK_ALLOC_LIMITED,
++	CHUNK_ALLOC_FORCE,
++};
++
+ struct btrfs_caching_control {
+ 	struct list_head list;
+ 	struct mutex mutex;
+@@ -201,6 +218,10 @@ int btrfs_add_reserved_bytes(struct btrf
+ 			     u64 ram_bytes, u64 num_bytes, int delalloc);
+ void btrfs_free_reserved_bytes(struct btrfs_block_group_cache *cache,
+ 			       u64 num_bytes, int delalloc);
++int btrfs_chunk_alloc(struct btrfs_trans_handle *trans, u64 flags,
++		      enum btrfs_chunk_alloc_enum force);
++int btrfs_force_chunk_alloc(struct btrfs_trans_handle *trans, u64 type);
++void check_system_chunk(struct btrfs_trans_handle *trans, const u64 type);
+ 
+ static inline int btrfs_block_group_cache_done(
+ 		struct btrfs_block_group_cache *cache)
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -2557,28 +2557,6 @@ enum btrfs_flush_state {
+ 	COMMIT_TRANS		=	9,
+ };
+ 
+-/*
+- * control flags for do_chunk_alloc's force field
+- * CHUNK_ALLOC_NO_FORCE means to only allocate a chunk
+- * if we really need one.
+- *
+- * CHUNK_ALLOC_LIMITED means to only try and allocate one
+- * if we have very few chunks already allocated.  This is
+- * used as part of the clustering code to help make sure
+- * we have a good pool of storage to cluster in, without
+- * filling the FS with empty chunks
+- *
+- * CHUNK_ALLOC_FORCE means it must try to allocate one
+- *
+- */
+-enum btrfs_chunk_alloc_enum {
+-	CHUNK_ALLOC_NO_FORCE,
+-	CHUNK_ALLOC_LIMITED,
+-	CHUNK_ALLOC_FORCE,
+-};
+-
+-int btrfs_chunk_alloc(struct btrfs_trans_handle *trans, u64 flags,
+-		      enum btrfs_chunk_alloc_enum force);
+ void btrfs_trans_release_metadata(struct btrfs_trans_handle *trans,
+ 				  struct btrfs_fs_info *fs_info);
+ int btrfs_subvolume_reserve_metadata(struct btrfs_root *root,
+@@ -2597,8 +2575,6 @@ int btrfs_error_unpin_extent_range(struc
+                                   u64 start, u64 end);
+ int btrfs_discard_extent(struct btrfs_fs_info *fs_info, u64 bytenr,
+ 			 u64 num_bytes, u64 *actual_bytes);
+-int btrfs_force_chunk_alloc(struct btrfs_trans_handle *trans,
+-			    struct btrfs_fs_info *fs_info, u64 type);
+ int btrfs_trim_fs(struct btrfs_fs_info *fs_info, struct fstrim_range *range);
+ 
+ int btrfs_init_space_info(struct btrfs_fs_info *fs_info);
+@@ -2608,8 +2584,6 @@ int __get_raid_index(u64 flags);
+ int btrfs_start_write_no_snapshoting(struct btrfs_root *root);
+ void btrfs_end_write_no_snapshoting(struct btrfs_root *root);
+ void btrfs_wait_for_snapshot_creation(struct btrfs_root *root);
+-void check_system_chunk(struct btrfs_trans_handle *trans,
+-			struct btrfs_fs_info *fs_info, const u64 type);
+ /* ctree.c */
+ int btrfs_bin_search(struct extent_buffer *eb, const struct btrfs_key *key,
+ 		     int level, int *slot);
+--- a/fs/btrfs/delalloc-space.c
++++ b/fs/btrfs/delalloc-space.c
+@@ -7,6 +7,7 @@
+ #include "space-info.h"
+ #include "transaction.h"
+ #include "qgroup.h"
++#include "block-group.h"
+ 
+ int btrfs_alloc_data_chunk_ondemand(struct btrfs_inode *inode, u64 bytes)
+ {
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -2854,248 +2854,6 @@ u64 btrfs_system_alloc_profile(struct bt
+ 	return btrfs_get_alloc_profile(fs_info, BTRFS_BLOCK_GROUP_SYSTEM);
+ }
+ 
+-static void force_metadata_allocation(struct btrfs_fs_info *info)
+-{
+-	struct list_head *head = &info->space_info;
+-	struct btrfs_space_info *found;
+-
+-	rcu_read_lock();
+-	list_for_each_entry_rcu(found, head, list) {
+-		if (found->flags & BTRFS_BLOCK_GROUP_METADATA)
+-			found->force_alloc = CHUNK_ALLOC_FORCE;
+-	}
+-	rcu_read_unlock();
+-}
+-
+-static int should_alloc_chunk(struct btrfs_fs_info *fs_info,
+-			      struct btrfs_space_info *sinfo, int force)
+-{
+-	u64 num_bytes = sinfo->total_bytes - sinfo->bytes_readonly;
+-	u64 num_allocated = sinfo->bytes_used + sinfo->bytes_reserved + sinfo->bytes_pinned;
+-	u64 thresh;
+-
+-	if (force == CHUNK_ALLOC_FORCE)
+-		return 1;
+-
+-	/*
+-	 * in limited mode, we want to have some free space up to
+-	 * about 1% of the FS size.
+-	 */
+-	if (force == CHUNK_ALLOC_LIMITED) {
+-		thresh = btrfs_super_total_bytes(fs_info->super_copy);
+-		thresh = max_t(u64, SZ_64M, div_factor_fine(thresh, 1));
+-
+-		if (num_bytes - num_allocated < thresh)
+-			return 1;
+-	}
+-
+-	if (num_allocated + SZ_2M < div_factor(num_bytes, 8))
+-		return 0;
+-	return 1;
+-}
+-
+-static u64 get_profile_num_devs(struct btrfs_fs_info *fs_info, u64 type)
+-{
+-	u64 num_dev;
+-
+-	if (type & (BTRFS_BLOCK_GROUP_RAID10 |
+-		    BTRFS_BLOCK_GROUP_RAID0 |
+-		    BTRFS_BLOCK_GROUP_RAID5 |
+-		    BTRFS_BLOCK_GROUP_RAID6))
+-		num_dev = fs_info->fs_devices->rw_devices;
+-	else if (type & BTRFS_BLOCK_GROUP_RAID1)
+-		num_dev = 2;
+-	else
+-		num_dev = 1;	/* DUP or single */
+-
+-	return num_dev;
+-}
+-
+-/*
+- * If @is_allocation is true, reserve space in the system space info necessary
+- * for allocating a chunk, otherwise if it's false, reserve space necessary for
+- * removing a chunk.
+- */
+-void check_system_chunk(struct btrfs_trans_handle *trans,
+-			struct btrfs_fs_info *fs_info, u64 type)
+-{
+-	struct btrfs_space_info *info;
+-	u64 left;
+-	u64 thresh;
+-	int ret = 0;
+-	u64 num_devs;
+-
+-	/*
+-	 * Needed because we can end up allocating a system chunk and for an
+-	 * atomic and race free space reservation in the chunk block reserve.
+-	 */
+-	ASSERT(mutex_is_locked(&fs_info->chunk_mutex));
+-
+-	info = btrfs_find_space_info(fs_info, BTRFS_BLOCK_GROUP_SYSTEM);
+-	spin_lock(&info->lock);
+-	left = info->total_bytes - btrfs_space_info_used(info, true);
+-	spin_unlock(&info->lock);
+-
+-	num_devs = get_profile_num_devs(fs_info, type);
+-
+-	/* num_devs device items to update and 1 chunk item to add or remove */
+-	thresh = btrfs_calc_trunc_metadata_size(fs_info, num_devs) +
+-		btrfs_calc_trans_metadata_size(fs_info, 1);
+-
+-	if (left < thresh && btrfs_test_opt(fs_info, ENOSPC_DEBUG)) {
+-		btrfs_info(fs_info, "left=%llu, need=%llu, flags=%llu",
+-			   left, thresh, type);
+-		btrfs_dump_space_info(fs_info, info, 0, 0);
+-	}
+-
+-	if (left < thresh) {
+-		u64 flags = btrfs_system_alloc_profile(fs_info);
+-
+-		/*
+-		 * Ignore failure to create system chunk. We might end up not
+-		 * needing it, as we might not need to COW all nodes/leafs from
+-		 * the paths we visit in the chunk tree (they were already COWed
+-		 * or created in the current transaction for example).
+-		 */
+-		ret = btrfs_alloc_chunk(trans, fs_info, flags);
+-	}
+-
+-	if (!ret) {
+-		ret = btrfs_block_rsv_add(fs_info->chunk_root,
+-					  &fs_info->chunk_block_rsv,
+-					  thresh, BTRFS_RESERVE_NO_FLUSH);
+-		if (!ret)
+-			trans->chunk_bytes_reserved += thresh;
+-	}
+-}
+-
+-/*
+- * If force is CHUNK_ALLOC_FORCE:
+- *    - return 1 if it successfully allocates a chunk,
+- *    - return errors including -ENOSPC otherwise.
+- * If force is NOT CHUNK_ALLOC_FORCE:
+- *    - return 0 if it doesn't need to allocate a new chunk,
+- *    - return 1 if it successfully allocates a chunk,
+- *    - return errors including -ENOSPC otherwise.
+- */
+-int btrfs_chunk_alloc(struct btrfs_trans_handle *trans, u64 flags,
+-		      enum btrfs_chunk_alloc_enum force)
+-{
+-	struct btrfs_fs_info *fs_info = trans->fs_info;
+-	struct btrfs_space_info *space_info;
+-	int wait_for_alloc = 0;
+-	int ret = 0;
+-
+-	/* Don't re-enter if we're already allocating a chunk */
+-	if (trans->allocating_chunk)
+-		return -ENOSPC;
+-
+-	space_info = btrfs_find_space_info(fs_info, flags);
+-	ASSERT(space_info);
+-
+-again:
+-	spin_lock(&space_info->lock);
+-	if (force < space_info->force_alloc)
+-		force = space_info->force_alloc;
+-	if (space_info->full) {
+-		if (should_alloc_chunk(fs_info, space_info, force))
+-			ret = -ENOSPC;
+-		else
+-			ret = 0;
+-		spin_unlock(&space_info->lock);
+-		return ret;
+-	}
+-
+-	if (!should_alloc_chunk(fs_info, space_info, force)) {
+-		spin_unlock(&space_info->lock);
+-		return 0;
+-	} else if (space_info->chunk_alloc) {
+-		wait_for_alloc = 1;
+-	} else {
+-		space_info->chunk_alloc = 1;
+-	}
+-
+-	spin_unlock(&space_info->lock);
+-
+-	mutex_lock(&fs_info->chunk_mutex);
+-
+-	/*
+-	 * The chunk_mutex is held throughout the entirety of a chunk
+-	 * allocation, so once we've acquired the chunk_mutex we know that the
+-	 * other guy is done and we need to recheck and see if we should
+-	 * allocate.
+-	 */
+-	if (wait_for_alloc) {
+-		mutex_unlock(&fs_info->chunk_mutex);
+-		wait_for_alloc = 0;
+-		goto again;
+-	}
+-
+-	trans->allocating_chunk = true;
+-
+-	/*
+-	 * If we have mixed data/metadata chunks we want to make sure we keep
+-	 * allocating mixed chunks instead of individual chunks.
+-	 */
+-	if (btrfs_mixed_space_info(space_info))
+-		flags |= (BTRFS_BLOCK_GROUP_DATA | BTRFS_BLOCK_GROUP_METADATA);
+-
+-	/*
+-	 * if we're doing a data chunk, go ahead and make sure that
+-	 * we keep a reasonable number of metadata chunks allocated in the
+-	 * FS as well.
+-	 */
+-	if (flags & BTRFS_BLOCK_GROUP_DATA && fs_info->metadata_ratio) {
+-		fs_info->data_chunk_allocations++;
+-		if (!(fs_info->data_chunk_allocations %
+-		      fs_info->metadata_ratio))
+-			force_metadata_allocation(fs_info);
+-	}
+-
+-	/*
+-	 * Check if we have enough space in SYSTEM chunk because we may need
+-	 * to update devices.
+-	 */
+-	check_system_chunk(trans, fs_info, flags);
+-
+-	ret = btrfs_alloc_chunk(trans, fs_info, flags);
+-	trans->allocating_chunk = false;
+-
+-	spin_lock(&space_info->lock);
+-	if (ret < 0 && ret != -ENOSPC)
+-		goto out;
+-	if (ret)
+-		space_info->full = 1;
+-	else {
+-		ret = 1;
+-		space_info->max_extent_size = 0;
+-	}
+-
+-	space_info->force_alloc = CHUNK_ALLOC_NO_FORCE;
+-out:
+-	space_info->chunk_alloc = 0;
+-	spin_unlock(&space_info->lock);
+-	mutex_unlock(&fs_info->chunk_mutex);
+-	/*
+-	 * When we allocate a new chunk we reserve space in the chunk block
+-	 * reserve to make sure we can COW nodes/leafs in the chunk tree or
+-	 * add new nodes/leafs to it if we end up needing to do it when
+-	 * inserting the chunk item and updating device items as part of the
+-	 * second phase of chunk allocation, performed by
+-	 * btrfs_finish_chunk_alloc(). So make sure we don't accumulate a
+-	 * large number of new block groups to create in our transaction
+-	 * handle's new_bgs list to avoid exhausting the chunk block reserve
+-	 * in extreme cases - like having a single transaction create many new
+-	 * block groups when starting to write out the free space caches of all
+-	 * the block groups that were made dirty during the lifetime of the
+-	 * transaction.
+-	 */
+-	if (trans->chunk_bytes_reserved >= (u64)SZ_2M)
+-		btrfs_create_pending_block_groups(trans, fs_info);
+-
+-	return ret;
+-}
+-
+ void btrfs_trans_release_metadata(struct btrfs_trans_handle *trans,
+ 				  struct btrfs_fs_info *fs_info)
+ {
+@@ -5903,14 +5661,6 @@ int btrfs_drop_subtree(struct btrfs_tran
+ 	return ret;
+ }
+ 
+-int btrfs_force_chunk_alloc(struct btrfs_trans_handle *trans,
+-			    struct btrfs_fs_info *fs_info, u64 type)
+-{
+-	u64 alloc_flags = btrfs_get_alloc_profile(fs_info, type);
+-
+-	return btrfs_chunk_alloc(trans, alloc_flags, CHUNK_ALLOC_FORCE);
+-}
+-
+ /*
+  * helper to account the unused space of all the readonly block group in the
+  * space_info. takes mirrors into account.
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -4242,8 +4242,7 @@ restart:
+ 		}
+ 	}
+ 	if (trans && progress && err == -ENOSPC) {
+-		ret = btrfs_force_chunk_alloc(trans, fs_info,
+-					      rc->block_group->flags);
++		ret = btrfs_force_chunk_alloc(trans, rc->block_group->flags);
+ 		if (ret == 1) {
+ 			err = 0;
+ 			progress = 0;
+--- a/fs/btrfs/volumes.c
++++ b/fs/btrfs/volumes.c
+@@ -2880,7 +2880,7 @@ int btrfs_remove_chunk(struct btrfs_tran
+ 	}
+ 	map = em->map_lookup;
+ 	mutex_lock(&fs_info->chunk_mutex);
+-	check_system_chunk(trans, fs_info, map->type);
++	check_system_chunk(trans, map->type);
+ 	mutex_unlock(&fs_info->chunk_mutex);
+ 
+ 	/*
+@@ -3113,7 +3113,7 @@ static int btrfs_may_alloc_data_chunk(st
+ 			if (IS_ERR(trans))
+ 				return PTR_ERR(trans);
+ 
+-			ret = btrfs_force_chunk_alloc(trans, fs_info,
++			ret = btrfs_force_chunk_alloc(trans,
+ 						      BTRFS_BLOCK_GROUP_DATA);
+ 			btrfs_end_transaction(trans);
+ 			if (ret < 0)

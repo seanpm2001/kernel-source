@@ -1,0 +1,86 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Tue, 18 Jun 2019 16:09:23 -0400
+Subject: btrfs: export block_rsv_use_bytes
+Git-commit: c2a67a76ec87579a46a16c49fc9997737b7fa844
+Patch-mainline: v5.3-rc1
+References: bsc#1165949
+
+We are going to need this to move the metadata reservation stuff to
+space_info.c.
+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/ctree.h       |    1 +
+ fs/btrfs/extent-tree.c |   13 +++++--------
+ 2 files changed, 6 insertions(+), 8 deletions(-)
+
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -2838,6 +2838,7 @@ int btrfs_block_rsv_refill(struct btrfs_
+ int btrfs_block_rsv_migrate(struct btrfs_block_rsv *src_rsv,
+ 			    struct btrfs_block_rsv *dst_rsv, u64 num_bytes,
+ 			    int update_size);
++int btrfs_block_rsv_use_bytes(struct btrfs_block_rsv *block_rsv, u64 num_bytes);
+ int btrfs_cond_migrate_bytes(struct btrfs_fs_info *fs_info,
+ 			     struct btrfs_block_rsv *dest, u64 num_bytes,
+ 			     int min_factor);
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -75,8 +75,6 @@ static int btrfs_add_reserved_bytes(stru
+ 				    u64 ram_bytes, u64 num_bytes, int delalloc);
+ static int btrfs_free_reserved_bytes(struct btrfs_block_group_cache *cache,
+ 				     u64 num_bytes, int delalloc);
+-static int block_rsv_use_bytes(struct btrfs_block_rsv *block_rsv,
+-			       u64 num_bytes);
+ static int __reserve_metadata_bytes(struct btrfs_root *root,
+ 				    struct btrfs_space_info *space_info,
+ 				    u64 orig_bytes,
+@@ -5236,7 +5234,7 @@ static int reserve_metadata_bytes(struct
+ 	if (ret == -ENOSPC &&
+ 	    unlikely(root->orphan_cleanup_state == ORPHAN_CLEANUP_STARTED)) {
+ 		if (block_rsv != global_rsv &&
+-		    !block_rsv_use_bytes(global_rsv, orig_bytes))
++		    !btrfs_block_rsv_use_bytes(global_rsv, orig_bytes))
+ 			ret = 0;
+ 	}
+ 	if (ret == -ENOSPC) {
+@@ -5272,8 +5270,7 @@ static struct btrfs_block_rsv *get_block
+ 	return block_rsv;
+ }
+ 
+-static int block_rsv_use_bytes(struct btrfs_block_rsv *block_rsv,
+-			       u64 num_bytes)
++int btrfs_block_rsv_use_bytes(struct btrfs_block_rsv *block_rsv, u64 num_bytes)
+ {
+ 	int ret = -ENOSPC;
+ 	spin_lock(&block_rsv->lock);
+@@ -5470,7 +5467,7 @@ int btrfs_block_rsv_migrate(struct btrfs
+ {
+ 	int ret;
+ 
+-	ret = block_rsv_use_bytes(src, num_bytes);
++	ret = btrfs_block_rsv_use_bytes(src, num_bytes);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -8251,7 +8248,7 @@ use_block_rsv(struct btrfs_trans_handle
+ 	if (unlikely(block_rsv->size == 0))
+ 		goto try_reserve;
+ again:
+-	ret = block_rsv_use_bytes(block_rsv, blocksize);
++	ret = btrfs_block_rsv_use_bytes(block_rsv, blocksize);
+ 	if (!ret)
+ 		return block_rsv;
+ 
+@@ -8289,7 +8286,7 @@ try_reserve:
+ 	 */
+ 	if (block_rsv->type != BTRFS_BLOCK_RSV_GLOBAL &&
+ 	    block_rsv->space_info == global_rsv->space_info) {
+-		ret = block_rsv_use_bytes(global_rsv, blocksize);
++		ret = btrfs_block_rsv_use_bytes(global_rsv, blocksize);
+ 		if (!ret)
+ 			return global_rsv;
+ 	}

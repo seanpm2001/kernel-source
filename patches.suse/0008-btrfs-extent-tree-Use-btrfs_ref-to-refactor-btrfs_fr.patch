@@ -15,18 +15,18 @@ Reviewed-by: David Sterba <dsterba@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 ---
  fs/btrfs/ctree.h       |    3 +--
- fs/btrfs/extent-tree.c |   44 +++++++++++++++++++-------------------------
- fs/btrfs/file.c        |   23 +++++++++++++----------
- fs/btrfs/inode.c       |   13 +++++++++----
+ fs/btrfs/extent-tree.c |   40 +++++++++++++++++-----------------------
+ fs/btrfs/file.c        |   24 +++++++++++++-----------
+ fs/btrfs/inode.c       |   12 ++++++++----
  fs/btrfs/relocation.c  |   25 ++++++++++++++++---------
- 5 files changed, 58 insertions(+), 50 deletions(-)
+ 5 files changed, 55 insertions(+), 49 deletions(-)
 
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -2720,8 +2720,7 @@ int btrfs_set_disk_extent_flags(struct b
+@@ -2754,8 +2754,7 @@ int btrfs_set_disk_extent_flags(struct b
  				int level, int is_data);
  int btrfs_free_extent(struct btrfs_trans_handle *trans,
- 		      struct btrfs_fs_info *fs_info,
+ 		      struct btrfs_root *root,
 -		      u64 bytenr, u64 num_bytes, u64 parent, u64 root_objectid,
 -		      u64 owner, u64 offset);
 +		      struct btrfs_ref *ref);
@@ -35,38 +35,36 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  			       u64 start, u64 len, int delalloc);
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -3298,9 +3298,8 @@ static int __btrfs_mod_ref(struct btrfs_
- 				ret = btrfs_inc_extent_ref(trans, fs_info,
- 						&generic_ref);
+@@ -3389,9 +3389,7 @@ static int __btrfs_mod_ref(struct btrfs_
+ 			if (inc)
+ 				ret = btrfs_inc_extent_ref(trans, root, &generic_ref);
  			else
--				ret = btrfs_free_extent(trans, fs_info, bytenr,
--						num_bytes, parent, ref_root,
--						key.objectid, key.offset);
-+				ret = btrfs_free_extent(trans, fs_info,
-+						&generic_ref);
+-				ret = btrfs_free_extent(trans, root, bytenr, num_bytes,
+-					   parent, ref_root, key.objectid,
+-					   key.offset);
++				ret = btrfs_free_extent(trans, root, &generic_ref);
  			if (ret)
  				goto fail;
  		} else {
-@@ -3315,9 +3314,8 @@ static int __btrfs_mod_ref(struct btrfs_
- 				ret = btrfs_inc_extent_ref(trans, fs_info,
- 						&generic_ref);
+@@ -3400,8 +3398,7 @@ static int __btrfs_mod_ref(struct btrfs_
+ 			if (inc)
+ 				ret = btrfs_inc_extent_ref(trans, root, &generic_ref);
  			else
--				ret = btrfs_free_extent(trans, fs_info, bytenr,
--						num_bytes, parent, ref_root,
--						level - 1, 0);
-+				ret = btrfs_free_extent(trans, fs_info,
-+						&generic_ref);
+-				ret = btrfs_free_extent(trans, root, bytenr, num_bytes,
+-					   parent, ref_root, level - 1, 0);
++				ret = btrfs_free_extent(trans, root, &generic_ref);
  			if (ret)
  				goto fail;
  		}
-@@ -7190,42 +7188,36 @@ out:
+@@ -7275,42 +7272,37 @@ out:
  /* Can return -ENOMEM */
  int btrfs_free_extent(struct btrfs_trans_handle *trans,
- 		      struct btrfs_fs_info *fs_info,
+ 		      struct btrfs_root *root,
 -		      u64 bytenr, u64 num_bytes, u64 parent, u64 root_objectid,
 -		      u64 owner, u64 offset)
 +		      struct btrfs_ref *ref)
  {
+ 	struct btrfs_fs_info *fs_info = root->fs_info;
 -	struct btrfs_ref generic_ref = { 0 };
  	int old_ref_mod, new_ref_mod;
  	int ret;
@@ -74,7 +72,6 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	if (btrfs_is_testing(fs_info))
  		return 0;
  
--
 -	btrfs_init_generic_ref(&generic_ref, BTRFS_DROP_DELAYED_REF, bytenr,
 -			       num_bytes, parent);
 -	generic_ref.real_root = root_objectid;
@@ -112,7 +109,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  
  	return ret;
  }
-@@ -8652,6 +8644,7 @@ static noinline int do_walk_down(struct
+@@ -8737,6 +8729,7 @@ static noinline int do_walk_down(struct
  	u32 blocksize;
  	struct btrfs_key key;
  	struct btrfs_key first_key;
@@ -120,43 +117,43 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	struct extent_buffer *next;
  	int level = wc->level;
  	int reada = 0;
-@@ -8825,9 +8818,10 @@ skip:
+@@ -8909,9 +8902,10 @@ skip:
+ 		 */
  		wc->drop_level = level;
  		find_next_key(path, level, &wc->drop_progress);
- 
--		ret = btrfs_free_extent(trans, fs_info, bytenr, blocksize,
+-		ret = btrfs_free_extent(trans, root, bytenr, blocksize,
 -					parent, root->root_key.objectid,
 -					level - 1, 0);
 +		btrfs_init_generic_ref(&ref, BTRFS_DROP_DELAYED_REF, bytenr,
 +				       fs_info->nodesize, parent);
 +		btrfs_init_tree_ref(&ref, level - 1, root->root_key.objectid);
-+		ret = btrfs_free_extent(trans, fs_info, &ref);
++		ret = btrfs_free_extent(trans, root, &ref);
  		if (ret)
  			goto out_unlock;
  	}
 --- a/fs/btrfs/file.c
 +++ b/fs/btrfs/file.c
-@@ -1007,11 +1007,15 @@ delete_extent_item:
+@@ -1006,11 +1006,14 @@ delete_extent_item:
  				extent_end = ALIGN(extent_end,
  						   fs_info->sectorsize);
  			} else if (update_refs && disk_bytenr > 0) {
--				ret = btrfs_free_extent(trans, fs_info,
+-				ret = btrfs_free_extent(trans, root,
 -						disk_bytenr, num_bytes, 0,
+-						root->root_key.objectid,
+-						key.objectid, key.offset -
+-						extent_offset);
 +				btrfs_init_generic_ref(&ref,
 +						BTRFS_DROP_DELAYED_REF,
 +						disk_bytenr, num_bytes, 0);
 +				btrfs_init_data_ref(&ref,
- 						root->root_key.objectid,
--						key.objectid, key.offset -
--						extent_offset);
++ 						root->root_key.objectid,
 +						key.objectid,
 +						key.offset - extent_offset);
-+				ret = btrfs_free_extent(trans, fs_info,
-+						&ref);
++				ret = btrfs_free_extent(trans, root, &ref);
  				BUG_ON(ret); /* -ENOMEM */
  				inode_sub_bytes(inode,
  						extent_end - key.offset);
-@@ -1328,6 +1332,9 @@ again:
+@@ -1327,6 +1330,9 @@ again:
  
  	other_start = end;
  	other_end = 0;
@@ -166,31 +163,31 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	if (extent_mergeable(leaf, path->slots[0] + 1,
  			     ino, bytenr, orig_offset,
  			     &other_start, &other_end)) {
-@@ -1338,9 +1345,7 @@ again:
+@@ -1337,9 +1343,7 @@ again:
  		extent_end = other_end;
  		del_slot = path->slots[0] + 1;
  		del_nr++;
--		ret = btrfs_free_extent(trans, fs_info, bytenr, num_bytes,
+-		ret = btrfs_free_extent(trans, root, bytenr, num_bytes,
 -					0, root->root_key.objectid,
 -					ino, orig_offset);
-+		ret = btrfs_free_extent(trans, fs_info, &ref);
++		ret = btrfs_free_extent(trans, root, &ref);
  		if (ret) {
  			btrfs_abort_transaction(trans, ret);
  			goto out;
-@@ -1358,9 +1363,7 @@ again:
+@@ -1357,9 +1361,7 @@ again:
  		key.offset = other_start;
  		del_slot = path->slots[0];
  		del_nr++;
--		ret = btrfs_free_extent(trans, fs_info, bytenr, num_bytes,
+-		ret = btrfs_free_extent(trans, root, bytenr, num_bytes,
 -					0, root->root_key.objectid,
 -					ino, orig_offset);
-+		ret = btrfs_free_extent(trans, fs_info, &ref);
++		ret = btrfs_free_extent(trans, root, &ref);
  		if (ret) {
  			btrfs_abort_transaction(trans, ret);
  			goto out;
 --- a/fs/btrfs/inode.c
 +++ b/fs/btrfs/inode.c
-@@ -4476,12 +4476,17 @@ delete:
+@@ -4484,12 +4484,16 @@ delete:
  		if (found_extent &&
  		    (test_bit(BTRFS_ROOT_REF_COWS, &root->state) ||
  		     root == fs_info->tree_root)) {
@@ -198,27 +195,26 @@ Signed-off-by: David Sterba <dsterba@suse.com>
 +
  			btrfs_set_path_blocking(path);
  			bytes_deleted += extent_num_bytes;
--			ret = btrfs_free_extent(trans, fs_info, extent_start,
+-			ret = btrfs_free_extent(trans, root, extent_start,
 -						extent_num_bytes, 0,
 -						btrfs_header_owner(leaf),
 -						ino, extent_offset);
-+
 +			btrfs_init_generic_ref(&ref, BTRFS_DROP_DELAYED_REF,
 +					extent_start, extent_num_bytes, 0);
 +			ref.real_root = root->root_key.objectid;
 +			btrfs_init_data_ref(&ref, btrfs_header_owner(leaf),
 +					ino, extent_offset);
-+			ret = btrfs_free_extent(trans, fs_info, &ref);
++			ret = btrfs_free_extent(trans, root, &ref);
  			if (ret) {
  				btrfs_abort_transaction(trans, ret);
  				break;
 --- a/fs/btrfs/relocation.c
 +++ b/fs/btrfs/relocation.c
-@@ -1752,9 +1752,12 @@ int replace_file_extents(struct btrfs_tr
+@@ -1761,9 +1761,12 @@ int replace_file_extents(struct btrfs_tr
  			break;
  		}
  
--		ret = btrfs_free_extent(trans, fs_info, bytenr, num_bytes,
+-		ret = btrfs_free_extent(trans, root, bytenr, num_bytes,
 -					parent, btrfs_header_owner(leaf),
 -					key.objectid, key.offset);
 +		btrfs_init_generic_ref(&ref, BTRFS_DROP_DELAYED_REF, bytenr,
@@ -226,32 +222,32 @@ Signed-off-by: David Sterba <dsterba@suse.com>
 +		ref.real_root = root->root_key.objectid;
 +		btrfs_init_data_ref(&ref, btrfs_header_owner(leaf),
 +				    key.objectid, key.offset);
-+		ret = btrfs_free_extent(trans, fs_info, &ref);
++		ret = btrfs_free_extent(trans, root, &ref);
  		if (ret) {
  			btrfs_abort_transaction(trans, ret);
  			break;
-@@ -1968,14 +1971,18 @@ again:
- 		ret = btrfs_inc_extent_ref(trans, fs_info, &ref);
+@@ -1977,14 +1980,18 @@ again:
+ 		ret = btrfs_inc_extent_ref(trans, dest, &ref);
  		BUG_ON(ret);
  
--		ret = btrfs_free_extent(trans, fs_info, new_bytenr, blocksize,
+-		ret = btrfs_free_extent(trans, src, new_bytenr, blocksize,
 -					path->nodes[level]->start,
 -					src->root_key.objectid, level - 1, 0);
 +		btrfs_init_generic_ref(&ref, BTRFS_DROP_DELAYED_REF, new_bytenr,
 +				       blocksize, path->nodes[level]->start);
 +		btrfs_init_tree_ref(&ref, level - 1, src->root_key.objectid);
 +		ref.skip_qgroup = true;
-+		ret = btrfs_free_extent(trans, fs_info, &ref);
++		ret = btrfs_free_extent(trans, src, &ref);
  		BUG_ON(ret);
  
--		ret = btrfs_free_extent(trans, fs_info, old_bytenr, blocksize,
+-		ret = btrfs_free_extent(trans, dest, old_bytenr, blocksize,
 -					0, dest->root_key.objectid, level - 1,
 -					0);
 +		btrfs_init_generic_ref(&ref, BTRFS_DROP_DELAYED_REF, old_bytenr,
 +				       blocksize, 0);
 +		btrfs_init_tree_ref(&ref, level - 1, dest->root_key.objectid);
 +		ref.skip_qgroup = true;
-+		ret = btrfs_free_extent(trans, fs_info, &ref);
++		ret = btrfs_free_extent(trans, dest, &ref);
  		BUG_ON(ret);
  
  		btrfs_unlock_up_safe(path, 0);

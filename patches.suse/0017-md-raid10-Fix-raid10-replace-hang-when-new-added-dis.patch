@@ -1,0 +1,129 @@
+From ee37d7314a32ab6809eacc3389bad0406c69a81f Mon Sep 17 00:00:00 2001
+From: Alex Wu <alexwu@synology.com>
+Date: Fri, 21 Sep 2018 16:05:03 +0800
+Subject: [PATCH] md/raid10: Fix raid10 replace hang when new added disk faulty
+Git-commit: ee37d7314a32ab6809eacc3389bad0406c69a81f
+Patch-mainline: v4.20-rc1
+References: bsc#1166003
+
+[Symptom]
+
+Resync thread hang when new added disk faulty during replacing.
+
+[Root Cause]
+
+In raid10_sync_request(), we expect to issue a bio with callback
+end_sync_read(), and a bio with callback end_sync_write().
+
+In normal situation, we will add resyncing sectors into
+mddev->recovery_active when raid10_sync_request() returned, and sub
+resynced sectors from mddev->recovery_active when end_sync_write()
+calls end_sync_request().
+
+If new added disk, which are replacing the old disk, is set faulty,
+there is a race condition:
+    1. In the first rcu protected section, resync thread did not detect
+       that mreplace is set faulty and pass the condition.
+    2. In the second rcu protected section, mreplace is set faulty.
+    3. But, resync thread will prepare the read object first, and then
+       check the write condition.
+    4. It will find that mreplace is set faulty and do not have to
+       prepare write object.
+This cause we add resync sectors but never sub it.
+
+[How to Reproduce]
+
+This issue can be easily reproduced by the following steps:
+    mdadm -C /dev/md0 --assume-clean -l 10 -n 4 /dev/sd[abcd]
+    mdadm /dev/md0 -a /dev/sde
+    mdadm /dev/md0 --replace /dev/sdd
+    sleep 1
+    mdadm /dev/md0 -f /dev/sde
+
+[How to Fix]
+
+This issue can be fixed by using local variables to record the result
+of test conditions. Once the conditions are satisfied, we can make sure
+that we need to issue a bio for read and a bio for write.
+
+Previous 'commit 24afd80d99f8 ("md/raid10: handle recovery of
+replacement devices.")' will also check whether bio is NULL, but leave
+the comment saying that it is a pointless test. So we remove this dummy
+check.
+
+Reported-by: Alex Chen <alexchen@synology.com>
+Reviewed-by: Allen Peng <allenpeng@synology.com>
+Reviewed-by: BingJing Chang <bingjingc@synology.com>
+Signed-off-by: Alex Wu <alexwu@synology.com>
+Signed-off-by: Shaohua Li <shli@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/raid10.c | 27 ++++++++++++++-------------
+ 1 file changed, 14 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/md/raid10.c b/drivers/md/raid10.c
+index d6f7978b4449..749848b2c477 100644
+--- a/drivers/md/raid10.c
++++ b/drivers/md/raid10.c
+@@ -3079,6 +3079,8 @@ static sector_t raid10_sync_request(struct mddev *mddev, sector_t sector_nr,
+ 			sector_t sect;
+ 			int must_sync;
+ 			int any_working;
++			int need_recover = 0;
++			int need_replace = 0;
+ 			struct raid10_info *mirror = &conf->mirrors[i];
+ 			struct md_rdev *mrdev, *mreplace;
+ 
+@@ -3086,11 +3088,15 @@ static sector_t raid10_sync_request(struct mddev *mddev, sector_t sector_nr,
+ 			mrdev = rcu_dereference(mirror->rdev);
+ 			mreplace = rcu_dereference(mirror->replacement);
+ 
+-			if ((mrdev == NULL ||
+-			     test_bit(Faulty, &mrdev->flags) ||
+-			     test_bit(In_sync, &mrdev->flags)) &&
+-			    (mreplace == NULL ||
+-			     test_bit(Faulty, &mreplace->flags))) {
++			if (mrdev != NULL &&
++			    !test_bit(Faulty, &mrdev->flags) &&
++			    !test_bit(In_sync, &mrdev->flags))
++				need_recover = 1;
++			if (mreplace != NULL &&
++			    !test_bit(Faulty, &mreplace->flags))
++				need_replace = 1;
++
++			if (!need_recover && !need_replace) {
+ 				rcu_read_unlock();
+ 				continue;
+ 			}
+@@ -3213,7 +3219,7 @@ static sector_t raid10_sync_request(struct mddev *mddev, sector_t sector_nr,
+ 				r10_bio->devs[1].devnum = i;
+ 				r10_bio->devs[1].addr = to_addr;
+ 
+-				if (!test_bit(In_sync, &mrdev->flags)) {
++				if (need_recover) {
+ 					bio = r10_bio->devs[1].bio;
+ 					bio->bi_next = biolist;
+ 					biolist = bio;
+@@ -3230,16 +3236,11 @@ static sector_t raid10_sync_request(struct mddev *mddev, sector_t sector_nr,
+ 				bio = r10_bio->devs[1].repl_bio;
+ 				if (bio)
+ 					bio->bi_end_io = NULL;
+-				/* Note: if mreplace != NULL, then bio
++				/* Note: if need_replace, then bio
+ 				 * cannot be NULL as r10buf_pool_alloc will
+ 				 * have allocated it.
+-				 * So the second test here is pointless.
+-				 * But it keeps semantic-checkers happy, and
+-				 * this comment keeps human reviewers
+-				 * happy.
+ 				 */
+-				if (mreplace == NULL || bio == NULL ||
+-				    test_bit(Faulty, &mreplace->flags))
++				if (!need_replace)
+ 					break;
+ 				bio->bi_next = biolist;
+ 				biolist = bio;
+-- 
+2.25.0
+

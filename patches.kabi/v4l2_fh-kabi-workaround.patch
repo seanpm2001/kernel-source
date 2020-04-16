@@ -1,0 +1,125 @@
+From: Takashi Iwai <tiwai@suse.de>
+Subject: kABI workaround for v4l2_fh
+Patch-mainline: Never, kABI workaround
+References: CVE-2019-9458 bsc#1168295
+
+The patch
+  patches.suse/media-v4l-event-Prevent-freeing-event-subscriptions-.patch
+introduced a new field subscribe_lock into v4l2_fh object, and this
+breaks kABI.  Unfortunately we cannot use a standard technique due to the
+embedded nature of this object.
+
+Convert to a global lock for avoiding the kABI breakage, as a cost of a
+slight performance degration (which should be negligible).
+
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/media/v4l2-core/v4l2-event.c |   10 +++++-----
+ drivers/media/v4l2-core/v4l2-fh.c    |    5 +++--
+ include/media/v4l2-fh.h              |    5 ++---
+ 3 files changed, 10 insertions(+), 10 deletions(-)
+
+--- a/drivers/media/v4l2-core/v4l2-event.c
++++ b/drivers/media/v4l2-core/v4l2-event.c
+@@ -197,7 +197,7 @@ static void __v4l2_event_unsubscribe(str
+ 	struct v4l2_fh *fh = sev->fh;
+ 	unsigned int i;
+ 
+-	lockdep_assert_held(&fh->subscribe_lock);
++	lockdep_assert_held(&v4l2_fh_subscribe_lock);
+ 	assert_spin_locked(&fh->vdev->fh_lock);
+ 
+ 	/* Remove any pending events for this subscription */
+@@ -235,7 +235,7 @@ int v4l2_event_subscribe(struct v4l2_fh
+ 	sev->ops = ops;
+ 	sev->elems = elems;
+ 
+-	mutex_lock(&fh->subscribe_lock);
++	mutex_lock(&v4l2_fh_subscribe_lock);
+ 
+ 	spin_lock_irqsave(&fh->vdev->fh_lock, flags);
+ 	found_ev = v4l2_event_subscribed(fh, sub->type, sub->id);
+@@ -255,7 +255,7 @@ int v4l2_event_subscribe(struct v4l2_fh
+ 		}
+ 	}
+ 
+-	mutex_unlock(&fh->subscribe_lock);
++	mutex_unlock(&v4l2_fh_subscribe_lock);
+ 
+ 	return ret;
+ }
+@@ -295,7 +295,7 @@ int v4l2_event_unsubscribe(struct v4l2_f
+ 		return 0;
+ 	}
+ 
+-	mutex_lock(&fh->subscribe_lock);
++	mutex_lock(&v4l2_fh_subscribe_lock);
+ 
+ 	spin_lock_irqsave(&fh->vdev->fh_lock, flags);
+ 
+@@ -308,7 +308,7 @@ int v4l2_event_unsubscribe(struct v4l2_f
+ 	if (sev && sev->ops && sev->ops->del)
+ 		sev->ops->del(sev);
+ 
+-	mutex_unlock(&fh->subscribe_lock);
++	mutex_unlock(&v4l2_fh_subscribe_lock);
+ 
+ 	kfree(sev);
+ 
+--- a/drivers/media/v4l2-core/v4l2-fh.c
++++ b/drivers/media/v4l2-core/v4l2-fh.c
+@@ -26,6 +26,9 @@
+ #include <media/v4l2-ioctl.h>
+ #include <media/v4l2-mc.h>
+ 
++/* FIXME: converted to a global lock due to kABI compatibility */
++DEFINE_MUTEX(v4l2_fh_subscribe_lock);
++
+ void v4l2_fh_init(struct v4l2_fh *fh, struct video_device *vdev)
+ {
+ 	fh->vdev = vdev;
+@@ -45,7 +48,6 @@ void v4l2_fh_init(struct v4l2_fh *fh, st
+ 	INIT_LIST_HEAD(&fh->available);
+ 	INIT_LIST_HEAD(&fh->subscribed);
+ 	fh->sequence = -1;
+-	mutex_init(&fh->subscribe_lock);
+ }
+ EXPORT_SYMBOL_GPL(v4l2_fh_init);
+ 
+@@ -91,7 +93,6 @@ void v4l2_fh_exit(struct v4l2_fh *fh)
+ 		return;
+ 	v4l_disable_media_source(fh->vdev);
+ 	v4l2_event_unsubscribe_all(fh);
+-	mutex_destroy(&fh->subscribe_lock);
+ 	fh->vdev = NULL;
+ }
+ EXPORT_SYMBOL_GPL(v4l2_fh_exit);
+--- a/include/media/v4l2-fh.h
++++ b/include/media/v4l2-fh.h
+@@ -37,8 +37,6 @@ struct v4l2_ctrl_handler;
+  * @prio: priority of the file handler, as defined by &enum v4l2_priority
+  *
+  * @wait: event' s wait queue
+- * @subscribe_lock: serialise changes to the subscribed list; guarantee that
+- *		    the add and del event callbacks are orderly called
+  * @subscribed: list of subscribed events
+  * @available: list of events waiting to be dequeued
+  * @navailable: number of available events at @available list
+@@ -54,7 +52,6 @@ struct v4l2_fh {
+ 
+ 	/* Events */
+ 	wait_queue_head_t	wait;
+-	struct mutex		subscribe_lock;
+ 	struct list_head	subscribed;
+ 	struct list_head	available;
+ 	unsigned int		navailable;
+@@ -65,6 +62,8 @@ struct v4l2_fh {
+ #endif
+ };
+ 
++extern struct mutex v4l2_fh_subscribe_lock;
++
+ /**
+  * v4l2_fh_init - Initialise the file handle.
+  *

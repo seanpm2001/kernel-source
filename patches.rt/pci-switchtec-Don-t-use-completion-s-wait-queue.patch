@@ -28,7 +28,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 
 --- a/drivers/pci/switch/switchtec.c
 +++ b/drivers/pci/switch/switchtec.c
-@@ -297,10 +297,11 @@ struct switchtec_user {
+@@ -299,10 +299,11 @@ struct switchtec_user {
  
  	enum mrpc_state state;
  
@@ -41,7 +41,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	u32 cmd;
  	u32 status;
  	u32 return_code;
-@@ -322,7 +323,7 @@ static struct switchtec_user *stuser_cre
+@@ -324,7 +325,7 @@ static struct switchtec_user *stuser_cre
  	stuser->stdev = stdev;
  	kref_init(&stuser->kref);
  	INIT_LIST_HEAD(&stuser->list);
@@ -50,16 +50,16 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	stuser->event_cnt = atomic_read(&stdev->event_cnt);
  
  	dev_dbg(&stdev->dev, "%s: %p\n", __func__, stuser);
-@@ -405,7 +406,7 @@ static int mrpc_queue_cmd(struct switcht
+@@ -403,7 +404,7 @@ static int mrpc_queue_cmd(struct switcht
  	kref_get(&stuser->kref);
  	stuser->read_len = sizeof(stuser->data);
  	stuser_set_state(stuser, MRPC_QUEUED);
--	init_completion(&stuser->comp);
+-	reinit_completion(&stuser->comp);
 +	stuser->cmd_done = false;
  	list_add_tail(&stuser->list, &stdev->mrpc_queue);
  
  	mrpc_cmd_submit(stdev);
-@@ -442,7 +443,7 @@ static void mrpc_complete_cmd(struct swi
+@@ -440,7 +441,7 @@ static void mrpc_complete_cmd(struct swi
  		      stuser->read_len);
  
  out:
@@ -68,7 +68,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	list_del_init(&stuser->list);
  	stuser_put(stuser);
  	stdev->mrpc_busy = 0;
-@@ -712,10 +713,11 @@ static ssize_t switchtec_dev_read(struct
+@@ -710,10 +711,11 @@ static ssize_t switchtec_dev_read(struct
  	mutex_unlock(&stdev->mrpc_mutex);
  
  	if (filp->f_flags & O_NONBLOCK) {
@@ -82,7 +82,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		if (rc < 0)
  			return rc;
  	}
-@@ -763,7 +765,7 @@ static unsigned int switchtec_dev_poll(s
+@@ -761,7 +763,7 @@ static unsigned int switchtec_dev_poll(s
  	struct switchtec_dev *stdev = stuser->stdev;
  	int ret = 0;
  
@@ -91,7 +91,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	poll_wait(filp, &stdev->event_wq, wait);
  
  	if (lock_mutex_and_test_alive(stdev))
-@@ -771,7 +773,7 @@ static unsigned int switchtec_dev_poll(s
+@@ -769,7 +771,7 @@ static unsigned int switchtec_dev_poll(s
  
  	mutex_unlock(&stdev->mrpc_mutex);
  
@@ -100,7 +100,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		ret |= POLLIN | POLLRDNORM;
  
  	if (stuser->event_cnt != atomic_read(&stdev->event_cnt))
-@@ -1237,7 +1239,8 @@ static void stdev_kill(struct switchtec_
+@@ -1240,7 +1242,8 @@ static void stdev_kill(struct switchtec_
  
  	/* Wake up and kill any users waiting on an MRPC request */
  	list_for_each_entry_safe(stuser, tmpuser, &stdev->mrpc_queue, list) {

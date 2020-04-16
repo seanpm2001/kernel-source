@@ -1,0 +1,106 @@
+From: Omar Sandoval <osandov@fb.com>
+Date: Tue, 22 May 2018 09:59:50 -0700
+Subject: Btrfs: clean up error handling in btrfs_truncate()
+Git-commit: ad7e1a740d940cf7da1beb332a1095bcda40c747
+Patch-mainline: v4.18-rc1
+References: bsc#1165949
+
+btrfs_truncate() uses two variables for error handling, ret and err (if
+this sounds familiar, it's because btrfs_truncate_inode_items() did
+something similar). This is error prone, as was made evident by "Btrfs:
+fix error handling in btrfs_truncate()". We only have err because we
+don't want to mask an error if we call btrfs_update_inode() and
+btrfs_end_transaction(), so let's make that its own scoped return
+variable and use ret everywhere else.
+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Omar Sandoval <osandov@fb.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/inode.c | 33 ++++++++++++++-------------------
+ 1 file changed, 14 insertions(+), 19 deletions(-)
+
+diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
+index 880431ae5e59..89b208201783 100644
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -9030,8 +9030,7 @@ static int btrfs_truncate(struct inode *inode, bool skip_writeback)
+ 	struct btrfs_fs_info *fs_info = btrfs_sb(inode->i_sb);
+ 	struct btrfs_root *root = BTRFS_I(inode)->root;
+ 	struct btrfs_block_rsv *rsv;
+-	int ret = 0;
+-	int err = 0;
++	int ret;
+ 	struct btrfs_trans_handle *trans;
+ 	u64 mask = fs_info->sectorsize - 1;
+ 	u64 min_size = btrfs_calc_trunc_metadata_size(fs_info, 1);
+@@ -9083,7 +9082,7 @@ static int btrfs_truncate(struct inode *inode, bool skip_writeback)
+ 	 */
+ 	trans = btrfs_start_transaction(root, 2);
+ 	if (IS_ERR(trans)) {
+-		err = PTR_ERR(trans);
++		ret = PTR_ERR(trans);
+ 		goto out;
+ 	}
+ 
+@@ -9107,24 +9106,19 @@ static int btrfs_truncate(struct inode *inode, bool skip_writeback)
+ 						 inode->i_size,
+ 						 BTRFS_EXTENT_DATA_KEY);
+ 		trans->block_rsv = &fs_info->trans_block_rsv;
+-		if (ret != -ENOSPC && ret != -EAGAIN) {
+-			if (ret < 0)
+-				err = ret;
++		if (ret != -ENOSPC && ret != -EAGAIN)
+ 			break;
+-		}
+ 
+ 		ret = btrfs_update_inode(trans, root, inode);
+-		if (ret) {
+-			err = ret;
++		if (ret)
+ 			break;
+-		}
+ 
+ 		btrfs_end_transaction(trans);
+ 		btrfs_btree_balance_dirty(fs_info);
+ 
+ 		trans = btrfs_start_transaction(root, 2);
+ 		if (IS_ERR(trans)) {
+-			ret = err = PTR_ERR(trans);
++			ret = PTR_ERR(trans);
+ 			trans = NULL;
+ 			break;
+ 		}
+@@ -9158,21 +9152,22 @@ static int btrfs_truncate(struct inode *inode, bool skip_writeback)
+ 	}
+ 
+ 	if (trans) {
++		int ret2;
++
+ 		trans->block_rsv = &fs_info->trans_block_rsv;
+-		ret = btrfs_update_inode(trans, root, inode);
+-		if (ret && !err)
+-			err = ret;
++		ret2 = btrfs_update_inode(trans, root, inode);
++		if (ret2 && !ret)
++			ret = ret2;
+ 
+-		ret = btrfs_end_transaction(trans);
++		ret2 = btrfs_end_transaction(trans);
++		if (ret2 && !ret)
++			ret = ret2;
+ 		btrfs_btree_balance_dirty(fs_info);
+ 	}
+ out:
+ 	btrfs_free_block_rsv(fs_info, rsv);
+ 
+-	if (ret && !err)
+-		err = ret;
+-
+-	return err;
++	return ret;
+ }
+ 
+ /*
+

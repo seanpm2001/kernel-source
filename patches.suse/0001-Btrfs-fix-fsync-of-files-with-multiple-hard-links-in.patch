@@ -60,33 +60,29 @@ Reported-by: Jayashree Mohan <jayashree2912@gmail.com>
 Signed-off-by: Filipe Manana <fdmanana@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 ---
- fs/btrfs/btrfs_inode.h |  6 ++++++
- fs/btrfs/inode.c       | 17 +++++++++++++++++
- fs/btrfs/tree-log.c    | 16 ++++++++++++++++
+ fs/btrfs/btrfs_inode.h |    6 ++++++
+ fs/btrfs/inode.c       |   17 +++++++++++++++++
+ fs/btrfs/tree-log.c    |   16 ++++++++++++++++
  3 files changed, 39 insertions(+)
 
-diff --git a/fs/btrfs/btrfs_inode.h b/fs/btrfs/btrfs_inode.h
-index cbea7456f797..1d8c7560022d 100644
 --- a/fs/btrfs/btrfs_inode.h
 +++ b/fs/btrfs/btrfs_inode.h
-@@ -159,6 +159,12 @@ struct btrfs_inode {
- 	 */
+@@ -160,6 +160,12 @@ struct btrfs_inode {
  	u64 last_unlink_trans;
  
-+	/*
+ 	/*
 +	 * Track the transaction id of the last transaction used to create a
 +	 * hard link for the inode. This is used by the log tree (fsync).
 +	 */
 +	u64 last_link_trans;
 +
- 	/*
++	/*
  	 * Number of bytes outstanding that are going to need csums.  This is
  	 * used in ENOSPC accounting.
-diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
-index 357fe75589a9..a248d8d5c41f 100644
+ 	 */
 --- a/fs/btrfs/inode.c
 +++ b/fs/btrfs/inode.c
-@@ -3831,6 +3831,21 @@ static int btrfs_read_locked_inode(struct inode *inode,
+@@ -3672,6 +3672,21 @@ cache_index:
  	 * inode is not a directory, logging its parent unnecessarily.
  	 */
  	BTRFS_I(inode)->last_unlink_trans = BTRFS_I(inode)->last_trans;
@@ -108,7 +104,7 @@ index 357fe75589a9..a248d8d5c41f 100644
  
  	path->slots[0]++;
  	if (inode->i_nlink != 1 ||
-@@ -6753,6 +6768,7 @@ static int btrfs_link(struct dentry *old_dentry, struct inode *dir,
+@@ -6454,6 +6469,7 @@ static int btrfs_link(struct dentry *old
  			if (err)
  				goto fail;
  		}
@@ -116,19 +112,17 @@ index 357fe75589a9..a248d8d5c41f 100644
  		d_instantiate(dentry, inode);
  		ret = btrfs_log_new_name(trans, BTRFS_I(inode), NULL, parent,
  					 true, NULL);
-@@ -9453,6 +9469,7 @@ struct inode *btrfs_alloc_inode(struct super_block *sb)
+@@ -9156,6 +9172,7 @@ struct inode *btrfs_alloc_inode(struct s
  	ei->index_cnt = (u64)-1;
  	ei->dir_index = 0;
  	ei->last_unlink_trans = 0;
 +	ei->last_link_trans = 0;
  	ei->last_log_commit = 0;
- 	ei->delayed_iput_count = 0;
  
-diff --git a/fs/btrfs/tree-log.c b/fs/btrfs/tree-log.c
-index 61ded3c9cc1a..8cd571f6747b 100644
+ 	spin_lock_init(&ei->lock);
 --- a/fs/btrfs/tree-log.c
 +++ b/fs/btrfs/tree-log.c
-@@ -5947,6 +5947,22 @@ static int btrfs_log_inode_parent(struct btrfs_trans_handle *trans,
+@@ -5946,6 +5946,22 @@ static int btrfs_log_inode_parent(struct
  			goto end_trans;
  	}
  
@@ -151,6 +145,3 @@ index 61ded3c9cc1a..8cd571f6747b 100644
  	while (1) {
  		if (!parent || d_really_is_negative(parent) || sb != parent->d_sb)
  			break;
--- 
-2.19.0
-

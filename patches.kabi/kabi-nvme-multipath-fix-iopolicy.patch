@@ -1,0 +1,46 @@
+From: Daniel Wagner <dwagner@suse.de>
+Date: Thu, 02 Apr 2020 09:41:09 +0200
+Subject: [PATCH] kabi: nvme: Add NVME_IOPOLICY_UNKNOWN back
+Patch-mainline: Never, kABI workaround
+References: bsc#1158983
+
+The initial version of the nvme-multipath-round-robin-I-O-policy.patch
+defined NVME_IOPOLICY_UNKNOWN, which was removed for the mainline
+version. Add the definition back to avoid changes in struct
+nvme_subsystem.
+
+Signed-off-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/nvme/host/multipath.c |    3 ++-
+ drivers/nvme/host/nvme.h      |    1 +
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+--- a/drivers/nvme/host/multipath.c
++++ b/drivers/nvme/host/multipath.c
+@@ -545,6 +545,7 @@ void nvme_mpath_stop(struct nvme_ctrl *c
+ 		__ATTR(_name, _mode, _show, _store)
+ 
+ static const char *nvme_iopolicy_names[] = {
++	[NVME_IOPOLICY_UNKNOWN] = "unknown",
+ 	[NVME_IOPOLICY_NUMA]	= "numa",
+ 	[NVME_IOPOLICY_RR]	= "round-robin",
+ };
+@@ -566,7 +567,7 @@ static ssize_t nvme_subsys_iopolicy_stor
+ 		container_of(dev, struct nvme_subsystem, dev);
+ 	int i;
+ 
+-	for (i = 0; i < ARRAY_SIZE(nvme_iopolicy_names); i++) {
++	for (i = 1; i < ARRAY_SIZE(nvme_iopolicy_names); i++) {
+ 		if (sysfs_streq(buf, nvme_iopolicy_names[i])) {
+ 			WRITE_ONCE(subsys->iopolicy, i);
+ 			return count;
+--- a/drivers/nvme/host/nvme.h
++++ b/drivers/nvme/host/nvme.h
+@@ -250,6 +250,7 @@ struct nvme_ctrl {
+ };
+ 
+ enum nvme_iopolicy {
++	NVME_IOPOLICY_UNKNOWN,
+ 	NVME_IOPOLICY_NUMA,
+ 	NVME_IOPOLICY_RR,
+ };

@@ -1,0 +1,138 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Tue, 18 Jun 2019 16:09:18 -0400
+Subject: btrfs: export space_info_add_*_bytes
+Git-commit: d44b72aa12d0a74b67ffabdcab2f64653282dccd
+Patch-mainline: v5.3-rc1
+References: bsc#1165949
+
+Prep work for consolidating all of the space_info code into one file.
+We need to export these so multiple files can use them.
+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/extent-tree.c |   40 ++++++++++++++++++----------------------
+ fs/btrfs/space-info.h  |    7 +++++++
+ 2 files changed, 25 insertions(+), 22 deletions(-)
+
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -97,12 +97,6 @@ static int __reserve_metadata_bytes(stru
+ 				    struct btrfs_space_info *space_info,
+ 				    u64 orig_bytes,
+ 				    enum btrfs_reserve_flush_enum flush);
+-static void space_info_add_new_bytes(struct btrfs_fs_info *fs_info,
+-				     struct btrfs_space_info *space_info,
+-				     u64 num_bytes);
+-static void space_info_add_old_bytes(struct btrfs_fs_info *fs_info,
+-				     struct btrfs_space_info *space_info,
+-				     u64 num_bytes);
+ 
+ static noinline int
+ block_group_cache_done(struct btrfs_block_group_cache *cache)
+@@ -4131,8 +4125,8 @@ static void update_space_info(struct btr
+ 	found->bytes_readonly += bytes_readonly;
+ 	if (total_bytes > 0)
+ 		found->full = 0;
+-	space_info_add_new_bytes(info, found, total_bytes -
+-				 bytes_used - bytes_readonly);
++	btrfs_space_info_add_new_bytes(info, found, total_bytes -
++				       bytes_used - bytes_readonly);
+ 	spin_unlock(&found->lock);
+ 	*space_info = found;
+ }
+@@ -5319,7 +5313,8 @@ static int wait_reserve_ticket(struct bt
+ 	spin_unlock(&space_info->lock);
+ 
+ 	if (reclaim_bytes)
+-		space_info_add_old_bytes(fs_info, space_info, reclaim_bytes);
++		btrfs_space_info_add_old_bytes(fs_info, space_info,
++					       reclaim_bytes);
+ 	return ret;
+ }
+ 
+@@ -5434,7 +5429,8 @@ static int __reserve_metadata_bytes(stru
+ 	spin_unlock(&space_info->lock);
+ 
+ 	if (reclaim_bytes)
+-		space_info_add_old_bytes(fs_info, space_info, reclaim_bytes);
++		btrfs_space_info_add_old_bytes(fs_info, space_info,
++					       reclaim_bytes);
+ 	ASSERT(list_empty(&ticket.list));
+ 	return ret;
+ }
+@@ -5594,8 +5590,8 @@ void btrfs_migrate_to_delayed_refs_rsv(s
+ 		trace_btrfs_space_reservation(fs_info, "delayed_refs_rsv",
+ 					      0, num_bytes, 1);
+ 	if (to_free)
+-		space_info_add_old_bytes(fs_info, delayed_refs_rsv->space_info,
+-					 to_free);
++		btrfs_space_info_add_old_bytes(fs_info,
++				delayed_refs_rsv->space_info, to_free);
+ }
+ 
+ /**
+@@ -5638,9 +5634,9 @@ int btrfs_delayed_refs_rsv_refill(struct
+  * This is for space we already have accounted in space_info->bytes_may_use, so
+  * basically when we're returning space from block_rsv's.
+  */
+-static void space_info_add_old_bytes(struct btrfs_fs_info *fs_info,
+-				     struct btrfs_space_info *space_info,
+-				     u64 num_bytes)
++void btrfs_space_info_add_old_bytes(struct btrfs_fs_info *fs_info,
++				    struct btrfs_space_info *space_info,
++				    u64 num_bytes)
+ {
+ 	struct reserve_ticket *ticket;
+ 	struct list_head *head;
+@@ -5701,9 +5697,9 @@ again:
+  * space_info->bytes_may_use yet.  So if we allocate a chunk or unpin an extent
+  * we use this helper.
+  */
+-static void space_info_add_new_bytes(struct btrfs_fs_info *fs_info,
+-				     struct btrfs_space_info *space_info,
+-				     u64 num_bytes)
++void btrfs_space_info_add_new_bytes(struct btrfs_fs_info *fs_info,
++				    struct btrfs_space_info *space_info,
++				    u64 num_bytes)
+ {
+ 	struct reserve_ticket *ticket;
+ 	struct list_head *head = &space_info->priority_tickets;
+@@ -5786,8 +5782,8 @@ static u64 block_rsv_release_bytes(struc
+ 			spin_unlock(&dest->lock);
+ 		}
+ 		if (num_bytes)
+-			space_info_add_old_bytes(fs_info, space_info,
+-						 num_bytes);
++			btrfs_space_info_add_old_bytes(fs_info, space_info,
++						       num_bytes);
+ 	}
+ 	if (qgroup_to_release_ret)
+ 		*qgroup_to_release_ret = qgroup_to_release;
+@@ -7011,8 +7007,8 @@ static int unpin_extent_range(struct btr
+ 			spin_unlock(&global_rsv->lock);
+ 			/* Add to any tickets we may have */
+ 			if (len)
+-				space_info_add_new_bytes(fs_info, space_info,
+-							 len);
++				btrfs_space_info_add_new_bytes(fs_info,
++						space_info, len);
+ 		}
+ 		spin_unlock(&space_info->lock);
+ 	}
+--- a/fs/btrfs/space-info.h
++++ b/fs/btrfs/space-info.h
+@@ -74,4 +74,11 @@ static inline bool btrfs_mixed_space_inf
+ 		(space_info->flags & BTRFS_BLOCK_GROUP_DATA));
+ }
+ 
++void btrfs_space_info_add_new_bytes(struct btrfs_fs_info *fs_info,
++				    struct btrfs_space_info *space_info,
++				    u64 num_bytes);
++void btrfs_space_info_add_old_bytes(struct btrfs_fs_info *fs_info,
++				    struct btrfs_space_info *space_info,
++				    u64 num_bytes);
++
+ #endif /* BTRFS_SPACE_INFO_H */

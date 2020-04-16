@@ -37,16 +37,14 @@ Fixes: f0e9b7d6401959 ("Btrfs: fix race setting block group readonly during devi
 Signed-off-by: Filipe Manana <fdmanana@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 ---
- fs/btrfs/ordered-data.c |  6 +-----
- fs/btrfs/ordered-data.h |  2 +-
- fs/btrfs/scrub.c        | 39 ---------------------------------------
+ fs/btrfs/ordered-data.c |    6 +-----
+ fs/btrfs/ordered-data.h |    2 +-
+ fs/btrfs/scrub.c        |   39 ---------------------------------------
  3 files changed, 2 insertions(+), 45 deletions(-)
 
-diff --git a/fs/btrfs/ordered-data.c b/fs/btrfs/ordered-data.c
-index c6f5f7e..a098632 100644
 --- a/fs/btrfs/ordered-data.c
 +++ b/fs/btrfs/ordered-data.c
-@@ -737,12 +737,11 @@ u64 btrfs_wait_ordered_extents(struct btrfs_root *root, u64 nr,
+@@ -745,12 +745,11 @@ u64 btrfs_wait_ordered_extents(struct bt
  	return count;
  }
  
@@ -60,7 +58,7 @@ index c6f5f7e..a098632 100644
  	u64 done;
  
  	INIT_LIST_HEAD(&splice);
-@@ -762,7 +761,6 @@ u64 btrfs_wait_ordered_roots(struct btrfs_fs_info *fs_info, u64 nr,
+@@ -770,7 +769,6 @@ u64 btrfs_wait_ordered_roots(struct btrf
  		done = btrfs_wait_ordered_extents(root, nr,
  						  range_start, range_len);
  		btrfs_put_fs_root(root);
@@ -68,7 +66,7 @@ index c6f5f7e..a098632 100644
  
  		spin_lock(&fs_info->ordered_root_lock);
  		if (nr != U64_MAX) {
-@@ -772,8 +770,6 @@ u64 btrfs_wait_ordered_roots(struct btrfs_fs_info *fs_info, u64 nr,
+@@ -780,8 +778,6 @@ u64 btrfs_wait_ordered_roots(struct btrf
  	list_splice_tail(&splice, &fs_info->ordered_roots);
  	spin_unlock(&fs_info->ordered_root_lock);
  	mutex_unlock(&fs_info->ordered_operations_mutex);
@@ -77,11 +75,9 @@ index c6f5f7e..a098632 100644
  }
  
  /*
-diff --git a/fs/btrfs/ordered-data.h b/fs/btrfs/ordered-data.h
-index 56c4c0e..bc08fb1 100644
 --- a/fs/btrfs/ordered-data.h
 +++ b/fs/btrfs/ordered-data.h
-@@ -202,7 +202,7 @@ int btrfs_find_ordered_sum(struct inode *inode, u64 offset, u64 disk_bytenr,
+@@ -202,7 +202,7 @@ int btrfs_find_ordered_sum(struct inode
  			   u32 *sum, int len);
  u64 btrfs_wait_ordered_extents(struct btrfs_root *root, u64 nr,
  			       const u64 range_start, const u64 range_len);
@@ -90,14 +86,12 @@ index 56c4c0e..bc08fb1 100644
  			      const u64 range_start, const u64 range_len);
  void btrfs_get_logged_extents(struct btrfs_inode *inode,
  			      struct list_head *logged_list,
-diff --git a/fs/btrfs/scrub.c b/fs/btrfs/scrub.c
-index c71d0d2..8ed36be 100644
 --- a/fs/btrfs/scrub.c
 +++ b/fs/btrfs/scrub.c
-@@ -3848,45 +3848,6 @@ int scrub_enumerate_chunks(struct scrub_ctx *sctx,
+@@ -3849,45 +3849,6 @@ int scrub_enumerate_chunks(struct scrub_
  		 */
  		scrub_pause_on(fs_info);
- 		ret = btrfs_inc_block_group_ro(fs_info, cache);
+ 		ret = btrfs_inc_block_group_ro(cache);
 -		if (!ret && is_dev_replace) {
 -			/*
 -			 * If we are doing a device replace wait for any tasks
@@ -140,6 +134,3 @@ index c71d0d2..8ed36be 100644
  		scrub_pause_off(fs_info);
  
  		if (ret == 0) {
--- 
-2.16.4
-

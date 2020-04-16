@@ -1,0 +1,38 @@
+From 9d938ea53b265ed6df6cdd1715d971f0235fdbfc Mon Sep 17 00:00:00 2001
+From: Keith Busch <keith.busch@intel.com>
+Date: Thu, 20 Sep 2018 10:27:10 -0600
+Subject: [PATCH] PCI/AER: Don't read upstream ports below fatal errors
+Git-commit: 9d938ea53b265ed6df6cdd1715d971f0235fdbfc
+Patch-mainline: v4.20-rc1
+References: bsc#1161561
+
+The AER driver has never read the config space of an endpoint that reported
+a fatal error because the link to that device is considered unreliable.
+
+An ERR_FATAL from an upstream port almost certainly indicates an error on
+its upstream link, so we can't expect to reliably read its config space for
+the same reason.
+
+Signed-off-by: Keith Busch <keith.busch@intel.com>
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Reviewed-by: Sinan Kaya <okaya@kernel.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/pci/pcie/aer/aerdrv_core.c |    5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+--- a/drivers/pci/pcie/aer/aerdrv_core.c
++++ b/drivers/pci/pcie/aer/aerdrv_core.c
+@@ -363,8 +363,9 @@ int aer_get_device_error_info(struct pci
+ 			&info->mask);
+ 		if (!(info->status & ~info->mask))
+ 			return 0;
+-	} else if (dev->hdr_type == PCI_HEADER_TYPE_BRIDGE ||
+-		info->severity == AER_NONFATAL) {
++	} else if (pci_pcie_type(dev) == PCI_EXP_TYPE_ROOT_PORT ||
++	           pci_pcie_type(dev) == PCI_EXP_TYPE_DOWNSTREAM ||
++		   info->severity == AER_NONFATAL) {
+ 
+ 		/* Link is still healthy for IO reads */
+ 		pci_read_config_dword(dev, pos + PCI_ERR_UNCOR_STATUS,

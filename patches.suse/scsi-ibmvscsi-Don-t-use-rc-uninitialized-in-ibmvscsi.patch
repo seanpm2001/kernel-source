@@ -1,0 +1,67 @@
+From 961ed94e8a83d8881546a278bf844699af92a502 Mon Sep 17 00:00:00 2001
+From: Nathan Chancellor <natechancellor@gmail.com>
+Date: Mon, 3 Jun 2019 16:44:06 -0700
+Subject: [PATCH] scsi: ibmvscsi: Don't use rc uninitialized in
+ ibmvscsi_do_work
+
+References: bsc#1161951 ltc#183551
+Patch-mainline: v5.3-rc1
+Git-commit: 961ed94e8a83d8881546a278bf844699af92a502
+
+clang warns:
+
+drivers/scsi/ibmvscsi/ibmvscsi.c:2126:7: warning: variable 'rc' is used
+uninitialized whenever switch case is taken [-Wsometimes-uninitialized]
+        case IBMVSCSI_HOST_ACTION_NONE:
+             ^~~~~~~~~~~~~~~~~~~~~~~~~
+drivers/scsi/ibmvscsi/ibmvscsi.c:2151:6: note: uninitialized use occurs
+here
+        if (rc) {
+            ^~
+
+Initialize rc in the IBMVSCSI_HOST_ACTION_UNBLOCK case statement then
+shuffle IBMVSCSI_HOST_ACTION_NONE down to the default case statement and
+make it return early so that rc is never used uninitialized in this
+function.
+
+Fixes: 035a3c4046b5 ("scsi: ibmvscsi: redo driver work thread to use enum action states")
+Link: https://github.com/ClangBuiltLinux/linux/issues/502
+Suggested-by: Michael Ellerman <mpe@ellerman.id.au>
+Suggested-by: Tyrel Datwyler <tyreld@linux.ibm.com>
+Signed-off-by: Nathan Chancellor <natechancellor@gmail.com>
+Acked-by: Tyrel Datwyler <tyreld@linux.ibm.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ drivers/scsi/ibmvscsi/ibmvscsi.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/scsi/ibmvscsi/ibmvscsi.c b/drivers/scsi/ibmvscsi/ibmvscsi.c
+index 727c31dc11a0..fcfaf037b5bf 100644
+--- a/drivers/scsi/ibmvscsi/ibmvscsi.c
++++ b/drivers/scsi/ibmvscsi/ibmvscsi.c
+@@ -2123,8 +2123,8 @@ static void ibmvscsi_do_work(struct ibmvscsi_host_data *hostdata)
+ 
+ 	spin_lock_irqsave(hostdata->host->host_lock, flags);
+ 	switch (hostdata->action) {
+-	case IBMVSCSI_HOST_ACTION_NONE:
+ 	case IBMVSCSI_HOST_ACTION_UNBLOCK:
++		rc = 0;
+ 		break;
+ 	case IBMVSCSI_HOST_ACTION_RESET:
+ 		spin_unlock_irqrestore(hostdata->host->host_lock, flags);
+@@ -2142,8 +2142,10 @@ static void ibmvscsi_do_work(struct ibmvscsi_host_data *hostdata)
+ 		if (!rc)
+ 			rc = ibmvscsi_send_crq(hostdata, 0xC001000000000000LL, 0);
+ 		break;
++	case IBMVSCSI_HOST_ACTION_NONE:
+ 	default:
+-		break;
++		spin_unlock_irqrestore(hostdata->host->host_lock, flags);
++		return;
+ 	}
+ 
+ 	hostdata->action = IBMVSCSI_HOST_ACTION_NONE;
+-- 
+2.23.0
+

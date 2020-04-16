@@ -1,0 +1,38 @@
+From 58af3110a7c5d161f72f94a98c6f2b9b75bf5cf9 Mon Sep 17 00:00:00 2001
+From: Daniel Verkamp <dverkamp@chromium.org>
+Date: Mon, 12 Nov 2018 15:22:17 -0800
+Subject: [PATCH] lib/raid6: avoid __attribute_const__ redefinition
+Git-commit: 58af3110a7c5d161f72f94a98c6f2b9b75bf5cf9
+Patch-mainline: v5.0-rc1
+References: bsc#1166003
+
+This is defined in glibc's sys/cdefs.h on my system with the same
+definition as the raid6test fallback definition.  Add a #ifndef check to
+avoid a compiler warning about redefining it.
+
+Signed-off-by: Daniel Verkamp <dverkamp@chromium.org>
+Signed-off-by: Shaohua Li <shli@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ include/linux/raid/pq.h | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/include/linux/raid/pq.h b/include/linux/raid/pq.h
+index 0c245dcb8b48..d7c99161bba2 100644
+--- a/include/linux/raid/pq.h
++++ b/include/linux/raid/pq.h
+@@ -53,7 +53,9 @@ extern const char raid6_empty_zero_page[PAGE_SIZE];
+ 
+ #define __init
+ #define __exit
+-#define __attribute_const__ __attribute__((const))
++#ifndef __attribute_const__
++# define __attribute_const__ __attribute__((const))
++#endif
+ #define noinline __attribute__((noinline))
+ 
+ #define preempt_enable()
+-- 
+2.25.0
+

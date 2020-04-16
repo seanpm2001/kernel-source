@@ -1,0 +1,92 @@
+From cb9ee154317b084a96a7c2b771d1688f39fc714c Mon Sep 17 00:00:00 2001
+From: Guoqing Jiang <gqjiang@suse.com>
+Date: Thu, 18 Oct 2018 16:37:47 +0800
+Subject: [PATCH] md-cluster: send BITMAP_NEEDS_SYNC message if reshaping is
+ interrupted
+Git-commit: cb9ee154317b084a96a7c2b771d1688f39fc714c
+Patch-mainline: v4.20-rc1
+References: bsc#1166003
+
+We need to continue the reshaping if it was interrupted in
+original node. So original node should call resync_bitmap
+in case reshaping is aborted.
+
+Then BITMAP_NEEDS_SYNC message is broadcasted to other nodes,
+node which continues the reshaping should restart reshape from
+mddev->reshape_position instead of from the first beginning.
+
+Reviewed-by: NeilBrown <neilb@suse.com>
+Signed-off-by: Guoqing Jiang <gqjiang@suse.com>
+Signed-off-by: Shaohua Li <shli@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/md-cluster.c | 19 ++++++++++++++++---
+ drivers/md/md.c         | 12 ++++++++++--
+ 2 files changed, 26 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/md/md-cluster.c b/drivers/md/md-cluster.c
+index 792e0218a42f..f1b870766deb 100644
+--- a/drivers/md/md-cluster.c
++++ b/drivers/md/md-cluster.c
+@@ -333,6 +333,12 @@ static void recover_bitmaps(struct md_thread *thread)
+ 			}
+ 		spin_unlock_irq(&cinfo->suspend_lock);
+ 
++		/* Kick off a reshape if needed */
++		if (test_bit(MD_RESYNCING_REMOTE, &mddev->recovery) &&
++		    test_bit(MD_RECOVERY_RESHAPE, &mddev->recovery) &&
++		    mddev->reshape_position != MaxSector)
++			md_wakeup_thread(mddev->sync_thread);
++
+ 		if (hi > 0) {
+ 			if (lo < mddev->recovery_cp)
+ 				mddev->recovery_cp = lo;
+@@ -1020,10 +1026,17 @@ static int leave(struct mddev *mddev)
+ 	if (!cinfo)
+ 		return 0;
+ 
+-	/* BITMAP_NEEDS_SYNC message should be sent when node
++	/*
++	 * BITMAP_NEEDS_SYNC message should be sent when node
+ 	 * is leaving the cluster with dirty bitmap, also we
+-	 * can only deliver it when dlm connection is available */
+-	if (cinfo->slot_number > 0 && mddev->recovery_cp != MaxSector)
++	 * can only deliver it when dlm connection is available.
++	 *
++	 * Also, we should send BITMAP_NEEDS_SYNC message in
++	 * case reshaping is interrupted.
++	 */
++	if ((cinfo->slot_number > 0 && mddev->recovery_cp != MaxSector) ||
++	    (mddev->reshape_position != MaxSector &&
++	     test_bit(MD_CLOSING, &mddev->flags)))
+ 		resync_bitmap(mddev);
+ 
+ 	set_bit(MD_CLUSTER_HOLDING_MUTEX_FOR_RECVD, &cinfo->state);
+diff --git a/drivers/md/md.c b/drivers/md/md.c
+index fa2bbdec9955..390f410e51dd 100644
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -8370,9 +8370,17 @@ void md_do_sync(struct md_thread *thread)
+ 		else if (!mddev->bitmap)
+ 			j = mddev->recovery_cp;
+ 
+-	} else if (test_bit(MD_RECOVERY_RESHAPE, &mddev->recovery))
++	} else if (test_bit(MD_RECOVERY_RESHAPE, &mddev->recovery)) {
+ 		max_sectors = mddev->resync_max_sectors;
+-	else {
++		/*
++		 * If the original node aborts reshaping then we continue the
++		 * reshaping, so set j again to avoid restart reshape from the
++		 * first beginning
++		 */
++		if (mddev_is_clustered(mddev) &&
++		    mddev->reshape_position != MaxSector)
++			j = mddev->reshape_position;
++	} else {
+ 		/* recovery follows the physical size of devices */
+ 		max_sectors = mddev->dev_sectors;
+ 		j = MaxSector;
+-- 
+2.25.0
+

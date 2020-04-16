@@ -1,0 +1,58 @@
+From 45687f96c112adda2f1d1f05b977661eb00d5a1c Mon Sep 17 00:00:00 2001
+From: Alexandru Gagniuc <mr.nuke.me@gmail.com>
+Date: Tue, 17 Jul 2018 10:31:23 -0500
+Subject: [PATCH] PCI/AER: Don't clear AER bits if error handling is Firmware-First
+Git-commit: 45687f96c112adda2f1d1f05b977661eb00d5a1c
+Patch-mainline: v4.19-rc1
+References: bsc#1161561
+
+If the platform requests Firmware-First error handling, firmware is
+responsible for reading and clearing AER status bits.  If OSPM also clears
+them, we may miss errors.  See ACPI v6.2, sec 18.3.2.5 and 18.4.
+
+This race is mostly of theoretical significance, as it is not easy to
+reasonably demonstrate it in testing.
+
+Signed-off-by: Alexandru Gagniuc <mr.nuke.me@gmail.com>
+[bhelgaas: add similar guards to pci_cleanup_aer_uncorrect_error_status()
+and pci_aer_clear_fatal_status()]
+
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/pci/pcie/aer/aerdrv_core.c |    9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+--- a/drivers/pci/pcie/aer/aerdrv_core.c
++++ b/drivers/pci/pcie/aer/aerdrv_core.c
+@@ -70,6 +70,9 @@ int pci_cleanup_aer_uncorrect_error_stat
+ 	if (!pos)
+ 		return -EIO;
+ 
++	if (pcie_aer_get_firmware_first(dev))
++		return -EIO;
++
+ 	/* Clear status bits for ERR_NONFATAL errors only */
+ 	pci_read_config_dword(dev, pos + PCI_ERR_UNCOR_STATUS, &status);
+ 	pci_read_config_dword(dev, pos + PCI_ERR_UNCOR_SEVER, &sev);
+@@ -90,6 +93,9 @@ void pci_aer_clear_fatal_status(struct p
+ 	if (!pos)
+ 		return;
+ 
++	if (pcie_aer_get_firmware_first(dev))
++		return;
++
+ 	/* Clear status bits for ERR_FATAL errors only */
+ 	pci_read_config_dword(dev, pos + PCI_ERR_UNCOR_STATUS, &status);
+ 	pci_read_config_dword(dev, pos + PCI_ERR_UNCOR_SEVER, &sev);
+@@ -111,6 +117,9 @@ int pci_cleanup_aer_error_status_regs(st
+ 	if (!pos)
+ 		return -EIO;
+ 
++	if (pcie_aer_get_firmware_first(dev))
++		return -EIO;
++
+ 	port_type = pci_pcie_type(dev);
+ 	if (port_type == PCI_EXP_TYPE_ROOT_PORT) {
+ 		pci_read_config_dword(dev, pos + PCI_ERR_ROOT_STATUS, &status);

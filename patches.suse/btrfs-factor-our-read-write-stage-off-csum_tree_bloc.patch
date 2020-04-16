@@ -1,0 +1,135 @@
+From 2996e1f8bcadf0436cc67b63af01523f6cf5d43f Mon Sep 17 00:00:00 2001
+From: Johannes Thumshirn <jthumshirn@suse.de>
+Date: Mon, 25 Feb 2019 14:24:15 +0100
+Patch-mainline: v5.1
+Git-commit: 2996e1f8bcadf0436cc67b63af01523f6cf5d43f
+References: bsc#1168273
+Subject: [PATCH] btrfs: factor our read/write stage off csum_tree_block into
+ its callers
+
+Currently csum_tree_block() does two things, first it as it's name
+suggests it calculates the checksum for a tree-block. But it also writes
+this checksum to disk or reads an extent_buffer from disk and compares the
+checksum with the calculated checksum, depending on the verify argument.
+
+Furthermore one of the two callers passes in '1' for the verify argument,
+the other one passes in '0'.
+
+For clarity and less layering violations, factor out the second stage in
+csum_tree_block()'s callers.
+
+Suggested-by: Nikolay Borisov <nborisov@suse.com>
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Johannes Thumshirn <jthumshirn@suse.de>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/disk-io.c |   55 +++++++++++++++++++++++++++--------------------------
+ 1 file changed, 29 insertions(+), 26 deletions(-)
+
+--- a/fs/btrfs/disk-io.c
++++ b/fs/btrfs/disk-io.c
+@@ -277,15 +277,12 @@ void btrfs_csum_final(u32 crc, u8 *resul
+ }
+ 
+ /*
+- * compute the csum for a btree block, and either verify it or write it
+- * into the csum field of the block.
++ * Compute the csum of a btree block and store the result to provided buffer.
++ *
++ * Returns error if the extent buffer cannot be mapped.
+  */
+-static int csum_tree_block(struct btrfs_fs_info *fs_info,
+-			   struct extent_buffer *buf,
+-			   int verify)
++static int csum_tree_block(struct extent_buffer *buf, u8 *result)
+ {
+-	u16 csum_size = btrfs_super_csum_size(fs_info->super_copy);
+-	char result[BTRFS_CSUM_SIZE];
+ 	unsigned long len;
+ 	unsigned long cur_len;
+ 	unsigned long offset = BTRFS_CSUM_SIZE;
+@@ -311,23 +308,6 @@ static int csum_tree_block(struct btrfs_
+ 
+ 	btrfs_csum_final(crc, result);
+ 
+-	if (verify) {
+-		if (memcmp_extent_buffer(buf, result, 0, csum_size)) {
+-			u32 val;
+-			u32 found = 0;
+-			memcpy(&found, result, csum_size);
+-
+-			read_extent_buffer(buf, &val, 0, csum_size);
+-			btrfs_warn_rl(fs_info,
+-				"%s checksum verify failed on %llu wanted %X found %X level %d",
+-				fs_info->sb->s_id, buf->start,
+-				val, found, btrfs_header_level(buf));
+-			return -EUCLEAN;
+-		}
+-	} else {
+-		write_extent_buffer(buf, result, 0, csum_size);
+-	}
+-
+ 	return 0;
+ }
+ 
+@@ -544,6 +524,8 @@ static int csum_dirty_buffer(struct btrf
+ {
+ 	u64 start = page_offset(page);
+ 	u64 found_start;
++	u8 result[BTRFS_CSUM_SIZE];
++	u16 csum_size = btrfs_super_csum_size(fs_info->super_copy);
+ 	struct extent_buffer *eb;
+ 
+ 	eb = (struct extent_buffer *)page->private;
+@@ -563,7 +545,11 @@ static int csum_dirty_buffer(struct btrf
+ 	ASSERT(memcmp_extent_buffer(eb, fs_info->fsid,
+ 			btrfs_header_fsid(), BTRFS_FSID_SIZE) == 0);
+ 
+-	return csum_tree_block(fs_info, eb, 0);
++	if (csum_tree_block(eb, result))
++		return -EINVAL;
++
++	write_extent_buffer(eb, result, 0, csum_size);
++	return 0;
+ }
+ 
+ static int check_tree_block_fsid(struct btrfs_fs_info *fs_info,
+@@ -593,7 +579,9 @@ static int btree_readpage_end_io_hook(st
+ 	struct extent_buffer *eb;
+ 	struct btrfs_root *root = BTRFS_I(page->mapping->host)->root;
+ 	struct btrfs_fs_info *fs_info = root->fs_info;
++	u16 csum_size = btrfs_super_csum_size(fs_info->super_copy);
+ 	int ret = 0;
++	u8 result[BTRFS_CSUM_SIZE];
+ 	int reads_done;
+ 
+ 	if (!page->private)
+@@ -640,10 +628,25 @@ static int btree_readpage_end_io_hook(st
+ 	btrfs_set_buffer_lockdep_class(btrfs_header_owner(eb),
+ 				       eb, found_level);
+ 
+-	ret = csum_tree_block(fs_info, eb, 1);
++	ret = csum_tree_block(eb, result);
+ 	if (ret)
+ 		goto err;
+ 
++	if (memcmp_extent_buffer(eb, result, 0, csum_size)) {
++		u32 val;
++		u32 found = 0;
++
++		memcpy(&found, result, csum_size);
++
++		read_extent_buffer(eb, &val, 0, csum_size);
++		btrfs_warn_rl(fs_info,
++		"%s checksum verify failed on %llu wanted %x found %x level %d",
++			      fs_info->sb->s_id, eb->start,
++			      val, found, btrfs_header_level(eb));
++		ret = -EUCLEAN;
++		goto err;
++	}
++
+ 	/*
+ 	 * If this is a leaf block and it is corrupt, set the corrupt bit so
+ 	 * that we don't try and read the other copies of this block, just

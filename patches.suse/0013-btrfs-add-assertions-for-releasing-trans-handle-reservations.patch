@@ -1,0 +1,40 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 29 Sep 2017 15:44:05 -0400
+Subject: btrfs: add assertions for releasing trans handle reservations
+Git-commit: bf2681cb94d13d91326fc098ca98620b595a9d6b
+Patch-mainline: v4.15-rc1
+References: bsc#1165949
+
+These are useful for debugging problems where we mess with
+trans->block_rsv to make sure we're not screwing something up.
+
+Signed-off-by: Josef Bacik <jbacik@fb.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/extent-tree.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/fs/btrfs/extent-tree.c b/fs/btrfs/extent-tree.c
+index 423d89145bac..4f874d02f310 100644
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -5823,12 +5823,15 @@ static void release_global_block_rsv(struct btrfs_fs_info *fs_info)
+ void btrfs_trans_release_metadata(struct btrfs_trans_handle *trans,
+ 				  struct btrfs_fs_info *fs_info)
+ {
+-	if (!trans->block_rsv)
++	if (!trans->block_rsv) {
++		ASSERT(!trans->bytes_reserved);
+ 		return;
++	}
+ 
+ 	if (!trans->bytes_reserved)
+ 		return;
+ 
++	ASSERT(trans->block_rsv == &fs_info->trans_block_rsv);
+ 	trace_btrfs_space_reservation(fs_info, "transaction",
+ 				      trans->transid, trans->bytes_reserved, 0);
+ 	btrfs_block_rsv_release(fs_info, trans->block_rsv,
+

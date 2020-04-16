@@ -1,0 +1,84 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Mon, 3 Dec 2018 10:20:34 -0500
+Subject: btrfs: update may_commit_transaction to use the delayed refs rsv
+Git-commit: 4c8edbc75cb9ff846066cd9781ede4f27caf3cf4
+Patch-mainline: v5.0-rc1
+References: bsc#1165949
+
+Any space used in the delayed_refs_rsv will be freed up by a transaction
+commit, so instead of just counting the pinned space we also need to
+account for any space in the delayed_refs_rsv when deciding if it will
+make a different to commit the transaction to satisfy our space
+reservation.  If we have enough bytes to satisfy our reservation ticket
+then we are good to go, otherwise subtract out what space we would gain
+back by committing the transaction and compare that against the pinned
+space to make our decision.
+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/extent-tree.c |   27 ++++++++++++++++-----------
+ 1 file changed, 16 insertions(+), 11 deletions(-)
+
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -4958,8 +4958,10 @@ static int may_commit_transaction(struct
+ {
+ 	struct reserve_ticket *ticket = NULL;
+ 	struct btrfs_block_rsv *delayed_rsv = &fs_info->delayed_block_rsv;
++	struct btrfs_block_rsv *delayed_refs_rsv = &fs_info->delayed_refs_rsv;
+ 	struct btrfs_trans_handle *trans;
+-	u64 bytes;
++	u64 bytes_needed;
++	u64 reclaim_bytes = 0;
+ 
+ 	trans = (struct btrfs_trans_handle *)current->journal_info;
+ 	if (trans)
+@@ -4972,14 +4974,14 @@ static int may_commit_transaction(struct
+ 	else if (!list_empty(&space_info->tickets))
+ 		ticket = list_first_entry(&space_info->tickets,
+ 					  struct reserve_ticket, list);
+-	bytes = ticket ? ticket->bytes : 0;
++	bytes_needed = (ticket) ? ticket->bytes : 0;
+ 	spin_unlock(&space_info->lock);
+ 
+-	if (!bytes)
++	if (!bytes_needed)
+ 		return 0;
+ 	/* See if there is enough pinned space to make this reservation */
+ 	if (percpu_counter_compare(&space_info->total_bytes_pinned,
+-				   bytes) >= 0)
++				   bytes_needed) >= 0)
+ 		goto commit;
+ 
+ 	/*
+@@ -4990,17 +4992,20 @@ static int may_commit_transaction(struct
+ 		return -ENOSPC;
+ 
+ 	spin_lock(&delayed_rsv->lock);
+-	if (delayed_rsv->size > bytes)
+-		bytes = 0;
+-	else
+-		bytes -= delayed_rsv->size;
++	reclaim_bytes += delayed_rsv->reserved;
++	spin_unlock(&delayed_rsv->lock);
++
++	spin_lock(&delayed_refs_rsv->lock);
++	reclaim_bytes += delayed_refs_rsv->reserved;
++	spin_unlock(&delayed_refs_rsv->lock);
++	if (reclaim_bytes >= bytes_needed)
++		goto commit;
++	bytes_needed -= reclaim_bytes;
+ 
+ 	if (percpu_counter_compare(&space_info->total_bytes_pinned,
+-				   bytes) < 0) {
+-		spin_unlock(&delayed_rsv->lock);
++				   bytes_needed) < 0) {
+ 		return -ENOSPC;
+ 	}
+-	spin_unlock(&delayed_rsv->lock);
+ 
+ commit:
+ 	trans = btrfs_join_transaction(fs_info->extent_root);

@@ -1,0 +1,57 @@
+From 02c6db4f7308e4f5adf4df2ef623160bfdb18636 Mon Sep 17 00:00:00 2001
+From: Qu Wenruo <wqu@suse.com>
+Date: Wed, 20 Mar 2019 14:27:45 +0800
+Patch-mainline: v5.2
+Git-commit: 02c6db4f7308e4f5adf4df2ef623160bfdb18636
+References: bsc#1168273
+Subject: [PATCH 5/7] btrfs: extent_io: Handle errors better in
+ extent_write_locked_range()
+
+We can only get @ret <= 0.  Add an ASSERT() for it just in case.
+
+Then, instead of submitting the write bio even we got some error, check
+the return value first.
+
+If we have already hit some error, just clean up the corrupted or
+half-baked bio, and return error.
+
+If there is no error so far, then call flush_write_bio() and return the
+result.
+
+Signed-off-by: Qu Wenruo <wqu@suse.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/extent_io.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/fs/btrfs/extent_io.c b/fs/btrfs/extent_io.c
+index cd76be7013d8..b43a0a0f41e4 100644
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -4042,7 +4042,6 @@ int extent_write_locked_range(struct inode *inode, u64 start, u64 end,
+ 			      int mode)
+ {
+ 	int ret = 0;
+-	int flush_ret;
+ 	struct address_space *mapping = inode->i_mapping;
+ 	struct extent_io_tree *tree = &BTRFS_I(inode)->io_tree;
+ 	struct page *page;
+@@ -4075,8 +4074,12 @@ int extent_write_locked_range(struct inode *inode, u64 start, u64 end,
+ 		start += PAGE_SIZE;
+ 	}
+ 
+-	flush_ret = flush_write_bio(&epd);
+-	BUG_ON(flush_ret < 0);
++	ASSERT(ret <= 0);
++	if (ret < 0) {
++		end_write_bio(&epd, ret);
++		return ret;
++	}
++	ret = flush_write_bio(&epd);
+ 	return ret;
+ }
+ 
+-- 
+2.26.0
+

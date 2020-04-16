@@ -1,0 +1,139 @@
+From: Anand Jain <anand.jain@oracle.com>
+Date: Wed, 25 Apr 2018 19:01:43 +0800
+Subject: btrfs: move btrfs_raid_group values to btrfs_raid_attr table
+Git-commit: 41a6e8913cdff6b30ac53a24641259d117c0b101
+Patch-mainline: v4.18-rc1
+References: bsc#1165949
+
+Add a new member struct btrfs_raid_attr::bg_flag so that
+btrfs_raid_array can maintain the bit map flag of the raid type, and
+so we can drop btrfs_raid_group.
+
+Signed-off-by: Anand Jain <anand.jain@oracle.com>
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/disk-io.c     |    2 +-
+ fs/btrfs/extent-tree.c |    2 +-
+ fs/btrfs/volumes.c     |   19 ++++++++-----------
+ fs/btrfs/volumes.h     |    2 +-
+ 4 files changed, 11 insertions(+), 14 deletions(-)
+
+--- a/fs/btrfs/disk-io.c
++++ b/fs/btrfs/disk-io.c
+@@ -3548,7 +3548,7 @@ int btrfs_get_num_tolerated_disk_barrier
+ 	for (raid_type = 0; raid_type < BTRFS_NR_RAID_TYPES; raid_type++) {
+ 		if (raid_type == BTRFS_RAID_SINGLE)
+ 			continue;
+-		if (!(flags & btrfs_raid_group[raid_type]))
++		if (!(flags & btrfs_raid_array[raid_type].bg_flag))
+ 			continue;
+ 		min_tolerated = min(min_tolerated,
+ 				    btrfs_raid_array[raid_type].
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -4193,7 +4193,7 @@ static u64 btrfs_reduce_alloc_profile(st
+ 	/* First, mask out the RAID levels which aren't possible */
+ 	for (raid_type = 0; raid_type < BTRFS_NR_RAID_TYPES; raid_type++) {
+ 		if (num_devices >= btrfs_raid_array[raid_type].devs_min)
+-			allowed |= btrfs_raid_group[raid_type];
++			allowed |= btrfs_raid_array[raid_type].bg_flag;
+ 	}
+ 	allowed &= flags;
+ 
+--- a/fs/btrfs/volumes.c
++++ b/fs/btrfs/volumes.c
+@@ -51,6 +51,7 @@ const struct btrfs_raid_attr btrfs_raid_
+ 		.tolerated_failures = 1,
+ 		.devs_increment	= 2,
+ 		.ncopies	= 2,
++		.bg_flag	= BTRFS_BLOCK_GROUP_RAID10,
+ 	},
+ 	[BTRFS_RAID_RAID1] = {
+ 		.sub_stripes	= 1,
+@@ -60,6 +61,7 @@ const struct btrfs_raid_attr btrfs_raid_
+ 		.tolerated_failures = 1,
+ 		.devs_increment	= 2,
+ 		.ncopies	= 2,
++		.bg_flag	= BTRFS_BLOCK_GROUP_RAID1,
+ 	},
+ 	[BTRFS_RAID_DUP] = {
+ 		.sub_stripes	= 1,
+@@ -69,6 +71,7 @@ const struct btrfs_raid_attr btrfs_raid_
+ 		.tolerated_failures = 0,
+ 		.devs_increment	= 1,
+ 		.ncopies	= 2,
++		.bg_flag	= BTRFS_BLOCK_GROUP_DUP,
+ 	},
+ 	[BTRFS_RAID_RAID0] = {
+ 		.sub_stripes	= 1,
+@@ -78,6 +81,7 @@ const struct btrfs_raid_attr btrfs_raid_
+ 		.tolerated_failures = 0,
+ 		.devs_increment	= 1,
+ 		.ncopies	= 1,
++		.bg_flag	= BTRFS_BLOCK_GROUP_RAID0,
+ 	},
+ 	[BTRFS_RAID_SINGLE] = {
+ 		.sub_stripes	= 1,
+@@ -87,6 +91,7 @@ const struct btrfs_raid_attr btrfs_raid_
+ 		.tolerated_failures = 0,
+ 		.devs_increment	= 1,
+ 		.ncopies	= 1,
++		.bg_flag	= 0,
+ 	},
+ 	[BTRFS_RAID_RAID5] = {
+ 		.sub_stripes	= 1,
+@@ -96,6 +101,7 @@ const struct btrfs_raid_attr btrfs_raid_
+ 		.tolerated_failures = 1,
+ 		.devs_increment	= 1,
+ 		.ncopies	= 2,
++		.bg_flag	= BTRFS_BLOCK_GROUP_RAID5,
+ 	},
+ 	[BTRFS_RAID_RAID6] = {
+ 		.sub_stripes	= 1,
+@@ -105,19 +111,10 @@ const struct btrfs_raid_attr btrfs_raid_
+ 		.tolerated_failures = 2,
+ 		.devs_increment	= 1,
+ 		.ncopies	= 3,
++		.bg_flag	= BTRFS_BLOCK_GROUP_RAID6,
+ 	},
+ };
+ 
+-const u64 btrfs_raid_group[BTRFS_NR_RAID_TYPES] = {
+-	[BTRFS_RAID_RAID10] = BTRFS_BLOCK_GROUP_RAID10,
+-	[BTRFS_RAID_RAID1]  = BTRFS_BLOCK_GROUP_RAID1,
+-	[BTRFS_RAID_DUP]    = BTRFS_BLOCK_GROUP_DUP,
+-	[BTRFS_RAID_RAID0]  = BTRFS_BLOCK_GROUP_RAID0,
+-	[BTRFS_RAID_SINGLE] = 0,
+-	[BTRFS_RAID_RAID5]  = BTRFS_BLOCK_GROUP_RAID5,
+-	[BTRFS_RAID_RAID6]  = BTRFS_BLOCK_GROUP_RAID6,
+-};
+-
+ /*
+  * Table to convert BTRFS_RAID_* to the error code if minimum number of devices
+  * condition is not met. Zero means there's no corresponding
+@@ -1802,7 +1799,7 @@ static int btrfs_check_raid_min_devices(
+ 	} while (read_seqretry(&fs_info->profiles_lock, seq));
+ 
+ 	for (i = 0; i < BTRFS_NR_RAID_TYPES; i++) {
+-		if (!(all_avail & btrfs_raid_group[i]))
++		if (!(all_avail & btrfs_raid_array[i].bg_flag))
+ 			continue;
+ 
+ 		if (num_devices < btrfs_raid_array[i].devs_min) {
+--- a/fs/btrfs/volumes.h
++++ b/fs/btrfs/volumes.h
+@@ -336,11 +336,11 @@ struct btrfs_raid_attr {
+ 	int tolerated_failures; /* max tolerated fail devs */
+ 	int devs_increment;	/* ndevs has to be a multiple of this */
+ 	int ncopies;		/* how many copies to data has */
++	u64 bg_flag;		/* block group flag of the raid */
+ };
+ 
+ extern const struct btrfs_raid_attr btrfs_raid_array[BTRFS_NR_RAID_TYPES];
+ extern const int btrfs_raid_mindev_error[BTRFS_NR_RAID_TYPES];
+-extern const u64 btrfs_raid_group[BTRFS_NR_RAID_TYPES];
+ 
+ struct map_lookup {
+ 	u64 type;

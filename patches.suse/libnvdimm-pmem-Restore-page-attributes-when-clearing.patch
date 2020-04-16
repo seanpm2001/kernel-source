@@ -2,9 +2,10 @@ From c953cc987ab87d180e1d5de2f1c217abe33aac77 Mon Sep 17 00:00:00 2001
 From: Dan Williams <dan.j.williams@intel.com>
 Date: Fri, 13 Jul 2018 21:50:37 -0700
 Subject: [PATCH] libnvdimm, pmem: Restore page attributes when clearing errors
-Git-commit: c953cc987ab87d180e1d5de2f1c217abe33aac77
-Patch-mainline: v4.19-rc1
+
 References: bsc#1107783
+Patch-mainline: v4.19-rc1
+Git-commit: c953cc987ab87d180e1d5de2f1c217abe33aac77
 
 Use clear_mce_nospec() to restore WB mode for the kernel linear mapping
 of a pmem page that was marked 'HWPoison'. A page with 'HWPoison' set
@@ -16,12 +17,13 @@ The 'HWPoison' flag is only cleared when overwriting an entire page.
 Signed-off-by: Dan Williams <dan.j.williams@intel.com>
 Signed-off-by: Dave Jiang <dave.jiang@intel.com>
 Acked-by: Jan Kara <jack@suse.cz>
-
 ---
- drivers/nvdimm/pmem.c |   26 ++++++++++++++++++++++++++
- drivers/nvdimm/pmem.h |   13 +++++++++++++
+ drivers/nvdimm/pmem.c | 26 ++++++++++++++++++++++++++
+ drivers/nvdimm/pmem.h | 13 +++++++++++++
  2 files changed, 39 insertions(+)
 
+diff --git a/drivers/nvdimm/pmem.c b/drivers/nvdimm/pmem.c
+index 8b1fd7f1a224..55c7a69751d3 100644
 --- a/drivers/nvdimm/pmem.c
 +++ b/drivers/nvdimm/pmem.c
 @@ -20,6 +20,7 @@
@@ -32,7 +34,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  #include <linux/module.h>
  #include <linux/moduleparam.h>
  #include <linux/badblocks.h>
-@@ -51,6 +52,30 @@ static struct nd_region *to_region(struc
+@@ -51,6 +52,30 @@ static struct nd_region *to_region(struct pmem_device *pmem)
  	return to_nd_region(to_dev(pmem)->parent);
  }
  
@@ -63,14 +65,15 @@ Acked-by: Jan Kara <jack@suse.cz>
  static blk_status_t pmem_clear_poison(struct pmem_device *pmem,
  		phys_addr_t offset, unsigned int len)
  {
-@@ -65,6 +90,7 @@ static blk_status_t pmem_clear_poison(st
+@@ -65,6 +90,7 @@ static blk_status_t pmem_clear_poison(struct pmem_device *pmem,
  	if (cleared < len)
  		rc = BLK_STS_IOERR;
  	if (cleared > 0 && cleared / 512) {
 +		hwpoison_clear(pmem, pmem->phys_addr + offset, cleared);
  		cleared /= 512;
- 		dev_dbg(dev, "%s: %#llx clear %ld sector%s\n", __func__,
+ 		dev_dbg(dev, "%#llx clear %ld sector%s\n",
  				(unsigned long long) sector, cleared,
+diff --git a/drivers/nvdimm/pmem.h b/drivers/nvdimm/pmem.h
 --- a/drivers/nvdimm/pmem.h
 +++ b/drivers/nvdimm/pmem.h
 @@ -1,5 +1,6 @@
@@ -80,7 +83,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  #include <linux/badblocks.h>
  #include <linux/types.h>
  #include <linux/pfn_t.h>
-@@ -26,4 +27,16 @@ struct pmem_device {
+@@ -27,4 +28,16 @@ struct pmem_device {
  
  long __pmem_direct_access(struct pmem_device *pmem, pgoff_t pgoff,
  		long nr_pages, void **kaddr, pfn_t *pfn);
@@ -97,3 +100,6 @@ Acked-by: Jan Kara <jack@suse.cz>
 +}
 +#endif
  #endif /* __NVDIMM_PMEM_H__ */
+-- 
+2.23.0
+

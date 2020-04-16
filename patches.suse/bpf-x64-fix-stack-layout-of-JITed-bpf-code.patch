@@ -16,25 +16,23 @@ Fixes: 177366bf7ceb ("bpf: change x86 JITed program stack layout")
 Signed-off-by: Alexei Starovoitov <ast@kernel.org>
 Acked-by: Gary Lin <glin@suse.com>
 ---
- arch/x86/net/bpf_jit_comp.c |   83 +++++++++++---------------------------------
- 1 file changed, 21 insertions(+), 62 deletions(-)
+ arch/x86/net/bpf_jit_comp.c |   70 +++++++++++++-------------------------------
+ 1 file changed, 21 insertions(+), 49 deletions(-)
 
 --- a/arch/x86/net/bpf_jit_comp.c
 +++ b/arch/x86/net/bpf_jit_comp.c
-@@ -200,11 +200,7 @@ struct jit_context {
+@@ -191,9 +191,7 @@ struct jit_context {
  #define BPF_MAX_INSN_SIZE	128
  #define BPF_INSN_SAFETY		64
  
--#define AUX_STACK_SPACE \
--	(32 /* space for rbx, r13, r14, r15 */ + \
--	 8 /* space for skb_copy_bits() buffer */)
+-#define AUX_STACK_SPACE		40 /* Space for RBX, R13, R14, R15, tailcnt */
 -
--#define PROLOGUE_SIZE 37
+-#define PROLOGUE_SIZE		37
 +#define PROLOGUE_SIZE		20
  
  /* emit x64 prologue code for BPF program and check it's size.
   * bpf_tail_call helper will skip it while jumping into another program
-@@ -214,51 +210,19 @@ static void emit_prologue(u8 **pprog, u3
+@@ -203,40 +201,19 @@ static void emit_prologue(u8 **pprog, u3
  	u8 *prog = *pprog;
  	int cnt = 0;
  
@@ -48,19 +46,8 @@ Acked-by: Gary Lin <glin@suse.com>
 -	/* sub rbp, AUX_STACK_SPACE */
 -	EMIT4(0x48, 0x83, 0xED, AUX_STACK_SPACE);
 -
--	/* all classic BPF filters use R6(rbx) save it */
--
 -	/* mov qword ptr [rbp+0],rbx */
 -	EMIT4(0x48, 0x89, 0x5D, 0);
--
--	/* bpf_convert_filter() maps classic BPF register X to R7 and uses R8
--	 * as temporary, so all tcpdump filters need to spill/fill R7(r13) and
--	 * R8(r14). R9(r15) spill could be made conditional, but there is only
--	 * one 'bpf_error' return path out of helper functions inside bpf_jit.S
--	 * The overhead of extra spill is negligible for any filter other
--	 * than synthetic ones. Therefore not worth adding complexity.
--	 */
--
 -	/* mov qword ptr [rbp+8],r13 */
 -	EMIT4(0x4C, 0x89, 0x6D, 8);
 -	/* mov qword ptr [rbp+16],r14 */
@@ -96,7 +83,7 @@ Acked-by: Gary Lin <glin@suse.com>
  	*pprog = prog;
  }
  
-@@ -298,13 +262,13 @@ static void emit_bpf_tail_call(u8 **ppro
+@@ -276,13 +253,13 @@ static void emit_bpf_tail_call(u8 **ppro
  	/* if (tail_call_cnt > MAX_TAIL_CALL_CNT)
  	 *   goto out;
  	 */
@@ -112,7 +99,7 @@ Acked-by: Gary Lin <glin@suse.com>
  
  	/* prog = array->ptrs[index]; */
  	EMIT4_off32(0x48, 0x8B, 0x84, 0xD6,       /* mov rax, [rsi + rdx * 8 + offsetof(...)] */
-@@ -1069,19 +1033,14 @@ common_load:
+@@ -960,19 +937,14 @@ emit_jmp:
  			seen_exit = true;
  			/* update cleanup_addr */
  			ctx->cleanup_addr = proglen;

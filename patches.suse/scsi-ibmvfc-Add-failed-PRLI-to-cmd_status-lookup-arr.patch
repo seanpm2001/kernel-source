@@ -1,0 +1,36 @@
+From 95237c25d8d08ebc451dd2d793f7e765f57b0c9f Mon Sep 17 00:00:00 2001
+From: Tyrel Datwyler <tyreld@linux.vnet.ibm.com>
+Date: Wed, 20 Mar 2019 14:56:52 -0500
+Subject: [PATCH] scsi: ibmvfc: Add failed PRLI to cmd_status lookup array
+
+References: bsc#1161951 ltc#183551
+Patch-mainline: v5.1-rc3
+Git-commit: 95237c25d8d08ebc451dd2d793f7e765f57b0c9f
+
+The VIOS uses the SCSI_ERROR class to report PRLI failures. These errors
+are indicated with the combination of a IBMVFC_FC_SCSI_ERROR return status
+and 0x8000 error code. Add these codes to cmd_status[] with appropriate
+human readable error message.
+
+Signed-off-by: Tyrel Datwyler <tyreld@linux.vnet.ibm.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ drivers/scsi/ibmvscsi/ibmvfc.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/scsi/ibmvscsi/ibmvfc.c b/drivers/scsi/ibmvscsi/ibmvfc.c
+index c3ce27039552..18ee2a8ec3d5 100644
+--- a/drivers/scsi/ibmvscsi/ibmvfc.c
++++ b/drivers/scsi/ibmvscsi/ibmvfc.c
+@@ -139,6 +139,7 @@ static const struct {
+ 	{ IBMVFC_FC_FAILURE, IBMVFC_VENDOR_SPECIFIC, DID_ERROR, 1, 1, "vendor specific" },
+ 
+ 	{ IBMVFC_FC_SCSI_ERROR, 0, DID_OK, 1, 0, "SCSI error" },
++	{ IBMVFC_FC_SCSI_ERROR, IBMVFC_COMMAND_FAILED, DID_ERROR, 0, 1, "PRLI to device failed." },
+ };
+ 
+ static void ibmvfc_npiv_login(struct ibmvfc_host *);
+-- 
+2.23.0
+

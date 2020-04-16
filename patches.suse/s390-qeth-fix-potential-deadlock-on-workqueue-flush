@@ -1,0 +1,201 @@
+From: Julian Wiedmann <jwi@linux.ibm.com>
+Date: Wed, 20 Nov 2019 14:20:56 +0100
+Subject: s390/qeth: fix potential deadlock on workqueue flush
+Git-commit: c8183f5489020afc08dd9d88c3e4ee0e3c820733
+Patch-mainline: v5.4
+References: bsc#1165185 LTC#184108
+
+Description:   qeth: fix potential deadlock on workqueue flush
+Symptom:       Deadlock when tearing down a L2 qeth device.
+Problem:       The L2 bridgeport code uses the coarse 'conf_mutex' for
+               guarding access to its configuration state.
+               This can result in a deadlock when qeth_l2_stop_card() -
+               called under the conf_mutex - blocks on flush_workqueue()
+               to wait for the completion of pending bridgeport workers.
+               Such workers would also need to aquire the conf_mutex,
+               stalling indefinitely.
+Solution:      Introduce a lock that specifically guards the bridgeport
+               configuration, so that the workers no longer need the
+               conf_mutex.
+Reproduction:  Tear down a L2 device concurrently to when qeth processes
+               a bridgeport event on that device.
+
+Upstream-Description:
+
+              s390/qeth: fix potential deadlock on workqueue flush
+
+              The L2 bridgeport code uses the coarse 'conf_mutex' for guarding access
+              to its configuration state.
+              This can result in a deadlock when qeth_l2_stop_card() - called under the
+              conf_mutex - blocks on flush_workqueue() to wait for the completion of
+              pending bridgeport workers. Such workers would also need to aquire
+              the conf_mutex, stalling indefinitely.
+
+              Introduce a lock that specifically guards the bridgeport configuration,
+              so that the workers no longer need the conf_mutex.
+              Wrapping qeth_l2_promisc_to_bridge() in this fine-grained lock then also
+              fixes a theoretical race against a concurrent qeth_bridge_port_role_store()
+              operation.
+
+Fixes: c0a2e4d10d93 ("s390/qeth: conclude all event processing before offlining a card")
+Signed-off-by: Julian Wiedmann <jwi@linux.ibm.com>
+Reviewed-by: Alexandra Winter <wintera@linux.ibm.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Petr Tesarik <ptesarik@suse.com>
+[ ptesarik: First hunk patches code added by upstream commit
+  59b757a9bf2bd30173029fa7bd6821239d6a7242, but since SLE15-SP1 also
+  misses commit d0c748256611f8612728bcbf9933eb103c077763 (and possibly
+  other changes), the mutex cannot be added to qeth_l2_set_rx_mode,
+  as that one runs under netif_addr_lock_bh(). ]
+---
+ drivers/s390/net/qeth_core.h    |    1 +
+ drivers/s390/net/qeth_l2_main.c |   13 +++++++++----
+ drivers/s390/net/qeth_l2_sys.c  |   14 +++++++++++++-
+ 3 files changed, 23 insertions(+), 5 deletions(-)
+
+--- a/drivers/s390/net/qeth_core.h
++++ b/drivers/s390/net/qeth_core.h
+@@ -819,6 +819,7 @@ struct qeth_card {
+ 	struct service_level qeth_service_level;
+ 	struct qdio_ssqd_desc ssqd;
+ 	debug_info_t *debug;
++	struct mutex sbp_lock;
+ 	struct mutex conf_mutex;
+ 	struct mutex discipline_mutex;
+ 	struct napi_struct napi;
+--- a/drivers/s390/net/qeth_l2_main.c
++++ b/drivers/s390/net/qeth_l2_main.c
+@@ -801,6 +801,8 @@ static int qeth_l2_probe_device(struct c
+ 	struct qeth_card *card = dev_get_drvdata(&gdev->dev);
+ 	int rc;
+ 
++	mutex_init(&card->sbp_lock);
++
+ 	if (gdev->dev.type == &qeth_generic_devtype) {
+ 		rc = qeth_l2_create_device_attributes(&gdev->dev);
+ 		if (rc)
+@@ -968,10 +970,13 @@ static int __qeth_l2_set_online(struct c
+ 		rc = -ENODEV;
+ 		goto out_remove;
+ 	}
++
++	mutex_lock(&card->sbp_lock);
+ 	qeth_bridgeport_query_support(card);
+ 	if (card->options.sbp.supported_funcs)
+ 		dev_info(&card->gdev->dev,
+ 		"The device represents a Bridge Capable Port\n");
++	mutex_unlock(&card->sbp_lock);
+ 
+ 	rc = qeth_l2_setup_netdev(card, carrier_ok);
+ 	if (rc)
+@@ -1412,9 +1417,9 @@ static void qeth_bridge_state_change_wor
+ 
+ 	/* Role should not change by itself, but if it did, */
+ 	/* information from the hardware is authoritative.  */
+-	mutex_lock(&data->card->conf_mutex);
++	mutex_lock(&data->card->sbp_lock);
+ 	data->card->options.sbp.role = entry->role;
+-	mutex_unlock(&data->card->conf_mutex);
++	mutex_unlock(&data->card->sbp_lock);
+ 
+ 	snprintf(env_locrem, sizeof(env_locrem), "BRIDGEPORT=statechange");
+ 	snprintf(env_role, sizeof(env_role), "ROLE=%s",
+@@ -1480,9 +1485,9 @@ static void qeth_bridge_host_event_worke
+ 			: (data->hostevs.lost_event_mask == 0x02)
+ 			? "Bridge port state change"
+ 			: "Unknown reason");
+-		mutex_lock(&data->card->conf_mutex);
++		mutex_lock(&data->card->sbp_lock);
+ 		data->card->options.sbp.hostnotification = 0;
+-		mutex_unlock(&data->card->conf_mutex);
++		mutex_unlock(&data->card->sbp_lock);
+ 		qeth_bridge_emit_host_event(data->card, anev_abort,
+ 			0, NULL, NULL);
+ 	} else
+--- a/drivers/s390/net/qeth_l2_sys.c
++++ b/drivers/s390/net/qeth_l2_sys.c
+@@ -23,6 +23,7 @@ static ssize_t qeth_bridge_port_role_sta
+ 	if (qeth_l2_vnicc_is_in_use(card))
+ 		return sprintf(buf, "n/a (VNIC characteristics)\n");
+ 
++	mutex_lock(&card->sbp_lock);
+ 	if (qeth_card_hw_is_reachable(card) &&
+ 					card->options.sbp.supported_funcs)
+ 		rc = qeth_bridgeport_query_ports(card,
+@@ -56,6 +57,7 @@ static ssize_t qeth_bridge_port_role_sta
+ 		else
+ 			rc = sprintf(buf, "%s\n", word);
+ 	}
++	mutex_unlock(&card->sbp_lock);
+ 
+ 	return rc;
+ }
+@@ -90,6 +92,7 @@ static ssize_t qeth_bridge_port_role_sto
+ 		return -EINVAL;
+ 
+ 	mutex_lock(&card->conf_mutex);
++	mutex_lock(&card->sbp_lock);
+ 
+ 	if (qeth_l2_vnicc_is_in_use(card))
+ 		rc = -EBUSY;
+@@ -103,6 +106,7 @@ static ssize_t qeth_bridge_port_role_sto
+ 	} else
+ 		card->options.sbp.role = role;
+ 
++	mutex_unlock(&card->sbp_lock);
+ 	mutex_unlock(&card->conf_mutex);
+ 
+ 	return rc ? rc : count;
+@@ -157,6 +161,7 @@ static ssize_t qeth_bridgeport_hostnotif
+ 		return rc;
+ 
+ 	mutex_lock(&card->conf_mutex);
++	mutex_lock(&card->sbp_lock);
+ 
+ 	if (qeth_l2_vnicc_is_in_use(card))
+ 		rc = -EBUSY;
+@@ -167,6 +172,7 @@ static ssize_t qeth_bridgeport_hostnotif
+ 	} else
+ 		card->options.sbp.hostnotification = enable;
+ 
++	mutex_unlock(&card->sbp_lock);
+ 	mutex_unlock(&card->conf_mutex);
+ 
+ 	return rc ? rc : count;
+@@ -222,6 +228,7 @@ static ssize_t qeth_bridgeport_reflect_s
+ 		return -EINVAL;
+ 
+ 	mutex_lock(&card->conf_mutex);
++	mutex_lock(&card->sbp_lock);
+ 
+ 	if (qeth_l2_vnicc_is_in_use(card))
+ 		rc = -EBUSY;
+@@ -233,6 +240,7 @@ static ssize_t qeth_bridgeport_reflect_s
+ 		rc = 0;
+ 	}
+ 
++	mutex_unlock(&card->sbp_lock);
+ 	mutex_unlock(&card->conf_mutex);
+ 
+ 	return rc ? rc : count;
+@@ -268,6 +276,8 @@ void qeth_l2_setup_bridgeport_attrs(stru
+ 		return;
+ 	if (!card->options.sbp.supported_funcs)
+ 		return;
++
++	mutex_lock(&card->sbp_lock);
+ 	if (card->options.sbp.role != QETH_SBP_ROLE_NONE) {
+ 		/* Conditional to avoid spurious error messages */
+ 		qeth_bridgeport_setrole(card, card->options.sbp.role);
+@@ -279,8 +289,10 @@ void qeth_l2_setup_bridgeport_attrs(stru
+ 		rc = qeth_bridgeport_an_set(card, 1);
+ 		if (rc)
+ 			card->options.sbp.hostnotification = 0;
+-	} else
++	} else {
+ 		qeth_bridgeport_an_set(card, 0);
++	}
++	mutex_unlock(&card->sbp_lock);
+ }
+ 
+ /* VNIC CHARS support */

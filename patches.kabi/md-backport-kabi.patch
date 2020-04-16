@@ -1,0 +1,110 @@
+From: NeilBrown <neilb@suse.com>
+Subject: Fix kabi after "md: batch flush requests."
+Patch-mainline: Never, kabi
+References: bsc#1119680
+
+The new fields are private to md, so they can be hidden from the kabi.
+
+Acked-by: NeilBrown <neilb@suse.com>
+Signed-off-by: Neil Brown <neilb@suse.com>
+Acked-by: Coly Li <colyli@suse.de>
+---
+ drivers/md/md-cluster.h |    7 +++++--
+ drivers/md/md.h         |   40 ++++++++++++++++++++++++++--------------
+ 2 files changed, 31 insertions(+), 16 deletions(-)
+
+--- a/drivers/md/md-cluster.h
++++ b/drivers/md/md-cluster.h
+@@ -13,7 +13,6 @@ struct md_cluster_operations {
+ 	int (*leave)(struct mddev *mddev);
+ 	int (*slot_number)(struct mddev *mddev);
+ 	int (*resync_info_update)(struct mddev *mddev, sector_t lo, sector_t hi);
+-	void (*resync_info_get)(struct mddev *mddev, sector_t *lo, sector_t *hi);
+ 	int (*metadata_update_start)(struct mddev *mddev);
+ 	int (*metadata_update_finish)(struct mddev *mddev);
+ 	void (*metadata_update_cancel)(struct mddev *mddev);
+@@ -26,10 +25,14 @@ struct md_cluster_operations {
+ 	int (*remove_disk)(struct mddev *mddev, struct md_rdev *rdev);
+ 	void (*load_bitmaps)(struct mddev *mddev, int total_slots);
+ 	int (*gather_bitmaps)(struct md_rdev *rdev);
+-	int (*resize_bitmaps)(struct mddev *mddev, sector_t newsize, sector_t oldsize);
+ 	int (*lock_all_bitmaps)(struct mddev *mddev);
+ 	void (*unlock_all_bitmaps)(struct mddev *mddev);
+ 	void (*update_size)(struct mddev *mddev, sector_t old_dev_sectors);
++
++#ifndef __GENKSYMS__
++	void (*resync_info_get)(struct mddev *mddev, sector_t *lo, sector_t *hi);
++	int (*resize_bitmaps)(struct mddev *mddev, sector_t newsize, sector_t oldsize);
++#endif
+ };
+ 
+ #endif /* _MD_CLUSTER_H */
+--- a/drivers/md/md.h
++++ b/drivers/md/md.h
+@@ -118,13 +118,6 @@ struct md_rdev {
+ 					   * in superblock.
+ 					   */
+ 
+-	/*
+-	 * The members for check collision of write IOs.
+-	 */
+-	struct list_head serial_list;
+-	spinlock_t serial_list_lock;
+-	wait_queue_head_t serial_io_wait;
+-
+ 	struct work_struct del_work;	/* used for delayed sysfs removal */
+ 
+ 	struct kernfs_node *sysfs_state; /* handle for 'state'
+@@ -138,6 +131,15 @@ struct md_rdev {
+ 		unsigned int size;	/* Size in sectors of the PPL space */
+ 		sector_t sector;	/* First sector of the PPL space */
+ 	} ppl;
++
++#ifndef __GENKSYMS__
++	/*
++	 * The members for check collision of write IOs.
++	 */
++	struct list_head serial_list;
++	spinlock_t serial_list_lock;
++	wait_queue_head_t serial_io_wait;
++#endif
+ };
+ enum flag_bits {
+ 	Faulty,			/* device is known to have a fault */
+@@ -486,13 +488,16 @@ struct mddev {
+ 					  */
+ 	struct work_struct flush_work;
+ 	struct work_struct event_work;	/* used by dm to report failure event */
+-	mempool_t *serial_info_pool;
+ 	void (*sync_super)(struct mddev *mddev, struct md_rdev *rdev);
+ 	struct md_cluster_info		*cluster_info;
+ 	unsigned int			good_device_nr;	/* good device num within cluster raid */
+ 
+ 	bool	has_superblocks:1;
++
++#ifndef __GENKSYMS__
++	mempool_t *serial_info_pool;
+ 	bool	fail_last_dev:1;
++#endif
+ };
+ 
+ enum recovery_flags {
+@@ -584,7 +593,6 @@ struct md_personality
+ 	int (*check_reshape) (struct mddev *mddev);
+ 	int (*start_reshape) (struct mddev *mddev);
+ 	void (*finish_reshape) (struct mddev *mddev);
+-	void (*update_reshape_pos) (struct mddev *mddev);
+ 	/* quiesce suspends or resumes internal processing.
+ 	 * 1 - stop new actions and wait for action io to complete
+ 	 * 0 - return to normal behaviour
+@@ -605,6 +613,10 @@ struct md_personality
+ 	int (*congested)(struct mddev *mddev, int bits);
+ 	/* Changes the consistency policy of an active array. */
+ 	int (*change_consistency_policy)(struct mddev *mddev, const char *buf);
++
++#ifndef __GENKSYMS__
++	void (*update_reshape_pos) (struct mddev *mddev);
++#endif
+ };
+ 
+ struct md_sysfs_entry {

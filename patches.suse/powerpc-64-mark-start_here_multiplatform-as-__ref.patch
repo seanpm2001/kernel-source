@@ -1,0 +1,49 @@
+From 9c4e4c90ec24652921e31e9551fcaedc26eec86d Mon Sep 17 00:00:00 2001
+From: Christophe Leroy <christophe.leroy@c-s.fr>
+Date: Fri, 10 May 2019 06:31:28 +0000
+Subject: [PATCH] powerpc/64: mark start_here_multiplatform as __ref
+
+References: bsc#1148868
+Patch-mainline: v5.3-rc1
+Git-commit: 9c4e4c90ec24652921e31e9551fcaedc26eec86d
+
+Otherwise, the following warning is encountered:
+
+WARNING: vmlinux.o(.text+0x3dc6): Section mismatch in reference from the variable start_here_multiplatform to the function .init.text:.early_setup()
+The function start_here_multiplatform() references
+the function __init .early_setup().
+This is often because start_here_multiplatform lacks a __init
+annotation or the annotation of .early_setup is wrong.
+
+Fixes: 56c46bba9bbf ("powerpc/64: Fix booting large kernels with STRICT_KERNEL_RWX")
+Cc: Russell Currey <ruscur@russell.cc>
+Signed-off-by: Christophe Leroy <christophe.leroy@c-s.fr>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kernel/head_64.S | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/arch/powerpc/kernel/head_64.S b/arch/powerpc/kernel/head_64.S
+index 5321a11c2835..259be7f6d551 100644
+--- a/arch/powerpc/kernel/head_64.S
++++ b/arch/powerpc/kernel/head_64.S
+@@ -904,6 +904,7 @@ p_toc:	.8byte	__toc_start + 0x8000 - 0b
+ /*
+  * This is where the main kernel code starts.
+  */
++__REF
+ start_here_multiplatform:
+ 	/* set up the TOC */
+ 	bl      relative_toc
+@@ -979,6 +980,7 @@ start_here_multiplatform:
+ 	RFI
+ 	b	.	/* prevent speculative execution */
+ 
++	.previous
+ 	/* This is where all platforms converge execution */
+ 
+ start_here_common:
+-- 
+2.23.0
+

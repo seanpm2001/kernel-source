@@ -1,0 +1,63 @@
+From: Amir Goldstein <amir73il@gmail.com>
+Date: Sun, 26 May 2019 17:34:07 +0300
+Subject: debugfs: simplify __debugfs_remove_file()
+Patch-mainline: v5.3-rc1
+Git-commit: 823e545c027795997f29ec5c255aff605cf39e85
+References: bsc#1159198
+
+Move simple_unlink()+d_delete() from __debugfs_remove_file() into
+caller __debugfs_remove() and rename helper for post remove file to
+__debugfs_file_removed().
+
+This will simplify adding fsnotify_unlink() hook.
+
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Reviewed-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Amir Goldstein <amir73il@gmail.com>
+Signed-off-by: Jan Kara <jack@suse.cz>
+Acked-by: Nicolai Stange <nstange@suse.de>
+---
+ fs/debugfs/inode.c |   20 ++++++++------------
+ 1 file changed, 8 insertions(+), 12 deletions(-)
+
+--- a/fs/debugfs/inode.c
++++ b/fs/debugfs/inode.c
+@@ -629,13 +629,10 @@ struct dentry *debugfs_create_symlink(co
+ }
+ EXPORT_SYMBOL_GPL(debugfs_create_symlink);
+ 
+-static void __debugfs_remove_file(struct dentry *dentry, struct dentry *parent)
++static void __debugfs_file_removed(struct dentry *dentry)
+ {
+ 	struct debugfs_fsdata *fsd;
+ 
+-	simple_unlink(d_inode(parent), dentry);
+-	d_delete(dentry);
+-
+ 	/*
+ 	 * Paired with the closing smp_mb() implied by a successful
+ 	 * cmpxchg() in debugfs_file_get(): either
+@@ -656,16 +653,15 @@ static int __debugfs_remove(struct dentr
+ 
+ 	if (simple_positive(dentry)) {
+ 		dget(dentry);
+-		if (!d_is_reg(dentry)) {
+-			if (d_is_dir(dentry))
+-				ret = simple_rmdir(d_inode(parent), dentry);
+-			else
+-				simple_unlink(d_inode(parent), dentry);
+-			if (!ret)
+-				d_delete(dentry);
++		if (d_is_dir(dentry)) {
++			ret = simple_rmdir(d_inode(parent), dentry);
+ 		} else {
+-			__debugfs_remove_file(dentry, parent);
++			simple_unlink(d_inode(parent), dentry);
+ 		}
++		if (!ret)
++			d_delete(dentry);
++		if (d_is_reg(dentry))
++			__debugfs_file_removed(dentry);
+ 		dput(dentry);
+ 	}
+ 	return ret;

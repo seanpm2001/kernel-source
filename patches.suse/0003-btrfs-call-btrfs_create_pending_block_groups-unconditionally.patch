@@ -1,0 +1,57 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Wed, 21 Nov 2018 14:05:42 -0500
+Subject: btrfs: call btrfs_create_pending_block_groups unconditionally
+Git-commit: 119e80df7d49e3794ca6d18afecd0cce948cad94
+Patch-mainline: v5.1-rc1
+References: bsc#1165949
+
+The first thing we do is loop through the list, this
+
+if (!list_empty())
+	btrfs_create_pending_block_groups();
+
+thing is just wasted space.
+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/extent-tree.c |    3 +--
+ fs/btrfs/transaction.c |    6 ++----
+ 2 files changed, 3 insertions(+), 6 deletions(-)
+
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -3104,8 +3104,7 @@ again:
+ 	}
+ 
+ 	if (run_all) {
+-		if (!list_empty(&trans->new_bgs))
+-			btrfs_create_pending_block_groups(trans, fs_info);
++		btrfs_create_pending_block_groups(trans, fs_info);
+ 
+ 		spin_lock(&delayed_refs->lock);
+ 		node = rb_first(&delayed_refs->href_root);
+--- a/fs/btrfs/transaction.c
++++ b/fs/btrfs/transaction.c
+@@ -863,8 +863,7 @@ static int __btrfs_end_transaction(struc
+ 	btrfs_trans_release_metadata(trans, info);
+ 	trans->block_rsv = NULL;
+ 
+-	if (!list_empty(&trans->new_bgs))
+-		btrfs_create_pending_block_groups(trans, info);
++	btrfs_create_pending_block_groups(trans, info);
+ 
+ 	btrfs_trans_release_chunk_metadata(trans);
+ 
+@@ -1978,8 +1977,7 @@ int btrfs_commit_transaction(struct btrf
+ 	cur_trans->delayed_refs.flushing = 1;
+ 	smp_wmb();
+ 
+-	if (!list_empty(&trans->new_bgs))
+-		btrfs_create_pending_block_groups(trans, fs_info);
++	btrfs_create_pending_block_groups(trans, fs_info);
+ 
+ 	ret = btrfs_run_delayed_refs(trans, fs_info, 0);
+ 	if (ret) {

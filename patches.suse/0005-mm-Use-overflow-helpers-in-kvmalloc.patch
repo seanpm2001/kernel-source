@@ -1,0 +1,62 @@
+From 3b3b1a29eb89ba93f91213cbebb332a2ac31fa8b Mon Sep 17 00:00:00 2001
+From: Kees Cook <keescook@chromium.org>
+Date: Tue, 8 May 2018 12:55:26 -0700
+Subject: [PATCH] mm: Use overflow helpers in kvmalloc()
+Git-commit: 3b3b1a29eb89ba93f91213cbebb332a2ac31fa8b
+Patch-mainline: v4.18-rc1
+References: bsc#1166003
+
+Instead of open-coded multiplication and bounds checking, use the new
+overflow helper. Additionally prepare for vmalloc() users to add
+array_size()-family helpers in the future.
+
+Signed-off-by: Kees Cook <keescook@chromium.org>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ include/linux/mm.h      | 7 +++++--
+ include/linux/vmalloc.h | 1 +
+ 2 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/include/linux/mm.h b/include/linux/mm.h
+index 1ac1f06a4be6..7cb1c6a6bf82 100644
+--- a/include/linux/mm.h
++++ b/include/linux/mm.h
+@@ -25,6 +25,7 @@
+ #include <linux/err.h>
+ #include <linux/page_ref.h>
+ #include <linux/memremap.h>
++#include <linux/overflow.h>
+ 
+ struct mempolicy;
+ struct anon_vma;
+@@ -560,10 +561,12 @@ static inline void *kvzalloc(size_t size, gfp_t flags)
+ 
+ static inline void *kvmalloc_array(size_t n, size_t size, gfp_t flags)
+ {
+-	if (size != 0 && n > SIZE_MAX / size)
++	size_t bytes;
++
++	if (unlikely(check_mul_overflow(n, size, &bytes)))
+ 		return NULL;
+ 
+-	return kvmalloc(n * size, flags);
++	return kvmalloc(bytes, flags);
+ }
+ 
+ extern void kvfree(const void *addr);
+diff --git a/include/linux/vmalloc.h b/include/linux/vmalloc.h
+index 1e5d8c392f15..398e9c95cd61 100644
+--- a/include/linux/vmalloc.h
++++ b/include/linux/vmalloc.h
+@@ -8,6 +8,7 @@
+ #include <linux/llist.h>
+ #include <asm/page.h>		/* pgprot_t */
+ #include <linux/rbtree.h>
++#include <linux/overflow.h>
+ 
+ struct vm_area_struct;		/* vma defining user mapping in mm_types.h */
+ struct notifier_block;		/* in notifier.h */
+-- 
+2.25.0
+

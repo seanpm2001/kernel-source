@@ -1,0 +1,114 @@
+From bb58eb9e167d087cc518f7a71c3c00f1671958da Mon Sep 17 00:00:00 2001
+From: Qu Wenruo <wqu@suse.com>
+Date: Fri, 25 Jan 2019 13:09:15 +0800
+Patch-mainline: v5.1
+Git-commit: bb58eb9e167d087cc518f7a71c3c00f1671958da
+References: bsc#1168273
+Subject: [PATCH] btrfs: extent_io: Kill the forward declaration of
+ flush_write_bio
+
+There is no need to forward declare flush_write_bio(), as it only
+depends on submit_one_bio().  Both of them are pretty small, just move
+them to kill the forward declaration.
+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Reviewed-by: Johannes Thumshirn <jthumshirn@suse.de>
+Signed-off-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/extent_io.c |   70 ++++++++++++++++++++++++---------------------------
+ 1 file changed, 34 insertions(+), 36 deletions(-)
+
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -146,7 +146,40 @@ static void add_extent_changeset(struct
+ 	BUG_ON(ret < 0);
+ }
+ 
+-static void flush_write_bio(struct extent_page_data *epd);
++static int __must_check submit_one_bio(struct bio *bio, int mirror_num,
++				       unsigned long bio_flags)
++{
++	blk_status_t ret = 0;
++	struct bio_vec *bvec = bio_last_bvec_all(bio);
++	struct page *page = bvec->bv_page;
++	struct extent_io_tree *tree = bio->bi_private;
++	u64 start;
++
++	start = page_offset(page) + bvec->bv_offset;
++
++	bio->bi_private = NULL;
++	bio_get(bio);
++
++	if (tree->ops)
++		ret = tree->ops->submit_bio_hook(page->mapping->host, bio,
++					   mirror_num, bio_flags, start);
++	else
++		btrfsic_submit_bio(bio);
++
++	bio_put(bio);
++	return blk_status_to_errno(ret);
++}
++
++static void flush_write_bio(struct extent_page_data *epd)
++{
++	if (epd->bio) {
++		int ret;
++
++		ret = submit_one_bio(epd->bio, 0, 0);
++		BUG_ON(ret < 0); /* -ENOMEM */
++		epd->bio = NULL;
++	}
++}
+ 
+ static inline struct btrfs_fs_info *
+ tree_fs_info(struct extent_io_tree *tree)
+@@ -2762,30 +2795,6 @@ struct bio *btrfs_bio_clone_partial(stru
+ 	return bio;
+ }
+ 
+-static int __must_check submit_one_bio(struct bio *bio, int mirror_num,
+-				       unsigned long bio_flags)
+-{
+-	blk_status_t ret = 0;
+-	struct bio_vec *bvec = bio_last_bvec_all(bio);
+-	struct page *page = bvec->bv_page;
+-	struct extent_io_tree *tree = bio->bi_private;
+-	u64 start;
+-
+-	start = page_offset(page) + bvec->bv_offset;
+-
+-	bio->bi_private = NULL;
+-	bio_get(bio);
+-
+-	if (tree->ops)
+-		ret = tree->ops->submit_bio_hook(page->mapping->host, bio,
+-					   mirror_num, bio_flags, start);
+-	else
+-		btrfsic_submit_bio(bio);
+-
+-	bio_put(bio);
+-	return blk_status_to_errno(ret);
+-}
+-
+ static int merge_bio(struct extent_io_tree *tree, struct page *page,
+ 		     unsigned long offset, size_t size, struct bio *bio,
+ 		     unsigned long bio_flags)
+@@ -4089,17 +4098,6 @@ retry:
+ 	return ret;
+ }
+ 
+-static void flush_write_bio(struct extent_page_data *epd)
+-{
+-	if (epd->bio) {
+-		int ret;
+-
+-		ret = submit_one_bio(epd->bio, 0, 0);
+-		BUG_ON(ret < 0); /* -ENOMEM */
+-		epd->bio = NULL;
+-	}
+-}
+-
+ int extent_write_full_page(struct page *page, struct writeback_control *wbc)
+ {
+ 	int ret;

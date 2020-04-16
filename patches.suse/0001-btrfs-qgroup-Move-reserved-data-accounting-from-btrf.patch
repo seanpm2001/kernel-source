@@ -104,15 +104,15 @@ Signed-off-by: David Sterba <dsterba@suse.com>
 ---
  fs/btrfs/delayed-ref.c       |   14 ++++----------
  fs/btrfs/delayed-ref.h       |   11 -----------
- fs/btrfs/extent-tree.c       |    4 ----
+ fs/btrfs/extent-tree.c       |    3 ---
  fs/btrfs/qgroup.c            |   19 +++++++++++++++----
  fs/btrfs/qgroup.h            |   18 +++++++++++-------
  include/trace/events/btrfs.h |   29 -----------------------------
- 6 files changed, 30 insertions(+), 65 deletions(-)
+ 6 files changed, 30 insertions(+), 64 deletions(-)
 
 --- a/fs/btrfs/delayed-ref.c
 +++ b/fs/btrfs/delayed-ref.c
-@@ -590,15 +590,13 @@ static void init_delayed_ref_head(struct
+@@ -611,15 +611,13 @@ static void init_delayed_ref_head(struct
  	RB_CLEAR_NODE(&head_ref->href_node);
  	head_ref->processing = 0;
  	head_ref->total_ref_mod = count_mod;
@@ -130,7 +130,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  		}
  
  		qrecord->bytenr = bytenr;
-@@ -641,10 +639,6 @@ add_delayed_ref_head(struct btrfs_fs_inf
+@@ -662,10 +660,6 @@ add_delayed_ref_head(struct btrfs_fs_inf
  	existing = htree_insert(&delayed_refs->href_root,
  				&head_ref->href_node);
  	if (existing) {
@@ -138,10 +138,10 @@ Signed-off-by: David Sterba <dsterba@suse.com>
 -			&& head_ref->qgroup_reserved
 -			&& existing->qgroup_ref_root
 -			&& existing->qgroup_reserved);
- 		update_existing_head_ref(delayed_refs, existing, head_ref,
+ 		update_existing_head_ref(trans, existing, head_ref,
  					 old_ref_mod);
  		/*
-@@ -764,7 +758,7 @@ int btrfs_add_delayed_tree_ref(struct bt
+@@ -789,7 +783,7 @@ int btrfs_add_delayed_tree_ref(struct bt
  
  	if (test_bit(BTRFS_FS_QUOTA_ENABLED, &fs_info->flags) &&
  	    is_fstree(ref_root)) {
@@ -150,7 +150,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  		if (!record)
  			goto free_head_ref;
  	}
-@@ -848,7 +842,7 @@ int btrfs_add_delayed_data_ref(struct bt
+@@ -879,7 +873,7 @@ int btrfs_add_delayed_data_ref(struct bt
  
  	if (test_bit(BTRFS_FS_QUOTA_ENABLED, &fs_info->flags) &&
  	    is_fstree(ref_root)) {
@@ -181,17 +181,16 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	 * until the delayed ref is processed.  must_insert_reserved is
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -2519,10 +2519,6 @@ void btrfs_cleanup_ref_head_accounting(s
- 			spin_unlock(&delayed_refs->lock);
+@@ -2624,9 +2624,6 @@ void btrfs_cleanup_ref_head_accounting(s
  		}
  	}
--
+ 
 -	/* Also free its reserved qgroup space */
 -	btrfs_qgroup_free_delayed_ref(fs_info, head->qgroup_ref_root,
 -				      head->qgroup_reserved);
+ 	btrfs_delayed_refs_rsv_release(fs_info, nr_items);
  }
  
- static int cleanup_ref_head(struct btrfs_trans_handle *trans,
 --- a/fs/btrfs/qgroup.c
 +++ b/fs/btrfs/qgroup.c
 @@ -1488,12 +1488,18 @@ int btrfs_qgroup_trace_extent_nolock(str

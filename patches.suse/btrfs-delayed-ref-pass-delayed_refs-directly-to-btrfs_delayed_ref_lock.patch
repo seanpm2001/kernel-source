@@ -1,0 +1,62 @@
+From: Lu Fengqi <lufq.fnst@cn.fujitsu.com>
+Date: Thu, 11 Oct 2018 13:40:34 +0800
+Subject: btrfs: delayed-ref: pass delayed_refs directly to
+ btrfs_delayed_ref_lock
+Git-commit: 9e920a6f03e40b1eb712f38b29ad5880153754e2
+Patch-mainline: v4.20-rc1
+References: bsc#1165949
+
+Since trans is only used for referring to delayed_refs, there is no need
+to pass it instead of delayed_refs to btrfs_delayed_ref_lock().
+
+No functional change.
+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Lu Fengqi <lufq.fnst@cn.fujitsu.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/delayed-ref.c |    5 +----
+ fs/btrfs/delayed-ref.h |    2 +-
+ fs/btrfs/extent-tree.c |    2 +-
+ 3 files changed, 3 insertions(+), 6 deletions(-)
+
+--- a/fs/btrfs/delayed-ref.c
++++ b/fs/btrfs/delayed-ref.c
+@@ -210,12 +210,9 @@ find_ref_head(struct rb_root *root, u64
+ 	return NULL;
+ }
+ 
+-int btrfs_delayed_ref_lock(struct btrfs_trans_handle *trans,
++int btrfs_delayed_ref_lock(struct btrfs_delayed_ref_root *delayed_refs,
+ 			   struct btrfs_delayed_ref_head *head)
+ {
+-	struct btrfs_delayed_ref_root *delayed_refs;
+-
+-	delayed_refs = &trans->transaction->delayed_refs;
+ 	assert_spin_locked(&delayed_refs->lock);
+ 	if (mutex_trylock(&head->mutex))
+ 		return 0;
+--- a/fs/btrfs/delayed-ref.h
++++ b/fs/btrfs/delayed-ref.h
+@@ -270,7 +270,7 @@ void btrfs_merge_delayed_refs(struct btr
+ struct btrfs_delayed_ref_head *
+ btrfs_find_delayed_ref_head(struct btrfs_delayed_ref_root *delayed_refs,
+ 			    u64 bytenr);
+-int btrfs_delayed_ref_lock(struct btrfs_trans_handle *trans,
++int btrfs_delayed_ref_lock(struct btrfs_delayed_ref_root *delayed_refs,
+ 			   struct btrfs_delayed_ref_head *head);
+ static inline void btrfs_delayed_ref_unlock(struct btrfs_delayed_ref_head *head)
+ {
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -2685,7 +2685,7 @@ static noinline int __btrfs_run_delayed_
+ 
+ 			/* grab the lock that says we are going to process
+ 			 * all the refs for this head */
+-			ret = btrfs_delayed_ref_lock(trans, locked_ref);
++			ret = btrfs_delayed_ref_lock(delayed_refs, locked_ref);
+ 			spin_unlock(&delayed_refs->lock);
+ 			/*
+ 			 * we may have dropped the spin lock to get the head

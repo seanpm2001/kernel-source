@@ -1,9 +1,12 @@
+From 2d657d17f72d2ae70c02f0d0ea6a04ad0f016b57 Mon Sep 17 00:00:00 2001
 From: Alexander Duyck <alexander.h.duyck@linux.intel.com>
 Date: Wed, 10 Oct 2018 16:39:20 -0700
-Subject: nvdimm: Split label init out from the logic for getting config data
-Git-commit: 2d657d17f72d2ae70c02f0d0ea6a04ad0f016b57
-Patch-mainline: v4.20-rc1
+Subject: [PATCH] nvdimm: Split label init out from the logic for getting
+ config data
+
 References: bsc#1111921, bsc#1113408, FATE#326765, bsc#1113972
+Patch-mainline: v4.20-rc1
+Git-commit: 2d657d17f72d2ae70c02f0d0ea6a04ad0f016b57
 
 This patch splits the initialization of the label data into two functions.
 One for doing the init, and another for reading the actual configuration
@@ -24,16 +27,18 @@ Signed-off-by: Alexander Duyck <alexander.h.duyck@linux.intel.com>
 Signed-off-by: Dan Williams <dan.j.williams@intel.com>
 Acked-by: Johannes Thumshirn <jthumshirn@suse.de>
 ---
- drivers/nvdimm/dimm.c      |    2 -
- drivers/nvdimm/dimm_devs.c |   49 +++++++++++++++++----------------------------
- drivers/nvdimm/label.c     |   38 ++++++++++++++++++++++++++++++++++
- drivers/nvdimm/label.h     |    1 
- drivers/nvdimm/nd.h        |    2 +
+ drivers/nvdimm/dimm.c      |  2 +-
+ drivers/nvdimm/dimm_devs.c | 49 +++++++++++++++-----------------------
+ drivers/nvdimm/label.c     | 38 +++++++++++++++++++++++++++++
+ drivers/nvdimm/label.h     |  1 +
+ drivers/nvdimm/nd.h        |  2 ++
  5 files changed, 61 insertions(+), 31 deletions(-)
 
+diff --git a/drivers/nvdimm/dimm.c b/drivers/nvdimm/dimm.c
+index 6c8fb7590838..07bf96948553 100644
 --- a/drivers/nvdimm/dimm.c
 +++ b/drivers/nvdimm/dimm.c
-@@ -75,7 +75,7 @@ static int nvdimm_probe(struct device *d
+@@ -75,7 +75,7 @@ static int nvdimm_probe(struct device *dev)
  	 * DIMM capacity. We fail the dimm probe to prevent regions from
  	 * attempting to parse the label area.
  	 */
@@ -42,9 +47,11 @@ Acked-by: Johannes Thumshirn <jthumshirn@suse.de>
  	if (rc == -EACCES)
  		nvdimm_set_locked(dev);
  	if (rc)
+diff --git a/drivers/nvdimm/dimm_devs.c b/drivers/nvdimm/dimm_devs.c
+index 75ac78017b15..6c3de2317390 100644
 --- a/drivers/nvdimm/dimm_devs.c
 +++ b/drivers/nvdimm/dimm_devs.c
-@@ -85,55 +85,47 @@ int nvdimm_init_nsarea(struct nvdimm_drv
+@@ -85,55 +85,47 @@ int nvdimm_init_nsarea(struct nvdimm_drvdata *ndd)
  	return cmd_rc;
  }
  
@@ -74,11 +81,11 @@ Acked-by: Johannes Thumshirn <jthumshirn@suse.de>
 +	if (offset + len > ndd->nsarea.config_size)
  		return -ENXIO;
 -	}
--
+ 
 -	ndd->data = kvmalloc(ndd->nsarea.config_size, GFP_KERNEL);
 -	if (!ndd->data)
 -		return -ENOMEM;
- 
+-
 -	max_cmd_size = min_t(u32, ndd->nsarea.config_size, ndd->nsarea.max_xfer);
 +	max_cmd_size = min_t(u32, len, ndd->nsarea.max_xfer);
  	cmd = kvzalloc(max_cmd_size + sizeof(*cmd), GFP_KERNEL);
@@ -115,11 +122,11 @@ Acked-by: Johannes Thumshirn <jthumshirn@suse.de>
 +		/* out_buf should be valid, copy it into our output buffer */
 +		memcpy(buf + buf_offset, cmd->out_buf, cmd->in_length);
  	}
--	dev_dbg(ndd->dev, "%s: len: %zu rc: %d\n", __func__, offset, rc);
+-	dev_dbg(ndd->dev, "len: %zu rc: %d\n", offset, rc);
  	kvfree(cmd);
  
  	return rc;
-@@ -151,9 +143,6 @@ int nvdimm_set_config_data(struct nvdimm
+@@ -151,9 +143,6 @@ int nvdimm_set_config_data(struct nvdimm_drvdata *ndd, size_t offset,
  	if (rc)
  		return rc;
  
@@ -129,9 +136,11 @@ Acked-by: Johannes Thumshirn <jthumshirn@suse.de>
  	if (offset + len > ndd->nsarea.config_size)
  		return -ENXIO;
  
+diff --git a/drivers/nvdimm/label.c b/drivers/nvdimm/label.c
+index 43bad0d5bdb6..563f24af01b5 100644
 --- a/drivers/nvdimm/label.c
 +++ b/drivers/nvdimm/label.c
-@@ -422,6 +422,44 @@ int nd_label_reserve_dpa(struct nvdimm_d
+@@ -417,6 +417,44 @@ int nd_label_reserve_dpa(struct nvdimm_drvdata *ndd)
  	return 0;
  }
  
@@ -176,6 +185,8 @@ Acked-by: Johannes Thumshirn <jthumshirn@suse.de>
  int nd_label_active_count(struct nvdimm_drvdata *ndd)
  {
  	struct nd_namespace_index *nsindex;
+diff --git a/drivers/nvdimm/label.h b/drivers/nvdimm/label.h
+index 18bbe183b3a9..685afb3de0fe 100644
 --- a/drivers/nvdimm/label.h
 +++ b/drivers/nvdimm/label.h
 @@ -141,6 +141,7 @@ struct nvdimm_drvdata;
@@ -186,9 +197,11 @@ Acked-by: Johannes Thumshirn <jthumshirn@suse.de>
  size_t sizeof_namespace_index(struct nvdimm_drvdata *ndd);
  int nd_label_active_count(struct nvdimm_drvdata *ndd);
  struct nd_namespace_label *nd_label_active(struct nvdimm_drvdata *ndd, int n);
+diff --git a/drivers/nvdimm/nd.h b/drivers/nvdimm/nd.h
+index 98317e7ce5b5..e79cc8e5c114 100644
 --- a/drivers/nvdimm/nd.h
 +++ b/drivers/nvdimm/nd.h
-@@ -241,6 +241,8 @@ struct nvdimm_drvdata *to_ndd(struct nd_
+@@ -241,6 +241,8 @@ struct nvdimm_drvdata *to_ndd(struct nd_mapping *nd_mapping);
  int nvdimm_check_config_data(struct device *dev);
  int nvdimm_init_nsarea(struct nvdimm_drvdata *ndd);
  int nvdimm_init_config_data(struct nvdimm_drvdata *ndd);
@@ -197,3 +210,6 @@ Acked-by: Johannes Thumshirn <jthumshirn@suse.de>
  int nvdimm_set_config_data(struct nvdimm_drvdata *ndd, size_t offset,
  		void *buf, size_t len);
  long nvdimm_clear_poison(struct device *dev, phys_addr_t phys,
+-- 
+2.23.0
+

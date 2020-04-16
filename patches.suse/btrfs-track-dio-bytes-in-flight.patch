@@ -1,0 +1,162 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Wed, 10 Apr 2019 15:56:09 -0400
+Subject: btrfs: track DIO bytes in flight
+Git-commit: 4297ff84dc24d120753e0425702e8ad9b80ed10f
+Patch-mainline: v5.2-rc1
+References: bsc#1165949
+
+When diagnosing a slowdown of generic/224 I noticed we were not doing
+anything when calling into shrink_delalloc().  This is because all
+writes in 224 are O_DIRECT, not delalloc, and thus our delalloc_bytes
+counter is 0, which short circuits most of the work inside of
+shrink_delalloc().  However O_DIRECT writes still consume metadata
+resources and generate ordered extents, which we can still wait on.
+
+Fix this by tracking outstanding DIO write bytes, and use this as well
+as the delalloc bytes counter to decide if we need to lookup and wait on
+any ordered extents.  If we have more DIO writes than delalloc bytes
+we'll go ahead and wait on any ordered extents regardless of our flush
+state as flushing delalloc is likely to not gain us anything.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+[ use dio instead of odirect in identifiers ]
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/ctree.h        |    1 +
+ fs/btrfs/disk-io.c      |   15 ++++++++++++++-
+ fs/btrfs/extent-tree.c  |   15 +++++++++++++--
+ fs/btrfs/ordered-data.c |    9 ++++++++-
+ 4 files changed, 36 insertions(+), 4 deletions(-)
+
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -1000,6 +1000,7 @@ struct btrfs_fs_info {
+ 	/* used to keep from writing metadata until there is a nice batch */
+ 	struct percpu_counter dirty_metadata_bytes;
+ 	struct percpu_counter delalloc_bytes;
++	struct percpu_counter dio_bytes;
+ 	s32 dirty_metadata_batch;
+ 	s32 delalloc_batch;
+ 
+--- a/fs/btrfs/disk-io.c
++++ b/fs/btrfs/disk-io.c
+@@ -2483,11 +2483,17 @@ int open_ctree(struct super_block *sb,
+ 		goto fail;
+ 	}
+ 
+-	ret = percpu_counter_init(&fs_info->dirty_metadata_bytes, 0, GFP_KERNEL);
++	ret = percpu_counter_init(&fs_info->dio_bytes, 0, GFP_KERNEL);
+ 	if (ret) {
+ 		err = ret;
+ 		goto fail_srcu;
+ 	}
++
++	ret = percpu_counter_init(&fs_info->dirty_metadata_bytes, 0, GFP_KERNEL);
++	if (ret) {
++		err = ret;
++		goto fail_dio_bytes;
++	}
+ 	fs_info->dirty_metadata_batch = PAGE_SIZE *
+ 					(1 + ilog2(nr_cpu_ids));
+ 
+@@ -3176,6 +3182,8 @@ fail_delalloc_bytes:
+ 	percpu_counter_destroy(&fs_info->delalloc_bytes);
+ fail_dirty_metadata_bytes:
+ 	percpu_counter_destroy(&fs_info->dirty_metadata_bytes);
++fail_dio_bytes:
++	percpu_counter_destroy(&fs_info->dio_bytes);
+ fail_srcu:
+ 	cleanup_srcu_struct(&fs_info->subvol_srcu);
+ fail:
+@@ -3872,6 +3880,10 @@ void close_ctree(struct btrfs_fs_info *f
+ 		       percpu_counter_sum(&fs_info->delalloc_bytes));
+ 	}
+ 
++	if (percpu_counter_sum(&fs_info->dio_bytes))
++		btrfs_info(fs_info, "at unmount dio bytes count %lld",
++			   percpu_counter_sum(&fs_info->dio_bytes));
++
+ 	btrfs_sysfs_remove_mounted(fs_info);
+ 	btrfs_sysfs_remove_fsid(fs_info->fs_devices);
+ 
+@@ -3903,6 +3915,7 @@ void close_ctree(struct btrfs_fs_info *f
+ 
+ 	percpu_counter_destroy(&fs_info->dirty_metadata_bytes);
+ 	percpu_counter_destroy(&fs_info->delalloc_bytes);
++	percpu_counter_destroy(&fs_info->dio_bytes);
+ 	percpu_counter_destroy(&fs_info->bio_counter);
+ 	cleanup_srcu_struct(&fs_info->subvol_srcu);
+ 
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -4861,6 +4861,7 @@ static void shrink_delalloc(struct btrfs
+ 	struct btrfs_space_info *space_info;
+ 	struct btrfs_trans_handle *trans;
+ 	u64 delalloc_bytes;
++	u64 dio_bytes;
+ 	u64 max_reclaim;
+ 	u64 items;
+ 	long time_left;
+@@ -4877,7 +4878,8 @@ static void shrink_delalloc(struct btrfs
+ 
+ 	delalloc_bytes = percpu_counter_sum_positive(
+ 						&fs_info->delalloc_bytes);
+-	if (delalloc_bytes == 0) {
++	dio_bytes = percpu_counter_sum_positive(&fs_info->dio_bytes);
++	if (delalloc_bytes == 0 && dio_bytes == 0) {
+ 		if (trans)
+ 			return;
+ 		if (wait_ordered)
+@@ -4885,8 +4887,16 @@ static void shrink_delalloc(struct btrfs
+ 		return;
+ 	}
+ 
++	/*
++	 * If we are doing more ordered than delalloc we need to just wait on
++	 * ordered extents, otherwise we'll waste time trying to flush delalloc
++	 * that likely won't give us the space back we need.
++	 */
++	if (dio_bytes > delalloc_bytes)
++		wait_ordered = true;
++
+ 	loops = 0;
+-	while (delalloc_bytes && loops < 3) {
++	while ((delalloc_bytes || dio_bytes) && loops < 3) {
+ 		max_reclaim = min(delalloc_bytes, to_reclaim);
+ 		nr_pages = max_reclaim >> PAGE_SHIFT;
+ 		btrfs_writeback_inodes_sb_nr(fs_info, nr_pages, items);
+@@ -4929,6 +4939,7 @@ skip_async:
+ 		}
+ 		delalloc_bytes = percpu_counter_sum_positive(
+ 						&fs_info->delalloc_bytes);
++		dio_bytes = percpu_counter_sum_positive(&fs_info->dio_bytes);
+ 	}
+ }
+ 
+--- a/fs/btrfs/ordered-data.c
++++ b/fs/btrfs/ordered-data.c
+@@ -208,8 +208,11 @@ static int __btrfs_add_ordered_extent(st
+ 	if (type != BTRFS_ORDERED_IO_DONE && type != BTRFS_ORDERED_COMPLETE)
+ 		set_bit(type, &entry->flags);
+ 
+-	if (dio)
++	if (dio) {
++		percpu_counter_add_batch(&fs_info->dio_bytes, len,
++					 fs_info->delalloc_batch);
+ 		set_bit(BTRFS_ORDERED_DIRECT, &entry->flags);
++	}
+ 
+ 	/* one ref for the tree */
+ 	refcount_set(&entry->refs, 1);
+@@ -612,6 +615,10 @@ void btrfs_remove_ordered_extent(struct
+ 	if (root != fs_info->tree_root)
+ 		btrfs_delalloc_release_metadata(btrfs_inode, entry->len, false);
+ 
++	if (test_bit(BTRFS_ORDERED_DIRECT, &entry->flags))
++		percpu_counter_add_batch(&fs_info->dio_bytes, -entry->len,
++					 fs_info->delalloc_batch);
++
+ 	tree = &btrfs_inode->ordered_tree;
+ 	spin_lock_irq(&tree->lock);
+ 	node = &entry->rb_node;

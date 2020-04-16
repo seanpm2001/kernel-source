@@ -1,0 +1,144 @@
+From bde709a70884bfc790da6fbc4467c91e8d41c51b Mon Sep 17 00:00:00 2001
+From: Mauricio Faria de Oliveira <mauricfo@linux.vnet.ibm.com>
+Date: Fri, 9 Mar 2018 17:45:58 -0300
+Subject: [PATCH] powerpc/mm: Fix section mismatch warning in
+ stop_machine_change_mapping()
+
+References: bsc#1148868
+Patch-mainline: v4.17-rc1
+Git-commit: bde709a70884bfc790da6fbc4467c91e8d41c51b
+
+Fix the warning messages for stop_machine_change_mapping(), and a number
+of other affected functions in its call chain.
+
+All modified functions are under CONFIG_MEMORY_HOTPLUG, so __meminit
+is okay (keeps them / does not discard them).
+
+Boot-tested on powernv/power9/radix-mmu and pseries/power8/hash-mmu.
+
+    $ make -j$(nproc) CONFIG_DEBUG_SECTION_MISMATCH=y vmlinux
+    ...
+      MODPOST vmlinux.o
+    WARNING: vmlinux.o(.text+0x6b130): Section mismatch in reference from the function stop_machine_change_mapping() to the function .meminit.text:create_physical_mapping()
+    The function stop_machine_change_mapping() references
+    the function __meminit create_physical_mapping().
+    This is often because stop_machine_change_mapping lacks a __meminit
+    annotation or the annotation of create_physical_mapping is wrong.
+
+    WARNING: vmlinux.o(.text+0x6b13c): Section mismatch in reference from the function stop_machine_change_mapping() to the function .meminit.text:create_physical_mapping()
+    The function stop_machine_change_mapping() references
+    the function __meminit create_physical_mapping().
+    This is often because stop_machine_change_mapping lacks a __meminit
+    annotation or the annotation of create_physical_mapping is wrong.
+    ...
+
+Signed-off-by: Mauricio Faria de Oliveira <mauricfo@linux.vnet.ibm.com>
+Acked-by: Balbir Singh <bsingharora@gmail.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/mm/mem.c              |  4 ++--
+ arch/powerpc/mm/pgtable-book3s64.c |  4 ++--
+ arch/powerpc/mm/pgtable-radix.c    | 12 ++++++------
+ 3 files changed, 10 insertions(+), 10 deletions(-)
+
+--- a/arch/powerpc/mm/mem.c
++++ b/arch/powerpc/mm/mem.c
+@@ -126,7 +126,7 @@ int __weak remove_section_mapping(unsign
+ 	return -ENODEV;
+ }
+ 
+-int arch_add_memory(int nid, u64 start, u64 size, struct vmem_altmap *altmap,
++int __meminit arch_add_memory(int nid, u64 start, u64 size, struct vmem_altmap *altmap,
+ 		bool want_memblock)
+ {
+ 	unsigned long start_pfn = start >> PAGE_SHIFT;
+@@ -147,7 +147,7 @@ int arch_add_memory(int nid, u64 start,
+ }
+ 
+ #ifdef CONFIG_MEMORY_HOTREMOVE
+-int arch_remove_memory(u64 start, u64 size, struct vmem_altmap *altmap)
++int __meminit arch_remove_memory(u64 start, u64 size, struct vmem_altmap *altmap)
+ {
+ 	unsigned long start_pfn = start >> PAGE_SHIFT;
+ 	unsigned long nr_pages = size >> PAGE_SHIFT;
+diff --git a/arch/powerpc/mm/pgtable-book3s64.c b/arch/powerpc/mm/pgtable-book3s64.c
+index 422e80253a33..bd6ca74acf9e 100644
+--- a/arch/powerpc/mm/pgtable-book3s64.c
++++ b/arch/powerpc/mm/pgtable-book3s64.c
+@@ -155,7 +155,7 @@ void mmu_cleanup_all(void)
+ }
+ 
+ #ifdef CONFIG_MEMORY_HOTPLUG
+-int create_section_mapping(unsigned long start, unsigned long end)
++int __meminit create_section_mapping(unsigned long start, unsigned long end)
+ {
+ 	if (radix_enabled())
+ 		return radix__create_section_mapping(start, end);
+@@ -163,7 +163,7 @@ int create_section_mapping(unsigned long start, unsigned long end)
+ 	return hash__create_section_mapping(start, end);
+ }
+ 
+-int remove_section_mapping(unsigned long start, unsigned long end)
++int __meminit remove_section_mapping(unsigned long start, unsigned long end)
+ {
+ 	if (radix_enabled())
+ 		return radix__remove_section_mapping(start, end);
+diff --git a/arch/powerpc/mm/pgtable-radix.c b/arch/powerpc/mm/pgtable-radix.c
+index 2e10a964e290..ab9db0afd2c8 100644
+--- a/arch/powerpc/mm/pgtable-radix.c
++++ b/arch/powerpc/mm/pgtable-radix.c
+@@ -695,7 +695,7 @@ struct change_mapping_params {
+ 	unsigned long aligned_end;
+ };
+ 
+-static int stop_machine_change_mapping(void *data)
++static int __meminit stop_machine_change_mapping(void *data)
+ {
+ 	struct change_mapping_params *params =
+ 			(struct change_mapping_params *)data;
+@@ -742,7 +742,7 @@ static void remove_pte_table(pte_t *pte_start, unsigned long addr,
+ /*
+  * clear the pte and potentially split the mapping helper
+  */
+-static void split_kernel_mapping(unsigned long addr, unsigned long end,
++static void __meminit split_kernel_mapping(unsigned long addr, unsigned long end,
+ 				unsigned long size, pte_t *pte)
+ {
+ 	unsigned long mask = ~(size - 1);
+@@ -835,7 +835,7 @@ static void remove_pud_table(pud_t *pud_start, unsigned long addr,
+ 	}
+ }
+ 
+-static void remove_pagetable(unsigned long start, unsigned long end)
++static void __meminit remove_pagetable(unsigned long start, unsigned long end)
+ {
+ 	unsigned long addr, next;
+ 	pud_t *pud_base;
+@@ -863,12 +863,12 @@ static void remove_pagetable(unsigned long start, unsigned long end)
+ 	radix__flush_tlb_kernel_range(start, end);
+ }
+ 
+-int __ref radix__create_section_mapping(unsigned long start, unsigned long end)
++int __meminit radix__create_section_mapping(unsigned long start, unsigned long end)
+ {
+ 	return create_physical_mapping(start, end);
+ }
+ 
+-int radix__remove_section_mapping(unsigned long start, unsigned long end)
++int __meminit radix__remove_section_mapping(unsigned long start, unsigned long end)
+ {
+ 	remove_pagetable(start, end);
+ 	return 0;
+@@ -888,7 +888,7 @@ int __meminit radix__vmemmap_create_mapping(unsigned long start,
+ }
+ 
+ #ifdef CONFIG_MEMORY_HOTPLUG
+-void radix__vmemmap_remove_mapping(unsigned long start, unsigned long page_size)
++void __meminit radix__vmemmap_remove_mapping(unsigned long start, unsigned long page_size)
+ {
+ 	remove_pagetable(start, start + page_size);
+ }
+-- 
+2.23.0
+

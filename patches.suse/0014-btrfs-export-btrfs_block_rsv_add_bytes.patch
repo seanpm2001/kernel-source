@@ -1,0 +1,104 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Wed, 19 Jun 2019 13:47:18 -0400
+Subject: btrfs: export btrfs_block_rsv_add_bytes
+Git-commit: 0b50174ad5e9fb32abcfdb10b1a14e76a72b20e6
+Patch-mainline: v5.3-rc1
+References: bsc#1165949
+
+This is used in a few places, we need to make sure it's exported so we
+can move it around.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/block-rsv.h   |    2 ++
+ fs/btrfs/extent-tree.c |   18 +++++++++---------
+ 2 files changed, 11 insertions(+), 9 deletions(-)
+
+--- a/fs/btrfs/block-rsv.h
++++ b/fs/btrfs/block-rsv.h
+@@ -73,5 +73,7 @@ int btrfs_cond_migrate_bytes(struct btrf
+ void btrfs_block_rsv_release(struct btrfs_fs_info *fs_info,
+ 			     struct btrfs_block_rsv *block_rsv,
+ 			     u64 num_bytes);
++void btrfs_block_rsv_add_bytes(struct btrfs_block_rsv *block_rsv,
++			       u64 num_bytes, bool update_size);
+ 
+ #endif /* BTRFS_BLOCK_RSV_H */
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -4596,8 +4596,8 @@ int btrfs_block_rsv_use_bytes(struct btr
+ 	return ret;
+ }
+ 
+-static void block_rsv_add_bytes(struct btrfs_block_rsv *block_rsv,
+-				u64 num_bytes, int update_size)
++void btrfs_block_rsv_add_bytes(struct btrfs_block_rsv *block_rsv, u64 num_bytes,
++			       bool update_size)
+ {
+ 	spin_lock(&block_rsv->lock);
+ 	block_rsv->reserved += num_bytes;
+@@ -4629,7 +4629,7 @@ int btrfs_cond_migrate_bytes(struct btrf
+ 		global_rsv->full = 0;
+ 	spin_unlock(&global_rsv->lock);
+ 
+-	block_rsv_add_bytes(dest, num_bytes, 1);
++	btrfs_block_rsv_add_bytes(dest, num_bytes, 1);
+ 	return 0;
+ }
+ 
+@@ -4711,7 +4711,7 @@ int btrfs_delayed_refs_rsv_refill(struct
+ 				     num_bytes, flush);
+ 	if (ret)
+ 		return ret;
+-	block_rsv_add_bytes(block_rsv, num_bytes, 0);
++	btrfs_block_rsv_add_bytes(block_rsv, num_bytes, 0);
+ 	trace_btrfs_space_reservation(fs_info, "delayed_refs_rsv",
+ 				      0, num_bytes, 1);
+ 	return 0;
+@@ -4783,7 +4783,7 @@ int btrfs_block_rsv_migrate(struct btrfs
+ 	if (ret)
+ 		return ret;
+ 
+-	block_rsv_add_bytes(dst, num_bytes, update_size);
++	btrfs_block_rsv_add_bytes(dst, num_bytes, update_size);
+ 	return 0;
+ }
+ 
+@@ -4836,7 +4836,7 @@ int btrfs_block_rsv_add(struct btrfs_roo
+ 
+ 	ret = btrfs_reserve_metadata_bytes(root, block_rsv, num_bytes, flush);
+ 	if (!ret) {
+-		block_rsv_add_bytes(block_rsv, num_bytes, 1);
++		btrfs_block_rsv_add_bytes(block_rsv, num_bytes, 1);
+ 		return 0;
+ 	}
+ 
+@@ -4883,7 +4883,7 @@ int btrfs_block_rsv_refill(struct btrfs_
+ 
+ 	ret = btrfs_reserve_metadata_bytes(root, block_rsv, num_bytes, flush);
+ 	if (!ret) {
+-		block_rsv_add_bytes(block_rsv, num_bytes, 0);
++		btrfs_block_rsv_add_bytes(block_rsv, num_bytes, 0);
+ 		return 0;
+ 	}
+ 
+@@ -5296,7 +5296,7 @@ int btrfs_delalloc_reserve_metadata(stru
+ 	spin_unlock(&inode->lock);
+ 
+ 	/* Now we can safely add our space to our block rsv */
+-	block_rsv_add_bytes(block_rsv, meta_reserve, false);
++	btrfs_block_rsv_add_bytes(block_rsv, meta_reserve, false);
+ 	trace_btrfs_space_reservation(root->fs_info, "delalloc",
+ 				      btrfs_ino(inode), meta_reserve, 1);
+ 
+@@ -7550,7 +7550,7 @@ try_reserve:
+ static void unuse_block_rsv(struct btrfs_fs_info *fs_info,
+ 			    struct btrfs_block_rsv *block_rsv, u32 blocksize)
+ {
+-	block_rsv_add_bytes(block_rsv, blocksize, 0);
++	btrfs_block_rsv_add_bytes(block_rsv, blocksize, 0);
+ 	block_rsv_release_bytes(fs_info, block_rsv, NULL, 0, NULL);
+ }
+ 

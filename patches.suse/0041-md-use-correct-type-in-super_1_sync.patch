@@ -1,0 +1,35 @@
+From ae50640bebc48f1fc0092f16ea004c7c4d12c985 Mon Sep 17 00:00:00 2001
+From: Christoph Hellwig <hch@lst.de>
+Date: Thu, 4 Apr 2019 18:56:13 +0200
+Subject: [PATCH] md: use correct type in super_1_sync
+Git-commit: ae50640bebc48f1fc0092f16ea004c7c4d12c985
+Patch-mainline: v5.2-rc1
+References: bsc#1166003
+
+If we want to convert from a little endian format we need to cast
+to a little endian type, otherwise sparse will be unhappy.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Song Liu <songliubraving@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/md.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/md/md.c b/drivers/md/md.c
+index 7a74e2de40b5..4a31380b0eff 100644
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -1872,7 +1872,7 @@ static void super_1_sync(struct mddev *mddev, struct md_rdev *rdev)
+ 		md_error(mddev, rdev);
+ 	else {
+ 		struct badblocks *bb = &rdev->badblocks;
+-		u64 *bbp = (u64 *)page_address(rdev->bb_page);
++		__le64 *bbp = (__le64 *)page_address(rdev->bb_page);
+ 		u64 *p = bb->page;
+ 		sb->feature_map |= cpu_to_le32(MD_FEATURE_BAD_BLOCKS);
+ 		if (bb->changed) {
+-- 
+2.25.0
+

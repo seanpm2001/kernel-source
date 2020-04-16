@@ -34,8 +34,8 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  };
  
  #ifdef CONFIG_BLOCK
-@@ -179,6 +180,11 @@ struct ceph_msg_data {
- 			unsigned int	alignment;	/* first page */
+@@ -180,6 +181,11 @@ struct ceph_msg_data {
+ 			bool		own_pages;
  		};
  		struct ceph_pagelist	*pagelist;
 +		struct {
@@ -46,7 +46,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  	};
  };
  
-@@ -203,6 +209,10 @@ struct ceph_msg_data_cursor {
+@@ -204,6 +210,10 @@ struct ceph_msg_data_cursor {
  			struct page	*page;		/* page from list */
  			size_t		offset;		/* bytes from list */
  		};
@@ -57,7 +57,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  	};
  };
  
-@@ -363,6 +373,8 @@ void ceph_msg_data_add_bio(struct ceph_m
+@@ -365,6 +375,8 @@ void ceph_msg_data_add_bio(struct ceph_m
  #endif /* CONFIG_BLOCK */
  void ceph_msg_data_add_bvecs(struct ceph_msg *msg,
  			     struct ceph_bvec_iter *bvec_pos);
@@ -103,7 +103,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  					struct ceph_pagelist *pagelist);
 --- a/net/ceph/messenger.c
 +++ b/net/ceph/messenger.c
-@@ -920,6 +920,75 @@ static bool ceph_msg_data_bvecs_advance(
+@@ -922,6 +922,75 @@ static bool ceph_msg_data_bvecs_advance(
  }
  
  /*
@@ -179,7 +179,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
   * For a page array, a piece comes from the first page in the array
   * that has not already been fully consumed.
   */
-@@ -1105,6 +1174,9 @@ static void __ceph_msg_data_cursor_init(
+@@ -1107,6 +1176,9 @@ static void __ceph_msg_data_cursor_init(
  	case CEPH_MSG_DATA_BVECS:
  		ceph_msg_data_bvecs_cursor_init(cursor, length);
  		break;
@@ -189,7 +189,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  	case CEPH_MSG_DATA_NONE:
  	default:
  		/* BUG(); */
-@@ -1153,6 +1225,9 @@ static struct page *ceph_msg_data_next(s
+@@ -1155,6 +1227,9 @@ static struct page *ceph_msg_data_next(s
  	case CEPH_MSG_DATA_BVECS:
  		page = ceph_msg_data_bvecs_next(cursor, page_offset, length);
  		break;
@@ -199,7 +199,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  	case CEPH_MSG_DATA_NONE:
  	default:
  		page = NULL;
-@@ -1194,6 +1269,9 @@ static void ceph_msg_data_advance(struct
+@@ -1196,6 +1271,9 @@ static void ceph_msg_data_advance(struct
  	case CEPH_MSG_DATA_BVECS:
  		new_piece = ceph_msg_data_bvecs_advance(cursor, bytes);
  		break;
@@ -209,7 +209,7 @@ Acked-by: Luis Henriques <lhenriques@suse.com>
  	case CEPH_MSG_DATA_NONE:
  	default:
  		BUG();
-@@ -3307,6 +3385,23 @@ void ceph_msg_data_add_bvecs(struct ceph
+@@ -3311,6 +3389,23 @@ void ceph_msg_data_add_bvecs(struct ceph
  }
  EXPORT_SYMBOL(ceph_msg_data_add_bvecs);
  

@@ -35,20 +35,18 @@ and switches all users of the fsid to the new logic.
 
 Signed-off-by: Nikolay Borisov <nborisov@suse.com>
 ---
- fs/btrfs/ctree.c                | 10 ++---
- fs/btrfs/ctree.h                | 11 ++++--
- fs/btrfs/disk-io.c              | 31 ++++++++++++---
- fs/btrfs/volumes.c              | 70 ++++++++++++++++++++++++++-------
- fs/btrfs/volumes.h              |  1 +
- include/uapi/linux/btrfs.h      |  1 +
- include/uapi/linux/btrfs_tree.h |  1 +
+ fs/btrfs/ctree.c                |   10 ++---
+ fs/btrfs/ctree.h                |   11 ++++--
+ fs/btrfs/disk-io.c              |   31 ++++++++++++++---
+ fs/btrfs/volumes.c              |   70 +++++++++++++++++++++++++++++++---------
+ fs/btrfs/volumes.h              |    1 
+ include/uapi/linux/btrfs.h      |    1 
+ include/uapi/linux/btrfs_tree.h |    1 
  7 files changed, 96 insertions(+), 29 deletions(-)
 
-diff --git a/fs/btrfs/ctree.c b/fs/btrfs/ctree.c
-index f70741084f2d..c4a39eef23a0 100644
 --- a/fs/btrfs/ctree.c
 +++ b/fs/btrfs/ctree.c
-@@ -275,7 +275,7 @@ int btrfs_copy_root(struct btrfs_trans_handle *trans,
+@@ -240,7 +240,7 @@ int btrfs_copy_root(struct btrfs_trans_h
  	else
  		btrfs_set_header_owner(cow, new_root_objectid);
  
@@ -57,7 +55,7 @@ index f70741084f2d..c4a39eef23a0 100644
  
  	WARN_ON(btrfs_header_generation(buf) > trans->transid);
  	if (new_root_objectid == BTRFS_TREE_RELOC_OBJECTID)
-@@ -1150,7 +1150,7 @@ static noinline int __btrfs_cow_block(struct btrfs_trans_handle *trans,
+@@ -1152,7 +1152,7 @@ static noinline int __btrfs_cow_block(st
  	else
  		btrfs_set_header_owner(cow, root->root_key.objectid);
  
@@ -66,7 +64,7 @@ index f70741084f2d..c4a39eef23a0 100644
  
  	ret = update_ref_for_cow(trans, root, buf, cow, &last_ref);
  	if (ret) {
-@@ -3392,7 +3392,7 @@ static noinline int insert_new_root(struct btrfs_trans_handle *trans,
+@@ -3444,7 +3444,7 @@ static noinline int insert_new_root(stru
  	btrfs_set_header_backref_rev(c, BTRFS_MIXED_BACKREF_REV);
  	btrfs_set_header_owner(c, root->root_key.objectid);
  
@@ -75,7 +73,7 @@ index f70741084f2d..c4a39eef23a0 100644
  	write_extent_buffer_chunk_tree_uuid(c, fs_info->chunk_tree_uuid);
  
  	btrfs_set_node_key(c, &lower_key, 0);
-@@ -3527,7 +3527,7 @@ static noinline int split_node(struct btrfs_trans_handle *trans,
+@@ -3579,7 +3579,7 @@ static noinline int split_node(struct bt
  	btrfs_set_header_generation(split, trans->transid);
  	btrfs_set_header_backref_rev(split, BTRFS_MIXED_BACKREF_REV);
  	btrfs_set_header_owner(split, root->root_key.objectid);
@@ -84,7 +82,7 @@ index f70741084f2d..c4a39eef23a0 100644
  	write_extent_buffer_chunk_tree_uuid(split, fs_info->chunk_tree_uuid);
  
  	ret = tree_mod_log_eb_copy(fs_info, split, c, 0, mid, c_nritems - mid);
-@@ -4320,7 +4320,7 @@ static noinline int split_leaf(struct btrfs_trans_handle *trans,
+@@ -4372,7 +4372,7 @@ again:
  	btrfs_set_header_backref_rev(right, BTRFS_MIXED_BACKREF_REV);
  	btrfs_set_header_owner(right, root->root_key.objectid);
  	btrfs_set_header_level(right, 0);
@@ -93,11 +91,9 @@ index f70741084f2d..c4a39eef23a0 100644
  	write_extent_buffer_chunk_tree_uuid(right, fs_info->chunk_tree_uuid);
  
  	if (split == 0) {
-diff --git a/fs/btrfs/ctree.h b/fs/btrfs/ctree.h
-index da67736c382d..0076d2ecb2a0 100644
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -208,7 +208,7 @@ struct btrfs_root_backup {
+@@ -209,7 +209,7 @@ struct btrfs_root_backup {
  struct btrfs_super_block {
  	u8 csum[BTRFS_CSUM_SIZE];
  	/* the first 4 fields must match struct btrfs_header */
@@ -106,7 +102,7 @@ index da67736c382d..0076d2ecb2a0 100644
  	__le64 bytenr; /* this block number */
  	__le64 flags;
  
-@@ -245,8 +245,11 @@ struct btrfs_super_block {
+@@ -246,8 +246,11 @@ struct btrfs_super_block {
  	__le64 cache_generation;
  	__le64 uuid_tree_generation;
  
@@ -119,7 +115,7 @@ index da67736c382d..0076d2ecb2a0 100644
  	u8 sys_chunk_array[BTRFS_SYSTEM_CHUNK_ARRAY_SIZE];
  	struct btrfs_root_backup super_roots[BTRFS_NUM_BACKUP_ROOTS];
  } __attribute__ ((__packed__));
-@@ -275,7 +278,8 @@ struct btrfs_super_block {
+@@ -277,7 +280,8 @@ struct btrfs_super_block {
  	 BTRFS_FEATURE_INCOMPAT_RAID56 |		\
  	 BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF |		\
  	 BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA |	\
@@ -129,7 +125,7 @@ index da67736c382d..0076d2ecb2a0 100644
  
  #define BTRFS_FEATURE_INCOMPAT_SAFE_SET			\
  	(BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF)
-@@ -751,6 +755,7 @@ struct btrfs_delayed_root;
+@@ -760,6 +764,7 @@ struct btrfs_delayed_root;
  
  struct btrfs_fs_info {
  	u8 fsid[BTRFS_FSID_SIZE];
@@ -137,11 +133,9 @@ index da67736c382d..0076d2ecb2a0 100644
  	u8 chunk_tree_uuid[BTRFS_UUID_SIZE];
  	unsigned long flags;
  	struct btrfs_root *extent_root;
-diff --git a/fs/btrfs/disk-io.c b/fs/btrfs/disk-io.c
-index c33decceb3e6..05ee2399fb20 100644
 --- a/fs/btrfs/disk-io.c
 +++ b/fs/btrfs/disk-io.c
-@@ -579,7 +579,7 @@ static int csum_dirty_buffer(struct btrfs_fs_info *fs_info, struct page *page)
+@@ -542,7 +542,7 @@ static int csum_dirty_buffer(struct btrf
  	if (WARN_ON(!PageUptodate(page)))
  		return -EUCLEAN;
  
@@ -149,8 +143,8 @@ index c33decceb3e6..05ee2399fb20 100644
 +	ASSERT(memcmp_extent_buffer(eb, fs_info->metadata_fsid,
  			btrfs_header_fsid(), BTRFS_FSID_SIZE) == 0);
  
- 	return csum_tree_block(fs_info, eb, 0);
-@@ -594,7 +594,19 @@ static int check_tree_block_fsid(struct btrfs_fs_info *fs_info,
+ 	if (csum_tree_block(eb, result))
+@@ -561,7 +561,19 @@ static int check_tree_block_fsid(struct
  
  	read_extent_buffer(eb, fsid, btrfs_header_fsid(), BTRFS_FSID_SIZE);
  	while (fs_devices) {
@@ -171,7 +165,7 @@ index c33decceb3e6..05ee2399fb20 100644
  			ret = 0;
  			break;
  		}
-@@ -1355,7 +1367,7 @@ struct btrfs_root *btrfs_create_tree(struct btrfs_trans_handle *trans,
+@@ -1338,7 +1350,7 @@ struct btrfs_root *btrfs_create_tree(str
  	btrfs_set_header_owner(leaf, objectid);
  	root->node = leaf;
  
@@ -180,7 +174,7 @@ index c33decceb3e6..05ee2399fb20 100644
  	write_extent_buffer_chunk_tree_uuid(leaf, fs_info->chunk_tree_uuid);
  	btrfs_mark_buffer_dirty(leaf);
  
-@@ -1436,7 +1448,7 @@ static struct btrfs_root *alloc_log_tree(struct btrfs_trans_handle *trans,
+@@ -1419,7 +1431,7 @@ static struct btrfs_root *alloc_log_tree
  	btrfs_set_header_owner(leaf, BTRFS_TREE_LOG_OBJECTID);
  	root->node = leaf;
  
@@ -189,7 +183,7 @@ index c33decceb3e6..05ee2399fb20 100644
  	btrfs_mark_buffer_dirty(root->node);
  	btrfs_tree_unlock(root->node);
  	return root;
-@@ -2717,6 +2729,12 @@ int open_ctree(struct super_block *sb,
+@@ -2699,6 +2711,12 @@ int open_ctree(struct super_block *sb,
  	brelse(bh);
  
  	memcpy(fs_info->fsid, fs_info->super_copy->fsid, BTRFS_FSID_SIZE);
@@ -202,7 +196,7 @@ index c33decceb3e6..05ee2399fb20 100644
  
  	ret = btrfs_check_super_valid(fs_info);
  	if (ret) {
-@@ -3693,7 +3711,8 @@ int write_all_supers(struct btrfs_fs_info *fs_info, int max_mirrors)
+@@ -3662,7 +3680,8 @@ int write_all_supers(struct btrfs_fs_inf
  		btrfs_set_stack_device_io_width(dev_item, dev->io_width);
  		btrfs_set_stack_device_sector_size(dev_item, dev->sector_size);
  		memcpy(dev_item->uuid, dev->uuid, BTRFS_UUID_SIZE);
@@ -212,7 +206,7 @@ index c33decceb3e6..05ee2399fb20 100644
  
  		flags = btrfs_super_flags(sb);
  		btrfs_set_super_flags(sb, flags | BTRFS_HEADER_FLAG_WRITTEN);
-@@ -4141,7 +4160,7 @@ static int btrfs_check_super_valid(struct btrfs_fs_info *fs_info)
+@@ -4106,7 +4125,7 @@ static int btrfs_check_super_valid(struc
  		ret = -EINVAL;
  	}
  
@@ -221,11 +215,9 @@ index c33decceb3e6..05ee2399fb20 100644
  		btrfs_err(fs_info,
  			   "dev_item UUID does not match fsid: %pU != %pU",
  			   fs_info->fsid, sb->dev_item.fsid);
-diff --git a/fs/btrfs/volumes.c b/fs/btrfs/volumes.c
-index 94326471bae6..52e4a63dc01a 100644
 --- a/fs/btrfs/volumes.c
 +++ b/fs/btrfs/volumes.c
-@@ -172,14 +172,15 @@ static struct btrfs_fs_devices *__alloc_fs_devices(void)
+@@ -173,14 +173,15 @@ static struct btrfs_fs_devices *__alloc_
  
  /**
   * alloc_fs_devices - allocate struct btrfs_fs_devices
@@ -244,7 +236,7 @@ index 94326471bae6..52e4a63dc01a 100644
  {
  	struct btrfs_fs_devices *fs_devs;
  
-@@ -192,6 +193,11 @@ static struct btrfs_fs_devices *alloc_fs_devices(const u8 *fsid)
+@@ -193,6 +194,11 @@ static struct btrfs_fs_devices *alloc_fs
  	else
  		generate_random_uuid(fs_devs->fsid);
  
@@ -256,7 +248,7 @@ index 94326471bae6..52e4a63dc01a 100644
  	return fs_devs;
  }
  
-@@ -272,13 +278,24 @@ static noinline struct btrfs_device *__find_device(struct list_head *head,
+@@ -273,13 +279,24 @@ static noinline struct btrfs_device *__f
  	return NULL;
  }
  
@@ -284,7 +276,7 @@ index 94326471bae6..52e4a63dc01a 100644
  	}
  	return NULL;
  }
-@@ -615,10 +632,21 @@ static noinline int device_list_add(const char *path,
+@@ -616,10 +633,21 @@ static noinline int device_list_add(cons
  	struct rcu_string *name;
  	int ret = 0;
  	u64 found_transid = btrfs_super_generation(disk_super);
@@ -308,7 +300,7 @@ index 94326471bae6..52e4a63dc01a 100644
  		if (IS_ERR(fs_devices))
  			return PTR_ERR(fs_devices);
  
-@@ -731,7 +759,7 @@ static struct btrfs_fs_devices *clone_fs_devices(struct btrfs_fs_devices *orig)
+@@ -761,7 +789,7 @@ static struct btrfs_fs_devices *clone_fs
  	struct btrfs_device *device;
  	struct btrfs_device *orig_dev;
  
@@ -317,7 +309,7 @@ index 94326471bae6..52e4a63dc01a 100644
  	if (IS_ERR(fs_devices))
  		return fs_devices;
  
-@@ -1006,6 +1034,11 @@ static int __btrfs_open_devices(struct btrfs_fs_devices *fs_devices,
+@@ -1036,6 +1064,11 @@ static int __btrfs_open_devices(struct b
  
  		if (btrfs_super_flags(disk_super) & BTRFS_SUPER_FLAG_SEEDING) {
  			device->writeable = 0;
@@ -329,7 +321,7 @@ index 94326471bae6..52e4a63dc01a 100644
  		} else {
  			device->writeable = !bdev_read_only(bdev);
  			seeding = 0;
-@@ -1717,7 +1750,7 @@ static int btrfs_add_device(struct btrfs_trans_handle *trans,
+@@ -1747,7 +1780,7 @@ static int btrfs_add_device(struct btrfs
  	ptr = btrfs_device_uuid(dev_item);
  	write_extent_buffer(leaf, device->uuid, ptr, BTRFS_UUID_SIZE);
  	ptr = btrfs_device_fsid(dev_item);
@@ -338,7 +330,7 @@ index 94326471bae6..52e4a63dc01a 100644
  	btrfs_mark_buffer_dirty(leaf);
  
  	ret = 0;
-@@ -2115,7 +2148,12 @@ static int btrfs_find_device_by_path(struct btrfs_fs_info *fs_info,
+@@ -2145,7 +2178,12 @@ static int btrfs_find_device_by_path(str
  	disk_super = (struct btrfs_super_block *)bh->b_data;
  	devid = btrfs_stack_device_id(&disk_super->dev_item);
  	dev_uuid = disk_super->dev_item.uuid;
@@ -352,7 +344,7 @@ index 94326471bae6..52e4a63dc01a 100644
  	brelse(bh);
  	if (!*device)
  		ret = -ENOENT;
-@@ -2230,6 +2268,8 @@ static int btrfs_prepare_sprout(struct btrfs_fs_info *fs_info)
+@@ -2256,6 +2294,8 @@ static int btrfs_prepare_sprout(struct b
  
  	generate_random_uuid(fs_devices->fsid);
  	memcpy(fs_info->fsid, fs_devices->fsid, BTRFS_FSID_SIZE);
@@ -361,7 +353,7 @@ index 94326471bae6..52e4a63dc01a 100644
  	memcpy(disk_super->fsid, fs_devices->fsid, BTRFS_FSID_SIZE);
  	mutex_unlock(&fs_info->fs_devices->device_list_mutex);
  
-@@ -6356,7 +6396,7 @@ struct btrfs_device *btrfs_find_device(struct btrfs_fs_info *fs_info, u64 devid,
+@@ -6386,7 +6426,7 @@ struct btrfs_device *btrfs_find_device(s
  	cur_devices = fs_info->fs_devices;
  	while (cur_devices) {
  		if (!fsid ||
@@ -370,7 +362,7 @@ index 94326471bae6..52e4a63dc01a 100644
  			device = __find_device(&cur_devices->devices,
  					       devid, uuid);
  			if (device)
-@@ -6640,12 +6680,12 @@ static struct btrfs_fs_devices *open_seed_devices(struct btrfs_fs_info *fs_info,
+@@ -6611,12 +6651,12 @@ static struct btrfs_fs_devices *open_see
  		fs_devices = fs_devices->seed;
  	}
  
@@ -385,7 +377,7 @@ index 94326471bae6..52e4a63dc01a 100644
  		if (IS_ERR(fs_devices))
  			return fs_devices;
  
-@@ -6696,7 +6736,7 @@ static int read_one_dev(struct btrfs_fs_info *fs_info,
+@@ -6667,7 +6707,7 @@ static int read_one_dev(struct btrfs_fs_
  	read_extent_buffer(leaf, fs_uuid, btrfs_device_fsid(dev_item),
  			   BTRFS_UUID_SIZE);
  
@@ -394,11 +386,9 @@ index 94326471bae6..52e4a63dc01a 100644
  		fs_devices = open_seed_devices(fs_info, fs_uuid);
  		if (IS_ERR(fs_devices))
  			return PTR_ERR(fs_devices);
-diff --git a/fs/btrfs/volumes.h b/fs/btrfs/volumes.h
-index 6d1b48929104..8777517317cf 100644
 --- a/fs/btrfs/volumes.h
 +++ b/fs/btrfs/volumes.h
-@@ -221,6 +221,7 @@ BTRFS_DEVICE_GETSET_FUNCS(bytes_used);
+@@ -228,6 +228,7 @@ BTRFS_DEVICE_GETSET_FUNCS(bytes_used);
  
  struct btrfs_fs_devices {
  	u8 fsid[BTRFS_FSID_SIZE]; /* FS specific uuid */
@@ -406,11 +396,9 @@ index 6d1b48929104..8777517317cf 100644
  
  	u64 num_devices;
  	u64 open_devices;
-diff --git a/include/uapi/linux/btrfs.h b/include/uapi/linux/btrfs.h
-index a456e5309238..d53aa5a5d806 100644
 --- a/include/uapi/linux/btrfs.h
 +++ b/include/uapi/linux/btrfs.h
-@@ -273,6 +273,7 @@ struct btrfs_ioctl_fs_info_args {
+@@ -267,6 +267,7 @@ struct btrfs_ioctl_fs_info_args {
  #define BTRFS_FEATURE_INCOMPAT_RAID56		(1ULL << 7)
  #define BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA	(1ULL << 8)
  #define BTRFS_FEATURE_INCOMPAT_NO_HOLES		(1ULL << 9)
@@ -418,8 +406,6 @@ index a456e5309238..d53aa5a5d806 100644
  
  struct btrfs_ioctl_feature_flags {
  	__u64 compat_flags;
-diff --git a/include/uapi/linux/btrfs_tree.h b/include/uapi/linux/btrfs_tree.h
-index 3142645a27f5..8afb27552130 100644
 --- a/include/uapi/linux/btrfs_tree.h
 +++ b/include/uapi/linux/btrfs_tree.h
 @@ -455,6 +455,7 @@ struct btrfs_free_space_header {
@@ -430,6 +416,3 @@ index 3142645a27f5..8afb27552130 100644
  
  
  /*
--- 
-2.17.1
-

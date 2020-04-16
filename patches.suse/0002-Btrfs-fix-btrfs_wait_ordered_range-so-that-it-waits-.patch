@@ -1,0 +1,63 @@
+From b9cd174dedd6b9573ec0e21b9c949cd26af92e0c Mon Sep 17 00:00:00 2001
+From: Filipe Manana <fdmanana@suse.com>
+Date: Thu, 13 Feb 2020 12:29:50 +0000
+Patch-mainline: v5.6-rc3
+Git-commit: e75fd33b3f744f644061a4f9662bd63f5434f806
+References: bsc#1163508
+Subject: [PATCH 2/2] Btrfs: fix btrfs_wait_ordered_range() so that it waits
+ for all ordered extents
+
+In btrfs_wait_ordered_range() once we find an ordered extent that has
+finished with an error we exit the loop and don't wait for any other
+ordered extents that might be still in progress.
+
+All the users of btrfs_wait_ordered_range() expect that there are no more
+ordered extents in progress after that function returns. So past fixes
+such like the ones from the two following commits:
+
+  ff612ba7849964 ("btrfs: fix panic during relocation after ENOSPC before
+                   writeback happens")
+
+  28aeeac1dd3080 ("Btrfs: fix panic when starting bg cache writeout after
+                   IO error")
+
+don't work when there are multiple ordered extents in the range.
+
+Fix that by making btrfs_wait_ordered_range() wait for all ordered extents
+even after it finds one that had an error.
+
+Link: https://github.com/kdave/btrfs-progs/issues/228#issuecomment-569777554
+CC: stable@vger.kernel.org # 4.4+
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Reviewed-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: Filipe Manana <fdmanana@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+(cherry picked from commit e75fd33b3f744f644061a4f9662bd63f5434f806)
+---
+ fs/btrfs/ordered-data.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/fs/btrfs/ordered-data.c b/fs/btrfs/ordered-data.c
+index 4f51e634f22d..4038fa4e2a87 100644
+--- a/fs/btrfs/ordered-data.c
++++ b/fs/btrfs/ordered-data.c
+@@ -859,10 +859,15 @@ int btrfs_wait_ordered_range(struct inode *inode, u64 start, u64 len)
+ 		}
+ 		btrfs_start_ordered_extent(inode, ordered, 1);
+ 		end = ordered->file_offset;
++		/*
++		 * If the ordered extent had an error save the error but don't
++		 * exit without waiting first for all other ordered extents in
++		 * the range to complete.
++		 */
+ 		if (test_bit(BTRFS_ORDERED_IOERR, &ordered->flags))
+ 			ret = -EIO;
+ 		btrfs_put_ordered_extent(ordered);
+-		if (ret || end == 0 || end == start)
++		if (end == 0 || end == start)
+ 			break;
+ 		end--;
+ 	}
+-- 
+2.16.4
+

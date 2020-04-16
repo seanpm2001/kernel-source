@@ -1,0 +1,272 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Tue, 18 Jun 2019 16:09:16 -0400
+Subject: btrfs: move space_info to space-info.h
+Git-commit: 8719aaae8d696bf0c73f74e6d6cc75451b50d5df
+Patch-mainline: v5.3-rc1
+References: bsc#1165949
+
+Migrate the struct definition and the one helper that's in ctree.h into
+space-info.h
+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/ctree.h            |   73 -----------------------------------------
+ fs/btrfs/disk-io.c          |    1 
+ fs/btrfs/extent-tree.c      |    1 
+ fs/btrfs/free-space-cache.c |    1 
+ fs/btrfs/ioctl.c            |    1 
+ fs/btrfs/space-info.h       |   77 ++++++++++++++++++++++++++++++++++++++++++++
+ fs/btrfs/super.c            |    1 
+ fs/btrfs/sysfs.c            |    1 
+ fs/btrfs/volumes.c          |    1 
+ 9 files changed, 85 insertions(+), 72 deletions(-)
+
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -48,6 +48,7 @@ struct btrfs_trans_handle;
+ struct btrfs_transaction;
+ struct btrfs_pending_snapshot;
+ struct btrfs_delayed_ref_root;
++struct btrfs_space_info;
+ extern struct kmem_cache *btrfs_trans_handle_cachep;
+ extern struct kmem_cache *btrfs_transaction_cachep;
+ extern struct kmem_cache *btrfs_bit_radix_cachep;
+@@ -388,72 +389,6 @@ struct raid_kobject {
+ 	struct list_head list;
+ };
+ 
+-struct btrfs_space_info {
+-	spinlock_t lock;
+-
+-	u64 total_bytes;	/* total bytes in the space,
+-				   this doesn't take mirrors into account */
+-	u64 bytes_used;		/* total bytes used,
+-				   this doesn't take mirrors into account */
+-	u64 bytes_pinned;	/* total bytes pinned, will be freed when the
+-				   transaction finishes */
+-	u64 bytes_reserved;	/* total bytes the allocator has reserved for
+-				   current allocations */
+-	u64 bytes_may_use;	/* number of bytes that may be used for
+-				   delalloc/allocations */
+-	u64 bytes_readonly;	/* total bytes that are read only */
+-
+-	u64 max_extent_size;	/* This will hold the maximum extent size of
+-				   the space info if we had an ENOSPC in the
+-				   allocator. */
+-
+-	unsigned int full:1;	/* indicates that we cannot allocate any more
+-				   chunks for this space */
+-	unsigned int chunk_alloc:1;	/* set if we are allocating a chunk */
+-
+-	unsigned int flush:1;		/* set if we are trying to make space */
+-
+-	unsigned int force_alloc;	/* set if we need to force a chunk
+-					   alloc for this space */
+-
+-	u64 disk_used;		/* total bytes used on disk */
+-	u64 disk_total;		/* total bytes on disk, takes mirrors into
+-				   account */
+-
+-	u64 flags;
+-
+-	/*
+-	 * bytes_pinned is kept in line with what is actually pinned, as in
+-	 * we've called update_block_group and dropped the bytes_used counter
+-	 * and increased the bytes_pinned counter.  However this means that
+-	 * bytes_pinned does not reflect the bytes that will be pinned once the
+-	 * delayed refs are flushed, so this counter is inc'ed every time we
+-	 * call btrfs_free_extent so it is a realtime count of what will be
+-	 * freed once the transaction is committed.  It will be zeroed every
+-	 * time the transaction commits.
+-	 */
+-	struct percpu_counter total_bytes_pinned;
+-
+-	struct list_head list;
+-	/* Protected by the spinlock 'lock'. */
+-	struct list_head ro_bgs;
+-	struct list_head priority_tickets;
+-	struct list_head tickets;
+-	/*
+-	 * tickets_id just indicates the next ticket will be handled, so note
+-	 * it's not stored per ticket.
+-	 */
+-	u64 tickets_id;
+-
+-	struct rw_semaphore groups_sem;
+-	/* for block groups in our same type */
+-	struct list_head block_groups[BTRFS_NR_RAID_TYPES];
+-	wait_queue_head_t wait;
+-
+-	struct kobject kobj;
+-	struct kobject *block_group_kobjs[BTRFS_NR_RAID_TYPES];
+-};
+-
+ #define	BTRFS_BLOCK_RSV_GLOBAL		1
+ #define	BTRFS_BLOCK_RSV_DELALLOC	2
+ #define	BTRFS_BLOCK_RSV_TRANS		3
+@@ -2668,12 +2603,6 @@ BTRFS_SETGET_STACK_FUNCS(stack_dev_repla
+ 	((unsigned long)(btrfs_leaf_data(leaf) + \
+ 	btrfs_item_offset_nr(leaf, slot)))
+ 
+-static inline bool btrfs_mixed_space_info(struct btrfs_space_info *space_info)
+-{
+-	return ((space_info->flags & BTRFS_BLOCK_GROUP_METADATA) &&
+-		(space_info->flags & BTRFS_BLOCK_GROUP_DATA));
+-}
+-
+ static inline gfp_t btrfs_alloc_write_mask(struct address_space *mapping)
+ {
+ 	return mapping_gfp_constraint(mapping, ~__GFP_FS);
+--- a/fs/btrfs/disk-io.c
++++ b/fs/btrfs/disk-io.c
+@@ -51,6 +51,7 @@
+ #include "qgroup.h"
+ #include "compression.h"
+ #include "tree-checker.h"
++#include "space-info.h"
+ 
+ #ifdef CONFIG_X86
+ #include <asm/cpufeature.h>
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -39,6 +39,7 @@
+ #include "math.h"
+ #include "sysfs.h"
+ #include "qgroup.h"
++#include "space-info.h"
+ 
+ #undef SCRAMBLE_DELAYED_REFS
+ 
+--- a/fs/btrfs/free-space-cache.c
++++ b/fs/btrfs/free-space-cache.c
+@@ -30,6 +30,7 @@
+ #include "extent_io.h"
+ #include "inode-map.h"
+ #include "volumes.h"
++#include "space-info.h"
+ 
+ #define BITS_PER_BITMAP		(PAGE_SIZE * 8UL)
+ #define MAX_CACHE_BYTES_PER_GIG	SZ_32K
+--- a/fs/btrfs/ioctl.c
++++ b/fs/btrfs/ioctl.c
+@@ -61,6 +61,7 @@
+ #include "qgroup.h"
+ #include "tree-log.h"
+ #include "compression.h"
++#include "space-info.h"
+ 
+ #ifdef CONFIG_64BIT
+ /* If we have a 32-bit userspace and 64-bit kernel, then the UAPI
+--- /dev/null
++++ b/fs/btrfs/space-info.h
+@@ -0,0 +1,77 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++
++#ifndef BTRFS_SPACE_INFO_H
++#define BTRFS_SPACE_INFO_H
++
++struct btrfs_space_info {
++	spinlock_t lock;
++
++	u64 total_bytes;	/* total bytes in the space,
++				   this doesn't take mirrors into account */
++	u64 bytes_used;		/* total bytes used,
++				   this doesn't take mirrors into account */
++	u64 bytes_pinned;	/* total bytes pinned, will be freed when the
++				   transaction finishes */
++	u64 bytes_reserved;	/* total bytes the allocator has reserved for
++				   current allocations */
++	u64 bytes_may_use;	/* number of bytes that may be used for
++				   delalloc/allocations */
++	u64 bytes_readonly;	/* total bytes that are read only */
++
++	u64 max_extent_size;	/* This will hold the maximum extent size of
++				   the space info if we had an ENOSPC in the
++				   allocator. */
++
++	unsigned int full:1;	/* indicates that we cannot allocate any more
++				   chunks for this space */
++	unsigned int chunk_alloc:1;	/* set if we are allocating a chunk */
++
++	unsigned int flush:1;		/* set if we are trying to make space */
++
++	unsigned int force_alloc;	/* set if we need to force a chunk
++					   alloc for this space */
++
++	u64 disk_used;		/* total bytes used on disk */
++	u64 disk_total;		/* total bytes on disk, takes mirrors into
++				   account */
++
++	u64 flags;
++
++	/*
++	 * bytes_pinned is kept in line with what is actually pinned, as in
++	 * we've called update_block_group and dropped the bytes_used counter
++	 * and increased the bytes_pinned counter.  However this means that
++	 * bytes_pinned does not reflect the bytes that will be pinned once the
++	 * delayed refs are flushed, so this counter is inc'ed every time we
++	 * call btrfs_free_extent so it is a realtime count of what will be
++	 * freed once the transaction is committed.  It will be zeroed every
++	 * time the transaction commits.
++	 */
++	struct percpu_counter total_bytes_pinned;
++
++	struct list_head list;
++	/* Protected by the spinlock 'lock'. */
++	struct list_head ro_bgs;
++	struct list_head priority_tickets;
++	struct list_head tickets;
++	/*
++	 * tickets_id just indicates the next ticket will be handled, so note
++	 * it's not stored per ticket.
++	 */
++	u64 tickets_id;
++
++	struct rw_semaphore groups_sem;
++	/* for block groups in our same type */
++	struct list_head block_groups[BTRFS_NR_RAID_TYPES];
++	wait_queue_head_t wait;
++
++	struct kobject kobj;
++	struct kobject *block_group_kobjs[BTRFS_NR_RAID_TYPES];
++};
++static inline bool btrfs_mixed_space_info(struct btrfs_space_info *space_info)
++{
++	return ((space_info->flags & BTRFS_BLOCK_GROUP_METADATA) &&
++		(space_info->flags & BTRFS_BLOCK_GROUP_DATA));
++}
++
++#endif /* BTRFS_SPACE_INFO_H */
+--- a/fs/btrfs/super.c
++++ b/fs/btrfs/super.c
+@@ -58,6 +58,7 @@
+ #include "dev-replace.h"
+ #include "free-space-cache.h"
+ #include "backref.h"
++#include "space-info.h"
+ #include "tests/btrfs-tests.h"
+ 
+ #include "qgroup.h"
+--- a/fs/btrfs/sysfs.c
++++ b/fs/btrfs/sysfs.c
+@@ -31,6 +31,7 @@
+ #include "transaction.h"
+ #include "sysfs.h"
+ #include "volumes.h"
++#include "space-info.h"
+ 
+ static inline struct btrfs_fs_info *to_fs_info(struct kobject *kobj);
+ static inline struct btrfs_fs_devices *to_fs_devs(struct kobject *kobj);
+--- a/fs/btrfs/volumes.c
++++ b/fs/btrfs/volumes.c
+@@ -42,6 +42,7 @@
+ #include "dev-replace.h"
+ #include "sysfs.h"
+ #include "tree-checker.h"
++#include "space-info.h"
+ 
+ const struct btrfs_raid_attr btrfs_raid_array[BTRFS_NR_RAID_TYPES] = {
+ 	[BTRFS_RAID_RAID10] = {

@@ -27,33 +27,29 @@ Tested-by: James Wang <jnwang@suse.com>
 Signed-off-by: Filipe Manana <fdmanana@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 ---
- fs/btrfs/btrfs_inode.h |   6 --
- fs/btrfs/inode.c       |  17 ---
- fs/btrfs/tree-log.c    | 228 +++++++++++++++++++++++++++++++++--------
+ fs/btrfs/btrfs_inode.h |    6 -
+ fs/btrfs/inode.c       |   17 ---
+ fs/btrfs/tree-log.c    |  228 ++++++++++++++++++++++++++++++++++++++++---------
  3 files changed, 188 insertions(+), 63 deletions(-)
 
-diff --git a/fs/btrfs/btrfs_inode.h b/fs/btrfs/btrfs_inode.h
-index 7f895b673c4f..19e4eecd67ce 100644
 --- a/fs/btrfs/btrfs_inode.h
 +++ b/fs/btrfs/btrfs_inode.h
-@@ -159,12 +159,6 @@ struct btrfs_inode {
- 	 */
+@@ -160,12 +160,6 @@ struct btrfs_inode {
  	u64 last_unlink_trans;
  
--	/*
+ 	/*
 -	 * Track the transaction id of the last transaction used to create a
 -	 * hard link for the inode. This is used by the log tree (fsync).
 -	 */
 -	u64 last_link_trans;
 -
- 	/*
+-	/*
  	 * Number of bytes outstanding that are going to need csums.  This is
  	 * used in ENOSPC accounting.
-diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
-index 0038dab54f40..b3e279e68eaa 100644
+ 	 */
 --- a/fs/btrfs/inode.c
 +++ b/fs/btrfs/inode.c
-@@ -3668,21 +3668,6 @@ static int btrfs_read_locked_inode(struct inode *inode,
+@@ -3707,21 +3707,6 @@ cache_index:
  	 * inode is not a directory, logging its parent unnecessarily.
  	 */
  	BTRFS_I(inode)->last_unlink_trans = BTRFS_I(inode)->last_trans;
@@ -75,7 +71,7 @@ index 0038dab54f40..b3e279e68eaa 100644
  
  	path->slots[0]++;
  	if (inode->i_nlink != 1 ||
-@@ -6494,7 +6479,6 @@ static int btrfs_link(struct dentry *old_dentry, struct inode *dir,
+@@ -6500,7 +6485,6 @@ static int btrfs_link(struct dentry *old
  			if (err)
  				goto fail;
  		}
@@ -83,19 +79,17 @@ index 0038dab54f40..b3e279e68eaa 100644
  		d_instantiate(dentry, inode);
  		ret = btrfs_log_new_name(trans, BTRFS_I(inode), NULL, parent,
  					 true, NULL);
-@@ -9202,7 +9186,6 @@ struct inode *btrfs_alloc_inode(struct super_block *sb)
+@@ -9211,7 +9195,6 @@ struct inode *btrfs_alloc_inode(struct s
  	ei->index_cnt = (u64)-1;
  	ei->dir_index = 0;
  	ei->last_unlink_trans = 0;
 -	ei->last_link_trans = 0;
  	ei->last_log_commit = 0;
- 	ei->delayed_iput_count = 0;
  
-diff --git a/fs/btrfs/tree-log.c b/fs/btrfs/tree-log.c
-index 27c47acde982..5c0fd8b848ec 100644
+ 	spin_lock_init(&ei->lock);
 --- a/fs/btrfs/tree-log.c
 +++ b/fs/btrfs/tree-log.c
-@@ -6008,6 +6008,190 @@ static int btrfs_log_all_parents(struct btrfs_trans_handle *trans,
+@@ -6007,6 +6007,190 @@ out:
  	return ret;
  }
  
@@ -286,7 +280,7 @@ index 27c47acde982..5c0fd8b848ec 100644
  /*
   * helper function around btrfs_log_inode to make sure newly created
   * parent directories also end up in the log.  A minimal inode and backref
-@@ -6026,11 +6210,9 @@ static int btrfs_log_inode_parent(struct btrfs_trans_handle *trans,
+@@ -6025,11 +6209,9 @@ static int btrfs_log_inode_parent(struct
  	struct btrfs_fs_info *fs_info = root->fs_info;
  	int inode_only = exists_only ? LOG_INODE_EXISTS : LOG_INODE_ALL;
  	struct super_block *sb;
@@ -298,7 +292,7 @@ index 27c47acde982..5c0fd8b848ec 100644
  
  	sb = inode->vfs_inode.i_sb;
  
-@@ -6136,54 +6318,20 @@ static int btrfs_log_inode_parent(struct btrfs_trans_handle *trans,
+@@ -6135,54 +6317,20 @@ static int btrfs_log_inode_parent(struct
  	 * and has a link count of 2.
  	 */
  	if (inode->last_unlink_trans > last_committed) {
@@ -333,7 +327,7 @@ index 27c47acde982..5c0fd8b848ec 100644
 -		inode = BTRFS_I(d_inode(parent));
 -		if (root != inode->root)
 -			break;
- 
+-
 -		if (inode->generation > last_committed) {
 -			ret = btrfs_log_inode(trans, root, inode,
 -					LOG_INODE_EXISTS, 0, LLONG_MAX, ctx);
@@ -342,7 +336,7 @@ index 27c47acde982..5c0fd8b848ec 100644
 -		}
 -		if (IS_ROOT(parent))
 -			break;
--
+ 
 -		parent = dget_parent(parent);
 -		dput(old_parent);
 -		old_parent = parent;
@@ -357,6 +351,3 @@ index 27c47acde982..5c0fd8b848ec 100644
  	if (ret < 0) {
  		btrfs_set_log_full_commit(fs_info, trans);
  		ret = 1;
--- 
-2.19.0
-

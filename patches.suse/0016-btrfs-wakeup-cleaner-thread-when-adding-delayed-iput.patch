@@ -1,0 +1,73 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 11 Jan 2019 10:21:02 -0500
+Subject: btrfs: wakeup cleaner thread when adding delayed iput
+Git-commit: fd340d0f68cc87badfc9efcb226f23a5428826a0
+Patch-mainline: v5.0-rc3
+References: bsc#1165949
+
+The cleaner thread usually takes care of delayed iputs, with the
+exception of the btrfs_end_transaction_throttle path.  Delaying iputs
+means we are potentially delaying the eviction of an inode and it's
+respective space.  The cleaner thread only gets woken up every 30
+seconds, or when we require space.  If there are a lot of inodes that
+need to be deleted we could induce a serious amount of latency while we
+wait for these inodes to be evicted.  So instead wakeup the cleaner if
+it's not already awake to process any new delayed iputs we add to the
+list.  If we suddenly need space we will less likely be backed up
+behind a bunch of inodes that are waiting to be deleted, and we could
+possibly free space before we need to get into the flushing logic which
+will save us some latency.
+
+Reviewed-by: Filipe Manana <fdmanana@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/ctree.h   |    4 ++++
+ fs/btrfs/disk-io.c |    3 +++
+ fs/btrfs/inode.c   |    2 ++
+ 3 files changed, 9 insertions(+)
+
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -756,6 +756,10 @@ struct btrfs_delayed_root;
+  */
+ #define BTRFS_FS_BALANCE_RUNNING		18
+ 
++
++/* Indicate that the cleaner thread is awake and doing something. */
++#define BTRFS_FS_CLEANER_RUNNING		19
++
+ struct btrfs_fs_info {
+ 	u8 fsid[BTRFS_FSID_SIZE];
+ 	u8 chunk_tree_uuid[BTRFS_UUID_SIZE];
+--- a/fs/btrfs/disk-io.c
++++ b/fs/btrfs/disk-io.c
+@@ -1754,6 +1754,8 @@ static int cleaner_kthread(void *arg)
+ 	while (1) {
+ 		again = 0;
+ 
++		set_bit(BTRFS_FS_CLEANER_RUNNING, &fs_info->flags);
++
+ 		/* Make the cleaner go to sleep early. */
+ 		if (btrfs_need_cleaner_sleep(fs_info))
+ 			goto sleep;
+@@ -1800,6 +1802,7 @@ static int cleaner_kthread(void *arg)
+ 		 */
+ 		btrfs_delete_unused_bgs(fs_info);
+ sleep:
++		clear_bit(BTRFS_FS_CLEANER_RUNNING, &fs_info->flags);
+ 		if (kthread_should_park())
+ 			kthread_parkme();
+ 		if (kthread_should_stop())
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -3276,6 +3276,8 @@ void btrfs_run_delayed_iputs(struct btrf
+ 		spin_lock(&fs_info->delayed_iput_lock);
+ 	}
+ 	spin_unlock(&fs_info->delayed_iput_lock);
++	if (!test_bit(BTRFS_FS_CLEANER_RUNNING, &fs_info->flags))
++		wake_up_process(fs_info->cleaner_kthread);
+ }
+ 
+ /*

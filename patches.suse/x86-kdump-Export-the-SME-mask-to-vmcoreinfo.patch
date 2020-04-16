@@ -1,0 +1,64 @@
+From 65f750e5457aef9a8085a99d613fea0430303e93 Mon Sep 17 00:00:00 2001
+From: Lianbo Jiang <lijiang@redhat.com>
+Date: Thu, 10 Jan 2019 20:19:44 +0800
+Subject: [PATCH] x86/kdump: Export the SME mask to vmcoreinfo
+References: bsc#1141895
+Git-commit: 65f750e5457aef9a8085a99d613fea0430303e93
+Patch-mainline: v5.1-rc1
+
+On AMD SME machines, makedumpfile tools need to know whether the crashed
+kernel was encrypted.
+
+If SME is enabled in the first kernel, the crashed kernel's page table
+entries (pgd/pud/pmd/pte) contain the memory encryption mask which
+makedumpfile needs to remove in order to obtain the true physical
+address.
+
+Export that mask in a vmcoreinfo variable.
+
+ [ bp: Massage commit message and move define at the end of the
+   function. ]
+
+Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Cc: "H. Peter Anvin" <hpa@zytor.com>
+Cc: Andrew Morton <akpm@linux-foundation.org>
+Cc: Baoquan He <bhe@redhat.com>
+Cc: Dave Young <dyoung@redhat.com>
+Cc: Ingo Molnar <mingo@redhat.com>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: Tom Lendacky <thomas.lendacky@amd.com>
+Cc: anderson@redhat.com
+Cc: k-hagio@ab.jp.nec.com
+Cc: kexec@lists.infradead.org
+Cc: linux-doc@vger.kernel.org
+Cc: x86-ml <x86@kernel.org>
+Link: https://lkml.kernel.org/r/20190110121944.6050-3-lijiang@redhat.com
+---
+ arch/x86/kernel/machine_kexec_64.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/arch/x86/kernel/machine_kexec_64.c b/arch/x86/kernel/machine_kexec_64.c
+index 4c8acdfdc5a7..ceba408ea982 100644
+--- a/arch/x86/kernel/machine_kexec_64.c
++++ b/arch/x86/kernel/machine_kexec_64.c
+@@ -352,6 +352,8 @@ void machine_kexec(struct kimage *image)
+ 
+ void arch_crash_save_vmcoreinfo(void)
+ {
++	u64 sme_mask = sme_me_mask;
++
+ 	VMCOREINFO_NUMBER(phys_base);
+ 	VMCOREINFO_SYMBOL(init_top_pgt);
+ 
+@@ -364,6 +366,7 @@ void arch_crash_save_vmcoreinfo(void)
+ 	vmcoreinfo_append_str("KERNELOFFSET=%lx\n",
+ 			      kaslr_offset());
+ 	VMCOREINFO_NUMBER(KERNEL_IMAGE_SIZE);
++	VMCOREINFO_NUMBER(sme_mask);
+ }
+ 
+ /* arch-dependent functionality related to kexec file-based syscall */
+-- 
+2.16.4
+

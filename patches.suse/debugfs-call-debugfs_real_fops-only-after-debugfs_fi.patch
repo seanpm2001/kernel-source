@@ -1,0 +1,62 @@
+From: Nicolai Stange <nicstange@gmail.com>
+Date: Tue, 31 Oct 2017 00:15:53 +0100
+Subject: debugfs: call debugfs_real_fops() only after debugfs_file_get()
+Patch-mainline: v4.15-rc1
+Git-commit: 154b9d7512ae012aca7b4e90af67a72419ad1941
+References: bsc#1159198
+
+The current implementation of debugfs_real_fops() relies on a
+debugfs_fsdata instance to be installed at ->d_fsdata.
+
+With future patches introducing lazy allocation of these, this requirement
+will be guaranteed to be fullfilled only inbetween a
+debugfs_file_get()/debugfs_file_put() pair.
+
+The full proxies' fops implemented by debugfs happen to be the only
+offenders. Fix them up by moving their debugfs_real_fops() calls past those
+to debugfs_file_get().
+
+full_proxy_release() is special as it doesn't invoke debugfs_file_get() at
+all. Leave it alone for now.
+
+Signed-off-by: Nicolai Stange <nicstange@gmail.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Acked-by: Nicolai Stange <nstange@suse.de>
+---
+ fs/debugfs/file.c |    7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+--- a/fs/debugfs/file.c
++++ b/fs/debugfs/file.c
+@@ -144,13 +144,13 @@ const struct file_operations debugfs_ope
+ static ret_type full_proxy_ ## name(proto)				\
+ {									\
+ 	struct dentry *dentry = F_DENTRY(filp);			\
+-	const struct file_operations *real_fops =			\
+-		debugfs_real_fops(filp);				\
++	const struct file_operations *real_fops;			\
+ 	ret_type r;							\
+ 									\
+ 	r = debugfs_file_get(dentry);					\
+ 	if (unlikely(r))						\
+ 		return r;						\
++	real_fops = debugfs_real_fops(filp);				\
+ 	r = real_fops->name(args);					\
+ 	debugfs_file_put(dentry);					\
+ 	return r;							\
+@@ -177,13 +177,14 @@ FULL_PROXY_FUNC(unlocked_ioctl, long, fi
+ static unsigned int full_proxy_poll(struct file *filp,
+ 				struct poll_table_struct *wait)
+ {
+-	const struct file_operations *real_fops = debugfs_real_fops(filp);
+ 	struct dentry *dentry = F_DENTRY(filp);
+ 	unsigned int r = 0;
++	const struct file_operations *real_fops;
+ 
+ 	if (debugfs_file_get(dentry))
+ 		return POLLHUP;
+ 
++	real_fops = debugfs_real_fops(filp);
+ 	r = real_fops->poll(filp, wait);
+ 	debugfs_file_put(dentry);
+ 	return r;

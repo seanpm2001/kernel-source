@@ -1,0 +1,36 @@
+From efcd487c69b9d968552a6bf80e7839c4f28b419d Mon Sep 17 00:00:00 2001
+From: Christoph Hellwig <hch@lst.de>
+Date: Thu, 4 Apr 2019 18:56:16 +0200
+Subject: [PATCH] md: add __acquires/__releases annotations to
+ handle_active_stripes
+Git-commit: efcd487c69b9d968552a6bf80e7839c4f28b419d
+Patch-mainline: v5.2-rc1
+References: bsc#1166003
+
+This tells sparse that we release and reacquire the device_lock and
+avoids a warning.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Song Liu <songliubraving@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/raid5.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/md/raid5.c b/drivers/md/raid5.c
+index d794d8745144..2b0a715e70c9 100644
+--- a/drivers/md/raid5.c
++++ b/drivers/md/raid5.c
+@@ -6159,6 +6159,8 @@ static int  retry_aligned_read(struct r5conf *conf, struct bio *raid_bio,
+ static int handle_active_stripes(struct r5conf *conf, int group,
+ 				 struct r5worker *worker,
+ 				 struct list_head *temp_inactive_list)
++		__releases(&conf->device_lock)
++		__acquires(&conf->device_lock)
+ {
+ 	struct stripe_head *batch[MAX_STRIPE_BATCH], *sh;
+ 	int i, batch_size = 0, hash;
+-- 
+2.25.0
+

@@ -1,0 +1,76 @@
+From: Lu Fengqi <lufq.fnst@cn.fujitsu.com>
+Date: Mon, 28 May 2018 14:30:27 +0800
+Subject: btrfs: drop unused space_info parameter from create_space_info
+Git-commit: 4ca616832783ce6563b59b2d4764fdbb272e0362
+Patch-mainline: v4.18-rc1
+References: bsc#1165949
+
+Since commit dc2d3005d27d ("btrfs: remove dead create_space_info
+calls"), there is only one caller btrfs_init_space_info. However, it
+doesn't need create_space_info to return space_info at all.
+
+Signed-off-by: Lu Fengqi <lufq.fnst@cn.fujitsu.com>
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/extent-tree.c | 13 +++++--------
+ 1 file changed, 5 insertions(+), 8 deletions(-)
+
+diff --git a/fs/btrfs/extent-tree.c b/fs/btrfs/extent-tree.c
+index 7273dcddcdf4..7ebb05fe2cd8 100644
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -4007,8 +4007,7 @@ static const char *alloc_name(u64 flags)
+ 	};
+ }
+ 
+-static int create_space_info(struct btrfs_fs_info *info, u64 flags,
+-			     struct btrfs_space_info **new)
++static int create_space_info(struct btrfs_fs_info *info, u64 flags)
+ {
+ 
+ 	struct btrfs_space_info *space_info;
+@@ -4046,7 +4045,6 @@ static int create_space_info(struct btrfs_fs_info *info, u64 flags,
+ 		return ret;
+ 	}
+ 
+-	*new = space_info;
+ 	list_add_rcu(&space_info->list, &info->space_info);
+ 	if (flags & BTRFS_BLOCK_GROUP_DATA)
+ 		info->data_sinfo = space_info;
+@@ -10825,7 +10823,6 @@ void btrfs_delete_unused_bgs(struct btrfs_fs_info *fs_info)
+ 
+ int btrfs_init_space_info(struct btrfs_fs_info *fs_info)
+ {
+-	struct btrfs_space_info *space_info;
+ 	struct btrfs_super_block *disk_super;
+ 	u64 features;
+ 	u64 flags;
+@@ -10841,21 +10838,21 @@ int btrfs_init_space_info(struct btrfs_fs_info *fs_info)
+ 		mixed = 1;
+ 
+ 	flags = BTRFS_BLOCK_GROUP_SYSTEM;
+-	ret = create_space_info(fs_info, flags, &space_info);
++	ret = create_space_info(fs_info, flags);
+ 	if (ret)
+ 		goto out;
+ 
+ 	if (mixed) {
+ 		flags = BTRFS_BLOCK_GROUP_METADATA | BTRFS_BLOCK_GROUP_DATA;
+-		ret = create_space_info(fs_info, flags, &space_info);
++		ret = create_space_info(fs_info, flags);
+ 	} else {
+ 		flags = BTRFS_BLOCK_GROUP_METADATA;
+-		ret = create_space_info(fs_info, flags, &space_info);
++		ret = create_space_info(fs_info, flags);
+ 		if (ret)
+ 			goto out;
+ 
+ 		flags = BTRFS_BLOCK_GROUP_DATA;
+-		ret = create_space_info(fs_info, flags, &space_info);
++		ret = create_space_info(fs_info, flags);
+ 	}
+ out:
+ 	return ret;
+

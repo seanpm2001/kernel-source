@@ -1,0 +1,70 @@
+From d494549ac8852ec42854d1491dd17bb9350a0abc Mon Sep 17 00:00:00 2001
+From: Guoqing Jiang <gqjiang@suse.com>
+Date: Fri, 14 Jun 2019 17:10:39 +0800
+Subject: [PATCH] md: add bitmap_abort label in md_run
+Git-commit: d494549ac8852ec42854d1491dd17bb9350a0abc
+Patch-mainline: v5.3-rc1
+References: bsc#1166003
+
+Now, there are two places need to consider about
+the failure of destroy bitmap, so move the common
+part between bitmap_abort and abort label.
+
+Reviewed-by: NeilBrown <neilb@suse.com>
+Signed-off-by: Guoqing Jiang <gqjiang@suse.com>
+Signed-off-by: Song Liu <songliubraving@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/md.c |   26 ++++++++++----------------
+ 1 file changed, 10 insertions(+), 16 deletions(-)
+
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -5687,15 +5687,8 @@ int md_run(struct mddev *mddev)
+ 			mddev->bitmap = bitmap;
+ 
+ 	}
+-	if (err) {
+-		mddev_detach(mddev);
+-		if (mddev->private)
+-			pers->free(mddev, mddev->private);
+-		mddev->private = NULL;
+-		module_put(pers->owner);
+-		md_bitmap_destroy(mddev);
+-		goto abort;
+-	}
++	if (err)
++		goto bitmap_abort;
+ 
+ 	if (mddev->bitmap_info.max_write_behind > 0) {
+ 		bool creat_pool = false;
+@@ -5711,13 +5704,7 @@ int md_run(struct mddev *mddev)
+ 						    sizeof(struct wb_info));
+ 			if (!mddev->wb_info_pool) {
+ 				err = -ENOMEM;
+-				mddev_detach(mddev);
+-				if (mddev->private)
+-					pers->free(mddev, mddev->private);
+-				mddev->private = NULL;
+-				module_put(pers->owner);
+-				md_bitmap_destroy(mddev);
+-				goto abort;
++				goto bitmap_abort;
+ 			}
+ 		}
+ 	}
+@@ -5782,6 +5769,13 @@ int md_run(struct mddev *mddev)
+ 	sysfs_notify(&mddev->kobj, NULL, "degraded");
+ 	return 0;
+ 
++bitmap_abort:
++	mddev_detach(mddev);
++	if (mddev->private)
++		pers->free(mddev, mddev->private);
++	mddev->private = NULL;
++	module_put(pers->owner);
++	md_bitmap_destroy(mddev);
+ abort:
+ 	if (mddev->bio_set) {
+ 		bioset_free(mddev->bio_set);

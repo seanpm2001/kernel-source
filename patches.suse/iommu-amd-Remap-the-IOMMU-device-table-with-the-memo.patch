@@ -1,0 +1,68 @@
+From 8780158cf977ea5f9912931a30b3d575b36dba22 Mon Sep 17 00:00:00 2001
+From: Lianbo Jiang <lijiang@redhat.com>
+Date: Sun, 30 Sep 2018 11:10:32 +0800
+Subject: [PATCH] iommu/amd: Remap the IOMMU device table with the memory
+ encryption mask for kdump
+References: bsc#1141895
+Git-commit: 8780158cf977ea5f9912931a30b3d575b36dba22
+Patch-mainline: v4.20-rc1
+
+The kdump kernel copies the IOMMU device table from the old device table
+which is encrypted when SME is enabled in the first kernel. So remap the
+old device table with the memory encryption mask in the kdump kernel.
+
+ [ bp: Massage commit message. ]
+
+Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Reviewed-by: Tom Lendacky <thomas.lendacky@amd.com>
+Acked-by: Joerg Roedel <jroedel@suse.de>
+Cc: kexec@lists.infradead.org
+Cc: tglx@linutronix.de
+Cc: mingo@redhat.com
+Cc: hpa@zytor.com
+Cc: akpm@linux-foundation.org
+Cc: dan.j.williams@intel.com
+Cc: bhelgaas@google.com
+Cc: baiyaowei@cmss.chinamobile.com
+Cc: tiwai@suse.de
+Cc: brijesh.singh@amd.com
+Cc: dyoung@redhat.com
+Cc: bhe@redhat.com
+Link: https://lkml.kernel.org/r/20180930031033.22110-4-lijiang@redhat.com
+---
+ drivers/iommu/amd_iommu_init.c | 14 ++++++++++++--
+ 1 file changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/iommu/amd_iommu_init.c b/drivers/iommu/amd_iommu_init.c
+index 84b3e4445d46..3931c7de7c69 100644
+--- a/drivers/iommu/amd_iommu_init.c
++++ b/drivers/iommu/amd_iommu_init.c
+@@ -902,12 +902,22 @@ static bool copy_device_table(void)
+ 		}
+ 	}
+ 
+-	old_devtb_phys = entry & PAGE_MASK;
++	/*
++	 * When SME is enabled in the first kernel, the entry includes the
++	 * memory encryption mask(sme_me_mask), we must remove the memory
++	 * encryption mask to obtain the true physical address in kdump kernel.
++	 */
++	old_devtb_phys = __sme_clr(entry) & PAGE_MASK;
++
+ 	if (old_devtb_phys >= 0x100000000ULL) {
+ 		pr_err("The address of old device table is above 4G, not trustworthy!\n");
+ 		return false;
+ 	}
+-	old_devtb = memremap(old_devtb_phys, dev_table_size, MEMREMAP_WB);
++	old_devtb = (sme_active() && is_kdump_kernel())
++		    ? (__force void *)ioremap_encrypted(old_devtb_phys,
++							dev_table_size)
++		    : memremap(old_devtb_phys, dev_table_size, MEMREMAP_WB);
++
+ 	if (!old_devtb)
+ 		return false;
+ 
+-- 
+2.16.4
+

@@ -1,0 +1,41 @@
+From c35403f82ced283807f31eeafc2a7aebf1b20331 Mon Sep 17 00:00:00 2001
+From: Christoph Hellwig <hch@lst.de>
+Date: Thu, 4 Apr 2019 18:56:11 +0200
+Subject: [PATCH] md: use correct types in md_bitmap_print_sb
+Git-commit: c35403f82ced283807f31eeafc2a7aebf1b20331
+Patch-mainline: v5.2-rc1
+References: bsc#1166003
+
+If we want to convert from a little endian format we need to cast
+to a little endian type, otherwise sparse will be unhappy.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Song Liu <songliubraving@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/md-bitmap.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/md/md-bitmap.c b/drivers/md/md-bitmap.c
+index 1cd4f991792c..3a62a46b75c7 100644
+--- a/drivers/md/md-bitmap.c
++++ b/drivers/md/md-bitmap.c
+@@ -490,10 +490,10 @@ void md_bitmap_print_sb(struct bitmap *bitmap)
+ 	pr_debug("         magic: %08x\n", le32_to_cpu(sb->magic));
+ 	pr_debug("       version: %d\n", le32_to_cpu(sb->version));
+ 	pr_debug("          uuid: %08x.%08x.%08x.%08x\n",
+-		 le32_to_cpu(*(__u32 *)(sb->uuid+0)),
+-		 le32_to_cpu(*(__u32 *)(sb->uuid+4)),
+-		 le32_to_cpu(*(__u32 *)(sb->uuid+8)),
+-		 le32_to_cpu(*(__u32 *)(sb->uuid+12)));
++		 le32_to_cpu(*(__le32 *)(sb->uuid+0)),
++		 le32_to_cpu(*(__le32 *)(sb->uuid+4)),
++		 le32_to_cpu(*(__le32 *)(sb->uuid+8)),
++		 le32_to_cpu(*(__le32 *)(sb->uuid+12)));
+ 	pr_debug("        events: %llu\n",
+ 		 (unsigned long long) le64_to_cpu(sb->events));
+ 	pr_debug("events cleared: %llu\n",
+-- 
+2.25.0
+

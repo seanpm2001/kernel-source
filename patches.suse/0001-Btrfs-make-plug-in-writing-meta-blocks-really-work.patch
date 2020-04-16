@@ -1,0 +1,66 @@
+From 6300463b14c1c2665674eb8f15843e5bb7a7ff84 Mon Sep 17 00:00:00 2001
+From: Liu Bo <bo.li.liu@oracle.com>
+Date: Mon, 21 Aug 2017 15:49:59 -0600
+Patch-mainline: v4.15
+Git-commit: 6300463b14c1c2665674eb8f15843e5bb7a7ff84
+References: bsc#1168273
+Subject: [PATCH 1/2] Btrfs: make plug in writing meta blocks really work
+
+We have started plug in btrfs_write_and_wait_marked_extents() but the
+generated IOs actually go to device's schedule IO list where the work
+is doing in another task, thus the started plug doesn't make any
+sense.
+
+And since we wait for IOs immediately after writing meta blocks, it's
+the same case as writing log tree, doing sync submit can merge more
+IOs.
+
+Signed-off-by: Liu Bo <bo.li.liu@oracle.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/disk-io.c     |    6 ++++--
+ fs/btrfs/transaction.c |    2 ++
+ 2 files changed, 6 insertions(+), 2 deletions(-)
+
+--- a/fs/btrfs/disk-io.c
++++ b/fs/btrfs/disk-io.c
+@@ -1003,8 +1003,10 @@ static blk_status_t __btree_submit_bio_d
+ 	return ret;
+ }
+ 
+-static int check_async_write(unsigned long bio_flags)
++static int check_async_write(struct btrfs_inode *bi, unsigned long bio_flags)
+ {
++	if (atomic_read(&bi->sync_writers))
++		return 0;
+ 	if (bio_flags & EXTENT_BIO_TREE_LOG)
+ 		return 0;
+ #ifdef CONFIG_X86
+@@ -1019,7 +1021,7 @@ static blk_status_t btree_submit_bio_hoo
+ 				 u64 bio_offset)
+ {
+ 	struct btrfs_fs_info *fs_info = btrfs_sb(inode->i_sb);
+-	int async = check_async_write(bio_flags);
++	int async = check_async_write(BTRFS_I(inode), bio_flags);
+ 	blk_status_t ret;
+ 
+ 	if (bio_op(bio) != REQ_OP_WRITE) {
+--- a/fs/btrfs/transaction.c
++++ b/fs/btrfs/transaction.c
+@@ -950,6 +950,7 @@ int btrfs_write_marked_extents(struct bt
+ 	u64 start = 0;
+ 	u64 end;
+ 
++	atomic_inc(&BTRFS_I(fs_info->btree_inode)->sync_writers);
+ 	while (!find_first_extent_bit(dirty_pages, start, &start, &end,
+ 				      mark, &cached_state)) {
+ 		bool wait_writeback = false;
+@@ -985,6 +986,7 @@ int btrfs_write_marked_extents(struct bt
+ 		cond_resched();
+ 		start = end + 1;
+ 	}
++	atomic_dec(&BTRFS_I(fs_info->btree_inode)->sync_writers);
+ 	return werr;
+ }
+ 

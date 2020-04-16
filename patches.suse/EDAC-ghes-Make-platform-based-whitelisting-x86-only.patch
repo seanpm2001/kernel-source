@@ -1,0 +1,55 @@
+From: Borislav Petkov <bp@suse.de>
+Date: Fri, 18 May 2018 13:13:31 +0200
+Subject: EDAC, ghes: Make platform-based whitelisting x86-only
+
+Git-commit: eaa3a1d46cfdbf1af50311e7a22f5d38c0418b56
+Patch-mainline: v4.18-rc1
+References: bsc#1158187
+
+ARM machines all have DMI tables so if they request hw error reporting
+through GHES, then the driver should be able to detect DIMMs and report
+errors successfully (famous last words :)).
+
+Make the platform-based list x86-specific so that ghes_edac can load on
+ARM.
+
+Reported-by: Qiang Zheng <zhengqiang10@huawei.com>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Reviewed-by: James Morse <james.morse@arm.com>
+Tested-by: James Morse <james.morse@arm.com>
+Tested-by: Qiang Zheng <zhengqiang10@huawei.com>
+Link: https://lkml.kernel.org/r/1526039543-180996-1-git-send-email-zhengqiang10@huawei.com
+Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
+---
+ drivers/edac/ghes_edac.c | 14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/edac/ghes_edac.c b/drivers/edac/ghes_edac.c
+index 863fbf3db29f..473aeec4b1da 100644
+--- a/drivers/edac/ghes_edac.c
++++ b/drivers/edac/ghes_edac.c
+@@ -440,12 +440,16 @@ int ghes_edac_register(struct ghes *ghes, struct device *dev)
+ 	struct mem_ctl_info *mci;
+ 	struct edac_mc_layer layers[1];
+ 	struct ghes_edac_dimm_fill dimm_fill;
+-	int idx;
++	int idx = -1;
+ 
+-	/* Check if safe to enable on this system */
+-	idx = acpi_match_platform_list(plat_list);
+-	if (!force_load && idx < 0)
+-		return -ENODEV;
++	if (IS_ENABLED(CONFIG_X86)) {
++		/* Check if safe to enable on this system */
++		idx = acpi_match_platform_list(plat_list);
++		if (!force_load && idx < 0)
++			return -ENODEV;
++	} else {
++		idx = 0;
++	}
+ 
+ 	/*
+ 	 * We have only one logical memory controller to which all DIMMs belong.
+-- 
+2.16.4
+

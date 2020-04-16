@@ -20,23 +20,23 @@ Signed-off-by: Qu Wenruo <wqu@suse.com>
 Reviewed-by: David Sterba <dsterba@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 ---
- fs/btrfs/extent-tree.c |   30 ++++++++++++++++--------------
- 1 file changed, 16 insertions(+), 14 deletions(-)
+ fs/btrfs/extent-tree.c |   22 +++++++++++-----------
+ 1 file changed, 11 insertions(+), 11 deletions(-)
 
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -3275,10 +3275,6 @@ static int __btrfs_mod_ref(struct btrfs_
+@@ -3346,10 +3346,6 @@ static int __btrfs_mod_ref(struct btrfs_
  	int i;
  	int level;
  	int ret = 0;
 -	int (*process_func)(struct btrfs_trans_handle *,
--			    struct btrfs_fs_info *,
+-			    struct btrfs_root *,
 -			    u64, u64, u64, u64, u64, u64);
 -
  
  	if (btrfs_is_testing(fs_info))
  		return 0;
-@@ -3290,11 +3286,6 @@ static int __btrfs_mod_ref(struct btrfs_
+@@ -3361,11 +3357,6 @@ static int __btrfs_mod_ref(struct btrfs_
  	if (!test_bit(BTRFS_ROOT_REF_COWS, &root->state) && level == 0)
  		return 0;
  
@@ -48,36 +48,30 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	if (full_backref)
  		parent = buf->start;
  	else
-@@ -3316,16 +3307,27 @@ static int __btrfs_mod_ref(struct btrfs_
+@@ -3387,7 +3378,12 @@ static int __btrfs_mod_ref(struct btrfs_
  
  			num_bytes = btrfs_file_extent_disk_num_bytes(buf, fi);
  			key.offset -= btrfs_file_extent_offset(buf, fi);
--			ret = process_func(trans, fs_info, bytenr, num_bytes,
--					   parent, ref_root, key.objectid,
--					   key.offset);
+-			ret = process_func(trans, root, bytenr, num_bytes,
 +			if (inc)
-+				ret = btrfs_inc_extent_ref(trans, fs_info, bytenr,
-+						num_bytes, parent, ref_root,
-+						key.objectid, key.offset);
++				ret = btrfs_inc_extent_ref(trans, root, bytenr, num_bytes,
++					   parent, ref_root, key.objectid,
++					   key.offset);
 +			else
-+				ret = btrfs_free_extent(trans, fs_info, bytenr,
-+						num_bytes, parent, ref_root,
-+						key.objectid, key.offset);
++				ret = btrfs_free_extent(trans, root, bytenr, num_bytes,
+ 					   parent, ref_root, key.objectid,
+ 					   key.offset);
  			if (ret)
- 				goto fail;
+@@ -3395,7 +3391,11 @@ static int __btrfs_mod_ref(struct btrfs_
  		} else {
  			bytenr = btrfs_node_blockptr(buf, i);
  			num_bytes = fs_info->nodesize;
--			ret = process_func(trans, fs_info, bytenr, num_bytes,
--					   parent, ref_root, level - 1, 0);
+-			ret = process_func(trans, root, bytenr, num_bytes,
 +			if (inc)
-+				ret = btrfs_inc_extent_ref(trans, fs_info, bytenr,
-+						num_bytes, parent, ref_root,
-+						level - 1, 0);
++				ret = btrfs_inc_extent_ref(trans, root, bytenr, num_bytes,
++					   parent, ref_root, level - 1, 0);
 +			else
-+				ret = btrfs_free_extent(trans, fs_info, bytenr,
-+						num_bytes, parent, ref_root,
-+						level - 1, 0);
++				ret = btrfs_free_extent(trans, root, bytenr, num_bytes,
+ 					   parent, ref_root, level - 1, 0);
  			if (ret)
  				goto fail;
- 		}

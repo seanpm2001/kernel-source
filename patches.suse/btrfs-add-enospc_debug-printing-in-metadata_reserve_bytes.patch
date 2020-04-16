@@ -1,0 +1,40 @@
+From: Nikolay Borisov <nborisov@suse.com>
+Date: Fri, 15 Dec 2017 12:05:37 +0200
+Subject: btrfs: Add enospc_debug printing in metadata_reserve_bytes
+Git-commit: 9a3daff320260723b9e64b5b3b9c6592a0cd006a
+Patch-mainline: v4.17-rc1
+References: bsc#1165949
+
+Currently when enospc_debug mount option is turned on we do not print
+any debug info in case metadata reservation failures happen. Fix this
+by adding the necessary hook in reserve_metadata_bytes.
+
+Signed-off-by: Nikolay Borisov <nborisov@suse.com>
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/extent-tree.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/fs/btrfs/extent-tree.c b/fs/btrfs/extent-tree.c
+index 9a677860f64d..85258e85a030 100644
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -5394,10 +5394,15 @@ static int reserve_metadata_bytes(struct btrfs_root *root,
+ 		    !block_rsv_use_bytes(global_rsv, orig_bytes))
+ 			ret = 0;
+ 	}
+-	if (ret == -ENOSPC)
++	if (ret == -ENOSPC) {
+ 		trace_btrfs_space_reservation(fs_info, "space_info:enospc",
+ 					      block_rsv->space_info->flags,
+ 					      orig_bytes, 1);
++
++		if (btrfs_test_opt(fs_info, ENOSPC_DEBUG))
++			dump_space_info(fs_info, block_rsv->space_info,
++					orig_bytes, 0);
++	}
+ 	return ret;
+ }
+ 
+

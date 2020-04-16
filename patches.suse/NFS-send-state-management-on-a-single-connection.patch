@@ -1,0 +1,156 @@
+From: NeilBrown <neilb@suse.com>
+Date: Thu, 30 May 2019 10:41:28 +1000
+Subject: [PATCH] NFS: send state management on a single connection.
+Git-commit: 5a0c257f8e0f4c4b3c33dff545317c21a921303e
+Patch-mainline: v5.3
+References: bsc#1167005
+
+With NFSv4.1, different network connections need to be explicitly
+bound to a session.  During session startup, this is not possible
+so only a single connection must be used for session startup.
+
+So add a task flag to disable the default round-robin choice of
+connections (when nconnect > 1) and force the use of a single
+connection.
+Then use that flag on all requests for session management - for
+consistence, include NFSv4.0 management (SETCLIENTID) and session
+destruction
+
+Reported-by: Chuck Lever <chuck.lever@oracle.com>
+Signed-off-by: NeilBrown <neilb@suse.com>
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/nfs4proc.c            |   22 +++++++++++++---------
+ include/linux/sunrpc/sched.h |    1 +
+ net/sunrpc/clnt.c            |   18 +++++++++++++++++-
+ 3 files changed, 31 insertions(+), 10 deletions(-)
+
+--- a/fs/nfs/nfs4proc.c
++++ b/fs/nfs/nfs4proc.c
+@@ -5636,7 +5636,7 @@ int nfs4_proc_setclientid(struct nfs_cli
+ 		.rpc_message = &msg,
+ 		.callback_ops = &nfs4_setclientid_ops,
+ 		.callback_data = &setclientid,
+-		.flags = RPC_TASK_TIMEOUT,
++		.flags = RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN,
+ 	};
+ 	int status;
+ 
+@@ -5702,7 +5702,8 @@ int nfs4_proc_setclientid_confirm(struct
+ 	dprintk("NFS call  setclientid_confirm auth=%s, (client ID %llx)\n",
+ 		clp->cl_rpcclient->cl_auth->au_ops->au_name,
+ 		clp->cl_clientid);
+-	status = rpc_call_sync(clp->cl_rpcclient, &msg, RPC_TASK_TIMEOUT);
++	status = rpc_call_sync(clp->cl_rpcclient, &msg,
++			       RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN);
+ 	trace_nfs4_setclientid_confirm(clp, status);
+ 	dprintk("NFS reply setclientid_confirm: %d\n", status);
+ 	return status;
+@@ -7238,7 +7239,7 @@ static int _nfs4_proc_secinfo(struct ino
+ 		NFS_SP4_MACH_CRED_SECINFO, &clnt, &msg);
+ 
+ 	status = nfs4_call_sync(clnt, NFS_SERVER(dir), &msg, &args.seq_args,
+-				&res.seq_res, 0);
++				&res.seq_res, RPC_TASK_NO_ROUND_ROBIN);
+ 	dprintk("NFS reply  secinfo: %d\n", status);
+ 
+ 	if (cred)
+@@ -7636,7 +7637,7 @@ static int _nfs4_proc_exchange_id(struct
+ 		.rpc_client = clp->cl_rpcclient,
+ 		.callback_ops = &nfs4_exchange_id_call_ops,
+ 		.rpc_message = &msg,
+-		.flags = RPC_TASK_TIMEOUT,
++		.flags = RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN,
+ 	};
+ 	struct nfs41_exchange_id_data *calldata;
+ 	struct rpc_task *task;
+@@ -7799,7 +7800,8 @@ static int _nfs4_proc_destroy_clientid(s
+ 	};
+ 	int status;
+ 
+-	status = rpc_call_sync(clp->cl_rpcclient, &msg, RPC_TASK_TIMEOUT);
++	status = rpc_call_sync(clp->cl_rpcclient, &msg,
++			       RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN);
+ 	trace_nfs4_destroy_clientid(clp, status);
+ 	if (status)
+ 		dprintk("NFS: Got error %d from the server %s on "
+@@ -8080,7 +8082,8 @@ static int _nfs4_proc_create_session(str
+ 	nfs4_init_channel_attrs(&args, clp->cl_rpcclient);
+ 	args.flags = (SESSION4_PERSIST | SESSION4_BACK_CHAN);
+ 
+-	status = rpc_call_sync(session->clp->cl_rpcclient, &msg, RPC_TASK_TIMEOUT);
++	status = rpc_call_sync(session->clp->cl_rpcclient, &msg,
++			       RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN);
+ 	trace_nfs4_create_session(clp, status);
+ 
+ 	switch (status) {
+@@ -8156,7 +8159,8 @@ int nfs4_proc_destroy_session(struct nfs
+ 	if (!test_and_clear_bit(NFS4_SESSION_ESTABLISHED, &session->session_state))
+ 		return 0;
+ 
+-	status = rpc_call_sync(session->clp->cl_rpcclient, &msg, RPC_TASK_TIMEOUT);
++	status = rpc_call_sync(session->clp->cl_rpcclient, &msg,
++			       RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN);
+ 	trace_nfs4_destroy_session(session->clp, status);
+ 
+ 	if (status)
+@@ -8410,7 +8414,7 @@ static int nfs41_proc_reclaim_complete(s
+ 		.rpc_client = clp->cl_rpcclient,
+ 		.rpc_message = &msg,
+ 		.callback_ops = &nfs4_reclaim_complete_call_ops,
+-		.flags = RPC_TASK_ASYNC,
++		.flags = RPC_TASK_ASYNC | RPC_TASK_NO_ROUND_ROBIN,
+ 	};
+ 	int status = -ENOMEM;
+ 
+@@ -8971,7 +8975,7 @@ _nfs41_proc_secinfo_no_name(struct nfs_s
+ 
+ 	dprintk("--> %s\n", __func__);
+ 	status = nfs4_call_sync(clnt, server, &msg, &args.seq_args,
+-				&res.seq_res, 0);
++				&res.seq_res, RPC_TASK_NO_ROUND_ROBIN);
+ 	dprintk("<-- %s status=%d\n", __func__, status);
+ 
+ 	if (cred)
+--- a/include/linux/sunrpc/sched.h
++++ b/include/linux/sunrpc/sched.h
+@@ -117,6 +117,7 @@ struct rpc_task_setup {
+  */
+ #define RPC_TASK_ASYNC		0x0001		/* is an async task */
+ #define RPC_TASK_SWAPPER	0x0002		/* is swapping in/out */
++#define	RPC_TASK_NO_ROUND_ROBIN	0x0040		/* send requests on "main" xprt */
+ #define RPC_CALL_MAJORSEEN	0x0020		/* major timeout seen */
+ #define RPC_TASK_ROOTCREDS	0x0040		/* force root creds */
+ #define RPC_TASK_DYNAMIC	0x0080		/* task was kmalloc'ed */
+--- a/net/sunrpc/clnt.c
++++ b/net/sunrpc/clnt.c
+@@ -1010,10 +1010,26 @@ void rpc_task_release_client(struct rpc_
+ 	rpc_task_release_transport(task);
+ }
+ 
++static struct rpc_xprt *
++rpc_task_get_first_xprt(struct rpc_clnt *clnt)
++{
++	struct rpc_xprt *xprt;
++
++	rcu_read_lock();
++	xprt = xprt_get(rcu_dereference(clnt->cl_xprt));
++	rcu_read_unlock();
++
++	return xprt;
++}
++
+ static
+ void rpc_task_set_transport(struct rpc_task *task, struct rpc_clnt *clnt)
+ {
+-	if (!task->tk_xprt)
++	if (task->tk_xprt)
++		return;
++	if (task->tk_flags & RPC_TASK_NO_ROUND_ROBIN)
++		task->tk_xprt = rpc_task_get_first_xprt(clnt);
++	else
+ 		task->tk_xprt = xprt_iter_get_next(&clnt->cl_xpi);
+ }
+ 

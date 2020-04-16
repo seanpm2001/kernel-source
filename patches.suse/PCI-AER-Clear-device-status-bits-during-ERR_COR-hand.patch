@@ -1,0 +1,29 @@
+From 10d790d99d3b42ec07d54178b291708f14af886d Mon Sep 17 00:00:00 2001
+From: Oza Pawandeep <poza@codeaurora.org>
+Date: Thu, 19 Jul 2018 17:58:09 -0500
+Subject: [PATCH] PCI/AER: Clear device status bits during ERR_COR handling
+Git-commit: 10d790d99d3b42ec07d54178b291708f14af886d
+Patch-mainline: v4.19-rc1
+References: bsc#1161561
+
+In case of correctable error, the Correctable Error Detected bit in the
+Device Status register is set.  Clear it after handling the error.
+
+Signed-off-by: Oza Pawandeep <poza@codeaurora.org>
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/pci/pcie/aer/aerdrv_core.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/drivers/pci/pcie/aer/aerdrv_core.c
++++ b/drivers/pci/pcie/aer/aerdrv_core.c
+@@ -294,6 +294,7 @@ static void handle_error_source(struct p
+ 		if (pos)
+ 			pci_write_config_dword(dev, pos + PCI_ERR_COR_STATUS,
+ 					info->status);
++		pci_aer_clear_device_status(dev);
+ 	} else if (info->severity == AER_NONFATAL)
+ 		pcie_do_nonfatal_recovery(dev);
+ 	else if (info->severity == AER_FATAL)

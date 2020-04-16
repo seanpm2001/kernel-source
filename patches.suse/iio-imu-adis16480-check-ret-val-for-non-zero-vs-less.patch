@@ -1,0 +1,122 @@
+From 92c7529fc1bf3e607ed90c941e55bc244e04a256 Mon Sep 17 00:00:00 2001
+From: Alexandru Ardelean <alexandru.ardelean@analog.com>
+Date: Fri, 1 Nov 2019 11:34:59 +0200
+Subject: [PATCH] iio: imu: adis16480: check ret val for non-zero vs less-than-zero
+Git-commit: 92c7529fc1bf3e607ed90c941e55bc244e04a256
+Patch-mainline: v5.5-rc1
+References: bsc#1051510
+
+The ADIS library functions return zero on success, and negative values for
+error. Positive values aren't returned, but we only care about the success
+value (which is zero).
+
+This change is mostly needed so that the compiler won't make any inferences
+about some about values being potentially un-initialized. This only
+triggers after making some functions inline, because the compiler can
+better follow return paths.
+
+Signed-off-by: Alexandru Ardelean <alexandru.ardelean@analog.com>
+Signed-off-by: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/iio/imu/adis16480.c |   22 +++++++++++-----------
+ 1 file changed, 11 insertions(+), 11 deletions(-)
+
+--- a/drivers/iio/imu/adis16480.c
++++ b/drivers/iio/imu/adis16480.c
+@@ -134,7 +134,7 @@ static ssize_t adis16480_show_firmware_r
+ 	int ret;
+ 
+ 	ret = adis_read_reg_16(&adis16480->adis, ADIS16480_REG_FIRM_REV, &rev);
+-	if (ret < 0)
++	if (ret)
+ 		return ret;
+ 
+ 	len = scnprintf(buf, sizeof(buf), "%x.%x\n", rev >> 8, rev & 0xff);
+@@ -159,11 +159,11 @@ static ssize_t adis16480_show_firmware_d
+ 	int ret;
+ 
+ 	ret = adis_read_reg_16(&adis16480->adis, ADIS16480_REG_FIRM_Y, &year);
+-	if (ret < 0)
++	if (ret)
+ 		return ret;
+ 
+ 	ret = adis_read_reg_16(&adis16480->adis, ADIS16480_REG_FIRM_DM, &md);
+-	if (ret < 0)
++	if (ret)
+ 		return ret;
+ 
+ 	len = snprintf(buf, sizeof(buf), "%.2x-%.2x-%.4x\n",
+@@ -187,7 +187,7 @@ static int adis16480_show_serial_number(
+ 
+ 	ret = adis_read_reg_16(&adis16480->adis, ADIS16480_REG_SERIAL_NUM,
+ 		&serial);
+-	if (ret < 0)
++	if (ret)
+ 		return ret;
+ 
+ 	*val = serial;
+@@ -205,7 +205,7 @@ static int adis16480_show_product_id(voi
+ 
+ 	ret = adis_read_reg_16(&adis16480->adis, ADIS16480_REG_PROD_ID,
+ 		&prod_id);
+-	if (ret < 0)
++	if (ret)
+ 		return ret;
+ 
+ 	*val = prod_id;
+@@ -223,7 +223,7 @@ static int adis16480_show_flash_count(vo
+ 
+ 	ret = adis_read_reg_32(&adis16480->adis, ADIS16480_REG_FLASH_CNT,
+ 		&flash_count);
+-	if (ret < 0)
++	if (ret)
+ 		return ret;
+ 
+ 	*val = flash_count;
+@@ -291,7 +291,7 @@ static int adis16480_get_freq(struct iio
+ 	unsigned freq;
+ 
+ 	ret = adis_read_reg_16(&st->adis, ADIS16480_REG_DEC_RATE, &t);
+-	if (ret < 0)
++	if (ret)
+ 		return ret;
+ 
+ 	freq = 2460000 / (t + 1);
+@@ -385,7 +385,7 @@ static int adis16480_get_calibbias(struc
+ 			ret = -EINVAL;
+ 	}
+ 
+-	if (ret < 0)
++	if (ret)
+ 		return ret;
+ 
+ 	return IIO_VAL_INT;
+@@ -412,7 +412,7 @@ static int adis16480_get_calibscale(stru
+ 	int ret;
+ 
+ 	ret = adis_read_reg_16(&st->adis, reg, &val16);
+-	if (ret < 0)
++	if (ret)
+ 		return ret;
+ 
+ 	*scale = sign_extend32(val16, 15);
+@@ -451,7 +451,7 @@ static int adis16480_get_filter_freq(str
+ 	enable_mask = BIT(offset + 2);
+ 
+ 	ret = adis_read_reg_16(&st->adis, reg, &val);
+-	if (ret < 0)
++	if (ret)
+ 		return ret;
+ 
+ 	if (!(val & enable_mask))
+@@ -477,7 +477,7 @@ static int adis16480_set_filter_freq(str
+ 	enable_mask = BIT(offset + 2);
+ 
+ 	ret = adis_read_reg_16(&st->adis, reg, &val);
+-	if (ret < 0)
++	if (ret)
+ 		return ret;
+ 
+ 	if (freq == 0) {

@@ -1,0 +1,40 @@
+From 60271ab044a53edb9dcbe76bebea2221c4ff04d9 Mon Sep 17 00:00:00 2001
+From: Keith Busch <keith.busch@intel.com>
+Date: Thu, 20 Sep 2018 10:27:09 -0600
+Subject: [PATCH] PCI/AER: Take reference on error devices
+Git-commit: 60271ab044a53edb9dcbe76bebea2221c4ff04d9
+Patch-mainline: v4.20-rc1
+References: bsc#1161561
+
+Error handling may be running in parallel with a hot removal.  Reference
+count the device during AER handling so the device can not be freed while
+AER wants to reference it.
+
+Signed-off-by: Keith Busch <keith.busch@intel.com>
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Reviewed-by: Sinan Kaya <okaya@kernel.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/pci/pcie/aer/aerdrv_core.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/drivers/pci/pcie/aer/aerdrv_core.c
++++ b/drivers/pci/pcie/aer/aerdrv_core.c
+@@ -149,7 +149,7 @@ int pci_aer_init(struct pci_dev *dev)
+ static int add_error_device(struct aer_err_info *e_info, struct pci_dev *dev)
+ {
+ 	if (e_info->error_dev_num < AER_MAX_MULTI_ERR_DEVICES) {
+-		e_info->dev[e_info->error_dev_num] = dev;
++		e_info->dev[e_info->error_dev_num] = pci_dev_get(dev);
+ 		e_info->error_dev_num++;
+ 		return 0;
+ 	}
+@@ -299,6 +299,7 @@ static void handle_error_source(struct p
+ 		pcie_do_nonfatal_recovery(dev);
+ 	else if (info->severity == AER_FATAL)
+ 		pcie_do_fatal_recovery(dev, PCIE_PORT_SERVICE_AER);
++	pci_dev_put(dev);
+ }
+ 
+ #ifdef CONFIG_ACPI_APEI_PCIEAER

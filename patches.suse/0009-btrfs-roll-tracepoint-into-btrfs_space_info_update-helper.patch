@@ -1,0 +1,170 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Thu, 22 Aug 2019 15:10:55 -0400
+Subject: btrfs: roll tracepoint into btrfs_space_info_update helper
+Git-commit: f3e75e3805e1da4f7812f731b5396430fa3f2a08
+Patch-mainline: v5.4-rc1
+References: bsc#1165949
+
+We duplicate this tracepoint everywhere we call these helpers, so update
+the helper to have the tracepoint as well.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/block-group.c    |    3 ---
+ fs/btrfs/block-rsv.c      |    5 -----
+ fs/btrfs/delalloc-space.c |    4 ----
+ fs/btrfs/extent-tree.c    |    7 -------
+ fs/btrfs/space-info.c     |   10 ----------
+ fs/btrfs/space-info.h     |   10 +++++++---
+ 6 files changed, 7 insertions(+), 32 deletions(-)
+
+--- a/fs/btrfs/block-group.c
++++ b/fs/btrfs/block-group.c
+@@ -2712,9 +2712,6 @@ int btrfs_update_block_group(struct btrf
+ 			spin_unlock(&cache->lock);
+ 			spin_unlock(&cache->space_info->lock);
+ 
+-			trace_btrfs_space_reservation(info, "pinned",
+-						      cache->space_info->flags,
+-						      num_bytes, 1);
+ 			percpu_counter_add(&cache->space_info->total_bytes_pinned,
+ 					   num_bytes);
+ 			set_extent_dirty(info->pinned_extents,
+--- a/fs/btrfs/block-rsv.c
++++ b/fs/btrfs/block-rsv.c
+@@ -283,16 +283,11 @@ void btrfs_update_global_block_rsv(struc
+ 			block_rsv->reserved += num_bytes;
+ 			btrfs_space_info_update_bytes_may_use(fs_info, sinfo,
+ 							      num_bytes);
+-			trace_btrfs_space_reservation(fs_info, "space_info",
+-						      sinfo->flags, num_bytes,
+-						      1);
+ 		}
+ 	} else if (block_rsv->reserved > block_rsv->size) {
+ 		num_bytes = block_rsv->reserved - block_rsv->size;
+ 		btrfs_space_info_update_bytes_may_use(fs_info, sinfo,
+ 						      -num_bytes);
+-		trace_btrfs_space_reservation(fs_info, "space_info",
+-				      sinfo->flags, num_bytes, 0);
+ 		block_rsv->reserved = block_rsv->size;
+ 	}
+ 
+--- a/fs/btrfs/delalloc-space.c
++++ b/fs/btrfs/delalloc-space.c
+@@ -129,8 +129,6 @@ commit_trans:
+ 		return -ENOSPC;
+ 	}
+ 	btrfs_space_info_update_bytes_may_use(fs_info, data_sinfo, bytes);
+-	trace_btrfs_space_reservation(fs_info, "space_info",
+-				      data_sinfo->flags, bytes, 1);
+ 	spin_unlock(&data_sinfo->lock);
+ 
+ 	return ret;
+@@ -182,8 +180,6 @@ void btrfs_free_reserved_data_space_noqu
+ 	data_sinfo = fs_info->data_sinfo;
+ 	spin_lock(&data_sinfo->lock);
+ 	btrfs_space_info_update_bytes_may_use(fs_info, data_sinfo, -len);
+-	trace_btrfs_space_reservation(fs_info, "space_info",
+-				      data_sinfo->flags, len, 0);
+ 	spin_unlock(&data_sinfo->lock);
+ }
+ 
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -3051,9 +3051,6 @@ static int unpin_extent_range(struct btr
+ 		spin_lock(&cache->lock);
+ 		cache->pinned -= len;
+ 		btrfs_space_info_update_bytes_pinned(fs_info, space_info, -len);
+-
+-		trace_btrfs_space_reservation(fs_info, "pinned",
+-					      space_info->flags, len, 0);
+ 		space_info->max_extent_size = 0;
+ 		percpu_counter_add(&space_info->total_bytes_pinned, -len);
+ 		if (cache->ro) {
+@@ -3074,10 +3071,6 @@ static int unpin_extent_range(struct btr
+ 						space_info, to_add);
+ 				if (global_rsv->reserved >= global_rsv->size)
+ 					global_rsv->full = 1;
+-				trace_btrfs_space_reservation(fs_info,
+-							      "space_info",
+-							      space_info->flags,
+-							      to_add, 1);
+ 				len -= to_add;
+ 			}
+ 			spin_unlock(&global_rsv->lock);
+--- a/fs/btrfs/space-info.c
++++ b/fs/btrfs/space-info.c
+@@ -306,8 +306,6 @@ again:
+ 		goto again;
+ 	}
+ 	btrfs_space_info_update_bytes_may_use(fs_info, space_info, -num_bytes);
+-	trace_btrfs_space_reservation(fs_info, "space_info",
+-				      space_info->flags, num_bytes, 0);
+ 	spin_unlock(&space_info->lock);
+ }
+ /*
+@@ -327,9 +325,6 @@ again:
+ 		ticket = list_first_entry(head, struct reserve_ticket,
+ 					  list);
+ 		if (num_bytes >= ticket->bytes) {
+-			trace_btrfs_space_reservation(fs_info, "space_info",
+-						      space_info->flags,
+-						      ticket->bytes, 1);
+ 			list_del_init(&ticket->list);
+ 			num_bytes -= ticket->bytes;
+ 			btrfs_space_info_update_bytes_may_use(fs_info,
+@@ -338,9 +333,6 @@ again:
+ 			space_info->tickets_id++;
+ 			wake_up(&ticket->wait);
+ 		} else {
+-			trace_btrfs_space_reservation(fs_info, "space_info",
+-						      space_info->flags,
+-						      num_bytes, 1);
+ 			btrfs_space_info_update_bytes_may_use(fs_info,
+ 					space_info, num_bytes);
+ 			ticket->bytes -= num_bytes;
+@@ -1029,8 +1021,6 @@ static int __reserve_metadata_bytes(stru
+ 	     can_overcommit(root, space_info, orig_bytes, flush))) {
+ 		btrfs_space_info_update_bytes_may_use(fs_info, space_info,
+ 						      orig_bytes);
+-		trace_btrfs_space_reservation(fs_info, "space_info",
+-					      space_info->flags, orig_bytes, 1);
+ 		ret = 0;
+ 	}
+ 	/*
+--- a/fs/btrfs/space-info.h
++++ b/fs/btrfs/space-info.h
+@@ -87,14 +87,18 @@ static inline bool btrfs_mixed_space_inf
+  *
+  * Declare a helper function to detect underflow of various space info members
+  */
+-#define DECLARE_SPACE_INFO_UPDATE(name)					\
++#define DECLARE_SPACE_INFO_UPDATE(name, trace_name)			\
+ static inline void							\
+ btrfs_space_info_update_##name(struct btrfs_fs_info *fs_info,		\
+ 			       struct btrfs_space_info *sinfo,		\
+ 			       s64 bytes)				\
+ {									\
++	const u64 abs_bytes = (bytes < 0) ? -bytes : bytes;		\
+ 	lockdep_assert_held(&sinfo->lock);				\
+ 	trace_update_##name(fs_info, sinfo, sinfo->name, bytes);	\
++	trace_btrfs_space_reservation(fs_info, trace_name,		\
++				      sinfo->flags, abs_bytes,		\
++				      bytes > 0);			\
+ 	if (bytes < 0 && sinfo->name < -bytes) {			\
+ 		WARN_ON(1);						\
+ 		sinfo->name = 0;					\
+@@ -103,8 +107,8 @@ btrfs_space_info_update_##name(struct bt
+ 	sinfo->name += bytes;						\
+ }
+ 
+-DECLARE_SPACE_INFO_UPDATE(bytes_may_use);
+-DECLARE_SPACE_INFO_UPDATE(bytes_pinned);
++DECLARE_SPACE_INFO_UPDATE(bytes_may_use, "space_info");
++DECLARE_SPACE_INFO_UPDATE(bytes_pinned, "pinned");
+ 
+ void btrfs_space_info_add_new_bytes(struct btrfs_fs_info *fs_info,
+ 				    struct btrfs_space_info *space_info,

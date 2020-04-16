@@ -1,0 +1,41 @@
+From e06808be8a5296c09be84b3aaf63087b5737ba16 Mon Sep 17 00:00:00 2001
+From: Qu Wenruo <wqu@suse.com>
+Date: Wed, 20 Mar 2019 14:27:44 +0800
+Patch-mainline: v5.2
+Git-commit: e06808be8a5296c09be84b3aaf63087b5737ba16
+References: bsc#1168273
+Subject: [PATCH 4/7] btrfs: extent_io: Kill dead condition in
+ extent_write_cache_pages()
+
+Since __extent_writepage() will no longer return >0 value,
+(ret == AOP_WRITEPAGE_ACTIVATE) will never be true.
+
+Kill that dead branch.
+
+Reviewed-by: Johannes Thumshirn <jthumshirn@suse.de>
+Signed-off-by: Qu Wenruo <wqu@suse.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/extent_io.c | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/fs/btrfs/extent_io.c b/fs/btrfs/extent_io.c
+index 8399fc4b27ae..cd76be7013d8 100644
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -3974,11 +3974,6 @@ static int extent_write_cache_pages(struct address_space *mapping,
+ 			}
+ 
+ 			ret = __extent_writepage(page, wbc, epd);
+-
+-			if (unlikely(ret == AOP_WRITEPAGE_ACTIVATE)) {
+-				unlock_page(page);
+-				ret = 0;
+-			}
+ 			if (ret < 0) {
+ 				/*
+ 				 * done_index is set past this page,
+-- 
+2.26.0
+

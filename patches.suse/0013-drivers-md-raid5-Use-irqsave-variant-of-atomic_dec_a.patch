@@ -1,0 +1,51 @@
+From 685dbcaa25becfba864b72ec3f03470833b7f692 Mon Sep 17 00:00:00 2001
+From: Anna-Maria Gleixner <anna-maria@linutronix.de>
+Date: Tue, 3 Jul 2018 22:01:36 +0200
+Subject: [PATCH] drivers/md/raid5: Use irqsave variant of
+ atomic_dec_and_lock()
+Git-commit: 685dbcaa25becfba864b72ec3f03470833b7f692
+Patch-mainline: v4.19-rc1
+References: bsc#1111974 bsc#1166003
+
+The irqsave variant of atomic_dec_and_lock handles irqsave/restore when
+taking/releasing the spin lock. With this variant the call of
+local_irq_save is no longer required.
+
+Cc: Shaohua Li <shli@kernel.org>
+Cc: linux-raid@vger.kernel.org
+Acked-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: Anna-Maria Gleixner <anna-maria@linutronix.de>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Shaohua Li <shli@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/raid5.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/md/raid5.c b/drivers/md/raid5.c
+index 2031506a0ecd..e933bff9459e 100644
+--- a/drivers/md/raid5.c
++++ b/drivers/md/raid5.c
+@@ -409,16 +409,15 @@ void raid5_release_stripe(struct stripe_head *sh)
+ 		md_wakeup_thread(conf->mddev->thread);
+ 	return;
+ slow_path:
+-	local_irq_save(flags);
+ 	/* we are ok here if STRIPE_ON_RELEASE_LIST is set or not */
+-	if (atomic_dec_and_lock(&sh->count, &conf->device_lock)) {
++	if (atomic_dec_and_lock_irqsave(&sh->count, &conf->device_lock, flags)) {
+ 		INIT_LIST_HEAD(&list);
+ 		hash = sh->hash_lock_index;
+ 		do_release_stripe(conf, sh, &list);
+ 		spin_unlock(&conf->device_lock);
+ 		release_inactive_stripe_list(conf, &list, hash);
++		local_irq_restore(flags);
+ 	}
+-	local_irq_restore(flags);
+ }
+ 
+ static inline void remove_hash(struct stripe_head *sh)
+-- 
+2.19.0
+

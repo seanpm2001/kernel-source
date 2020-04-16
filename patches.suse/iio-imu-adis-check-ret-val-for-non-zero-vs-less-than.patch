@@ -1,0 +1,41 @@
+From 6a39ab3b195c125d3fe49d0b0b613c2e1dbbc5a2 Mon Sep 17 00:00:00 2001
+From: Alexandru Ardelean <alexandru.ardelean@analog.com>
+Date: Fri, 1 Nov 2019 11:35:00 +0200
+Subject: [PATCH] iio: imu: adis: check ret val for non-zero vs less-than-zero
+Git-commit: 6a39ab3b195c125d3fe49d0b0b613c2e1dbbc5a2
+Patch-mainline: v5.5-rc1
+References: bsc#1051510
+
+The ADIS library functions return zero on success, and negative values for
+error. Positive values aren't returned, but we only care about the success
+value (which is zero).
+
+This change is mostly needed so that the compiler won't make any inferences
+about some about values being potentially un-initialized. This only
+triggers after making some functions inline, because the compiler can
+better follow return paths.
+
+Signed-off-by: Alexandru Ardelean <alexandru.ardelean@analog.com>
+Signed-off-by: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/iio/imu/adis.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/iio/imu/adis.c b/drivers/iio/imu/adis.c
+index 1631c255deab..dc2f9e061d98 100644
+--- a/drivers/iio/imu/adis.c
++++ b/drivers/iio/imu/adis.c
+@@ -286,7 +286,7 @@ int adis_check_status(struct adis *adis)
+ 	int i;
+ 
+ 	ret = adis_read_reg_16(adis, adis->data->diag_stat_reg, &status);
+-	if (ret < 0)
++	if (ret)
+ 		return ret;
+ 
+ 	status &= adis->data->status_error_mask;
+-- 
+2.16.4
+

@@ -1,0 +1,52 @@
+From 8cf05a7841e1cfd894741d6bab43067b0ca85eb8 Mon Sep 17 00:00:00 2001
+From: "Gustavo A. R. Silva" <gustavo@embeddedor.com>
+Date: Fri, 14 Jun 2019 15:41:09 -0700
+Subject: [PATCH] md: raid10: Use struct_size() in kmalloc()
+Git-commit: 8cf05a7841e1cfd894741d6bab43067b0ca85eb8
+Patch-mainline: v5.3-rc1
+References: bsc#1166003
+
+One of the more common cases of allocation size calculations is finding
+the size of a structure that has a zero-sized array at the end, along
+with memory for some number of elements for that array. For example:
+
+struct foo {
+   int stuff;
+   struct boo entry[];
+};
+
+instance = kmalloc(size, GFP_KERNEL);
+
+Instead of leaving these open-coded and prone to type mistakes, we can
+now use the new struct_size() helper:
+
+instance = kmalloc(struct_size(instance, entry, count), GFP_KERNEL);
+
+This code was detected with the help of Coccinelle.
+
+Signed-off-by: Gustavo A. R. Silva <gustavo@embeddedor.com>
+Signed-off-by: Song Liu <songliubraving@fb.com>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/raid10.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/md/raid10.c b/drivers/md/raid10.c
+index 1facd0153399..f35e076ee47d 100644
+--- a/drivers/md/raid10.c
++++ b/drivers/md/raid10.c
+@@ -4755,8 +4755,7 @@ static int handle_reshape_read_error(struct mddev *mddev,
+ 	int idx = 0;
+ 	struct page **pages;
+ 
+-	r10b = kmalloc(sizeof(*r10b) +
+-	       sizeof(struct r10dev) * conf->copies, GFP_NOIO);
++	r10b = kmalloc(struct_size(r10b, devs, conf->copies), GFP_NOIO);
+ 	if (!r10b) {
+ 		set_bit(MD_RECOVERY_INTR, &mddev->recovery);
+ 		return -ENOMEM;
+-- 
+2.25.0
+

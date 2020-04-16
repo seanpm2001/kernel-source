@@ -19,7 +19,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
 
 --- a/drivers/md/md.c
 +++ b/drivers/md/md.c
-@@ -783,8 +783,10 @@ static void super_written(struct bio *bi
+@@ -865,8 +865,10 @@ static void super_written(struct bio *bi
  	if (bio->bi_status) {
  		pr_err("md: super_written gets error=%d\n", bio->bi_status);
  		md_error(mddev, rdev);
@@ -32,7 +32,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  			set_bit(MD_SB_NEED_REWRITE, &mddev->sb_flags);
  			set_bit(LastDev, &rdev->flags);
  		}
-@@ -1136,6 +1138,7 @@ static int super_90_validate(struct mdde
+@@ -1231,6 +1233,7 @@ static int super_90_validate(struct mdde
  
  	rdev->raid_disk = -1;
  	clear_bit(Faulty, &rdev->flags);
@@ -40,7 +40,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  	clear_bit(In_sync, &rdev->flags);
  	clear_bit(Bitmap_sync, &rdev->flags);
  	clear_bit(WriteMostly, &rdev->flags);
-@@ -1633,6 +1636,7 @@ static int super_1_validate(struct mddev
+@@ -1746,6 +1749,7 @@ static int super_1_validate(struct mddev
  
  	rdev->raid_disk = -1;
  	clear_bit(Faulty, &rdev->flags);
@@ -48,7 +48,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  	clear_bit(In_sync, &rdev->flags);
  	clear_bit(Bitmap_sync, &rdev->flags);
  	clear_bit(WriteMostly, &rdev->flags);
-@@ -1755,6 +1759,9 @@ static int super_1_validate(struct mddev
+@@ -1872,6 +1876,9 @@ static int super_1_validate(struct mddev
  			break;
  		case MD_DISK_ROLE_JOURNAL: /* journal device */
  			if (!(le32_to_cpu(sb->feature_map) & MD_FEATURE_JOURNAL)) {
@@ -58,7 +58,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  				/* journal device without journal feature */
  				pr_warn("md: journal device provided without journal feature, ignoring the device\n");
  				return -EINVAL;
-@@ -1763,6 +1770,11 @@ static int super_1_validate(struct mddev
+@@ -1880,6 +1887,11 @@ static int super_1_validate(struct mddev
  			rdev->journal_tail = le64_to_cpu(sb->journal_tail);
  			rdev->raid_disk = 0;
  			break;
@@ -70,7 +70,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  		default:
  			rdev->saved_raid_disk = role;
  			if ((le32_to_cpu(sb->feature_map) &
-@@ -1941,9 +1953,12 @@ retry:
+@@ -2065,9 +2077,12 @@ retry:
  
  	rdev_for_each(rdev2, mddev) {
  		i = rdev2->desc_nr;
@@ -86,7 +86,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  			sb->dev_roles[i] = cpu_to_le16(rdev2->raid_disk);
  		else if (test_bit(Journal, &rdev2->flags))
  			sb->dev_roles[i] = cpu_to_le16(MD_DISK_ROLE_JOURNAL);
-@@ -2698,6 +2713,8 @@ state_show(struct md_rdev *rdev, char *p
+@@ -2824,6 +2839,8 @@ state_show(struct md_rdev *rdev, char *p
  	    (!test_bit(ExternalBbl, &flags) &&
  	    rdev->badblocks.unacked_exist))
  		len += sprintf(page+len, "faulty%s", sep);
@@ -95,7 +95,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  	if (test_bit(In_sync, &flags))
  		len += sprintf(page+len, "in_sync%s", sep);
  	if (test_bit(Journal, &flags))
-@@ -2753,6 +2770,11 @@ state_store(struct md_rdev *rdev, const
+@@ -2879,6 +2896,11 @@ state_store(struct md_rdev *rdev, const
  			err = 0;
  		else
  			err = -EBUSY;
@@ -107,7 +107,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  	} else if (cmd_match(buf, "remove")) {
  		if (rdev->mddev->pers) {
  			clear_bit(Blocked, &rdev->flags);
-@@ -3000,6 +3022,7 @@ slot_store(struct md_rdev *rdev, const c
+@@ -3130,6 +3152,7 @@ slot_store(struct md_rdev *rdev, const c
  		rdev->raid_disk = slot;
  		/* assume it is working */
  		clear_bit(Faulty, &rdev->flags);
@@ -115,7 +115,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  		clear_bit(WriteMostly, &rdev->flags);
  		set_bit(In_sync, &rdev->flags);
  		sysfs_notify_dirent_safe(rdev->sysfs_state);
-@@ -6313,9 +6336,11 @@ static int get_disk_info(struct mddev *m
+@@ -6498,9 +6521,11 @@ static int get_disk_info(struct mddev *m
  		info.minor = MINOR(rdev->bdev->bd_dev);
  		info.raid_disk = rdev->raid_disk;
  		info.state = 0;
@@ -129,7 +129,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  			info.state |= (1<<MD_DISK_ACTIVE);
  			info.state |= (1<<MD_DISK_SYNC);
  		}
-@@ -7880,7 +7905,10 @@ static int md_seq_show(struct seq_file *
+@@ -8076,7 +8101,10 @@ static int md_seq_show(struct seq_file *
  			if (test_bit(Journal, &rdev->flags))
  				seq_printf(seq, "(J)");
  			if (test_bit(Faulty, &rdev->flags)) {
@@ -143,9 +143,9 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  			if (rdev->raid_disk < 0)
 --- a/drivers/md/md.h
 +++ b/drivers/md/md.h
-@@ -200,6 +200,9 @@ enum flag_bits {
- 				 * it didn't fail, so don't use FailFast
- 				 * any more for metadata
+@@ -213,6 +213,9 @@ enum flag_bits {
+ 				 * check if there is collision between raid1
+ 				 * serial bios.
  				 */
 +	Timeout,		/* Device fault due to timeout.
 +				 * 'Faulty' is required to be set.
@@ -155,7 +155,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  static inline int is_badblock(struct md_rdev *rdev, sector_t s, int sectors,
 --- a/drivers/md/raid10.c
 +++ b/drivers/md/raid10.c
-@@ -394,6 +394,7 @@ static void raid10_end_read_request(stru
+@@ -395,6 +395,7 @@ static void raid10_end_read_request(stru
  
  	slot = r10_bio->read_slot;
  	rdev = r10_bio->devs[slot].rdev;
@@ -163,7 +163,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  	/*
  	 * this branch is our 'one mirror IO has finished' event handler:
  	 */
-@@ -484,6 +485,7 @@ static void raid10_end_write_request(str
+@@ -485,6 +486,7 @@ static void raid10_end_write_request(str
  		repl = 0;
  		rdev = conf->mirrors[dev].rdev;
  	}
@@ -171,16 +171,16 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  	/*
  	 * this branch is our 'one mirror IO has finished' event handler:
  	 */
-@@ -510,6 +512,8 @@ static void raid10_end_write_request(str
- 					 */
- 					set_bit(R10BIO_WriteError, &r10_bio->state);
- 				else {
-+					if (bio->bi_status == BLK_STS_TIMEOUT)
-+						set_bit(Timeout, &rdev->flags);
- 					r10_bio->devs[slot].bio = NULL;
- 					to_put = bio;
- 					dec_rdev = 1;
-@@ -926,7 +930,11 @@ static void flush_pending_writes(struct
+@@ -515,6 +517,8 @@ static void raid10_end_write_request(str
+ 			if (!test_bit(Faulty, &rdev->flags))
+ 				set_bit(R10BIO_WriteError, &r10_bio->state);
+ 			else {
++				if (bio->bi_status == BLK_STS_TIMEOUT)
++					set_bit(Timeout, &rdev->flags);
+ 				r10_bio->devs[slot].bio = NULL;
+ 				to_put = bio;
+ 				dec_rdev = 1;
+@@ -950,7 +954,11 @@ static void flush_pending_writes(struct
  			bio->bi_next = NULL;
  			bio_set_dev(bio, rdev->bdev);
  			if (test_bit(Faulty, &rdev->flags)) {
@@ -193,7 +193,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  			} else if (unlikely((bio_op(bio) ==  REQ_OP_DISCARD) &&
  					    !blk_queue_discard(bio->bi_disk->queue)))
  				/* Just ignore it */
-@@ -1111,7 +1119,11 @@ static void raid10_unplug(struct blk_plu
+@@ -1135,7 +1143,11 @@ static void raid10_unplug(struct blk_plu
  		bio->bi_next = NULL;
  		bio_set_dev(bio, rdev->bdev);
  		if (test_bit(Faulty, &rdev->flags)) {
@@ -206,7 +206,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  		} else if (unlikely((bio_op(bio) ==  REQ_OP_DISCARD) &&
  				    !blk_queue_discard(bio->bi_disk->queue)))
  			/* Just ignore it */
-@@ -2104,6 +2116,9 @@ static void sync_request_write(struct md
+@@ -2112,6 +2124,9 @@ static void sync_request_write(struct md
  		} else if (test_bit(FailFast, &rdev->flags)) {
  			/* Just give up on this device */
  			md_error(rdev->mddev, rdev);
@@ -216,7 +216,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  			continue;
  		}
  		/* Ok, we need to write this bio, either to correct an
-@@ -2367,6 +2382,7 @@ static void fix_read_error(struct r10con
+@@ -2375,6 +2390,7 @@ static void fix_read_error(struct r10con
  	struct md_rdev *rdev;
  	int max_read_errors = atomic_read(&mddev->max_corr_read_errors);
  	int d = r10_bio->devs[r10_bio->read_slot].devnum;
@@ -224,7 +224,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  
  	/* still own a reference to this rdev, so it cannot
  	 * have been cleared recently.
-@@ -2390,6 +2406,9 @@ static void fix_read_error(struct r10con
+@@ -2398,6 +2414,9 @@ static void fix_read_error(struct r10con
  		pr_notice("md/raid10:%s: %s: Failing raid device\n",
  			  mdname(mddev), b);
  		md_error(mddev, rdev);
@@ -234,7 +234,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  		r10_bio->devs[r10_bio->read_slot].bio = IO_BLOCKED;
  		return;
  	}
-@@ -2631,9 +2650,12 @@ static void handle_read_error(struct mdd
+@@ -2639,9 +2658,12 @@ static void handle_read_error(struct mdd
  		freeze_array(conf, 1);
  		fix_read_error(conf, mddev, r10_bio);
  		unfreeze_array(conf);
@@ -249,7 +249,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  	rdev_dec_pending(rdev, mddev);
  	allow_barrier(conf);
  	r10_bio->state = 0;
-@@ -2668,8 +2690,13 @@ static void handle_write_completed(struc
+@@ -2676,8 +2698,13 @@ static void handle_write_completed(struc
  				if (!rdev_set_badblocks(
  					    rdev,
  					    r10_bio->devs[m].addr,
@@ -264,7 +264,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  			}
  			rdev = conf->mirrors[dev].replacement;
  			if (r10_bio->devs[m].repl_bio == NULL ||
-@@ -2685,8 +2712,13 @@ static void handle_write_completed(struc
+@@ -2693,8 +2720,13 @@ static void handle_write_completed(struc
  				if (!rdev_set_badblocks(
  					    rdev,
  					    r10_bio->devs[m].addr,
@@ -279,7 +279,7 @@ Signed-off-by: Neil Brown <neilb@suse.de>
  			}
  		}
  		put_buf(r10_bio);
-@@ -4817,6 +4849,9 @@ static void end_reshape_write(struct bio
+@@ -4900,6 +4932,9 @@ static void end_reshape_write(struct bio
  	if (bio->bi_status) {
  		/* FIXME should record badblock */
  		md_error(mddev, rdev);

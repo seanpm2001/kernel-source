@@ -1,0 +1,33 @@
+From: Hannes Reinecke <hare@suse.de>
+Date: Thu, 4 Jul 2019 08:10:46 +0200
+Subject: nvme-multipath: also check for a disabled path if there is a single
+ sibling
+Patch-mainline: v5.3-rc1
+Git-commit: 2032d074716a811440aa9cd2e971a0716646d6af
+References: bsc#1158983
+
+When we have a singular list in nvme_round_robin_path() we still
+need to check its validity.
+
+Signed-off-by: Hannes Reinecke <hare@suse.com>
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/nvme/host/multipath.c |    5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/drivers/nvme/host/multipath.c
++++ b/drivers/nvme/host/multipath.c
+@@ -191,8 +191,11 @@ static struct nvme_ns *nvme_round_robin_
+ {
+ 	struct nvme_ns *ns, *found, *fallback = NULL;
+ 
+-	if (list_is_singular(&head->list))
++	if (list_is_singular(&head->list)) {
++		if (nvme_path_is_disabled(old))
++			return NULL;
+ 		return old;
++	}
+ 
+ 	for (ns = nvme_next_ns(head, old);
+ 	     ns != old;

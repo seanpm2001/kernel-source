@@ -25,20 +25,20 @@ specified, and refused to assemble an affected array if that parameter is
 not set.
 
 Fixes: 20d0189b1012 ("block: Introduce new bio_split()")
-Cc: stable@vger.kernel.org (3.14+)
+cc: stable@vger.kernel.org (3.14+)
 Acked-by: Guoqing Jiang <guoqing.jiang@cloud.ionos.com>
 Signed-off-by: NeilBrown <neilb@suse.de>
 Signed-off-by: Song Liu <songliubraving@fb.com>
-Signed-off-by: Coly Li <colyli@suse.de>
-
 ---
- drivers/md/raid0.c |   34 +++++++++++++++++++++++++++++++++-
- drivers/md/raid0.h |   14 ++++++++++++++
- 2 files changed, 47 insertions(+), 1 deletion(-)
+ drivers/md/raid0.c | 32 +++++++++++++++++++++++++++++++-
+ drivers/md/raid0.h | 14 ++++++++++++++
+ 2 files changed, 45 insertions(+), 1 deletion(-)
 
+diff --git a/drivers/md/raid0.c b/drivers/md/raid0.c
+index bc422eae2c95..ec611abda835 100644
 --- a/drivers/md/raid0.c
 +++ b/drivers/md/raid0.c
-@@ -26,6 +26,9 @@
+@@ -19,6 +19,9 @@
  #include "raid0.h"
  #include "raid5.h"
  
@@ -48,7 +48,7 @@ Signed-off-by: Coly Li <colyli@suse.de>
  #define UNSUPPORTED_MDDEV_FLAGS		\
  	((1L << MD_HAS_JOURNAL) |	\
  	 (1L << MD_JOURNAL_CLEAN) |	\
-@@ -146,6 +149,19 @@ static int create_strip_zones(struct mdd
+@@ -139,6 +142,19 @@ static int create_strip_zones(struct mddev *mddev, struct r0conf **private_conf)
  	}
  	pr_debug("md/raid0:%s: FINAL %d zones\n",
  		 mdname(mddev), conf->nr_strip_zones);
@@ -68,7 +68,7 @@ Signed-off-by: Coly Li <colyli@suse.de>
  	/*
  	 * now since we have the hard sector sizes, we can make sure
  	 * chunk size is a multiple of that sector size
-@@ -552,10 +568,12 @@ static void raid0_handle_discard(struct
+@@ -547,10 +563,12 @@ static void raid0_handle_discard(struct mddev *mddev, struct bio *bio)
  
  static bool raid0_make_request(struct mddev *mddev, struct bio *bio)
  {
@@ -81,14 +81,13 @@ Signed-off-by: Coly Li <colyli@suse.de>
  	unsigned chunk_sects;
  	unsigned sectors;
  
-@@ -588,8 +606,22 @@ static bool raid0_make_request(struct md
+@@ -584,8 +602,20 @@ static bool raid0_make_request(struct mddev *mddev, struct bio *bio)
  		bio = split;
  	}
  
 +	orig_sector = sector;
  	zone = find_zone(mddev->private, &sector);
 -	tmp_dev = map_sector(mddev, zone, sector, &sector);
-+
 +	switch (conf->layout) {
 +	case RAID0_ORIG_LAYOUT:
 +		tmp_dev = map_sector(mddev, zone, orig_sector, &sector);
@@ -101,13 +100,14 @@ Signed-off-by: Coly Li <colyli@suse.de>
 +		bio_io_error(bio);
 +		return true;
 +	}
-+
- 	bio_set_dev(bio, tmp_dev->bdev);
- 	bio->bi_iter.bi_sector = sector + zone->dev_start +
- 		tmp_dev->data_offset;
+ 
+ 	if (unlikely(is_mddev_broken(tmp_dev, "raid0"))) {
+ 		bio_io_error(bio);
+diff --git a/drivers/md/raid0.h b/drivers/md/raid0.h
+index 540e65d92642..3816e5477db1 100644
 --- a/drivers/md/raid0.h
 +++ b/drivers/md/raid0.h
-@@ -7,11 +7,25 @@ struct strip_zone {
+@@ -8,11 +8,25 @@ struct strip_zone {
  	int	 nb_dev;	/* # of devices attached to the zone */
  };
  
@@ -133,3 +133,6 @@ Signed-off-by: Coly Li <colyli@suse.de>
  };
  
  #endif
+-- 
+2.25.0
+

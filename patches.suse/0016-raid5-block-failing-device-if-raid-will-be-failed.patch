@@ -1,0 +1,55 @@
+From fb73b357fb985cc652a72a41541d25915c7f9635 Mon Sep 17 00:00:00 2001
+From: Mariusz Tkaczyk <mariusz.tkaczyk@intel.com>
+Date: Tue, 4 Sep 2018 15:08:30 +0200
+Subject: [PATCH] raid5: block failing device if raid will be failed
+Git-commit: fb73b357fb985cc652a72a41541d25915c7f9635
+Patch-mainline: v4.20-rc1
+References: bsc#1166003
+
+Currently there is an inconsistency for failing the member drives
+for arrays with different RAID levels. For RAID456 - there is a possibility
+to fail all of the devices. However - for other RAID levels - kernel blocks
+removing the member drive, if the operation results in array's FAIL state
+(EBUSY is returned). For example - removing last drive from RAID1 is not
+possible.
+This kind of blocker was never implemented for raid456 and we cannot see
+the reason why.
+
+We had tested following patch and did not observe any regression, so do you
+have any comments/reasons for current approach, or we can send the proper
+patch for this?
+
+Signed-off-by: Mariusz Tkaczyk <mariusz.tkaczyk@intel.com>
+Signed-off-by: Shaohua Li <shli@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/raid5.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/drivers/md/raid5.c b/drivers/md/raid5.c
+index e4e98f47865d..4990f0319f6c 100644
+--- a/drivers/md/raid5.c
++++ b/drivers/md/raid5.c
+@@ -2681,6 +2681,18 @@ static void raid5_error(struct mddev *mddev, struct md_rdev *rdev)
+ 	pr_debug("raid456: error called\n");
+ 
+ 	spin_lock_irqsave(&conf->device_lock, flags);
++
++	if (test_bit(In_sync, &rdev->flags) &&
++	    mddev->degraded == conf->max_degraded) {
++		/*
++		 * Don't allow to achieve failed state
++		 * Don't try to recover this device
++		 */
++		conf->recovery_disabled = mddev->recovery_disabled;
++		spin_unlock_irqrestore(&conf->device_lock, flags);
++		return;
++	}
++
+ 	set_bit(Faulty, &rdev->flags);
+ 	clear_bit(In_sync, &rdev->flags);
+ 	mddev->degraded = raid5_calc_degraded(conf);
+-- 
+2.25.0
+

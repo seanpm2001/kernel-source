@@ -101,14 +101,15 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  int btrfs_add_delayed_data_ref(struct btrfs_fs_info *fs_info,
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -2113,18 +2113,20 @@ int btrfs_inc_extent_ref(struct btrfs_tr
+@@ -2193,6 +2193,7 @@ int btrfs_inc_extent_ref(struct btrfs_tr
  			 u64 bytenr, u64 num_bytes, u64 parent,
  			 u64 root_objectid, u64 owner, u64 offset)
  {
 +	struct btrfs_ref generic_ref = { 0 };
+ 	struct btrfs_fs_info *fs_info = root->fs_info;
  	int old_ref_mod, new_ref_mod;
  	int ret;
- 
+@@ -2200,12 +2201,13 @@ int btrfs_inc_extent_ref(struct btrfs_tr
  	BUG_ON(owner < BTRFS_FIRST_FREE_OBJECTID &&
  	       root_objectid == BTRFS_TREE_LOG_OBJECTID);
  
@@ -127,7 +128,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	} else {
  		ret = btrfs_add_delayed_data_ref(fs_info, trans, bytenr,
  						 num_bytes, parent,
-@@ -7121,18 +7123,20 @@ void btrfs_free_tree_block(struct btrfs_
+@@ -7215,18 +7217,20 @@ void btrfs_free_tree_block(struct btrfs_
  			   u64 parent, int last_ref)
  {
  	struct btrfs_fs_info *fs_info = root->fs_info;
@@ -154,17 +155,16 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  		BUG_ON(ret); /* -ENOMEM */
  		pin = old_ref_mod >= 0 && new_ref_mod < 0;
  	}
-@@ -7183,6 +7187,7 @@ int btrfs_free_extent(struct btrfs_trans
- 		      u64 bytenr, u64 num_bytes, u64 parent, u64 root_objectid,
+@@ -7278,12 +7282,16 @@ int btrfs_free_extent(struct btrfs_trans
  		      u64 owner, u64 offset)
  {
+ 	struct btrfs_fs_info *fs_info = root->fs_info;
 +	struct btrfs_ref generic_ref = { 0 };
  	int old_ref_mod, new_ref_mod;
  	int ret;
  
-@@ -7190,6 +7195,9 @@ int btrfs_free_extent(struct btrfs_trans
+ 	if (btrfs_is_testing(fs_info))
  		return 0;
- 
  
 +	btrfs_init_generic_ref(&generic_ref, BTRFS_DROP_DELAYED_REF, bytenr,
 +			       num_bytes, parent);
@@ -172,7 +172,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	/*
  	 * tree log blocks never actually go into the extent allocation
  	 * tree, just update pinning info and exit early.
-@@ -7201,11 +7209,9 @@ int btrfs_free_extent(struct btrfs_trans
+@@ -7295,11 +7303,9 @@ int btrfs_free_extent(struct btrfs_trans
  		old_ref_mod = new_ref_mod = 0;
  		ret = 0;
  	} else if (owner < BTRFS_FIRST_FREE_OBJECTID) {
@@ -187,7 +187,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	} else {
  		ret = btrfs_add_delayed_data_ref(fs_info, trans, bytenr,
  						 num_bytes, parent,
-@@ -8335,6 +8341,7 @@ struct extent_buffer *btrfs_alloc_tree_b
+@@ -8430,6 +8436,7 @@ struct extent_buffer *btrfs_alloc_tree_b
  	struct btrfs_block_rsv *block_rsv;
  	struct extent_buffer *buf;
  	struct btrfs_delayed_extent_op *extent_op;
@@ -195,7 +195,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	u64 flags = 0;
  	int ret;
  	u32 blocksize = fs_info->nodesize;
-@@ -8388,10 +8395,11 @@ struct extent_buffer *btrfs_alloc_tree_b
+@@ -8483,10 +8490,11 @@ struct extent_buffer *btrfs_alloc_tree_b
  		extent_op->is_data = false;
  		extent_op->level = level;
  

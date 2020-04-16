@@ -1,0 +1,65 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Wed, 19 Jun 2019 13:47:21 -0400
+Subject: btrfs: stop using block_rsv_release_bytes everywhere
+Git-commit: 424a47805a819ff59ada9549c4a21fe0ba95c446
+Patch-mainline: v5.3-rc1
+References: bsc#1165949
+
+block_rsv_release_bytes() is the internal to the block_rsv code, and
+shouldn't be called directly by anything else.  Switch all users to the
+exported helpers.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/extent-tree.c |   14 ++++++--------
+ 1 file changed, 6 insertions(+), 8 deletions(-)
+
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -4960,12 +4960,11 @@ void btrfs_inode_rsv_release(struct btrf
+ void btrfs_delayed_refs_rsv_release(struct btrfs_fs_info *fs_info, int nr)
+ {
+ 	struct btrfs_block_rsv *block_rsv = &fs_info->delayed_refs_rsv;
+-	struct btrfs_block_rsv *global_rsv = &fs_info->global_block_rsv;
+ 	u64 num_bytes = btrfs_calc_trans_metadata_size(fs_info, nr);
+ 	u64 released = 0;
+ 
+-	released = block_rsv_release_bytes(fs_info, block_rsv, global_rsv,
+-					   num_bytes, NULL);
++	released = __btrfs_block_rsv_release(fs_info, block_rsv, num_bytes,
++					     NULL);
+ 	if (released)
+ 		trace_btrfs_space_reservation(fs_info, "delayed_refs_rsv",
+ 					      0, released, 0);
+@@ -5050,8 +5049,7 @@ static void init_global_block_rsv(struct
+ 
+ static void release_global_block_rsv(struct btrfs_fs_info *fs_info)
+ {
+-	block_rsv_release_bytes(fs_info, &fs_info->global_block_rsv, NULL,
+-				(u64)-1, NULL);
++	btrfs_block_rsv_release(fs_info, &fs_info->global_block_rsv, (u64)-1);
+ 	WARN_ON(fs_info->trans_block_rsv.size > 0);
+ 	WARN_ON(fs_info->trans_block_rsv.reserved > 0);
+ 	WARN_ON(fs_info->chunk_block_rsv.size > 0);
+@@ -5119,8 +5117,8 @@ void btrfs_trans_release_chunk_metadata(
+ 
+ 	WARN_ON_ONCE(!list_empty(&trans->new_bgs));
+ 
+-	block_rsv_release_bytes(fs_info, &fs_info->chunk_block_rsv, NULL,
+-				trans->chunk_bytes_reserved, NULL);
++	btrfs_block_rsv_release(fs_info, &fs_info->chunk_block_rsv,
++				trans->chunk_bytes_reserved);
+ 	trans->chunk_bytes_reserved = 0;
+ }
+ 
+@@ -7550,7 +7548,7 @@ static void unuse_block_rsv(struct btrfs
+ 			    struct btrfs_block_rsv *block_rsv, u32 blocksize)
+ {
+ 	btrfs_block_rsv_add_bytes(block_rsv, blocksize, 0);
+-	block_rsv_release_bytes(fs_info, block_rsv, NULL, 0, NULL);
++	btrfs_block_rsv_release(fs_info, block_rsv, 0);
+ }
+ 
+ /*

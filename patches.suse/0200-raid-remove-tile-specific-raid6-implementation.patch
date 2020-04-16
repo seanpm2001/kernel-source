@@ -10,20 +10,21 @@ The Tile architecture is getting removed, so we no longer need this either.
 
 Acked-by: Ard Biesheuvel <ard.biesheuvel@linaro.org>
 Signed-off-by: Arnd Bergmann <arnd@arndb.de>
-Signed-off-by: Coly Li <colyli@suse.de>
-
+Acked-by: Coly Li <colyli@suse.de>
 ---
- include/linux/raid/pq.h |    1 
- lib/raid6/Makefile      |    6 ---
- lib/raid6/algos.c       |    3 -
- lib/raid6/test/Makefile |    7 ---
- lib/raid6/tilegx.uc     |   87 ------------------------------------------------
+ include/linux/raid/pq.h |  1 -
+ lib/raid6/Makefile      |  6 ---
+ lib/raid6/algos.c       |  3 --
+ lib/raid6/test/Makefile |  7 ----
+ lib/raid6/tilegx.uc     | 87 -----------------------------------------
  5 files changed, 104 deletions(-)
  delete mode 100644 lib/raid6/tilegx.uc
 
+diff --git a/include/linux/raid/pq.h b/include/linux/raid/pq.h
+index 583cdd3d49ca..a366cc314479 100644
 --- a/include/linux/raid/pq.h
 +++ b/include/linux/raid/pq.h
-@@ -105,7 +105,6 @@ extern const struct raid6_calls raid6_av
+@@ -105,7 +105,6 @@ extern const struct raid6_calls raid6_avx2x4;
  extern const struct raid6_calls raid6_avx512x1;
  extern const struct raid6_calls raid6_avx512x2;
  extern const struct raid6_calls raid6_avx512x4;
@@ -31,9 +32,11 @@ Signed-off-by: Coly Li <colyli@suse.de>
  extern const struct raid6_calls raid6_s390vx8;
  
  struct raid6_recov_calls {
+diff --git a/lib/raid6/Makefile b/lib/raid6/Makefile
+index 4add700ddfe3..44d6b46df051 100644
 --- a/lib/raid6/Makefile
 +++ b/lib/raid6/Makefile
-@@ -6,7 +6,6 @@ raid6_pq-y	+= algos.o recov.o tables.o i
+@@ -7,7 +7,6 @@ raid6_pq-y	+= algos.o recov.o tables.o int1.o int2.o int4.o \
  raid6_pq-$(CONFIG_X86) += recov_ssse3.o recov_avx2.o mmx.o sse1.o sse2.o avx2.o avx512.o recov_avx512.o
  raid6_pq-$(CONFIG_ALTIVEC) += altivec1.o altivec2.o altivec4.o altivec8.o
  raid6_pq-$(CONFIG_KERNEL_MODE_NEON) += neon.o neon1.o neon2.o neon4.o neon8.o recov_neon.o recov_neon_inner.o
@@ -53,9 +56,11 @@ Signed-off-by: Coly Li <colyli@suse.de>
  targets += s390vx8.c
  $(obj)/s390vx8.c:   UNROLL := 8
  $(obj)/s390vx8.c:   $(src)/s390vx.uc $(src)/unroll.awk FORCE
+diff --git a/lib/raid6/algos.c b/lib/raid6/algos.c
+index 476994723258..c65aa80d67ed 100644
 --- a/lib/raid6/algos.c
 +++ b/lib/raid6/algos.c
-@@ -75,9 +75,6 @@ const struct raid6_calls * const raid6_a
+@@ -75,9 +75,6 @@ const struct raid6_calls * const raid6_algos[] = {
  	&raid6_altivec4,
  	&raid6_altivec8,
  #endif
@@ -65,9 +70,11 @@ Signed-off-by: Coly Li <colyli@suse.de>
  #if defined(CONFIG_S390)
  	&raid6_s390vx8,
  #endif
+diff --git a/lib/raid6/test/Makefile b/lib/raid6/test/Makefile
+index be1010bdc435..fabc477b1417 100644
 --- a/lib/raid6/test/Makefile
 +++ b/lib/raid6/test/Makefile
-@@ -50,9 +50,6 @@ else
+@@ -51,9 +51,6 @@ else
                  OBJS += altivec1.o altivec2.o altivec4.o altivec8.o
          endif
  endif
@@ -77,7 +84,7 @@ Signed-off-by: Coly Li <colyli@suse.de>
  
  .c.o:
  	$(CC) $(CFLAGS) -c -o $@ $<
-@@ -115,15 +112,11 @@ int16.c: int.uc ../unroll.awk
+@@ -116,15 +113,11 @@ int16.c: int.uc ../unroll.awk
  int32.c: int.uc ../unroll.awk
  	$(AWK) ../unroll.awk -vN=32 < int.uc > $@
  
@@ -93,6 +100,9 @@ Signed-off-by: Coly Li <colyli@suse.de>
  
  spotless: clean
  	rm -f *~
+diff --git a/lib/raid6/tilegx.uc b/lib/raid6/tilegx.uc
+deleted file mode 100644
+index 2dd291a11264..000000000000
 --- a/lib/raid6/tilegx.uc
 +++ /dev/null
 @@ -1,87 +0,0 @@
@@ -183,3 +193,6 @@ Signed-off-by: Coly Li <colyli@suse.de>
 -	"tilegx$#",
 -	0
 -};
+-- 
+2.25.0
+

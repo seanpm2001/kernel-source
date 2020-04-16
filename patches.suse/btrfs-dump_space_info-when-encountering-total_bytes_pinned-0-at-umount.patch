@@ -8,38 +8,17 @@ can track down likely causes.
 
 Signed-off-by: Jeff Mahoney <jeffm@suse.com>
 ---
- fs/btrfs/extent-tree.c |    9 +++++++--
- 1 file changed, 7 insertions(+), 2 deletions(-)
+ fs/btrfs/space-info.c |    2 ++
+ 1 file changed, 2 insertions(+)
 
---- a/fs/btrfs/extent-tree.c
-+++ b/fs/btrfs/extent-tree.c
-@@ -7949,6 +7949,8 @@ static void dump_space_info(struct btrfs
+--- a/fs/btrfs/space-info.c
++++ b/fs/btrfs/space-info.c
+@@ -298,6 +298,8 @@ static void __btrfs_dump_space_info(stru
  		info->total_bytes, info->bytes_used, info->bytes_pinned,
  		info->bytes_reserved, info->bytes_may_use,
  		info->bytes_readonly);
 +	btrfs_info(fs_info, "total_bytes_pinned=%lld",
 +		   percpu_counter_sum(&info->total_bytes_pinned));
- 	spin_unlock(&info->lock);
  
- 	if (!dump_block_groups)
-@@ -9848,6 +9850,7 @@ int btrfs_free_block_groups(struct btrfs
- 
- 	while (!list_empty(&info->space_info)) {
- 		int i;
-+		s64 pinned;
- 
- 		space_info = list_entry(info->space_info.next,
- 					struct btrfs_space_info,
-@@ -9857,9 +9860,11 @@ int btrfs_free_block_groups(struct btrfs
- 		 * Do not hide this behind enospc_debug, this is actually
- 		 * important and indicates a real bug if this happens.
- 		 */
-+		pinned = percpu_counter_sum(&space_info->total_bytes_pinned);
- 		if (WARN_ON(space_info->bytes_pinned > 0 ||
- 			    space_info->bytes_reserved > 0 ||
--			    space_info->bytes_may_use > 0))
-+			    space_info->bytes_may_use > 0 ||
-+			    pinned != 0))
- 			dump_space_info(info, space_info, 0, 0);
- 		list_del(&space_info->list);
- 		for (i = 0; i < BTRFS_NR_RAID_TYPES; i++) {
+ 	DUMP_BLOCK_RSV(fs_info, global_block_rsv);
+ 	DUMP_BLOCK_RSV(fs_info, trans_block_rsv);

@@ -1,0 +1,36 @@
+From 0f2f02d1b57220951b9ae69abbcaa403163ee41b Mon Sep 17 00:00:00 2001
+From: Gilad Ben-Yossef <gilad@benyossef.com>
+Date: Sun, 25 Jun 2017 10:47:24 +0300
+Subject: [PATCH] staging: ccree: use signal safe completion wait
+Git-commit: 0f2f02d1b57220951b9ae69abbcaa403163ee41b
+References: git-fixes
+Patch-mainline: v4.13
+
+We were waiting for a completion notification of HW DMA
+operation using an interruptible wait which can result
+in data corruption if a signal interrupted us while
+DMA was not yet completed.
+
+Fix this by moving to uninterrupted wait.
+
+Fixes: abefd6741d ("staging: ccree: introduce CryptoCell HW driver").
+
+Signed-off-by: Gilad Ben-Yossef <gilad@benyossef.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/staging/ccree/ssi_request_mgr.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/drivers/staging/ccree/ssi_request_mgr.c
++++ b/drivers/staging/ccree/ssi_request_mgr.c
+@@ -482,7 +482,8 @@ int send_request(
+ 	if (!is_dout) {
+ 		/* Wait upon sequence completion.
+ 		*  Return "0" -Operation done successfully. */
+-		return wait_for_completion_interruptible(&ssi_req->seq_compl);
++		wait_for_completion(&ssi_req->seq_compl);
++		return 0;
+ 	} else {
+ 		/* Operation still in process */
+ 		return -EINPROGRESS;

@@ -1,0 +1,84 @@
+From aefb2e5fc2be590e6bef8985f3d175c3d38b0b77 Mon Sep 17 00:00:00 2001
+From: Guoqing Jiang <gqjiang@suse.com>
+Date: Thu, 18 Oct 2018 16:37:44 +0800
+Subject: [PATCH] md-cluster/raid10: call update_size in md_reap_sync_thread
+Git-commit: aefb2e5fc2be590e6bef8985f3d175c3d38b0b77
+Patch-mainline: v4.20-rc1
+References: bsc#1166003
+
+We need to change the capacity in all nodes after one node
+finishs reshape. And as we did before, we can't change the
+capacity directly in md_do_sync, instead, the capacity should
+be only changed in update_size or received CHANGE_CAPACITY
+msg.
+
+So master node calls update_size after completes reshape in
+md_reap_sync_thread, but we need to skip ops->update_size if
+MD_CLOSING is set since reshaping could not be finish.
+
+Reviewed-by: NeilBrown <neilb@suse.com>
+Signed-off-by: Guoqing Jiang <gqjiang@suse.com>
+Signed-off-by: Shaohua Li <shli@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/md.c | 21 ++++++++++++++++++---
+ 1 file changed, 18 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/md/md.c b/drivers/md/md.c
+index e07096c4ff20..e28f5db0a882 100644
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -8623,8 +8623,10 @@ void md_do_sync(struct md_thread *thread)
+ 		mddev_lock_nointr(mddev);
+ 		md_set_array_sectors(mddev, mddev->pers->size(mddev, 0, 0));
+ 		mddev_unlock(mddev);
+-		set_capacity(mddev->gendisk, mddev->array_sectors);
+-		revalidate_disk(mddev->gendisk);
++		if (!mddev_is_clustered(mddev)) {
++			set_capacity(mddev->gendisk, mddev->array_sectors);
++			revalidate_disk(mddev->gendisk);
++		}
+ 	}
+ 
+ 	spin_lock(&mddev->lock);
+@@ -8968,6 +8970,8 @@ EXPORT_SYMBOL(md_check_recovery);
+ void md_reap_sync_thread(struct mddev *mddev)
+ {
+ 	struct md_rdev *rdev;
++	sector_t old_dev_sectors = mddev->dev_sectors;
++	bool is_reshaped = false;
+ 
+ 	/* resync has finished, collect result */
+ 	md_unregister_thread(&mddev->sync_thread);
+@@ -8982,8 +8986,11 @@ void md_reap_sync_thread(struct mddev *mddev)
+ 		}
+ 	}
+ 	if (test_bit(MD_RECOVERY_RESHAPE, &mddev->recovery) &&
+-	    mddev->pers->finish_reshape)
++	    mddev->pers->finish_reshape) {
+ 		mddev->pers->finish_reshape(mddev);
++		if (mddev_is_clustered(mddev))
++			is_reshaped = true;
++	}
+ 
+ 	/* If array is no-longer degraded, then any saved_raid_disk
+ 	 * information must be scrapped.
+@@ -9004,6 +9011,14 @@ void md_reap_sync_thread(struct mddev *mddev)
+ 	clear_bit(MD_RECOVERY_RESHAPE, &mddev->recovery);
+ 	clear_bit(MD_RECOVERY_REQUESTED, &mddev->recovery);
+ 	clear_bit(MD_RECOVERY_CHECK, &mddev->recovery);
++	/*
++	 * We call md_cluster_ops->update_size here because sync_size could
++	 * be changed by md_update_sb, and MD_RECOVERY_RESHAPE is cleared,
++	 * so it is time to update size across cluster.
++	 */
++	if (mddev_is_clustered(mddev) && is_reshaped
++				      && !test_bit(MD_CLOSING, &mddev->flags))
++		md_cluster_ops->update_size(mddev, old_dev_sectors);
+ 	wake_up(&resync_wait);
+ 	/* flag recovery needed just to double check */
+ 	set_bit(MD_RECOVERY_NEEDED, &mddev->recovery);
+-- 
+2.25.0
+

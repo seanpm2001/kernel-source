@@ -1,0 +1,65 @@
+From 433175992c1775db6cbc7c92294345408a333bee Mon Sep 17 00:00:00 2001
+From: David Sterba <dsterba@suse.com>
+Date: Fri, 23 Jun 2017 03:46:07 +0200
+Patch-mainline: v4.16
+Git-commit: 433175992c1775db6cbc7c92294345408a333bee
+References: bsc#1168273
+Subject: [PATCH 1/7] btrfs: sink get_extent parameter to extent_writepages
+
+There's only one caller.
+
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/extent_io.c | 3 +--
+ fs/btrfs/extent_io.h | 1 -
+ fs/btrfs/inode.c     | 2 +-
+ 3 files changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/fs/btrfs/extent_io.c b/fs/btrfs/extent_io.c
+index 88131863d827..1d7aebd020ad 100644
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -4121,14 +4121,13 @@ int extent_write_locked_range(struct extent_io_tree *tree, struct inode *inode,
+ 
+ int extent_writepages(struct extent_io_tree *tree,
+ 		      struct address_space *mapping,
+-		      get_extent_t *get_extent,
+ 		      struct writeback_control *wbc)
+ {
+ 	int ret = 0;
+ 	struct extent_page_data epd = {
+ 		.bio = NULL,
+ 		.tree = tree,
+-		.get_extent = get_extent,
++		.get_extent = btrfs_get_extent,
+ 		.extent_locked = 0,
+ 		.sync_io = wbc->sync_mode == WB_SYNC_ALL,
+ 	};
+diff --git a/fs/btrfs/extent_io.h b/fs/btrfs/extent_io.h
+index 9f6a5133ce8a..e07f9e1c34e8 100644
+--- a/fs/btrfs/extent_io.h
++++ b/fs/btrfs/extent_io.h
+@@ -411,7 +411,6 @@ int extent_write_locked_range(struct extent_io_tree *tree, struct inode *inode,
+ 			      int mode);
+ int extent_writepages(struct extent_io_tree *tree,
+ 		      struct address_space *mapping,
+-		      get_extent_t *get_extent,
+ 		      struct writeback_control *wbc);
+ int btree_write_cache_pages(struct address_space *mapping,
+ 			    struct writeback_control *wbc);
+diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
+index ff91b2e3979a..a49dd803fb03 100644
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -8903,7 +8903,7 @@ static int btrfs_writepages(struct address_space *mapping,
+ 	struct extent_io_tree *tree;
+ 
+ 	tree = &BTRFS_I(mapping->host)->io_tree;
+-	return extent_writepages(tree, mapping, btrfs_get_extent, wbc);
++	return extent_writepages(tree, mapping, wbc);
+ }
+ 
+ static int
+-- 
+2.26.0
+

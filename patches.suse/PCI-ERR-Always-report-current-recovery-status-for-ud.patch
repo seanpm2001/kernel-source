@@ -1,0 +1,50 @@
+From 7b42d97e99d3a2babffd1b3456ded08b54981538 Mon Sep 17 00:00:00 2001
+From: Keith Busch <keith.busch@intel.com>
+Date: Thu, 20 Sep 2018 10:27:15 -0600
+Subject: [PATCH] PCI/ERR: Always report current recovery status for udev
+Git-commit: 7b42d97e99d3a2babffd1b3456ded08b54981538
+Patch-mainline: v4.20-rc1
+References: bsc#1161561
+
+A device still participates in error recovery even if it doesn't have
+the error callbacks.
+
+Always provide the status for user event watchers.
+
+Signed-off-by: Keith Busch <keith.busch@intel.com>
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Reviewed-by: Sinan Kaya <okaya@kernel.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/pci/pcie/err.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/pci/pcie/err.c b/drivers/pci/pcie/err.c
+index 362a717c831a..31e8a4314384 100644
+--- a/drivers/pci/pcie/err.c
++++ b/drivers/pci/pcie/err.c
+@@ -70,9 +70,8 @@ static int report_error_detected(struct pci_dev *dev,
+ 	} else {
+ 		err_handler = dev->driver->err_handler;
+ 		vote = err_handler->error_detected(dev, state);
+-		pci_uevent_ers(dev, PCI_ERS_RESULT_NONE);
+ 	}
+-
++	pci_uevent_ers(dev, vote);
+ 	*result = merge_result(*result, vote);
+ 	device_unlock(&dev->dev);
+ 	return 0;
+@@ -140,8 +139,8 @@ static int report_resume(struct pci_dev *dev, void *data)
+ 
+ 	err_handler = dev->driver->err_handler;
+ 	err_handler->resume(dev);
+-	pci_uevent_ers(dev, PCI_ERS_RESULT_RECOVERED);
+ out:
++	pci_uevent_ers(dev, PCI_ERS_RESULT_RECOVERED);
+ 	device_unlock(&dev->dev);
+ 	return 0;
+ }
+-- 
+2.16.4
+

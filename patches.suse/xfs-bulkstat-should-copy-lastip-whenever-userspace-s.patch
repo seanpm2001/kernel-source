@@ -1,0 +1,74 @@
+From f16fe3ecde6237256eeacb3cd582217ffe62c647 Mon Sep 17 00:00:00 2001
+From: "Darrick J. Wong" <darrick.wong@oracle.com>
+Date: Tue, 2 Jul 2019 09:39:39 -0700
+Subject: [PATCH] xfs: bulkstat should copy lastip whenever userspace supplies
+ one
+Git-commit: f16fe3ecde6237256eeacb3cd582217ffe62c647
+Patch-mainline: v5.3-rc1
+References: bsc#1165984
+
+When userspace passes in a @lastip pointer we should copy the results
+back, even if the @ocount pointer is NULL.
+
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Reviewed-by: Brian Foster <bfoster@redhat.com>
+Acked-by: Anthony Iliopoulos <ailiopoulos@suse.com>
+
+---
+ fs/xfs/xfs_ioctl.c   | 13 ++++++-------
+ fs/xfs/xfs_ioctl32.c | 13 ++++++-------
+ 2 files changed, 12 insertions(+), 14 deletions(-)
+
+diff --git a/fs/xfs/xfs_ioctl.c b/fs/xfs/xfs_ioctl.c
+index 7f1732ad6c40..8bc74ae3b72a 100644
+--- a/fs/xfs/xfs_ioctl.c
++++ b/fs/xfs/xfs_ioctl.c
+@@ -759,14 +759,13 @@ xfs_ioc_bulkstat(
+ 	if (error)
+ 		return error;
+ 
+-	if (bulkreq.ocount != NULL) {
+-		if (copy_to_user(bulkreq.lastip, &inlast,
+-						sizeof(xfs_ino_t)))
+-			return -EFAULT;
++	if (bulkreq.lastip != NULL &&
++	    copy_to_user(bulkreq.lastip, &inlast, sizeof(xfs_ino_t)))
++		return -EFAULT;
+ 
+-		if (copy_to_user(bulkreq.ocount, &count, sizeof(count)))
+-			return -EFAULT;
+-	}
++	if (bulkreq.ocount != NULL &&
++	    copy_to_user(bulkreq.ocount, &count, sizeof(count)))
++		return -EFAULT;
+ 
+ 	return 0;
+ }
+diff --git a/fs/xfs/xfs_ioctl32.c b/fs/xfs/xfs_ioctl32.c
+index d1967fe67472..3c3fb16685b1 100644
+--- a/fs/xfs/xfs_ioctl32.c
++++ b/fs/xfs/xfs_ioctl32.c
+@@ -305,14 +305,13 @@ xfs_compat_ioc_bulkstat(
+ 	if (error)
+ 		return error;
+ 
+-	if (bulkreq.ocount != NULL) {
+-		if (copy_to_user(bulkreq.lastip, &inlast,
+-						sizeof(xfs_ino_t)))
+-			return -EFAULT;
++	if (bulkreq.lastip != NULL &&
++	    copy_to_user(bulkreq.lastip, &inlast, sizeof(xfs_ino_t)))
++		return -EFAULT;
+ 
+-		if (copy_to_user(bulkreq.ocount, &count, sizeof(count)))
+-			return -EFAULT;
+-	}
++	if (bulkreq.ocount != NULL &&
++	    copy_to_user(bulkreq.ocount, &count, sizeof(count)))
++		return -EFAULT;
+ 
+ 	return 0;
+ }
+-- 
+2.16.4
+

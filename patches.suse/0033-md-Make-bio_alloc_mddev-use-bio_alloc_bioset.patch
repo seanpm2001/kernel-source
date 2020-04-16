@@ -1,0 +1,42 @@
+From 6251691a92170d3a781aaf7b5f2c31b50d669809 Mon Sep 17 00:00:00 2001
+From: Marcos Paulo de Souza <marcos.souza.org@gmail.com>
+Date: Mon, 14 Jan 2019 06:31:56 -0700
+Subject: [PATCH] md: Make bio_alloc_mddev use bio_alloc_bioset
+Git-commit: 6251691a92170d3a781aaf7b5f2c31b50d669809
+Patch-mainline: v5.0-rc3
+References: bsc#1166003
+
+bio_alloc_bioset returns a bio pointer or NULL, so we can avoid storing
+the returned data into a new variable.
+
+(Coly Li: rebase for Linux v4.12 based SUSE kernel)
+
+Acked-by: Guoqing Jiang <gqjiang@suse.com>
+Acked-by: Artur Paszkiewicz <artur.paszkiewicz@intel.com>
+Signed-off-by: Marcos Paulo de Souza <marcos.souza.org@gmail.com>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/md.c |    7 +------
+ 1 file changed, 1 insertion(+), 6 deletions(-)
+
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -189,15 +189,10 @@ static bool create_on_open = true;
+ struct bio *bio_alloc_mddev(gfp_t gfp_mask, int nr_iovecs,
+ 			    struct mddev *mddev)
+ {
+-	struct bio *b;
+-
+ 	if (!mddev || !mddev->bio_set)
+ 		return bio_alloc(gfp_mask, nr_iovecs);
+ 
+-	b = bio_alloc_bioset(gfp_mask, nr_iovecs, mddev->bio_set);
+-	if (!b)
+-		return NULL;
+-	return b;
++	return bio_alloc_bioset(gfp_mask, nr_iovecs, mddev->bio_set);
+ }
+ EXPORT_SYMBOL_GPL(bio_alloc_mddev);
+ 

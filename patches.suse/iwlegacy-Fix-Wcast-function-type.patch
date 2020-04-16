@@ -1,0 +1,65 @@
+From da5e57e8a6a3e69dac2937ba63fa86355628fbb2 Mon Sep 17 00:00:00 2001
+From: Phong Tran <tranmanphong@gmail.com>
+Date: Wed, 27 Nov 2019 00:55:28 +0700
+Subject: [PATCH] iwlegacy: Fix -Wcast-function-type
+Git-commit: da5e57e8a6a3e69dac2937ba63fa86355628fbb2
+Patch-mainline: v5.6-rc1
+References: bsc#1051510
+
+correct usage prototype of callback in tasklet_init().
+Report by https://github.com/KSPP/linux/issues/20
+
+Signed-off-by: Phong Tran <tranmanphong@gmail.com>
+Reviewed-by: Kees Cook <keescook@chromium.org>
+Signed-off-by: Kalle Valo <kvalo@codeaurora.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/net/wireless/intel/iwlegacy/3945-mac.c |    5 +++--
+ drivers/net/wireless/intel/iwlegacy/4965-mac.c |    5 +++--
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+--- a/drivers/net/wireless/intel/iwlegacy/3945-mac.c
++++ b/drivers/net/wireless/intel/iwlegacy/3945-mac.c
+@@ -1399,8 +1399,9 @@ il3945_dump_nic_error_log(struct il_priv
+ }
+ 
+ static void
+-il3945_irq_tasklet(struct il_priv *il)
++il3945_irq_tasklet(unsigned long data)
+ {
++	struct il_priv *il = (struct il_priv *)data;
+ 	u32 inta, handled = 0;
+ 	u32 inta_fh;
+ 	unsigned long flags;
+@@ -3432,7 +3433,7 @@ il3945_setup_deferred_work(struct il_pri
+ 	timer_setup(&il->watchdog, il_bg_watchdog, 0);
+ 
+ 	tasklet_init(&il->irq_tasklet,
+-		     (void (*)(unsigned long))il3945_irq_tasklet,
++		     il3945_irq_tasklet,
+ 		     (unsigned long)il);
+ }
+ 
+--- a/drivers/net/wireless/intel/iwlegacy/4965-mac.c
++++ b/drivers/net/wireless/intel/iwlegacy/4965-mac.c
+@@ -4363,8 +4363,9 @@ il4965_synchronize_irq(struct il_priv *i
+ }
+ 
+ static void
+-il4965_irq_tasklet(struct il_priv *il)
++il4965_irq_tasklet(unsigned long data)
+ {
++	struct il_priv *il = (struct il_priv *)data;
+ 	u32 inta, handled = 0;
+ 	u32 inta_fh;
+ 	unsigned long flags;
+@@ -6264,7 +6265,7 @@ il4965_setup_deferred_work(struct il_pri
+ 	timer_setup(&il->watchdog, il_bg_watchdog, 0);
+ 
+ 	tasklet_init(&il->irq_tasklet,
+-		     (void (*)(unsigned long))il4965_irq_tasklet,
++		     il4965_irq_tasklet,
+ 		     (unsigned long)il);
+ }
+ 

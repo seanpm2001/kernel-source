@@ -1,0 +1,40 @@
+From 5f14efd3d437205143dcffcf776e0122eae1755a Mon Sep 17 00:00:00 2001
+From: Liu Bo <bo.li.liu@oracle.com>
+Date: Wed, 23 Aug 2017 12:15:09 -0600
+Patch-mainline: v4.14
+Git-commit: 5f14efd3d437205143dcffcf776e0122eae1755a
+References: bsc#1168273
+Subject: [PATCH] Btrfs: do not reset bio->bi_ops while writing bio
+
+flush_epd_write_bio() sets bio->bi_opf by itself to honor REQ_SYNC,
+but it's not needed at all since bio->bi_opf has set up properly in
+both __extent_writepage() and write_one_eb(), and in the case of
+write_one_eb(), it also sets REQ_META, which we will lose in
+flush_epd_write_bio().
+
+This remove this unnecessary bio->bi_opf setting.
+
+Signed-off-by: Liu Bo <bo.li.liu@oracle.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/extent_io.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/fs/btrfs/extent_io.c b/fs/btrfs/extent_io.c
+index 4ead6da5a645..3738d245518c 100644
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -4062,9 +4062,6 @@ static void flush_epd_write_bio(struct extent_page_data *epd)
+ 	if (epd->bio) {
+ 		int ret;
+ 
+-		bio_set_op_attrs(epd->bio, REQ_OP_WRITE,
+-				 epd->sync_io ? REQ_SYNC : 0);
+-
+ 		ret = submit_one_bio(epd->bio, 0, epd->bio_flags);
+ 		BUG_ON(ret < 0); /* -ENOMEM */
+ 		epd->bio = NULL;
+-- 
+2.26.0
+

@@ -1,0 +1,675 @@
+From: Josef Bacik <jbacik@fb.com>
+Date: Mon, 3 Dec 2018 10:20:33 -0500
+Subject: btrfs: introduce delayed_refs_rsv
+Git-commit: ba2c4d4e3bda7d6de2bc616ae6715e0a0725b294
+Patch-mainline: v5.0-rc1
+References: bsc#1165949
+
+Traditionally we've had voodoo in btrfs to account for the space that
+delayed refs may take up by having a global_block_rsv.  This works most
+of the time, except when it doesn't.  We've had issues reported and seen
+in production where sometimes the global reserve is exhausted during
+transaction commit before we can run all of our delayed refs, resulting
+in an aborted transaction.  Because of this voodoo we have equally
+dubious flushing semantics around throttling delayed refs which we often
+get wrong.
+
+So instead give them their own block_rsv.  This way we can always know
+exactly how much outstanding space we need for delayed refs.  This
+allows us to make sure we are constantly filling that reservation up
+with space, and allows us to put more precise pressure on the enospc
+system.  Instead of doing math to see if its a good time to throttle,
+the normal enospc code will be invoked if we have a lot of delayed refs
+pending, and they will be run via the normal flushing mechanism.
+
+For now the delayed_refs_rsv will hold the reservations for the delayed
+refs, the block group updates, and deleting csums.  We could have a
+separate rsv for the block group updates, but the csum deletion stuff is
+still handled via the delayed_refs so that will stay there.
+
+Historical background:
+
+The global reserve has grown to cover everything we don't reserve space
+explicitly for, and we've grown a lot of weird ad-hoc heuristics to know
+if we're running short on space and when it's time to force a commit.  A
+failure rate of 20-40 file systems when we run hundreds of thousands of
+them isn't super high, but cleaning up this code will make things less
+ugly and more predictible.
+
+Thus the delayed refs rsv.  We always know how many delayed refs we have
+outstanding, and although running them generates more we can use the
+global reserve for that spill over, which fits better into it's desired
+use than a full blown reservation.  This first approach is to simply
+take how many times we're reserving space for and multiply that by 2 in
+order to save enough space for the delayed refs that could be generated.
+This is a niave approach and will probably evolve, but for now it works.
+
+Signed-off-by: Josef Bacik <jbacik@fb.com>
+Reviewed-by: David Sterba <dsterba@suse.com> # high-level review
+[ added background notes from the cover letter ]
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/ctree.h       |   14 ++-
+ fs/btrfs/delayed-ref.c |   44 ++++++++--
+ fs/btrfs/disk-io.c     |    3 
+ fs/btrfs/extent-tree.c |  214 +++++++++++++++++++++++++++++++++++++++++++++----
+ fs/btrfs/transaction.c |   37 +++++++-
+ 5 files changed, 284 insertions(+), 28 deletions(-)
+
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -457,8 +457,9 @@ struct btrfs_space_info {
+ #define	BTRFS_BLOCK_RSV_TRANS		3
+ #define	BTRFS_BLOCK_RSV_CHUNK		4
+ #define	BTRFS_BLOCK_RSV_DELOPS		5
+-#define	BTRFS_BLOCK_RSV_EMPTY		6
+-#define	BTRFS_BLOCK_RSV_TEMP		7
++#define BTRFS_BLOCK_RSV_DELREFS		6
++#define	BTRFS_BLOCK_RSV_EMPTY		7
++#define	BTRFS_BLOCK_RSV_TEMP		8
+ 
+ struct btrfs_block_rsv {
+ 	u64 size;
+@@ -800,6 +801,8 @@ struct btrfs_fs_info {
+ 	struct btrfs_block_rsv chunk_block_rsv;
+ 	/* block reservation for delayed operations */
+ 	struct btrfs_block_rsv delayed_block_rsv;
++	/* block reservation for delayed refs */
++	struct btrfs_block_rsv delayed_refs_rsv;
+ 
+ 	struct btrfs_block_rsv empty_block_rsv;
+ 
+@@ -2825,6 +2828,13 @@ int btrfs_cond_migrate_bytes(struct btrf
+ void btrfs_block_rsv_release(struct btrfs_fs_info *fs_info,
+ 			     struct btrfs_block_rsv *block_rsv,
+ 			     u64 num_bytes);
++void btrfs_delayed_refs_rsv_release(struct btrfs_fs_info *fs_info, int nr);
++void btrfs_update_delayed_refs_rsv(struct btrfs_trans_handle *trans);
++int btrfs_delayed_refs_rsv_refill(struct btrfs_fs_info *fs_info,
++				  enum btrfs_reserve_flush_enum flush);
++void btrfs_migrate_to_delayed_refs_rsv(struct btrfs_fs_info *fs_info,
++				       struct btrfs_block_rsv *src,
++				       u64 num_bytes);
+ int btrfs_inc_block_group_ro(struct btrfs_fs_info *fs_info,
+ 			     struct btrfs_block_group_cache *cache);
+ void btrfs_dec_block_group_ro(struct btrfs_block_group_cache *cache);
+--- a/fs/btrfs/delayed-ref.c
++++ b/fs/btrfs/delayed-ref.c
+@@ -479,12 +479,14 @@ inserted:
+  * helper function to update the accounting in the head ref
+  * existing and update must have the same bytenr
+  */
+-static noinline void
+-update_existing_head_ref(struct btrfs_delayed_ref_root *delayed_refs,
++static noinline void update_existing_head_ref(struct btrfs_trans_handle *trans,
+ 			 struct btrfs_delayed_ref_head *existing,
+ 			 struct btrfs_delayed_ref_head *update,
+ 			 int *old_ref_mod_ret)
+ {
++	struct btrfs_delayed_ref_root *delayed_refs =
++		&trans->transaction->delayed_refs;
++	struct btrfs_fs_info *fs_info = trans->fs_info;
+ 	int old_ref_mod;
+ 
+ 	BUG_ON(existing->is_data != update->is_data);
+@@ -542,10 +544,18 @@ update_existing_head_ref(struct btrfs_de
+ 	 * versa we need to make sure to adjust pending_csums accordingly.
+ 	 */
+ 	if (existing->is_data) {
+-		if (existing->total_ref_mod >= 0 && old_ref_mod < 0)
++		u64 csum_leaves =
++			btrfs_csum_bytes_to_leaves(fs_info,
++						   existing->num_bytes);
++
++		if (existing->total_ref_mod >= 0 && old_ref_mod < 0) {
+ 			delayed_refs->pending_csums -= existing->num_bytes;
+-		if (existing->total_ref_mod < 0 && old_ref_mod >= 0)
++			btrfs_delayed_refs_rsv_release(fs_info, csum_leaves);
++		}
++		if (existing->total_ref_mod < 0 && old_ref_mod >= 0) {
+ 			delayed_refs->pending_csums += existing->num_bytes;
++			trans->delayed_ref_updates += csum_leaves;
++		}
+ 	}
+ 	spin_unlock(&existing->lock);
+ }
+@@ -653,7 +663,7 @@ add_delayed_ref_head(struct btrfs_fs_inf
+ 			&& head_ref->qgroup_reserved
+ 			&& existing->qgroup_ref_root
+ 			&& existing->qgroup_reserved);
+-		update_existing_head_ref(delayed_refs, existing, head_ref,
++		update_existing_head_ref(trans, existing, head_ref,
+ 					 old_ref_mod);
+ 		/*
+ 		 * we've updated the existing ref, free the newly
+@@ -664,8 +674,12 @@ add_delayed_ref_head(struct btrfs_fs_inf
+ 	} else {
+ 		if (old_ref_mod)
+ 			*old_ref_mod = 0;
+-		if (head_ref->is_data && head_ref->ref_mod < 0)
++		if (head_ref->is_data && head_ref->ref_mod < 0) {
+ 			delayed_refs->pending_csums += head_ref->num_bytes;
++			trans->delayed_ref_updates +=
++				btrfs_csum_bytes_to_leaves(trans->fs_info,
++							   head_ref->num_bytes);
++		}
+ 		delayed_refs->num_heads++;
+ 		delayed_refs->num_heads_ready++;
+ 		atomic_inc(&delayed_refs->num_entries);
+@@ -796,6 +810,12 @@ int btrfs_add_delayed_tree_ref(struct bt
+ 	ret = insert_delayed_ref(trans, delayed_refs, head_ref, &ref->node);
+ 	spin_unlock(&delayed_refs->lock);
+ 
++	/*
++	 * Need to update the delayed_refs_rsv with any changes we may have
++	 * made.
++	 */
++	btrfs_update_delayed_refs_rsv(trans);
++
+ 	trace_add_delayed_tree_ref(fs_info, &ref->node, ref,
+ 				   action == BTRFS_ADD_DELAYED_EXTENT ?
+ 				   BTRFS_ADD_DELAYED_REF : action);
+@@ -883,6 +903,12 @@ int btrfs_add_delayed_data_ref(struct bt
+ 	ret = insert_delayed_ref(trans, delayed_refs, head_ref, &ref->node);
+ 	spin_unlock(&delayed_refs->lock);
+ 
++	/*
++	 * Need to update the delayed_refs_rsv with any changes we may have
++	 * made.
++	 */
++	btrfs_update_delayed_refs_rsv(trans);
++
+ 	trace_add_delayed_data_ref(trans->fs_info, &ref->node, ref,
+ 				   action == BTRFS_ADD_DELAYED_EXTENT ?
+ 				   BTRFS_ADD_DELAYED_REF : action);
+@@ -919,6 +945,12 @@ int btrfs_add_delayed_extent_op(struct b
+ 			     NULL, NULL, NULL);
+ 
+ 	spin_unlock(&delayed_refs->lock);
++
++	/*
++	 * Need to update the delayed_refs_rsv with any changes we may have
++	 * made.
++	 */
++	btrfs_update_delayed_refs_rsv(trans);
+ 	return 0;
+ }
+ 
+--- a/fs/btrfs/disk-io.c
++++ b/fs/btrfs/disk-io.c
+@@ -2540,6 +2540,8 @@ int open_ctree(struct super_block *sb,
+ 	btrfs_init_block_rsv(&fs_info->empty_block_rsv, BTRFS_BLOCK_RSV_EMPTY);
+ 	btrfs_init_block_rsv(&fs_info->delayed_block_rsv,
+ 			     BTRFS_BLOCK_RSV_DELOPS);
++	btrfs_init_block_rsv(&fs_info->delayed_refs_rsv,
++			     BTRFS_BLOCK_RSV_DELREFS);
+ 	atomic_set(&fs_info->nr_async_submits, 0);
+ 	atomic_set(&fs_info->async_delalloc_pages, 0);
+ 	atomic_set(&fs_info->async_submit_draining, 0);
+@@ -4461,6 +4463,7 @@ void btrfs_cleanup_dirty_bgs(struct btrf
+ 
+ 		spin_unlock(&cur_trans->dirty_bgs_lock);
+ 		btrfs_put_block_group(cache);
++		btrfs_delayed_refs_rsv_release(fs_info, 1);
+ 		spin_lock(&cur_trans->dirty_bgs_lock);
+ 	}
+ 	spin_unlock(&cur_trans->dirty_bgs_lock);
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -2611,6 +2611,7 @@ static void cleanup_ref_head_accounting(
+ 	struct btrfs_fs_info *fs_info = trans->fs_info;
+ 	struct btrfs_delayed_ref_root *delayed_refs =
+ 		&trans->transaction->delayed_refs;
++	int nr_items = 1;	/* Dropping this ref head update. */
+ 
+ 	if (head->total_ref_mod < 0) {
+ 		struct btrfs_space_info *space_info;
+@@ -2627,16 +2628,24 @@ static void cleanup_ref_head_accounting(
+ 		percpu_counter_add(&space_info->total_bytes_pinned,
+ 				   -head->num_bytes);
+ 
++		/*
++		 * We had csum deletions accounted for in our delayed refs rsv,
++		 * we need to drop the csum leaves for this update from our
++		 * delayed_refs_rsv.
++		 */
+ 		if (head->is_data) {
+ 			spin_lock(&delayed_refs->lock);
+ 			delayed_refs->pending_csums -= head->num_bytes;
+ 			spin_unlock(&delayed_refs->lock);
++			nr_items += btrfs_csum_bytes_to_leaves(fs_info,
++				head->num_bytes);
+ 		}
+ 	}
+ 
+ 	/* Also free its reserved qgroup space */
+ 	btrfs_qgroup_free_delayed_ref(fs_info, head->qgroup_ref_root,
+ 				      head->qgroup_reserved);
++	btrfs_delayed_refs_rsv_release(fs_info, nr_items);
+ }
+ 
+ static int cleanup_ref_head(struct btrfs_trans_handle *trans,
+@@ -3748,6 +3757,8 @@ again:
+ 	 */
+ 	mutex_lock(&trans->transaction->cache_write_mutex);
+ 	while (!list_empty(&dirty)) {
++		bool drop_reserve = true;
++
+ 		cache = list_first_entry(&dirty,
+ 					 struct btrfs_block_group_cache,
+ 					 dirty_list);
+@@ -3819,6 +3830,7 @@ again:
+ 					list_add_tail(&cache->dirty_list,
+ 						      &cur_trans->dirty_bgs);
+ 					btrfs_get_block_group(cache);
++					drop_reserve = false;
+ 				}
+ 				spin_unlock(&cur_trans->dirty_bgs_lock);
+ 			} else if (ret) {
+@@ -3829,6 +3841,8 @@ again:
+ 		/* if its not on the io list, we need to put the block group */
+ 		if (should_put)
+ 			btrfs_put_block_group(cache);
++		if (drop_reserve)
++			btrfs_delayed_refs_rsv_release(fs_info, 1);
+ 
+ 		if (ret)
+ 			break;
+@@ -3977,6 +3991,7 @@ int btrfs_write_dirty_block_groups(struc
+ 		/* if its not on the io list, we need to put the block group */
+ 		if (should_put)
+ 			btrfs_put_block_group(cache);
++		btrfs_delayed_refs_rsv_release(fs_info, 1);
+ 		spin_lock(&cur_trans->dirty_bgs_lock);
+ 	}
+ 	spin_unlock(&cur_trans->dirty_bgs_lock);
+@@ -5499,6 +5514,90 @@ int btrfs_cond_migrate_bytes(struct btrf
+ 	return 0;
+ }
+ 
++/**
++ * btrfs_migrate_to_delayed_refs_rsv - transfer bytes to our delayed refs rsv.
++ * @fs_info - the fs info for our fs.
++ * @src - the source block rsv to transfer from.
++ * @num_bytes - the number of bytes to transfer.
++ *
++ * This transfers up to the num_bytes amount from the src rsv to the
++ * delayed_refs_rsv.  Any extra bytes are returned to the space info.
++ */
++void btrfs_migrate_to_delayed_refs_rsv(struct btrfs_fs_info *fs_info,
++				       struct btrfs_block_rsv *src,
++				       u64 num_bytes)
++{
++	struct btrfs_block_rsv *delayed_refs_rsv = &fs_info->delayed_refs_rsv;
++	u64 to_free = 0;
++
++	spin_lock(&src->lock);
++	src->reserved -= num_bytes;
++	src->size -= num_bytes;
++	spin_unlock(&src->lock);
++
++	spin_lock(&delayed_refs_rsv->lock);
++	if (delayed_refs_rsv->size > delayed_refs_rsv->reserved) {
++		u64 delta = delayed_refs_rsv->size -
++			delayed_refs_rsv->reserved;
++		if (num_bytes > delta) {
++			to_free = num_bytes - delta;
++			num_bytes = delta;
++		}
++	} else {
++		to_free = num_bytes;
++		num_bytes = 0;
++	}
++
++	if (num_bytes)
++		delayed_refs_rsv->reserved += num_bytes;
++	if (delayed_refs_rsv->reserved >= delayed_refs_rsv->size)
++		delayed_refs_rsv->full = 1;
++	spin_unlock(&delayed_refs_rsv->lock);
++
++	if (num_bytes)
++		trace_btrfs_space_reservation(fs_info, "delayed_refs_rsv",
++					      0, num_bytes, 1);
++	if (to_free)
++		space_info_add_old_bytes(fs_info, delayed_refs_rsv->space_info,
++					 to_free);
++}
++
++/**
++ * btrfs_delayed_refs_rsv_refill - refill based on our delayed refs usage.
++ * @fs_info - the fs_info for our fs.
++ * @flush - control how we can flush for this reservation.
++ *
++ * This will refill the delayed block_rsv up to 1 items size worth of space and
++ * will return -ENOSPC if we can't make the reservation.
++ */
++int btrfs_delayed_refs_rsv_refill(struct btrfs_fs_info *fs_info,
++				  enum btrfs_reserve_flush_enum flush)
++{
++	struct btrfs_block_rsv *block_rsv = &fs_info->delayed_refs_rsv;
++	u64 limit = btrfs_calc_trans_metadata_size(fs_info, 1);
++	u64 num_bytes = 0;
++	int ret = -ENOSPC;
++
++	spin_lock(&block_rsv->lock);
++	if (block_rsv->reserved < block_rsv->size) {
++		num_bytes = block_rsv->size - block_rsv->reserved;
++		num_bytes = min(num_bytes, limit);
++	}
++	spin_unlock(&block_rsv->lock);
++
++	if (!num_bytes)
++		return 0;
++
++	ret = reserve_metadata_bytes(fs_info->extent_root, block_rsv,
++				     num_bytes, flush);
++	if (ret)
++		return ret;
++	block_rsv_add_bytes(block_rsv, num_bytes, 0);
++	trace_btrfs_space_reservation(fs_info, "delayed_refs_rsv",
++				      0, num_bytes, 1);
++	return 0;
++}
++
+ /*
+  * This is for space we already have accounted in space_info->bytes_may_use, so
+  * basically when we're returning space from block_rsv's.
+@@ -5829,6 +5928,31 @@ int btrfs_inode_rsv_refill(struct btrfs_
+ 	return ret;
+ }
+ 
++static u64 __btrfs_block_rsv_release(struct btrfs_fs_info *fs_info,
++				     struct btrfs_block_rsv *block_rsv,
++				     u64 num_bytes, u64 *qgroup_to_release)
++{
++	struct btrfs_block_rsv *global_rsv = &fs_info->global_block_rsv;
++	struct btrfs_block_rsv *delayed_rsv = &fs_info->delayed_refs_rsv;
++	struct btrfs_block_rsv *target = delayed_rsv;
++
++	if (target->full || target == block_rsv)
++		target = global_rsv;
++
++	if (block_rsv->space_info != target->space_info)
++		target = NULL;
++
++	return block_rsv_release_bytes(fs_info, block_rsv, target, num_bytes,
++				       qgroup_to_release);
++}
++
++void btrfs_block_rsv_release(struct btrfs_fs_info *fs_info,
++			     struct btrfs_block_rsv *block_rsv,
++			     u64 num_bytes)
++{
++	__btrfs_block_rsv_release(fs_info, block_rsv, num_bytes, NULL);
++}
++
+ /**
+  * btrfs_inode_rsv_release - release any excessive reservation.
+  * @inode - the inode we need to release from.
+@@ -5843,7 +5967,6 @@ int btrfs_inode_rsv_refill(struct btrfs_
+ void btrfs_inode_rsv_release(struct btrfs_inode *inode, bool qgroup_free)
+ {
+ 	struct btrfs_fs_info *fs_info = inode->root->fs_info;
+-	struct btrfs_block_rsv *global_rsv = &fs_info->global_block_rsv;
+ 	struct btrfs_block_rsv *block_rsv = &inode->block_rsv;
+ 	u64 released = 0;
+ 	u64 qgroup_to_release = 0;
+@@ -5853,8 +5976,8 @@ void btrfs_inode_rsv_release(struct btrf
+ 	 * are releasing 0 bytes, and then we'll just get the reservation over
+ 	 * the size free'd.
+ 	 */
+-	released = block_rsv_release_bytes(fs_info, block_rsv, global_rsv, 0,
+-					   &qgroup_to_release);
++	released = __btrfs_block_rsv_release(fs_info, block_rsv, 0,
++					     &qgroup_to_release);
+ 	if (released > 0)
+ 		trace_btrfs_space_reservation(fs_info, "delalloc",
+ 					      btrfs_ino(inode), released, 0);
+@@ -5865,16 +5988,26 @@ void btrfs_inode_rsv_release(struct btrf
+ 						   qgroup_to_release);
+ }
+ 
+-void btrfs_block_rsv_release(struct btrfs_fs_info *fs_info,
+-			     struct btrfs_block_rsv *block_rsv,
+-			     u64 num_bytes)
++/**
++ * btrfs_delayed_refs_rsv_release - release a ref head's reservation.
++ * @fs_info - the fs_info for our fs.
++ * @nr - the number of items to drop.
++ *
++ * This drops the delayed ref head's count from the delayed refs rsv and frees
++ * any excess reservation we had.
++ */
++void btrfs_delayed_refs_rsv_release(struct btrfs_fs_info *fs_info, int nr)
+ {
++	struct btrfs_block_rsv *block_rsv = &fs_info->delayed_refs_rsv;
+ 	struct btrfs_block_rsv *global_rsv = &fs_info->global_block_rsv;
++	u64 num_bytes = btrfs_calc_trans_metadata_size(fs_info, nr);
++	u64 released = 0;
+ 
+-	if (global_rsv == block_rsv ||
+-	    block_rsv->space_info != global_rsv->space_info)
+-		global_rsv = NULL;
+-	block_rsv_release_bytes(fs_info, block_rsv, global_rsv, num_bytes, NULL);
++	released = block_rsv_release_bytes(fs_info, block_rsv, global_rsv,
++					   num_bytes, NULL);
++	if (released)
++		trace_btrfs_space_reservation(fs_info, "delayed_refs_rsv",
++					      0, released, 0);
+ }
+ 
+ static void update_global_block_rsv(struct btrfs_fs_info *fs_info)
+@@ -5939,9 +6072,10 @@ static void init_global_block_rsv(struct
+ 	fs_info->trans_block_rsv.space_info = space_info;
+ 	fs_info->empty_block_rsv.space_info = space_info;
+ 	fs_info->delayed_block_rsv.space_info = space_info;
++	fs_info->delayed_refs_rsv.space_info = space_info;
+ 
+-	fs_info->extent_root->block_rsv = &fs_info->global_block_rsv;
+-	fs_info->csum_root->block_rsv = &fs_info->global_block_rsv;
++	fs_info->extent_root->block_rsv = &fs_info->delayed_refs_rsv;
++	fs_info->csum_root->block_rsv = &fs_info->delayed_refs_rsv;
+ 	fs_info->dev_root->block_rsv = &fs_info->global_block_rsv;
+ 	fs_info->tree_root->block_rsv = &fs_info->global_block_rsv;
+ 	if (fs_info->quota_root)
+@@ -5961,6 +6095,33 @@ static void release_global_block_rsv(str
+ 	WARN_ON(fs_info->chunk_block_rsv.reserved > 0);
+ 	WARN_ON(fs_info->delayed_block_rsv.size > 0);
+ 	WARN_ON(fs_info->delayed_block_rsv.reserved > 0);
++	WARN_ON(fs_info->delayed_refs_rsv.reserved > 0);
++	WARN_ON(fs_info->delayed_refs_rsv.size > 0);
++}
++
++/*
++ * btrfs_update_delayed_refs_rsv - adjust the size of the delayed refs rsv
++ * @trans - the trans that may have generated delayed refs
++ *
++ * This is to be called anytime we may have adjusted trans->delayed_ref_updates,
++ * it'll calculate the additional size and add it to the delayed_refs_rsv.
++ */
++void btrfs_update_delayed_refs_rsv(struct btrfs_trans_handle *trans)
++{
++	struct btrfs_fs_info *fs_info = trans->fs_info;
++	struct btrfs_block_rsv *delayed_rsv = &fs_info->delayed_refs_rsv;
++	u64 num_bytes;
++
++	if (!trans->delayed_ref_updates)
++		return;
++
++	num_bytes = btrfs_calc_trans_metadata_size(fs_info,
++						   trans->delayed_ref_updates);
++	spin_lock(&delayed_rsv->lock);
++	delayed_rsv->size += num_bytes;
++	delayed_rsv->full = 0;
++	spin_unlock(&delayed_rsv->lock);
++	trans->delayed_ref_updates = 0;
+ }
+ 
+ void btrfs_trans_release_metadata(struct btrfs_trans_handle *trans,
+@@ -6277,6 +6438,7 @@ static int update_block_group(struct btr
+ 	u64 old_val;
+ 	u64 byte_in_group;
+ 	int factor;
++	int ret = 0;
+ 
+ 	/* block accounting for super block */
+ 	spin_lock(&info->delalloc_root_lock);
+@@ -6290,8 +6452,10 @@ static int update_block_group(struct btr
+ 
+ 	while (total) {
+ 		cache = btrfs_lookup_block_group(info, bytenr);
+-		if (!cache)
+-			return -ENOENT;
++		if (!cache) {
++			ret = -ENOENT;
++			break;
++		}
+ 		factor = btrfs_bg_type_to_factor(cache->flags);
+ 
+ 		/*
+@@ -6348,7 +6512,8 @@ static int update_block_group(struct btr
+ 		if (list_empty(&cache->dirty_list)) {
+ 			list_add_tail(&cache->dirty_list,
+ 				      &trans->transaction->dirty_bgs);
+-				trans->transaction->num_dirty_bgs++;
++			trans->transaction->num_dirty_bgs++;
++			trans->delayed_ref_updates++;
+ 			btrfs_get_block_group(cache);
+ 		}
+ 		spin_unlock(&trans->transaction->dirty_bgs_lock);
+@@ -6373,7 +6538,10 @@ static int update_block_group(struct btr
+ 		total -= num_bytes;
+ 		bytenr += num_bytes;
+ 	}
+-	return 0;
++
++	/* Modified block groups are accounted for in the delayed_refs_rsv. */
++	btrfs_update_delayed_refs_rsv(trans);
++	return ret;
+ }
+ 
+ static u64 first_logical_byte(struct btrfs_fs_info *fs_info, u64 search_start)
+@@ -8380,7 +8548,12 @@ again:
+ 		goto again;
+ 	}
+ 
+-	if (btrfs_test_opt(fs_info, ENOSPC_DEBUG)) {
++	/*
++	 * The global reserve still exists to save us from ourselves, so don't
++	 * warn_on if we are short on our delayed refs reserve.
++	 */
++	if (block_rsv->type != BTRFS_BLOCK_RSV_DELREFS &&
++	    btrfs_test_opt(fs_info, ENOSPC_DEBUG)) {
+ 		static DEFINE_RATELIMIT_STATE(_rs,
+ 				DEFAULT_RATELIMIT_INTERVAL * 10,
+ 				/*DEFAULT_RATELIMIT_BURST*/ 1);
+@@ -10317,6 +10490,7 @@ void btrfs_create_pending_block_groups(s
+ 		add_block_group_free_space(trans, fs_info, block_group);
+ 		/* already aborted the transaction if it failed. */
+ next:
++		btrfs_delayed_refs_rsv_release(fs_info, 1);
+ 		list_del_init(&block_group->bg_list);
+ 	}
+ 	btrfs_trans_release_chunk_metadata(trans);
+@@ -10394,6 +10568,8 @@ int btrfs_make_block_group(struct btrfs_
+ 	link_block_group(cache);
+ 
+ 	list_add_tail(&cache->bg_list, &trans->new_bgs);
++	trans->delayed_ref_updates++;
++	btrfs_update_delayed_refs_rsv(trans);
+ 
+ 	set_avail_alloc_bits(fs_info, type);
+ 	return 0;
+@@ -10431,6 +10607,7 @@ int btrfs_remove_block_group(struct btrf
+ 	int factor;
+ 	struct btrfs_caching_control *caching_ctl = NULL;
+ 	bool remove_em;
++	bool remove_rsv = false;
+ 
+ 	block_group = btrfs_lookup_block_group(fs_info, group_start);
+ 	BUG_ON(!block_group);
+@@ -10492,6 +10669,7 @@ int btrfs_remove_block_group(struct btrf
+ 
+ 	if (!list_empty(&block_group->dirty_list)) {
+ 		list_del_init(&block_group->dirty_list);
++		remove_rsv = true;
+ 		btrfs_put_block_group(block_group);
+ 	}
+ 	spin_unlock(&trans->transaction->dirty_bgs_lock);
+@@ -10701,6 +10879,8 @@ int btrfs_remove_block_group(struct btrf
+ 
+ 	ret = btrfs_del_item(trans, root, path);
+ out:
++	if (remove_rsv)
++		btrfs_delayed_refs_rsv_release(fs_info, 1);
+ 	btrfs_free_path(path);
+ 	return ret;
+ }
+--- a/fs/btrfs/transaction.c
++++ b/fs/btrfs/transaction.c
+@@ -478,7 +478,7 @@ start_transaction(struct btrfs_root *roo
+ 		  bool enforce_qgroups)
+ {
+ 	struct btrfs_fs_info *fs_info = root->fs_info;
+-
++	struct btrfs_block_rsv *delayed_refs_rsv = &fs_info->delayed_refs_rsv;
+ 	struct btrfs_trans_handle *h;
+ 	struct btrfs_transaction *cur_trans;
+ 	u64 num_bytes = 0;
+@@ -507,13 +507,28 @@ start_transaction(struct btrfs_root *roo
+ 	 * the appropriate flushing if need be.
+ 	 */
+ 	if (num_items && root != fs_info->chunk_root) {
++		struct btrfs_block_rsv *rsv = &fs_info->trans_block_rsv;
++		u64 delayed_refs_bytes = 0;
++
+ 		qgroup_reserved = num_items * fs_info->nodesize;
+ 		ret = btrfs_qgroup_reserve_meta_pertrans(root, qgroup_reserved,
+ 				enforce_qgroups);
+ 		if (ret)
+ 			return ERR_PTR(ret);
+ 
++		/*
++		 * We want to reserve all the bytes we may need all at once, so
++		 * we only do 1 enospc flushing cycle per transaction start.  We
++		 * accomplish this by simply assuming we'll do 2 x num_items
++		 * worth of delayed refs updates in this trans handle, and
++		 * refill that amount for whatever is missing in the reserve.
++		 */
+ 		num_bytes = btrfs_calc_trans_metadata_size(fs_info, num_items);
++		if (delayed_refs_rsv->full == 0) {
++			delayed_refs_bytes = num_bytes;
++			num_bytes <<= 1;
++		}
++
+ 		/*
+ 		 * Do the reservation for the relocation root creation
+ 		 */
+@@ -522,8 +537,24 @@ start_transaction(struct btrfs_root *roo
+ 			reloc_reserved = true;
+ 		}
+ 
+-		ret = btrfs_block_rsv_add(root, &fs_info->trans_block_rsv,
+-					  num_bytes, flush);
++		ret = btrfs_block_rsv_add(root, rsv, num_bytes, flush);
++		if (ret)
++			goto reserve_fail;
++		if (delayed_refs_bytes) {
++			btrfs_migrate_to_delayed_refs_rsv(fs_info, rsv,
++							  delayed_refs_bytes);
++			num_bytes -= delayed_refs_bytes;
++		}
++	} else if (num_items == 0 && flush == BTRFS_RESERVE_FLUSH_ALL &&
++		   !delayed_refs_rsv->full) {
++		/*
++		 * Some people call with btrfs_start_transaction(root, 0)
++		 * because they can be throttled, but have some other mechanism
++		 * for reserving space.  We still want these guys to refill the
++		 * delayed block_rsv so just add 1 items worth of reservation
++		 * here.
++		 */
++		ret = btrfs_delayed_refs_rsv_refill(fs_info, flush);
+ 		if (ret)
+ 			goto reserve_fail;
+ 	}

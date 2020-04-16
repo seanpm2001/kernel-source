@@ -1,0 +1,46 @@
+From ca1e98e04a8d6cefbe8ad138df806434de6de7f3 Mon Sep 17 00:00:00 2001
+From: Guoqing Jiang <gqjiang@suse.com>
+Date: Thu, 18 Oct 2018 16:37:45 +0800
+Subject: [PATCH] md-cluster/raid10: don't call remove_and_add_spares during
+ reshaping stage
+Git-commit: ca1e98e04a8d6cefbe8ad138df806434de6de7f3
+Patch-mainline: v4.20-rc1
+References: bsc#1166003
+
+remove_and_add_spares is not needed if reshape is
+happening in another node, because raid10_add_disk
+called inside raid10_start_reshape would handle the
+role changes of disk. Plus, remove_and_add_spares
+can't deal with the role change due to reshape.
+
+Reviewed-by: NeilBrown <neilb@suse.com>
+Signed-off-by: Guoqing Jiang <gqjiang@suse.com>
+Signed-off-by: Shaohua Li <shli@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/md.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/md/md.c b/drivers/md/md.c
+index e28f5db0a882..fa2bbdec9955 100644
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -9218,8 +9218,12 @@ static void check_sb_changes(struct mddev *mddev, struct md_rdev *rdev)
+ 		}
+ 
+ 		if (role != rdev2->raid_disk) {
+-			/* got activated */
+-			if (rdev2->raid_disk == -1 && role != 0xffff) {
++			/*
++			 * got activated except reshape is happening.
++			 */
++			if (rdev2->raid_disk == -1 && role != 0xffff &&
++			    !(le32_to_cpu(sb->feature_map) &
++			      MD_FEATURE_RESHAPE_ACTIVE)) {
+ 				rdev2->saved_raid_disk = role;
+ 				ret = remove_and_add_spares(mddev, rdev2);
+ 				pr_info("Activated spare: %s\n",
+-- 
+2.25.0
+

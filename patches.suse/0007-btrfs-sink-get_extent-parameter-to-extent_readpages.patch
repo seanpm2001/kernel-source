@@ -1,0 +1,80 @@
+From 0932584b66e97aea91eb8c0b610e1d1083951b32 Mon Sep 17 00:00:00 2001
+From: David Sterba <dsterba@suse.com>
+Date: Fri, 23 Jun 2017 04:09:57 +0200
+Patch-mainline: v4.16
+Git-commit: 0932584b66e97aea91eb8c0b610e1d1083951b32
+References: bsc#1168273
+Subject: [PATCH 7/7] btrfs: sink get_extent parameter to extent_readpages
+
+There's only one caller that passes btrfs_get_extent.
+
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/extent_io.c | 11 +++++------
+ fs/btrfs/extent_io.h |  3 +--
+ fs/btrfs/inode.c     |  3 +--
+ 3 files changed, 7 insertions(+), 10 deletions(-)
+
+diff --git a/fs/btrfs/extent_io.c b/fs/btrfs/extent_io.c
+index 3f5debc5e56f..f86a6aae545a 100644
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -4133,8 +4133,7 @@ int extent_writepages(struct extent_io_tree *tree,
+ 
+ int extent_readpages(struct extent_io_tree *tree,
+ 		     struct address_space *mapping,
+-		     struct list_head *pages, unsigned nr_pages,
+-		     get_extent_t get_extent)
++		     struct list_head *pages, unsigned nr_pages)
+ {
+ 	struct bio *bio = NULL;
+ 	unsigned page_idx;
+@@ -4160,13 +4159,13 @@ int extent_readpages(struct extent_io_tree *tree,
+ 		pagepool[nr++] = page;
+ 		if (nr < ARRAY_SIZE(pagepool))
+ 			continue;
+-		__extent_readpages(tree, pagepool, nr, get_extent, &em_cached,
+-				   &bio, &bio_flags, &prev_em_start);
++		__extent_readpages(tree, pagepool, nr, btrfs_get_extent,
++				&em_cached, &bio, &bio_flags, &prev_em_start);
+ 		nr = 0;
+ 	}
+ 	if (nr)
+-		__extent_readpages(tree, pagepool, nr, get_extent, &em_cached,
+-				   &bio, &bio_flags, &prev_em_start);
++		__extent_readpages(tree, pagepool, nr, btrfs_get_extent,
++				&em_cached, &bio, &bio_flags, &prev_em_start);
+ 
+ 	if (em_cached)
+ 		free_extent_map(em_cached);
+diff --git a/fs/btrfs/extent_io.h b/fs/btrfs/extent_io.h
+index afc169d04b22..6cf4a0e5b0ea 100644
+--- a/fs/btrfs/extent_io.h
++++ b/fs/btrfs/extent_io.h
+@@ -414,8 +414,7 @@ int btree_write_cache_pages(struct address_space *mapping,
+ 			    struct writeback_control *wbc);
+ int extent_readpages(struct extent_io_tree *tree,
+ 		     struct address_space *mapping,
+-		     struct list_head *pages, unsigned nr_pages,
+-		     get_extent_t get_extent);
++		     struct list_head *pages, unsigned nr_pages);
+ int extent_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+ 		__u64 start, __u64 len);
+ void set_page_extent_mapped(struct page *page);
+diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
+index 63cf6cd174d1..72c7b38fb17e 100644
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -8911,8 +8911,7 @@ btrfs_readpages(struct file *file, struct address_space *mapping,
+ {
+ 	struct extent_io_tree *tree;
+ 	tree = &BTRFS_I(mapping->host)->io_tree;
+-	return extent_readpages(tree, mapping, pages, nr_pages,
+-				btrfs_get_extent);
++	return extent_readpages(tree, mapping, pages, nr_pages);
+ }
+ static int __btrfs_releasepage(struct page *page, gfp_t gfp_flags)
+ {
+-- 
+2.26.0
+

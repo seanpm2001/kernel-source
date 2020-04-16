@@ -1,10 +1,11 @@
+From 00fe717ee1ea3c2979db4f94b1533c57aed8dea9 Mon Sep 17 00:00:00 2001
 From: Arun Easi <aeasi@marvell.com>
 Date: Thu, 23 Jan 2020 20:50:14 -0800
-Subject: scsi: qla2xxx: Fix unbound NVME response length
-Patch-mainline: Queued in subsystem maintainer repository
-Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/mkp/scsi.git
-Git-commit: 538e574b23489452ab06f61e83c1f6b5f984ab7e
+Subject: [PATCH] scsi: qla2xxx: Fix unbound NVME response length
+
 References: bsc#1157966 bsc#1158013 bsc#1157424
+Patch-mainline: v5.6-rc1
+Git-commit: 00fe717ee1ea3c2979db4f94b1533c57aed8dea9
 
 On certain cases when response length is less than 32, NVME response data
 is supplied inline in IOCB. This is indicated by some combination of state
@@ -21,14 +22,16 @@ Reviewed-by: Ewan D. Milne <emilne@redhat.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
 Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
- drivers/scsi/qla2xxx/qla_dbg.c |    6 ------
- drivers/scsi/qla2xxx/qla_dbg.h |    6 ++++++
- drivers/scsi/qla2xxx/qla_isr.c |   12 ++++++++++++
+ drivers/scsi/qla2xxx/qla_dbg.c |  6 ------
+ drivers/scsi/qla2xxx/qla_dbg.h |  6 ++++++
+ drivers/scsi/qla2xxx/qla_isr.c | 12 ++++++++++++
  3 files changed, 18 insertions(+), 6 deletions(-)
 
+diff --git a/drivers/scsi/qla2xxx/qla_dbg.c b/drivers/scsi/qla2xxx/qla_dbg.c
+index e5500bba06ca..88a56e8480f7 100644
 --- a/drivers/scsi/qla2xxx/qla_dbg.c
 +++ b/drivers/scsi/qla2xxx/qla_dbg.c
-@@ -2519,12 +2519,6 @@ qla83xx_fw_dump_failed:
+@@ -2519,12 +2519,6 @@ qla83xx_fw_dump(scsi_qla_host_t *vha, int hardware_locked)
  /*                         Driver Debug Functions.                          */
  /****************************************************************************/
  
@@ -41,9 +44,11 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  /*
   * This function is for formatting and logging debug information.
   * It is to be used when vha is available. It formats the message
+diff --git a/drivers/scsi/qla2xxx/qla_dbg.h b/drivers/scsi/qla2xxx/qla_dbg.h
+index bb01b680ce9f..433e95502808 100644
 --- a/drivers/scsi/qla2xxx/qla_dbg.h
 +++ b/drivers/scsi/qla2xxx/qla_dbg.h
-@@ -374,3 +374,9 @@ extern int qla24xx_dump_ram(struct qla_h
+@@ -374,3 +374,9 @@ extern int qla24xx_dump_ram(struct qla_hw_data *, uint32_t, uint32_t *,
  extern void qla24xx_pause_risc(struct device_reg_24xx __iomem *,
  	struct qla_hw_data *);
  extern int qla24xx_soft_reset(struct qla_hw_data *);
@@ -53,9 +58,11 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
 +{
 +	return (level & ql2xextended_error_logging) == level;
 +}
+diff --git a/drivers/scsi/qla2xxx/qla_isr.c b/drivers/scsi/qla2xxx/qla_isr.c
+index e7bad0bfffda..e40705d38cea 100644
 --- a/drivers/scsi/qla2xxx/qla_isr.c
 +++ b/drivers/scsi/qla2xxx/qla_isr.c
-@@ -1939,6 +1939,18 @@ static void qla24xx_nvme_iocb_entry(scsi
+@@ -1939,6 +1939,18 @@ static void qla24xx_nvme_iocb_entry(scsi_qla_host_t *vha, struct req_que *req,
  		inbuf = (uint32_t *)&sts->nvme_ersp_data;
  		outbuf = (uint32_t *)fd->rspaddr;
  		iocb->u.nvme.rsp_pyld_len = le16_to_cpu(sts->nvme_rsp_pyld_len);
@@ -74,3 +81,6 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  		iter = iocb->u.nvme.rsp_pyld_len >> 2;
  		for (; iter; iter--)
  			*outbuf++ = swab32(*inbuf++);
+-- 
+2.23.0
+

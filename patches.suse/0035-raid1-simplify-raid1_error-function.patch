@@ -1,0 +1,39 @@
+From ebda52fa1be73952ec603b1fad685ce86ccb5ee6 Mon Sep 17 00:00:00 2001
+From: Yufen Yu <yuyufen@huawei.com>
+Date: Fri, 1 Feb 2019 10:45:01 +0800
+Subject: [PATCH] raid1: simplify raid1_error function
+Git-commit: ebda52fa1be73952ec603b1fad685ce86ccb5ee6
+Patch-mainline: v5.1-rc1
+References: bsc#1166003
+
+Remove redundance set_bit and let code simplify.
+
+Signed-off-by: Yufen Yu <yuyufen@huawei.com>
+Signed-off-by: Song Liu <songliubraving@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/raid1.c | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/md/raid1.c b/drivers/md/raid1.c
+index 1d54109071cc..7e63ccc4ae7b 100644
+--- a/drivers/md/raid1.c
++++ b/drivers/md/raid1.c
+@@ -1603,11 +1603,9 @@ static void raid1_error(struct mddev *mddev, struct md_rdev *rdev)
+ 		return;
+ 	}
+ 	set_bit(Blocked, &rdev->flags);
+-	if (test_and_clear_bit(In_sync, &rdev->flags)) {
++	if (test_and_clear_bit(In_sync, &rdev->flags))
+ 		mddev->degraded++;
+-		set_bit(Faulty, &rdev->flags);
+-	} else
+-		set_bit(Faulty, &rdev->flags);
++	set_bit(Faulty, &rdev->flags);
+ 	spin_unlock_irqrestore(&conf->device_lock, flags);
+ 	/*
+ 	 * if recovery is running, make sure it aborts.
+-- 
+2.25.0
+

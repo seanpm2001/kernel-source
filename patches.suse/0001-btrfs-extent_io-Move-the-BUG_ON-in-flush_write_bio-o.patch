@@ -1,0 +1,186 @@
+From f4340622e02261fae599e3da936ff4808b418173 Mon Sep 17 00:00:00 2001
+From: Qu Wenruo <wqu@suse.com>
+Date: Wed, 20 Mar 2019 14:27:41 +0800
+Patch-mainline: v5.2
+Git-commit: f4340622e02261fae599e3da936ff4808b418173
+References: bsc#1168273
+Subject: [PATCH 1/7] btrfs: extent_io: Move the BUG_ON() in flush_write_bio()
+ one level up
+
+We have a BUG_ON() in flush_write_bio() to handle the return value of
+submit_one_bio().
+
+Move the BUG_ON() one level up to all its callers.
+
+This patch will introduce temporary variable, @flush_ret to keep code
+change minimal in this patch. That variable will be cleaned up when
+enhancing the error handling later.
+
+Reviewed-by: Johannes Thumshirn <jthumshirn@suse.de>
+Signed-off-by: Qu Wenruo <wqu@suse.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/extent_io.c |   55 ++++++++++++++++++++++++++++++++++++++-------------
+ 1 file changed, 41 insertions(+), 14 deletions(-)
+
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -170,15 +170,28 @@ static int __must_check submit_one_bio(s
+ 	return blk_status_to_errno(ret);
+ }
+ 
+-static void flush_write_bio(struct extent_page_data *epd)
++/*
++ * Submit bio from extent page data via submit_one_bio
++ *
++ * Return 0 if everything is OK.
++ * Return <0 for error.
++ */
++static int __must_check flush_write_bio(struct extent_page_data *epd)
+ {
+-	if (epd->bio) {
+-		int ret;
++	int ret = 0;
+ 
++	if (epd->bio) {
+ 		ret = submit_one_bio(epd->bio, 0, 0);
+-		BUG_ON(ret < 0); /* -ENOMEM */
++		/*
++		 * Clean up of epd->bio is handled by its endio function.
++		 * And endio is either triggered by successful bio execution
++		 * or the error handler of submit bio hook.
++		 * So at this point, no matter what happened, we don't need
++		 * to clean up epd->bio.
++		 */
+ 		epd->bio = NULL;
+ 	}
++	return ret;
+ }
+ 
+ static inline struct btrfs_fs_info *
+@@ -3595,7 +3608,8 @@ lock_extent_buffer_for_io(struct extent_
+ 
+ 	if (!btrfs_try_tree_write_lock(eb)) {
+ 		flush = 1;
+-		flush_write_bio(epd);
++		ret = flush_write_bio(epd);
++		BUG_ON(ret < 0);
+ 		btrfs_tree_lock(eb);
+ 	}
+ 
+@@ -3604,7 +3618,8 @@ lock_extent_buffer_for_io(struct extent_
+ 		if (!epd->sync_io)
+ 			return 0;
+ 		if (!flush) {
+-			flush_write_bio(epd);
++			ret = flush_write_bio(epd);
++			BUG_ON(ret < 0);
+ 			flush = 1;
+ 		}
+ 		while (1) {
+@@ -3645,7 +3660,8 @@ lock_extent_buffer_for_io(struct extent_
+ 
+ 		if (!trylock_page(p)) {
+ 			if (!flush) {
+-				flush_write_bio(epd);
++				ret = flush_write_bio(epd);
++				BUG_ON(ret < 0);
+ 				flush = 1;
+ 			}
+ 			lock_page(p);
+@@ -3835,6 +3851,7 @@ int btree_write_cache_pages(struct addre
+ 		.sync_io = wbc->sync_mode == WB_SYNC_ALL,
+ 	};
+ 	int ret = 0;
++	int flush_ret;
+ 	int done = 0;
+ 	int nr_to_write_done = 0;
+ 	struct pagevec pvec;
+@@ -3939,7 +3956,8 @@ retry:
+ 		index = 0;
+ 		goto retry;
+ 	}
+-	flush_write_bio(&epd);
++	flush_ret = flush_write_bio(&epd);
++	BUG_ON(flush_ret < 0);
+ 	return ret;
+ }
+ 
+@@ -4023,7 +4041,8 @@ retry:
+ 			 * mapping
+ 			 */
+ 			if (!trylock_page(page)) {
+-				flush_write_bio(epd);
++				ret = flush_write_bio(epd);
++				BUG_ON(ret < 0);
+ 				lock_page(page);
+ 			}
+ 
+@@ -4039,8 +4058,10 @@ retry:
+ 			}
+ 
+ 			if (wbc->sync_mode != WB_SYNC_NONE) {
+-				if (PageWriteback(page))
+-					flush_write_bio(epd);
++				if (PageWriteback(page)) {
++					ret = flush_write_bio(epd);
++					BUG_ON(ret < 0);
++				}
+ 				wait_on_page_writeback(page);
+ 			}
+ 
+@@ -4101,6 +4122,7 @@ retry:
+ int extent_write_full_page(struct page *page, struct writeback_control *wbc)
+ {
+ 	int ret;
++	int flush_ret;
+ 	struct extent_page_data epd = {
+ 		.bio = NULL,
+ 		.tree = &BTRFS_I(page->mapping->host)->io_tree,
+@@ -4110,7 +4132,8 @@ int extent_write_full_page(struct page *
+ 
+ 	ret = __extent_writepage(page, wbc, &epd);
+ 
+-	flush_write_bio(&epd);
++	flush_ret = flush_write_bio(&epd);
++	BUG_ON(flush_ret < 0);
+ 	return ret;
+ }
+ 
+@@ -4118,6 +4141,7 @@ int extent_write_locked_range(struct ino
+ 			      int mode)
+ {
+ 	int ret = 0;
++	int flush_ret;
+ 	struct address_space *mapping = inode->i_mapping;
+ 	struct extent_io_tree *tree = &BTRFS_I(inode)->io_tree;
+ 	struct page *page;
+@@ -4152,7 +4176,8 @@ int extent_write_locked_range(struct ino
+ 		start += PAGE_SIZE;
+ 	}
+ 
+-	flush_write_bio(&epd);
++	flush_ret = flush_write_bio(&epd);
++	BUG_ON(flush_ret < 0);
+ 	return ret;
+ }
+ 
+@@ -4161,6 +4186,7 @@ int extent_writepages(struct extent_io_t
+ 		      struct writeback_control *wbc)
+ {
+ 	int ret = 0;
++	int flush_ret;
+ 	struct extent_page_data epd = {
+ 		.bio = NULL,
+ 		.tree = tree,
+@@ -4169,7 +4195,8 @@ int extent_writepages(struct extent_io_t
+ 	};
+ 
+ 	ret = extent_write_cache_pages(mapping, wbc, &epd);
+-	flush_write_bio(&epd);
++	flush_ret = flush_write_bio(&epd);
++	BUG_ON(flush_ret < 0);
+ 	return ret;
+ }
+ 

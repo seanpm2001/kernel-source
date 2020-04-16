@@ -15,14 +15,59 @@ post-release.
 
 Signed-off-by: Jeff Mahoney <jeffm@suse.com>
 ---
+ fs/btrfs/block-group.c |    6 ++++++
  fs/btrfs/ctree.h       |    1 +
  fs/btrfs/disk-io.c     |    1 +
- fs/btrfs/extent-tree.c |   24 +++++++++++++++++-------
- 3 files changed, 19 insertions(+), 7 deletions(-)
+ fs/btrfs/extent-tree.c |    6 +++++-
+ 4 files changed, 13 insertions(+), 1 deletion(-)
 
+--- a/fs/btrfs/block-group.c
++++ b/fs/btrfs/block-group.c
+@@ -812,8 +812,10 @@ int btrfs_cache_block_group(struct btrfs
+ 	}
+ 
+ 	down_write(&fs_info->commit_root_sem);
++	spin_lock(&fs_info->caching_block_groups_lock);
+ 	refcount_inc(&caching_ctl->count);
+ 	list_add_tail(&caching_ctl->list, &fs_info->caching_block_groups);
++	spin_unlock(&fs_info->caching_block_groups_lock);
+ 	up_write(&fs_info->commit_root_sem);
+ 
+ 	btrfs_get_block_group(cache);
+@@ -992,6 +994,7 @@ int btrfs_remove_block_group(struct btrf
+ 		btrfs_wait_block_group_cache_done(block_group);
+ 	if (block_group->has_caching_ctl) {
+ 		down_write(&fs_info->commit_root_sem);
++		spin_lock(&fs_info->caching_block_groups_lock);
+ 		if (!caching_ctl) {
+ 			struct btrfs_caching_control *ctl;
+ 
+@@ -1005,6 +1008,7 @@ int btrfs_remove_block_group(struct btrf
+ 		}
+ 		if (caching_ctl)
+ 			list_del_init(&caching_ctl->list);
++		spin_unlock(&fs_info->caching_block_groups_lock);
+ 		up_write(&fs_info->commit_root_sem);
+ 		if (caching_ctl) {
+ 			/* Once for the caching bgs list and once for us. */
+@@ -3124,12 +3128,14 @@ int btrfs_free_block_groups(struct btrfs
+ 	struct rb_node *n;
+ 
+ 	down_write(&info->commit_root_sem);
++	spin_lock(&info->caching_block_groups_lock);
+ 	while (!list_empty(&info->caching_block_groups)) {
+ 		caching_ctl = list_entry(info->caching_block_groups.next,
+ 					 struct btrfs_caching_control, list);
+ 		list_del(&caching_ctl->list);
+ 		btrfs_put_caching_control(caching_ctl);
+ 	}
++	spin_unlock(&info->caching_block_groups_lock);
+ 	up_write(&info->commit_root_sem);
+ 
+ 	spin_lock(&info->unused_bgs_lock);
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -874,6 +874,7 @@ struct btrfs_fs_info {
+@@ -677,6 +677,7 @@ struct btrfs_fs_info {
  
  	struct list_head trans_list;
  	struct list_head dead_roots;
@@ -32,7 +77,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  	spinlock_t delayed_iput_lock;
 --- a/fs/btrfs/disk-io.c
 +++ b/fs/btrfs/disk-io.c
-@@ -2633,6 +2633,7 @@ int open_ctree(struct super_block *sb,
+@@ -2530,6 +2530,7 @@ int open_ctree(struct super_block *sb,
  	spin_lock_init(&fs_info->qgroup_op_lock);
  	spin_lock_init(&fs_info->buffer_lock);
  	spin_lock_init(&fs_info->unused_bgs_lock);
@@ -42,22 +87,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  	mutex_init(&fs_info->delete_unused_bgs_mutex);
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -716,10 +716,12 @@ static int cache_block_group(struct btrf
- 		return 0;
- 	}
- 
--	down_write(&fs_info->commit_root_sem);
-+	down_read(&fs_info->commit_root_sem);
-+	spin_lock(&fs_info->caching_block_groups_lock);
- 	refcount_inc(&caching_ctl->count);
- 	list_add_tail(&caching_ctl->list, &fs_info->caching_block_groups);
--	up_write(&fs_info->commit_root_sem);
-+	spin_unlock(&fs_info->caching_block_groups_lock);
-+	up_read(&fs_info->commit_root_sem);
- 
- 	btrfs_get_block_group(cache);
- 
-@@ -6618,7 +6620,8 @@ void btrfs_prepare_extent_commit(struct
+@@ -2961,7 +2961,8 @@ void btrfs_prepare_extent_commit(struct
  	struct btrfs_caching_control *caching_ctl;
  	struct btrfs_block_group_cache *cache;
  
@@ -67,7 +97,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  
  	list_for_each_entry_safe(caching_ctl, next,
  				 &fs_info->caching_block_groups, list) {
-@@ -6631,7 +6634,10 @@ void btrfs_prepare_extent_commit(struct
+@@ -2974,7 +2975,10 @@ void btrfs_prepare_extent_commit(struct
  			cache->last_byte_to_unpin = caching_ctl->progress;
  		}
  	}
@@ -78,42 +108,3 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  	if (fs_info->pinned_extents == &fs_info->freed_extents[0])
  		fs_info->pinned_extents = &fs_info->freed_extents[1];
  	else
-@@ -9791,14 +9797,16 @@ int btrfs_free_block_groups(struct btrfs
- 	struct btrfs_caching_control *caching_ctl;
- 	struct rb_node *n;
- 
--	down_write(&info->commit_root_sem);
-+	down_read(&info->commit_root_sem);
-+	spin_lock(&info->caching_block_groups_lock);
- 	while (!list_empty(&info->caching_block_groups)) {
- 		caching_ctl = list_entry(info->caching_block_groups.next,
- 					 struct btrfs_caching_control, list);
- 		list_del(&caching_ctl->list);
- 		put_caching_control(caching_ctl);
- 	}
--	up_write(&info->commit_root_sem);
-+	spin_unlock(&info->caching_block_groups_lock);
-+	up_read(&info->commit_root_sem);
- 
- 	spin_lock(&info->unused_bgs_lock);
- 	while (!list_empty(&info->unused_bgs)) {
-@@ -10453,7 +10461,8 @@ int btrfs_remove_block_group(struct btrf
- 	if (block_group->cached == BTRFS_CACHE_STARTED)
- 		wait_block_group_cache_done(block_group);
- 	if (block_group->has_caching_ctl) {
--		down_write(&fs_info->commit_root_sem);
-+		down_read(&fs_info->commit_root_sem);
-+		spin_lock(&fs_info->caching_block_groups_lock);
- 		if (!caching_ctl) {
- 			struct btrfs_caching_control *ctl;
- 
-@@ -10467,7 +10476,8 @@ int btrfs_remove_block_group(struct btrf
- 		}
- 		if (caching_ctl)
- 			list_del_init(&caching_ctl->list);
--		up_write(&fs_info->commit_root_sem);
-+		spin_unlock(&fs_info->caching_block_groups_lock);
-+		up_read(&fs_info->commit_root_sem);
- 		if (caching_ctl) {
- 			/* Once for the caching bgs list and once for us. */
- 			put_caching_control(caching_ctl);

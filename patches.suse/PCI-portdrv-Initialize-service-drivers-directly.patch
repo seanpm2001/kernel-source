@@ -1,0 +1,145 @@
+From c29de84149aba5f74e87b6491c13ac7203c12f55 Mon Sep 17 00:00:00 2001
+From: Keith Busch <keith.busch@intel.com>
+Date: Thu, 20 Sep 2018 10:27:06 -0600
+Subject: [PATCH] PCI: portdrv: Initialize service drivers directly
+Git-commit: c29de84149aba5f74e87b6491c13ac7203c12f55
+Patch-mainline: v4.20-rc1
+References: bsc#1161561
+
+The PCI port driver saves the PCI state after initializing the device with
+the applicable service devices.  This was, however, before the service
+drivers were even registered because PCI probe happens before the
+device_initcall initialized those service drivers.  The config space state
+that the services set up were not being saved.  The end result would cause
+PCI devices to not react to events that the drivers think they did if the
+PCI state ever needed to be restored.
+
+Fix this by changing the service drivers from using the init calls to
+having the portdrv driver calling the services directly.  This will get the
+state saved as desired, while making the relationship between the port
+driver and the services under it more explicit in the code.
+
+Signed-off-by: Keith Busch <keith.busch@intel.com>
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Reviewed-by: Sinan Kaya <okaya@kernel.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/pci/hotplug/pciehp_core.c |    3 +--
+ drivers/pci/pcie/aer/aerdrv.c     |    3 +--
+ drivers/pci/pcie/dpc.c            |    3 +--
+ drivers/pci/pcie/pme.c            |    3 +--
+ drivers/pci/pcie/portdrv.h        |   24 ++++++++++++++++++++++++
+ drivers/pci/pcie/portdrv_pci.c    |    9 +++++++++
+ 6 files changed, 37 insertions(+), 8 deletions(-)
+
+--- a/drivers/pci/hotplug/pciehp_core.c
++++ b/drivers/pci/hotplug/pciehp_core.c
+@@ -322,7 +322,7 @@ static struct pcie_port_service_driver h
+ #endif	/* PM */
+ };
+ 
+-static int __init pcied_init(void)
++int __init pcie_hp_init(void)
+ {
+ 	int retval = 0;
+ 
+@@ -333,4 +333,3 @@ static int __init pcied_init(void)
+ 
+ 	return retval;
+ }
+-device_initcall(pcied_init);
+--- a/drivers/pci/pcie/aer/aerdrv.c
++++ b/drivers/pci/pcie/aer/aerdrv.c
+@@ -357,10 +357,9 @@ static void aer_error_resume(struct pci_
+  *
+  * Invoked when AER root service driver is loaded.
+  */
+-static int __init aer_service_init(void)
++int __init pcie_aer_init(void)
+ {
+ 	if (!pci_aer_available() || aer_acpi_firmware_first())
+ 		return -ENXIO;
+ 	return pcie_port_service_register(&aerdriver);
+ }
+-device_initcall(aer_service_init);
+--- a/drivers/pci/pcie/dpc.c
++++ b/drivers/pci/pcie/dpc.c
+@@ -285,8 +285,7 @@ static struct pcie_port_service_driver d
+ 	.reset_link	= dpc_reset_link,
+ };
+ 
+-static int __init dpc_service_init(void)
++int __init pcie_dpc_init(void)
+ {
+ 	return pcie_port_service_register(&dpcdriver);
+ }
+-device_initcall(dpc_service_init);
+--- a/drivers/pci/pcie/pme.c
++++ b/drivers/pci/pcie/pme.c
+@@ -449,8 +449,7 @@ static struct pcie_port_service_driver p
+ /**
+  * pcie_pme_service_init - Register the PCIe PME service driver.
+  */
+-static int __init pcie_pme_service_init(void)
++int __init pcie_pme_init(void)
+ {
+ 	return pcie_port_service_register(&pcie_pme_driver);
+ }
+-device_initcall(pcie_pme_service_init);
+--- a/drivers/pci/pcie/portdrv.h
++++ b/drivers/pci/pcie/portdrv.h
+@@ -27,6 +27,30 @@ extern bool pcie_ports_native;
+ 
+ #define PCIE_PORT_DEVICE_MAXSERVICES   5
+ 
++#ifdef CONFIG_PCIEAER
++int pcie_aer_init(void);
++#else
++static inline int pcie_aer_init(void) { return 0; }
++#endif
++
++#ifdef CONFIG_HOTPLUG_PCI_PCIE
++int pcie_hp_init(void);
++#else
++static inline int pcie_hp_init(void) { return 0; }
++#endif
++
++#ifdef CONFIG_PCIE_PME
++int pcie_pme_init(void);
++#else
++static inline int pcie_pme_init(void) { return 0; }
++#endif
++
++#ifdef CONFIG_PCIE_DPC
++int pcie_dpc_init(void);
++#else
++static inline int pcie_dpc_init(void) { return 0; }
++#endif
++
+ /* Port Type */
+ #define PCIE_ANY_PORT			(~0)
+ 
+--- a/drivers/pci/pcie/portdrv_pci.c
++++ b/drivers/pci/pcie/portdrv_pci.c
+@@ -228,11 +228,20 @@ static struct dmi_system_id __initdata p
+ 	 {}
+ };
+ 
++static void __init pcie_init_services(void)
++{
++	pcie_aer_init();
++	pcie_pme_init();
++	pcie_dpc_init();
++	pcie_hp_init();
++}
++
+ static int __init pcie_portdrv_init(void)
+ {
+ 	if (pcie_ports_disabled)
+ 		return -EACCES;
+ 
++	pcie_init_services();
+ 	dmi_check_system(pcie_portdrv_dmi_table);
+ 
+ 	return pci_register_driver(&pcie_portdriver);

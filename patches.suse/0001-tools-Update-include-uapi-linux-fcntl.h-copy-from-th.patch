@@ -1,0 +1,71 @@
+From ca3cf049d2430ac83eff5c32af7b86bb2d1285bf Mon Sep 17 00:00:00 2001
+From: Arnaldo Carvalho de Melo <acme@redhat.com>
+Date: Thu, 13 Jul 2017 17:15:24 -0300
+Subject: [PATCH] tools: Update include/uapi/linux/fcntl.h copy from the kernel
+Git-commit: ca3cf049d2430ac83eff5c32af7b86bb2d1285bf
+Patch-mainline: v4.14-rc1
+References: bsc#1166003
+
+To get the changes in the commit c75b1d9421f8 ("fs: add fcntl()
+interface for setting/getting write life time hints").
+
+Silencing this perf build warning:
+
+  Warning: include/uapi/linux/fcntl.h differs from kernel
+
+We already beautify the fcntl cmd argument, so an upcoming cset will
+update the 'cmd' strarray to cover these new commands.
+
+The hints are in the 3rd arg, a pointer, so not yet supported in 'perf
+trace', for that we need to copy it somehow, probably using eBPF, a new
+attempt at doing that is planned.
+
+Cc: Adrian Hunter <adrian.hunter@intel.com>
+Cc: David Ahern <dsahern@gmail.com>
+Cc: Jens Axboe <axboe@kernel.dk>
+Cc: Jiri Olsa <jolsa@kernel.org>
+Cc: Martin K. Petersen <martin.petersen@oracle.com>
+Cc: Namhyung Kim <namhyung@kernel.org>
+Cc: Wang Nan <wangnan0@huawei.com>
+Link: http://lkml.kernel.org/n/tip-al471wzs3x48alql0tm3mnfa@git.kernel.org
+Signed-off-by: Arnaldo Carvalho de Melo <acme@redhat.com>
+Acked-by: Coly Li <colyli@suse.de>
+---
+ tools/include/uapi/linux/fcntl.h | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/tools/include/uapi/linux/fcntl.h b/tools/include/uapi/linux/fcntl.h
+index 813afd6eee71..ec69d55bcec7 100644
+--- a/tools/include/uapi/linux/fcntl.h
++++ b/tools/include/uapi/linux/fcntl.h
+@@ -42,6 +42,27 @@
+ #define F_SEAL_WRITE	0x0008	/* prevent writes */
+ /* (1U << 31) is reserved for signed error codes */
+ 
++/*
++ * Set/Get write life time hints. {GET,SET}_RW_HINT operate on the
++ * underlying inode, while {GET,SET}_FILE_RW_HINT operate only on
++ * the specific file.
++ */
++#define F_GET_RW_HINT		(F_LINUX_SPECIFIC_BASE + 11)
++#define F_SET_RW_HINT		(F_LINUX_SPECIFIC_BASE + 12)
++#define F_GET_FILE_RW_HINT	(F_LINUX_SPECIFIC_BASE + 13)
++#define F_SET_FILE_RW_HINT	(F_LINUX_SPECIFIC_BASE + 14)
++
++/*
++ * Valid hint values for F_{GET,SET}_RW_HINT. 0 is "not set", or can be
++ * used to clear any hints previously set.
++ */
++#define RWF_WRITE_LIFE_NOT_SET	0
++#define RWH_WRITE_LIFE_NONE	1
++#define RWH_WRITE_LIFE_SHORT	2
++#define RWH_WRITE_LIFE_MEDIUM	3
++#define RWH_WRITE_LIFE_LONG	4
++#define RWH_WRITE_LIFE_EXTREME	5
++
+ /*
+  * Types of directory notifications that may be requested.
+  */
+-- 
+2.25.0
+

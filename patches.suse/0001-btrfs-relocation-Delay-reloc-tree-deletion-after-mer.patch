@@ -59,15 +59,15 @@ Signed-off-by: David Sterba <dsterba@suse.com>
 
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -1171,6 +1171,7 @@ struct btrfs_subvolume_writers {
- #define BTRFS_ROOT_FORCE_COW		6
+@@ -1181,6 +1181,7 @@ struct btrfs_subvolume_writers {
  #define BTRFS_ROOT_MULTI_LOG_TASKS	7
  #define BTRFS_ROOT_DIRTY		8
+ #define BTRFS_ROOT_DELETING		9
 +#define BTRFS_ROOT_DEAD_RELOC_TREE	10
  
  /*
   * in ram representation of the tree.  extent_root is used for all allocations
-@@ -1290,6 +1291,14 @@ struct btrfs_root {
+@@ -1300,6 +1301,14 @@ struct btrfs_root {
  	u64 nr_ordered_extents;
  
  	/*
@@ -94,7 +94,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	spin_lock_init(&root->inode_lock);
 --- a/fs/btrfs/relocation.c
 +++ b/fs/btrfs/relocation.c
-@@ -174,6 +174,8 @@ struct reloc_control {
+@@ -175,6 +175,8 @@ struct reloc_control {
  	struct mapping_tree reloc_root_tree;
  	/* list of reloc trees */
  	struct list_head reloc_roots;
@@ -103,7 +103,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	/* size of metadata reservation for merging reloc trees */
  	u64 merging_rsv_size;
  	/* size of relocated tree nodes */
-@@ -1503,15 +1505,17 @@ int btrfs_update_reloc_root(struct btrfs
+@@ -1512,15 +1514,17 @@ int btrfs_update_reloc_root(struct btrfs
  	struct btrfs_root_item *root_item;
  	int ret;
  
@@ -123,7 +123,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  		__del_reloc_root(reloc_root);
  	}
  
-@@ -2157,6 +2161,58 @@ static int find_next_key(struct btrfs_pa
+@@ -2166,6 +2170,58 @@ static int find_next_key(struct btrfs_pa
  }
  
  /*
@@ -182,7 +182,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
   * merge the relocated tree blocks in reloc tree with corresponding
   * fs tree.
   */
-@@ -2295,13 +2351,8 @@ static noinline_for_stack int merge_relo
+@@ -2304,13 +2360,8 @@ static noinline_for_stack int merge_relo
  out:
  	btrfs_free_path(path);
  
@@ -198,7 +198,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  
  	if (trans)
  		btrfs_end_transaction_throttle(trans);
-@@ -2446,14 +2497,6 @@ again:
+@@ -2455,14 +2506,6 @@ again:
  		} else {
  			list_del_init(&reloc_root->root_list);
  		}
@@ -213,7 +213,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	}
  
  	if (found) {
-@@ -4187,6 +4230,9 @@ restart:
+@@ -4209,6 +4252,9 @@ restart:
  		goto out_free;
  	}
  	btrfs_commit_transaction(trans);
@@ -223,7 +223,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  out_free:
  	btrfs_free_block_rsv(fs_info, rc->block_rsv);
  	btrfs_free_path(path);
-@@ -4281,6 +4327,7 @@ static struct reloc_control *alloc_reloc
+@@ -4303,6 +4349,7 @@ static struct reloc_control *alloc_reloc
  		return NULL;
  
  	INIT_LIST_HEAD(&rc->reloc_roots);
@@ -231,7 +231,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	backref_cache_init(&rc->backref_cache);
  	mapping_tree_init(&rc->reloc_root_tree);
  	extent_io_tree_init(&rc->processed_blocks,
-@@ -4591,6 +4638,10 @@ int btrfs_recover_relocation(struct btrf
+@@ -4613,6 +4660,10 @@ int btrfs_recover_relocation(struct btrf
  		goto out_free;
  	}
  	err = btrfs_commit_transaction(trans);

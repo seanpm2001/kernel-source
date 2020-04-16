@@ -1,0 +1,46 @@
+From 01daacfb9035e5b86d43a01f11a0614648f306c1 Mon Sep 17 00:00:00 2001
+From: Yicong Yang <yangyicong@hisilicon.com>
+Date: Fri, 13 Dec 2019 19:44:34 +0800
+Subject: [PATCH] PCI/AER: Log which device prevents error recovery
+Git-commit: 01daacfb9035e5b86d43a01f11a0614648f306c1
+Patch-mainline: v5.6-rc1
+References: bsc#1161561
+
+PCI error recovery will fail if any device under the Root Port doesn't have
+an error_detected callback.  Currently only the failure result is printed,
+which is not enough to identify the driver that lacks the callback.
+
+Log a message to identify the device with no error_detected callback.
+
+[bhelgaas: tweak log message]
+Link: https://lore.kernel.org/r/1576237474-32021-1-git-send-email-yangyicong@hisilicon.com
+Signed-off-by: Yicong Yang <yangyicong@hisilicon.com>
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/pci/pcie/err.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/pci/pcie/err.c b/drivers/pci/pcie/err.c
+index b0e6048a9208..98acf944a27f 100644
+--- a/drivers/pci/pcie/err.c
++++ b/drivers/pci/pcie/err.c
+@@ -61,10 +61,12 @@ static int report_error_detected(struct pci_dev *dev,
+ 		 * error callbacks of "any" device in the subtree, and will
+ 		 * exit in the disconnected error state.
+ 		 */
+-		if (dev->hdr_type != PCI_HEADER_TYPE_BRIDGE)
++		if (dev->hdr_type != PCI_HEADER_TYPE_BRIDGE) {
+ 			vote = PCI_ERS_RESULT_NO_AER_DRIVER;
+-		else
++			pci_info(dev, "AER: Can't recover (no error_detected callback)\n");
++		} else {
+ 			vote = PCI_ERS_RESULT_NONE;
++		}
+ 	} else {
+ 		err_handler = dev->driver->err_handler;
+ 		vote = err_handler->error_detected(dev, state);
+-- 
+2.16.4
+

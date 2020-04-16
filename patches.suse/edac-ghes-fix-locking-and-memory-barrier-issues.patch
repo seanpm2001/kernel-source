@@ -139,12 +139,12 @@ Link: https://lkml.kernel.org/r/20191105200732.3053-1-rrichter@marvell.com
  	struct edac_mc_layer layers[1];
  	struct ghes_edac_dimm_fill dimm_fill;
 +	unsigned long flags;
- 	int idx;
+ 	int idx = -1;
  
- 	/* Check if safe to enable on this system */
-@@ -451,11 +465,14 @@ int ghes_edac_register(struct ghes *ghes
- 	if (!force_load && idx < 0)
- 		return -ENODEV;
+ 	if (IS_ENABLED(CONFIG_X86)) {
+@@ -455,11 +469,14 @@ int ghes_edac_register(struct ghes *ghes
+ 		idx = 0;
+ 	}
  
 +	/* finish another registration/unregistration instance first */
 +	mutex_lock(&ghes_reg_mutex);
@@ -159,7 +159,7 @@ Link: https://lkml.kernel.org/r/20191105200732.3053-1-rrichter@marvell.com
  
  	/* Get the number of DIMMs */
  	dmi_walk(ghes_edac_count_dimms, &num_dimm);
-@@ -473,12 +490,13 @@ int ghes_edac_register(struct ghes *ghes
+@@ -477,12 +494,13 @@ int ghes_edac_register(struct ghes *ghes
  	mci = edac_mc_alloc(0, ARRAY_SIZE(layers), layers, sizeof(struct ghes_edac_pvt));
  	if (!mci) {
  		pr_info("Can't allocate memory for EDAC data\n");
@@ -177,7 +177,7 @@ Link: https://lkml.kernel.org/r/20191105200732.3053-1-rrichter@marvell.com
  
  	mci->pdev = dev;
  	mci->mtype_cap = MEM_FLAG_EMPTY;
-@@ -521,20 +539,47 @@ int ghes_edac_register(struct ghes *ghes
+@@ -525,20 +543,47 @@ int ghes_edac_register(struct ghes *ghes
  	if (rc < 0) {
  		pr_info("Can't register at EDAC core\n");
  		edac_mc_free(mci);

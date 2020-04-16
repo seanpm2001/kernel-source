@@ -1,0 +1,193 @@
+From c6c889d932bb49d95273711a790d16f814cb213b Mon Sep 17 00:00:00 2001
+From: Bjorn Helgaas <bhelgaas@google.com>
+Date: Fri, 9 Mar 2018 11:06:56 -0600
+Subject: [PATCH] PCI/portdrv: Remove pcie_port_bus_type link order dependency
+Git-commit: c6c889d932bb49d95273711a790d16f814cb213b
+Patch-mainline: v4.17-rc1
+References: bsc#1161561
+
+The pcie_port_bus_type must be registered before drivers that depend on it
+can be registered.  Those drivers include:
+
+  pcied_init()                # PCIe native hotplug driver
+  aer_service_init()          # AER driver
+  dpc_service_init()          # DPC driver
+  pcie_pme_service_init()     # PME driver
+
+Previously we registered pcie_port_bus_type from pcie_portdrv_init(), a
+device_initcall.  The callers of pcie_port_service_register() (above) are
+also device_initcalls.  This is fragile because the device_initcall
+ordering depends on link order, which is not explicit.
+
+Register pcie_port_bus_type from pci_driver_init() along with pci_bus_type.
+This removes the link order dependency between portdrv and the pciehp, AER,
+DPC, and PCIe PME drivers.
+
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Reviewed-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/pci/pci-driver.c       |   44 ++++++++++++++++++++++++++++++++-
+ drivers/pci/pcie/Makefile      |    2 -
+ drivers/pci/pcie/portdrv_bus.c |   54 -----------------------------------------
+ drivers/pci/pcie/portdrv_pci.c |   13 ---------
+ 4 files changed, 45 insertions(+), 68 deletions(-)
+ delete mode 100644 drivers/pci/pcie/portdrv_bus.c
+
+--- a/drivers/pci/pci-driver.c
++++ b/drivers/pci/pci-driver.c
+@@ -21,6 +21,7 @@
+ #include <linux/suspend.h>
+ #include <linux/kexec.h>
+ #include "pci.h"
++#include "pcie/portdrv.h"
+ 
+ struct pci_dynid {
+ 	struct list_head node;
+@@ -1558,8 +1559,49 @@ struct bus_type pci_bus_type = {
+ };
+ EXPORT_SYMBOL(pci_bus_type);
+ 
++#ifdef CONFIG_PCIEPORTBUS
++static int pcie_port_bus_match(struct device *dev, struct device_driver *drv)
++{
++	struct pcie_device *pciedev;
++	struct pcie_port_service_driver *driver;
++
++	if (drv->bus != &pcie_port_bus_type || dev->bus != &pcie_port_bus_type)
++		return 0;
++
++	pciedev = to_pcie_device(dev);
++	driver = to_service_driver(drv);
++
++	if (driver->service != pciedev->service)
++		return 0;
++
++	if (driver->port_type != PCIE_ANY_PORT &&
++	    driver->port_type != pci_pcie_type(pciedev->port))
++		return 0;
++
++	return 1;
++}
++
++struct bus_type pcie_port_bus_type = {
++	.name		= "pci_express",
++	.match		= pcie_port_bus_match,
++};
++EXPORT_SYMBOL_GPL(pcie_port_bus_type);
++#endif
++
+ static int __init pci_driver_init(void)
+ {
+-	return bus_register(&pci_bus_type);
++	int ret;
++
++	ret = bus_register(&pci_bus_type);
++	if (ret)
++		return ret;
++
++#ifdef CONFIG_PCIEPORTBUS
++	ret = bus_register(&pcie_port_bus_type);
++	if (ret)
++		return ret;
++#endif
++
++	return 0;
+ }
+ postcore_initcall(pci_driver_init);
+--- a/drivers/pci/pcie/Makefile
++++ b/drivers/pci/pcie/Makefile
+@@ -5,7 +5,7 @@
+ # Build PCI Express ASPM if needed
+ obj-$(CONFIG_PCIEASPM)		+= aspm.o
+ 
+-pcieportdrv-y			:= portdrv_core.o portdrv_pci.o portdrv_bus.o
++pcieportdrv-y			:= portdrv_core.o portdrv_pci.o
+ pcieportdrv-$(CONFIG_ACPI)	+= portdrv_acpi.o
+ 
+ obj-$(CONFIG_PCIEPORTBUS)	+= pcieportdrv.o
+--- a/drivers/pci/pcie/portdrv_pci.c
++++ b/drivers/pci/pcie/portdrv_pci.c
+@@ -256,22 +256,11 @@ static struct dmi_system_id __initdata p
+ 
+ static int __init pcie_portdrv_init(void)
+ {
+-	int retval;
+-
+ 	if (pcie_ports_disabled)
+ 		return -EACCES;
+ 
+ 	dmi_check_system(pcie_portdrv_dmi_table);
+ 
+-	retval = pcie_port_bus_register();
+-	if (retval) {
+-		printk(KERN_WARNING "PCIE: bus_register error: %d\n", retval);
+-		goto out;
+-	}
+-	retval = pci_register_driver(&pcie_portdriver);
+-	if (retval)
+-		pcie_port_bus_unregister();
+- out:
+-	return retval;
++	return pci_register_driver(&pcie_portdriver);
+ }
+ device_initcall(pcie_portdrv_init);
+--- a/drivers/pci/pcie/portdrv_bus.c
++++ /dev/null
+@@ -1,54 +0,0 @@
+-/*
+- * File:	portdrv_bus.c
+- * Purpose:	PCI Express Port Bus Driver's Bus Overloading Functions
+- *
+- * Copyright (C) 2004 Intel
+- * Copyright (C) Tom Long Nguyen (tom.l.nguyen@intel.com)
+- */
+-
+-#include <linux/module.h>
+-#include <linux/pci.h>
+-#include <linux/kernel.h>
+-#include <linux/errno.h>
+-#include <linux/pm.h>
+-
+-#include "portdrv.h"
+-
+-static int pcie_port_bus_match(struct device *dev, struct device_driver *drv);
+-
+-struct bus_type pcie_port_bus_type = {
+-	.name		= "pci_express",
+-	.match		= pcie_port_bus_match,
+-};
+-EXPORT_SYMBOL_GPL(pcie_port_bus_type);
+-
+-static int pcie_port_bus_match(struct device *dev, struct device_driver *drv)
+-{
+-	struct pcie_device *pciedev;
+-	struct pcie_port_service_driver *driver;
+-
+-	if (drv->bus != &pcie_port_bus_type || dev->bus != &pcie_port_bus_type)
+-		return 0;
+-
+-	pciedev = to_pcie_device(dev);
+-	driver = to_service_driver(drv);
+-
+-	if (driver->service != pciedev->service)
+-		return 0;
+-
+-	if ((driver->port_type != PCIE_ANY_PORT) &&
+-	    (driver->port_type != pci_pcie_type(pciedev->port)))
+-		return 0;
+-
+-	return 1;
+-}
+-
+-int pcie_port_bus_register(void)
+-{
+-	return bus_register(&pcie_port_bus_type);
+-}
+-
+-void pcie_port_bus_unregister(void)
+-{
+-	bus_unregister(&pcie_port_bus_type);
+-}

@@ -1,0 +1,40 @@
+From: William Dauchy <w.dauchy@criteo.com>
+Date: Tue, 21 Jan 2020 21:49:54 +0100
+Subject: net, ip6_tunnel: fix namespaces move
+Git-commit: 5311a69aaca30fa849c3cc46fb25f75727fb72d0
+Patch-mainline: 5.5
+References: networking-stable-20_01_27
+
+in the same manner as commit d0f418516022 ("net, ip_tunnel: fix
+namespaces move"), fix namespace moving as it was broken since commit
+8d79266bc48c ("ip6_tunnel: add collect_md mode to IPv6 tunnel"), but for
+ipv6 this time; there is no reason to keep it for ip6_tunnel.
+
+Fixes: 8d79266bc48c ("ip6_tunnel: add collect_md mode to IPv6 tunnel")
+Signed-off-by: William Dauchy <w.dauchy@criteo.com>
+Acked-by: Nicolas Dichtel <nicolas.dichtel@6wind.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ net/ipv6/ip6_tunnel.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/net/ipv6/ip6_tunnel.c b/net/ipv6/ip6_tunnel.c
+index 2f376dbc37d5..b5dd20c4599b 100644
+--- a/net/ipv6/ip6_tunnel.c
++++ b/net/ipv6/ip6_tunnel.c
+@@ -1877,10 +1877,8 @@ static int ip6_tnl_dev_init(struct net_device *dev)
+ 	if (err)
+ 		return err;
+ 	ip6_tnl_link_config(t);
+-	if (t->parms.collect_md) {
+-		dev->features |= NETIF_F_NETNS_LOCAL;
++	if (t->parms.collect_md)
+ 		netif_keep_dst(dev);
+-	}
+ 	return 0;
+ }
+ 
+-- 
+2.25.1
+

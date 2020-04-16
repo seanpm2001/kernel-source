@@ -1,0 +1,32 @@
+From: Hannes Reinecke <hare@suse.de>
+Date: Thu, 4 Jul 2019 08:10:47 +0200
+Subject: nvme-multipath: do not select namespaces which are about to be
+ removed
+Patch-mainline: v5.3-rc1
+Git-commit: 04e70bd4a0264a3d488a9eff6e116d7dc9a77967
+References: bsc#1158983
+
+nvme_ns_remove() will first set the NVME_NS_REMOVING flag before removing
+it from the list at the very last step.
+So to avoid selecting a namespace in nvme_find_path() which is about to be
+removed check the NVME_NS_REMOVING flag, too, when selecting a new path.
+
+Signed-off-by: Hannes Reinecke <hare@suse.com>
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/nvme/host/multipath.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/drivers/nvme/host/multipath.c
++++ b/drivers/nvme/host/multipath.c
+@@ -134,7 +134,8 @@ void nvme_mpath_clear_current_path(struc
+ static bool nvme_path_is_disabled(struct nvme_ns *ns)
+ {
+ 	return ns->ctrl->state != NVME_CTRL_LIVE ||
+-		test_bit(NVME_NS_ANA_PENDING, &ns->flags);
++		test_bit(NVME_NS_ANA_PENDING, &ns->flags) ||
++		test_bit(NVME_NS_REMOVING, &ns->flags);
+ }
+ 
+ static struct nvme_ns *__nvme_find_path(struct nvme_ns_head *head, int node)

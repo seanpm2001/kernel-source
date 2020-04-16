@@ -1,0 +1,157 @@
+From 7564beda19b3646d781934d04fc382b738053e6f Mon Sep 17 00:00:00 2001
+From: Guoqing Jiang <gqjiang@suse.com>
+Date: Thu, 18 Oct 2018 16:37:42 +0800
+Subject: [PATCH] md-cluster/raid10: support add disk under grow mode
+Git-commit: 7564beda19b3646d781934d04fc382b738053e6f
+Patch-mainline: v4.20-rc1
+References: bsc#1166003
+
+For clustered raid10 scenario, we need to let all the nodes
+know about that a new disk is added to the array, and the
+reshape caused by add new member just need to be happened in
+one node, but other nodes should know about the change.
+
+Since reshape means read data from somewhere (which is already
+used by array) and write data to unused region. Obviously, it
+is awful if one node is reading data from address while another
+node is writing to the same address. Considering we have
+implemented suspend writes in the resyncing area, so we can
+just broadcast the reading address to other nodes to avoid the
+trouble.
+
+For master node, it would call reshape_request then update sb
+during the reshape period. To avoid above trouble, we call
+resync_info_update to send RESYNC message in reshape_request.
+
+Then from slave node's view, it receives two type messages:
+1. RESYNCING message
+Slave node add the address (where master node reading data from)
+to suspend list.
+
+2. METADATA_UPDATED message
+Once slave nodes know the reshaping is started in master node,
+it is time to update reshape position and call start_reshape to
+follow master node's step. After reshape is done, only reshape
+position is need to be updated, so the majority task of reshaping
+is happened on the master node.
+
+Reviewed-by: NeilBrown <neilb@suse.com>
+Signed-off-by: Guoqing Jiang <gqjiang@suse.com>
+Signed-off-by: Shaohua Li <shli@fb.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/md.c     | 24 ++++++++++++++++++++++++
+ drivers/md/md.h     |  1 +
+ drivers/md/raid10.c | 34 ++++++++++++++++++++++++++++++++++
+ 3 files changed, 59 insertions(+)
+
+diff --git a/drivers/md/md.c b/drivers/md/md.c
+index 4c0f3e0331d5..e07096c4ff20 100644
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -9230,6 +9230,30 @@ static void check_sb_changes(struct mddev *mddev, struct md_rdev *rdev)
+ 	if (mddev->raid_disks != le32_to_cpu(sb->raid_disks))
+ 		update_raid_disks(mddev, le32_to_cpu(sb->raid_disks));
+ 
++	/*
++	 * Since mddev->delta_disks has already updated in update_raid_disks,
++	 * so it is time to check reshape.
++	 */
++	if (test_bit(MD_RESYNCING_REMOTE, &mddev->recovery) &&
++	    (le32_to_cpu(sb->feature_map) & MD_FEATURE_RESHAPE_ACTIVE)) {
++		/*
++		 * reshape is happening in the remote node, we need to
++		 * update reshape_position and call start_reshape.
++		 */
++		mddev->reshape_position = sb->reshape_position;
++		if (mddev->pers->update_reshape_pos)
++			mddev->pers->update_reshape_pos(mddev);
++		if (mddev->pers->start_reshape)
++			mddev->pers->start_reshape(mddev);
++	} else if (test_bit(MD_RESYNCING_REMOTE, &mddev->recovery) &&
++		   mddev->reshape_position != MaxSector &&
++		   !(le32_to_cpu(sb->feature_map) & MD_FEATURE_RESHAPE_ACTIVE)) {
++		/* reshape is just done in another node. */
++		mddev->reshape_position = MaxSector;
++		if (mddev->pers->update_reshape_pos)
++			mddev->pers->update_reshape_pos(mddev);
++	}
++
+ 	/* Finally set the event to be up to date */
+ 	mddev->events = le64_to_cpu(sb->events);
+ }
+diff --git a/drivers/md/md.h b/drivers/md/md.h
+index 8afd6bfdbfb9..c52afb52c776 100644
+--- a/drivers/md/md.h
++++ b/drivers/md/md.h
+@@ -557,6 +557,7 @@ struct md_personality
+ 	int (*check_reshape) (struct mddev *mddev);
+ 	int (*start_reshape) (struct mddev *mddev);
+ 	void (*finish_reshape) (struct mddev *mddev);
++	void (*update_reshape_pos) (struct mddev *mddev);
+ 	/* quiesce suspends or resumes internal processing.
+ 	 * 1 - stop new actions and wait for action io to complete
+ 	 * 0 - return to normal behaviour
+diff --git a/drivers/md/raid10.c b/drivers/md/raid10.c
+index 72e52921c545..1edd58a3098b 100644
+--- a/drivers/md/raid10.c
++++ b/drivers/md/raid10.c
+@@ -4605,6 +4605,32 @@ static sector_t reshape_request(struct mddev *mddev, sector_t sector_nr,
+ 	r10_bio->master_bio = read_bio;
+ 	r10_bio->read_slot = r10_bio->devs[r10_bio->read_slot].devnum;
+ 
++	/*
++	 * Broadcast RESYNC message to other nodes, so all nodes would not
++	 * write to the region to avoid conflict.
++	*/
++	if (mddev_is_clustered(mddev) && conf->cluster_sync_high <= sector_nr) {
++		struct mdp_superblock_1 *sb = NULL;
++		int sb_reshape_pos = 0;
++
++		conf->cluster_sync_low = sector_nr;
++		conf->cluster_sync_high = sector_nr + CLUSTER_RESYNC_WINDOW_SECTORS;
++		sb = page_address(rdev->sb_page);
++		if (sb) {
++			sb_reshape_pos = le64_to_cpu(sb->reshape_position);
++			/*
++			 * Set cluster_sync_low again if next address for array
++			 * reshape is less than cluster_sync_low. Since we can't
++			 * update cluster_sync_low until it has finished reshape.
++			 */
++			if (sb_reshape_pos < conf->cluster_sync_low)
++				conf->cluster_sync_low = sb_reshape_pos;
++		}
++
++		md_cluster_ops->resync_info_update(mddev, conf->cluster_sync_low,
++							  conf->cluster_sync_high);
++	}
++
+ 	/* Now find the locations in the new layout */
+ 	__raid10_find_phys(&conf->geo, r10_bio);
+ 
+@@ -4756,6 +4782,13 @@ static void end_reshape(struct r10conf *conf)
+ 	conf->fullsync = 0;
+ }
+ 
++static void raid10_update_reshape_pos(struct mddev *mddev)
++{
++	struct r10conf *conf = mddev->private;
++
++	conf->reshape_progress = mddev->reshape_position;
++}
++
+ static int handle_reshape_read_error(struct mddev *mddev,
+ 				     struct r10bio *r10_bio)
+ {
+@@ -4924,6 +4957,7 @@ static struct md_personality raid10_personality =
+ 	.check_reshape	= raid10_check_reshape,
+ 	.start_reshape	= raid10_start_reshape,
+ 	.finish_reshape	= raid10_finish_reshape,
++	.update_reshape_pos = raid10_update_reshape_pos,
+ 	.congested	= raid10_congested,
+ };
+ 
+-- 
+2.25.0
+

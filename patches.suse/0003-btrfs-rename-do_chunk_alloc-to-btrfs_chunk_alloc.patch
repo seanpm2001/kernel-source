@@ -1,0 +1,153 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Tue, 18 Jun 2019 16:09:17 -0400
+Subject: btrfs: rename do_chunk_alloc to btrfs_chunk_alloc
+Git-commit: fc471cb0c8f0016ac7ec5cc3e329c5e23d83d593
+Patch-mainline: v5.3-rc1
+References: bsc#1165949
+
+Really we just need the enum, but as we break more things up it'll help
+to have this external to extent-tree.c.
+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/ctree.h       |   22 ++++++++++++++++++++++
+ fs/btrfs/extent-tree.c |   38 ++++++++------------------------------
+ 2 files changed, 30 insertions(+), 30 deletions(-)
+
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -2772,6 +2772,28 @@ enum btrfs_flush_state {
+ 	COMMIT_TRANS		=	9,
+ };
+ 
++/*
++ * control flags for do_chunk_alloc's force field
++ * CHUNK_ALLOC_NO_FORCE means to only allocate a chunk
++ * if we really need one.
++ *
++ * CHUNK_ALLOC_LIMITED means to only try and allocate one
++ * if we have very few chunks already allocated.  This is
++ * used as part of the clustering code to help make sure
++ * we have a good pool of storage to cluster in, without
++ * filling the FS with empty chunks
++ *
++ * CHUNK_ALLOC_FORCE means it must try to allocate one
++ *
++ */
++enum btrfs_chunk_alloc_enum {
++	CHUNK_ALLOC_NO_FORCE,
++	CHUNK_ALLOC_LIMITED,
++	CHUNK_ALLOC_FORCE,
++};
++
++int btrfs_chunk_alloc(struct btrfs_trans_handle *trans, u64 flags,
++		      enum btrfs_chunk_alloc_enum force);
+ int btrfs_alloc_data_chunk_ondemand(struct btrfs_inode *inode, u64 bytes);
+ int btrfs_check_data_free_space(struct inode *inode,
+ 			struct extent_changeset **reserved, u64 start, u64 len);
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -44,26 +44,6 @@
+ #undef SCRAMBLE_DELAYED_REFS
+ 
+ /*
+- * control flags for do_chunk_alloc's force field
+- * CHUNK_ALLOC_NO_FORCE means to only allocate a chunk
+- * if we really need one.
+- *
+- * CHUNK_ALLOC_LIMITED means to only try and allocate one
+- * if we have very few chunks already allocated.  This is
+- * used as part of the clustering code to help make sure
+- * we have a good pool of storage to cluster in, without
+- * filling the FS with empty chunks
+- *
+- * CHUNK_ALLOC_FORCE means it must try to allocate one
+- *
+- */
+-enum {
+-	CHUNK_ALLOC_NO_FORCE = 0,
+-	CHUNK_ALLOC_LIMITED = 1,
+-	CHUNK_ALLOC_FORCE = 2,
+-};
+-
+-/*
+  * Declare a helper function to detect underflow of various space info members
+  */
+ #define DECLARE_SPACE_INFO_UPDATE(name)					\
+@@ -106,8 +86,6 @@ static int alloc_reserved_tree_block(str
+ 				     u64 parent, u64 root_objectid,
+ 				     u64 flags, struct btrfs_disk_key *key,
+ 				     int level, struct btrfs_key *ins);
+-static int do_chunk_alloc(struct btrfs_trans_handle *trans, u64 flags,
+-			  int force);
+ static int find_next_key(struct btrfs_path *path, int level,
+ 			 struct btrfs_key *key);
+ static void dump_space_info(struct btrfs_fs_info *fs_info,
+@@ -4368,7 +4346,7 @@ alloc:
+ 			if (IS_ERR(trans))
+ 				return PTR_ERR(trans);
+ 
+-			ret = do_chunk_alloc(trans, alloc_target,
++			ret = btrfs_chunk_alloc(trans, alloc_target,
+ 					     CHUNK_ALLOC_NO_FORCE);
+ 			btrfs_end_transaction(trans);
+ 			if (ret < 0) {
+@@ -4649,8 +4627,8 @@ void check_system_chunk(struct btrfs_tra
+  *    - return 1 if it successfully allocates a chunk,
+  *    - return errors including -ENOSPC otherwise.
+  */
+-static int do_chunk_alloc(struct btrfs_trans_handle *trans, u64 flags,
+-			  int force)
++int btrfs_chunk_alloc(struct btrfs_trans_handle *trans, u64 flags,
++		      enum btrfs_chunk_alloc_enum force)
+ {
+ 	struct btrfs_fs_info *fs_info = trans->fs_info;
+ 	struct btrfs_space_info *space_info;
+@@ -5097,7 +5075,7 @@ static int flush_space(struct btrfs_fs_i
+ 			ret = PTR_ERR(trans);
+ 			break;
+ 		}
+-		ret = do_chunk_alloc(trans,
++		ret = btrfs_chunk_alloc(trans,
+ 				     btrfs_metadata_alloc_profile(fs_info),
+ 				     (state == ALLOC_CHUNK) ?
+ 				     CHUNK_ALLOC_NO_FORCE : CHUNK_ALLOC_FORCE);
+@@ -8143,7 +8121,7 @@ loop:
+ 				goto out;
+ 			}
+ 
+-			ret = do_chunk_alloc(trans, flags, CHUNK_ALLOC_FORCE);
++			ret = btrfs_chunk_alloc(trans, flags, CHUNK_ALLOC_FORCE);
+ 
+ 			/*
+ 			 * If we can't allocate a new chunk we've already looped
+@@ -9819,7 +9797,7 @@ again:
+ 	 */
+ 	alloc_flags = update_block_group_flags(fs_info, cache->flags);
+ 	if (alloc_flags != cache->flags) {
+-		ret = do_chunk_alloc(trans, alloc_flags,
++		ret = btrfs_chunk_alloc(trans, alloc_flags,
+ 				     CHUNK_ALLOC_FORCE);
+ 		/*
+ 		 * ENOSPC is allowed here, we may have enough space
+@@ -9836,7 +9814,7 @@ again:
+ 	if (!ret)
+ 		goto out;
+ 	alloc_flags = get_alloc_profile(fs_info, cache->space_info->flags);
+-	ret = do_chunk_alloc(trans, alloc_flags, CHUNK_ALLOC_FORCE);
++	ret = btrfs_chunk_alloc(trans, alloc_flags, CHUNK_ALLOC_FORCE);
+ 	if (ret < 0)
+ 		goto out;
+ 	ret = inc_block_group_ro(cache, 0);
+@@ -9858,7 +9836,7 @@ int btrfs_force_chunk_alloc(struct btrfs
+ {
+ 	u64 alloc_flags = get_alloc_profile(fs_info, type);
+ 
+-	return do_chunk_alloc(trans, alloc_flags, CHUNK_ALLOC_FORCE);
++	return btrfs_chunk_alloc(trans, alloc_flags, CHUNK_ALLOC_FORCE);
+ }
+ 
+ /*

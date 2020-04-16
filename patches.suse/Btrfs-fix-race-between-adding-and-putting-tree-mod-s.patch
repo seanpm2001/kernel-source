@@ -103,18 +103,16 @@ Reviewed-by: Nikolay Borisov <nborisov@suse.com>
 Signed-off-by: Filipe Manana <fdmanana@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 ---
- fs/btrfs/ctree.c             | 8 ++------
- fs/btrfs/ctree.h             | 6 ++----
- fs/btrfs/delayed-ref.c       | 8 ++++----
- fs/btrfs/disk-io.c           | 1 -
- fs/btrfs/tests/btrfs-tests.c | 1 -
+ fs/btrfs/ctree.c             |    8 ++------
+ fs/btrfs/ctree.h             |    6 ++----
+ fs/btrfs/delayed-ref.c       |    8 ++++----
+ fs/btrfs/disk-io.c           |    1 -
+ fs/btrfs/tests/btrfs-tests.c |    1 -
  5 files changed, 8 insertions(+), 16 deletions(-)
 
-diff --git a/fs/btrfs/ctree.c b/fs/btrfs/ctree.c
-index efa913bc5625..356a1bba7645 100644
 --- a/fs/btrfs/ctree.c
 +++ b/fs/btrfs/ctree.c
-@@ -339,12 +339,10 @@ u64 btrfs_get_tree_mod_seq(struct btrfs_fs_info *fs_info,
+@@ -339,12 +339,10 @@ u64 btrfs_get_tree_mod_seq(struct btrfs_
  			   struct seq_list *elem)
  {
  	tree_mod_log_write_lock(fs_info);
@@ -127,7 +125,7 @@ index efa913bc5625..356a1bba7645 100644
  	tree_mod_log_write_unlock(fs_info);
  
  	return elem->seq;
-@@ -364,7 +362,7 @@ void btrfs_put_tree_mod_seq(struct btrfs_fs_info *fs_info,
+@@ -364,7 +362,7 @@ void btrfs_put_tree_mod_seq(struct btrfs
  	if (!seq_putting)
  		return;
  
@@ -136,7 +134,7 @@ index efa913bc5625..356a1bba7645 100644
  	list_del(&elem->list);
  	elem->seq = 0;
  
-@@ -375,19 +373,17 @@ void btrfs_put_tree_mod_seq(struct btrfs_fs_info *fs_info,
+@@ -375,19 +373,17 @@ void btrfs_put_tree_mod_seq(struct btrfs
  				 * blocker with lower sequence number exists, we
  				 * cannot remove anything from the log
  				 */
@@ -157,13 +155,11 @@ index efa913bc5625..356a1bba7645 100644
  	tm_root = &fs_info->tree_mod_log;
  	for (node = rb_first(tm_root); node; node = next) {
  		next = rb_next(node);
-diff --git a/fs/btrfs/ctree.h b/fs/btrfs/ctree.h
-index 79fdd23579c8..b3b45b24eadf 100644
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -913,14 +913,12 @@ struct btrfs_fs_info {
- 	struct list_head delayed_iputs;
- 	struct mutex cleaner_delayed_iput_mutex;
+@@ -919,14 +919,12 @@ struct btrfs_fs_info {
+ 	atomic_t nr_delayed_iputs;
+ 	wait_queue_head_t delayed_iputs_wait;
  
 -	/* this protects tree_mod_seq_list */
 -	spinlock_t tree_mod_seq_lock;
@@ -178,11 +174,9 @@ index 79fdd23579c8..b3b45b24eadf 100644
  
  	atomic_t nr_async_submits;
  	atomic_t async_submit_draining;
-diff --git a/fs/btrfs/delayed-ref.c b/fs/btrfs/delayed-ref.c
-index 869af3f28f9e..dbc7afbb3319 100644
 --- a/fs/btrfs/delayed-ref.c
 +++ b/fs/btrfs/delayed-ref.c
-@@ -316,7 +316,7 @@ void btrfs_merge_delayed_refs(struct btrfs_trans_handle *trans,
+@@ -311,7 +311,7 @@ void btrfs_merge_delayed_refs(struct btr
  	if (head->is_data)
  		return;
  
@@ -191,7 +185,7 @@ index 869af3f28f9e..dbc7afbb3319 100644
  	if (!list_empty(&fs_info->tree_mod_seq_list)) {
  		struct seq_list *elem;
  
-@@ -324,7 +324,7 @@ void btrfs_merge_delayed_refs(struct btrfs_trans_handle *trans,
+@@ -319,7 +319,7 @@ void btrfs_merge_delayed_refs(struct btr
  					struct seq_list, list);
  		seq = elem->seq;
  	}
@@ -200,7 +194,7 @@ index 869af3f28f9e..dbc7afbb3319 100644
  
  again:
  	for (node = rb_first(&head->ref_tree); node; node = rb_next(node)) {
-@@ -343,7 +343,7 @@ int btrfs_check_delayed_seq(struct btrfs_fs_info *fs_info,
+@@ -338,7 +338,7 @@ int btrfs_check_delayed_seq(struct btrfs
  	struct seq_list *elem;
  	int ret = 0;
  
@@ -209,7 +203,7 @@ index 869af3f28f9e..dbc7afbb3319 100644
  	if (!list_empty(&fs_info->tree_mod_seq_list)) {
  		elem = list_first_entry(&fs_info->tree_mod_seq_list,
  					struct seq_list, list);
-@@ -357,7 +357,7 @@ int btrfs_check_delayed_seq(struct btrfs_fs_info *fs_info,
+@@ -352,7 +352,7 @@ int btrfs_check_delayed_seq(struct btrfs
  		}
  	}
  
@@ -218,11 +212,9 @@ index 869af3f28f9e..dbc7afbb3319 100644
  	return ret;
  }
  
-diff --git a/fs/btrfs/disk-io.c b/fs/btrfs/disk-io.c
-index 9372435471cf..928ba1339a1e 100644
 --- a/fs/btrfs/disk-io.c
 +++ b/fs/btrfs/disk-io.c
-@@ -2544,7 +2544,6 @@ int open_ctree(struct super_block *sb,
+@@ -2518,7 +2518,6 @@ int open_ctree(struct super_block *sb,
  	spin_lock_init(&fs_info->delayed_iput_lock);
  	spin_lock_init(&fs_info->defrag_inodes_lock);
  	spin_lock_init(&fs_info->free_chunk_lock);
@@ -230,11 +222,9 @@ index 9372435471cf..928ba1339a1e 100644
  	spin_lock_init(&fs_info->super_lock);
  	spin_lock_init(&fs_info->qgroup_op_lock);
  	spin_lock_init(&fs_info->buffer_lock);
-diff --git a/fs/btrfs/tests/btrfs-tests.c b/fs/btrfs/tests/btrfs-tests.c
-index c3492bc1cc60..c77432e9d397 100644
 --- a/fs/btrfs/tests/btrfs-tests.c
 +++ b/fs/btrfs/tests/btrfs-tests.c
-@@ -121,7 +121,6 @@ struct btrfs_fs_info *btrfs_alloc_dummy_fs_info(u32 nodesize, u32 sectorsize)
+@@ -121,7 +121,6 @@ struct btrfs_fs_info *btrfs_alloc_dummy_
  	spin_lock_init(&fs_info->qgroup_op_lock);
  	spin_lock_init(&fs_info->super_lock);
  	spin_lock_init(&fs_info->fs_roots_radix_lock);
@@ -242,6 +232,3 @@ index c3492bc1cc60..c77432e9d397 100644
  	mutex_init(&fs_info->qgroup_ioctl_lock);
  	mutex_init(&fs_info->qgroup_rescan_lock);
  	rwlock_init(&fs_info->tree_mod_log_lock);
--- 
-2.16.4
-

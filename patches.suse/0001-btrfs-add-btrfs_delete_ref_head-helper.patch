@@ -1,0 +1,96 @@
+From: Josef Bacik <jbacik@fb.com>
+Date: Mon, 3 Dec 2018 10:20:29 -0500
+Subject: btrfs: add btrfs_delete_ref_head helper
+Git-commit: d7baffdaf9f9df8c9715aa507e3be2f409347c74
+Patch-mainline: v5.0-rc1
+References: bsc#1165949
+
+We do this dance in cleanup_ref_head and check_ref_cleanup, unify it
+into a helper and cleanup the calling functions.
+
+Reviewed-by: Omar Sandoval <osandov@fb.com>
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Josef Bacik <jbacik@fb.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/delayed-ref.c |   14 ++++++++++++++
+ fs/btrfs/delayed-ref.h |    3 ++-
+ fs/btrfs/extent-tree.c |   21 ++-------------------
+ 3 files changed, 18 insertions(+), 20 deletions(-)
+
+--- a/fs/btrfs/delayed-ref.c
++++ b/fs/btrfs/delayed-ref.c
+@@ -409,6 +409,20 @@ again:
+ 	return head;
+ }
+ 
++void btrfs_delete_ref_head(struct btrfs_delayed_ref_root *delayed_refs,
++			   struct btrfs_delayed_ref_head *head)
++{
++	lockdep_assert_held(&delayed_refs->lock);
++	lockdep_assert_held(&head->lock);
++
++	rb_erase(&head->href_node, &delayed_refs->href_root);
++	RB_CLEAR_NODE(&head->href_node);
++	atomic_dec(&delayed_refs->num_entries);
++	delayed_refs->num_heads--;
++	if (head->processing == 0)
++		delayed_refs->num_heads_ready--;
++}
++
+ /*
+  * Helper to insert the ref_node to the tail or merge with tail.
+  *
+--- a/fs/btrfs/delayed-ref.h
++++ b/fs/btrfs/delayed-ref.h
+@@ -276,7 +276,8 @@ static inline void btrfs_delayed_ref_unl
+ {
+ 	mutex_unlock(&head->mutex);
+ }
+-
++void btrfs_delete_ref_head(struct btrfs_delayed_ref_root *delayed_refs,
++			   struct btrfs_delayed_ref_head *head);
+ 
+ struct btrfs_delayed_ref_head *
+ btrfs_select_ref_head(struct btrfs_trans_handle *trans);
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -2608,12 +2608,9 @@ static int cleanup_ref_head(struct btrfs
+ 		spin_unlock(&delayed_refs->lock);
+ 		return 1;
+ 	}
+-	delayed_refs->num_heads--;
+-	rb_erase(&head->href_node, &delayed_refs->href_root);
+-	RB_CLEAR_NODE(&head->href_node);
++	btrfs_delete_ref_head(delayed_refs, head);
+ 	spin_unlock(&delayed_refs->lock);
+ 	spin_unlock(&head->lock);
+-	atomic_dec(&delayed_refs->num_entries);
+ 
+ 	trace_run_delayed_ref_head(fs_info, head, 0);
+ 
+@@ -7174,21 +7171,7 @@ static noinline int check_ref_cleanup(st
+ 	if (!mutex_trylock(&head->mutex))
+ 		goto out;
+ 
+-	/*
+-	 * at this point we have a head with no other entries.  Go
+-	 * ahead and process it.
+-	 */
+-	rb_erase(&head->href_node, &delayed_refs->href_root);
+-	RB_CLEAR_NODE(&head->href_node);
+-	atomic_dec(&delayed_refs->num_entries);
+-
+-	/*
+-	 * we don't take a ref on the node because we're removing it from the
+-	 * tree, so we just steal the ref the tree was holding.
+-	 */
+-	delayed_refs->num_heads--;
+-	if (head->processing == 0)
+-		delayed_refs->num_heads_ready--;
++	btrfs_delete_ref_head(delayed_refs, head);
+ 	head->processing = 0;
+ 	spin_unlock(&head->lock);
+ 	spin_unlock(&delayed_refs->lock);

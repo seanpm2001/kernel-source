@@ -15,8 +15,8 @@ Signed-off-by: David Sterba <dsterba@suse.com>
 ---
  fs/btrfs/delayed-ref.c |   16 ++++++++++++----
  fs/btrfs/delayed-ref.h |    4 +---
- fs/btrfs/extent-tree.c |   22 ++++++++++------------
- 3 files changed, 23 insertions(+), 19 deletions(-)
+ fs/btrfs/extent-tree.c |   23 ++++++++++-------------
+ 3 files changed, 23 insertions(+), 20 deletions(-)
 
 --- a/fs/btrfs/delayed-ref.c
 +++ b/fs/btrfs/delayed-ref.c
@@ -75,7 +75,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  				struct btrfs_trans_handle *trans,
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -2128,10 +2128,8 @@ int btrfs_inc_extent_ref(struct btrfs_tr
+@@ -2209,10 +2209,8 @@ int btrfs_inc_extent_ref(struct btrfs_tr
  		ret = btrfs_add_delayed_tree_ref(fs_info, trans, &generic_ref,
  				NULL, &old_ref_mod, &new_ref_mod);
  	} else {
@@ -88,7 +88,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  						 &old_ref_mod, &new_ref_mod);
  	}
  
-@@ -7213,10 +7211,8 @@ int btrfs_free_extent(struct btrfs_trans
+@@ -7307,10 +7305,8 @@ int btrfs_free_extent(struct btrfs_trans
  		ret = btrfs_add_delayed_tree_ref(fs_info, trans, &generic_ref,
  						 NULL, &old_ref_mod, &new_ref_mod);
  	} else {
@@ -101,22 +101,23 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  						 &old_ref_mod, &new_ref_mod);
  	}
  
-@@ -8167,14 +8163,16 @@ int btrfs_alloc_reserved_file_extent(str
+@@ -8261,15 +8257,16 @@ int btrfs_alloc_reserved_file_extent(str
  				     struct btrfs_key *ins)
  {
- 	struct btrfs_fs_info *fs_info = trans->fs_info;
+ 	struct btrfs_fs_info *fs_info = root->fs_info;
 +	struct btrfs_ref generic_ref = { 0 };
  	int ret;
  
- 	BUG_ON(root_objectid == BTRFS_TREE_LOG_OBJECTID);
+ 	BUG_ON(root->root_key.objectid == BTRFS_TREE_LOG_OBJECTID);
  
 -	ret = btrfs_add_delayed_data_ref(fs_info, trans, ins->objectid,
--					 ins->offset, 0, root_objectid, owner,
+-					 ins->offset, 0,
+-					 root->root_key.objectid, owner,
 -					 offset, ram_bytes,
 -					 BTRFS_ADD_DELAYED_EXTENT, NULL, NULL);
 +	btrfs_init_generic_ref(&generic_ref, BTRFS_ADD_DELAYED_EXTENT,
 +			       ins->objectid, ins->offset, 0);
-+	btrfs_init_data_ref(&generic_ref, root_objectid, owner, offset);
++	btrfs_init_data_ref(&generic_ref, root->root_key.objectid, owner, offset);
 +	ret = btrfs_add_delayed_data_ref(fs_info, trans, &generic_ref,
 +					 ram_bytes, NULL, NULL);
  	return ret;

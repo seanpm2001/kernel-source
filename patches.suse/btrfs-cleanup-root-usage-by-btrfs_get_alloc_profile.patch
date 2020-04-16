@@ -1,0 +1,194 @@
+From: Jeff Mahoney <jeffm@suse.com>
+Date: Wed, 17 May 2017 11:38:35 -0400
+Subject: btrfs: cleanup root usage by btrfs_get_alloc_profile
+Git-commit: 1b86826d12dc4acf9576cad9c43da74025dc8074
+Patch-mainline: v4.13-rc1
+References: bsc#1165949
+
+There are two places where we don't already know what kind of alloc
+profile we need before calling btrfs_get_alloc_profile, but we need
+access to a root everywhere we call it.
+
+This patch adds helpers for btrfs_{data,metadata,system}_alloc_profile()
+and relegates btrfs_system_alloc_profile to a static for use in those
+two cases.  The next patch will eliminate one of those.
+
+Signed-off-by: Jeff Mahoney <jeffm@suse.com>
+Reviewed-by: Liu Bo <bo.li.liu@oracle.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/ctree.h       |  4 +++-
+ fs/btrfs/extent-tree.c | 28 +++++++++++++++++++++-------
+ fs/btrfs/inode.c       |  3 +--
+ fs/btrfs/super.c       |  3 +--
+ fs/btrfs/volumes.c     |  5 ++---
+ 5 files changed, 28 insertions(+), 15 deletions(-)
+
+diff --git a/fs/btrfs/ctree.h b/fs/btrfs/ctree.h
+index c457cb177340..c13b4859df73 100644
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -2681,7 +2681,9 @@ void btrfs_get_block_group_trimming(struct btrfs_block_group_cache *cache);
+ void btrfs_put_block_group_trimming(struct btrfs_block_group_cache *cache);
+ void btrfs_create_pending_block_groups(struct btrfs_trans_handle *trans,
+ 				       struct btrfs_fs_info *fs_info);
+-u64 btrfs_get_alloc_profile(struct btrfs_root *root, int data);
++u64 btrfs_data_alloc_profile(struct btrfs_fs_info *fs_info);
++u64 btrfs_metadata_alloc_profile(struct btrfs_fs_info *fs_info);
++u64 btrfs_system_alloc_profile(struct btrfs_fs_info *fs_info);
+ void btrfs_clear_space_info_full(struct btrfs_fs_info *info);
+ 
+ enum btrfs_reserve_flush_enum {
+diff --git a/fs/btrfs/extent-tree.c b/fs/btrfs/extent-tree.c
+index 4c0d3980fe3f..47eb98ffdfc6 100644
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -4121,7 +4121,7 @@ static u64 get_alloc_profile(struct btrfs_fs_info *fs_info, u64 orig_flags)
+ 	return btrfs_reduce_alloc_profile(fs_info, flags);
+ }
+ 
+-u64 btrfs_get_alloc_profile(struct btrfs_root *root, int data)
++static u64 get_alloc_profile_by_root(struct btrfs_root *root, int data)
+ {
+ 	struct btrfs_fs_info *fs_info = root->fs_info;
+ 	u64 flags;
+@@ -4138,6 +4138,21 @@ u64 btrfs_get_alloc_profile(struct btrfs_root *root, int data)
+ 	return ret;
+ }
+ 
++u64 btrfs_data_alloc_profile(struct btrfs_fs_info *fs_info)
++{
++	return get_alloc_profile(fs_info, BTRFS_BLOCK_GROUP_DATA);
++}
++
++u64 btrfs_metadata_alloc_profile(struct btrfs_fs_info *fs_info)
++{
++	return get_alloc_profile(fs_info, BTRFS_BLOCK_GROUP_METADATA);
++}
++
++u64 btrfs_system_alloc_profile(struct btrfs_fs_info *fs_info)
++{
++	return get_alloc_profile(fs_info, BTRFS_BLOCK_GROUP_SYSTEM);
++}
++
+ static u64 btrfs_space_info_used(struct btrfs_space_info *s_info,
+ 				 bool may_use_included)
+ {
+@@ -4187,7 +4202,7 @@ int btrfs_alloc_data_chunk_ondemand(struct btrfs_inode *inode, u64 bytes)
+ 			data_sinfo->force_alloc = CHUNK_ALLOC_FORCE;
+ 			spin_unlock(&data_sinfo->lock);
+ alloc:
+-			alloc_target = btrfs_get_alloc_profile(root, 1);
++			alloc_target = btrfs_data_alloc_profile(fs_info);
+ 			/*
+ 			 * It is ugly that we don't call nolock join
+ 			 * transaction for the free space inode case here.
+@@ -4463,9 +4478,8 @@ void check_system_chunk(struct btrfs_trans_handle *trans,
+ 	}
+ 
+ 	if (left < thresh) {
+-		u64 flags;
++		u64 flags = btrfs_system_alloc_profile(fs_info);
+ 
+-		flags = btrfs_get_alloc_profile(fs_info->chunk_root, 0);
+ 		/*
+ 		 * Ignore failure to create system chunk. We might end up not
+ 		 * needing it, as we might not need to COW all nodes/leafs from
+@@ -4629,7 +4643,7 @@ static int can_overcommit(struct btrfs_root *root,
+ 	if (space_info->flags & BTRFS_BLOCK_GROUP_DATA)
+ 		return 0;
+ 
+-	profile = btrfs_get_alloc_profile(root, 0);
++	profile = get_alloc_profile_by_root(root, 0);
+ 	used = btrfs_space_info_used(space_info, false);
+ 
+ 	/*
+@@ -4894,7 +4908,7 @@ static int flush_space(struct btrfs_fs_info *fs_info,
+ 			break;
+ 		}
+ 		ret = do_chunk_alloc(trans, fs_info,
+-				     btrfs_get_alloc_profile(root, 0),
++				     btrfs_metadata_alloc_profile(fs_info),
+ 				     CHUNK_ALLOC_NO_FORCE);
+ 		btrfs_end_transaction(trans);
+ 		if (ret > 0 || ret == -ENOSPC)
+@@ -7954,7 +7968,7 @@ int btrfs_reserve_extent(struct btrfs_root *root, u64 ram_bytes,
+ 	u64 flags;
+ 	int ret;
+ 
+-	flags = btrfs_get_alloc_profile(root, is_data);
++	flags = get_alloc_profile_by_root(root, is_data);
+ again:
+ 	WARN_ON(num_bytes < fs_info->sectorsize);
+ 	ret = find_free_extent(fs_info, ram_bytes, num_bytes, empty_size,
+diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
+index 683ee05798e5..222d33d78092 100644
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -8473,7 +8473,6 @@ static int btrfs_submit_direct_hook(struct btrfs_dio_private *dip,
+ {
+ 	struct inode *inode = dip->inode;
+ 	struct btrfs_fs_info *fs_info = btrfs_sb(inode->i_sb);
+-	struct btrfs_root *root = BTRFS_I(inode)->root;
+ 	struct bio *bio;
+ 	struct bio *orig_bio = dip->orig_bio;
+ 	u64 start_sector = orig_bio->bi_iter.bi_sector;
+@@ -8499,7 +8498,7 @@ static int btrfs_submit_direct_hook(struct btrfs_dio_private *dip,
+ 	}
+ 
+ 	/* async crcs make it difficult to collect full stripe writes. */
+-	if (btrfs_get_alloc_profile(root, 1) & BTRFS_BLOCK_GROUP_RAID56_MASK)
++	if (btrfs_data_alloc_profile(fs_info) & BTRFS_BLOCK_GROUP_RAID56_MASK)
+ 		async_submit = 0;
+ 	else
+ 		async_submit = 1;
+diff --git a/fs/btrfs/super.c b/fs/btrfs/super.c
+index 4f1cdd5058f1..3371213924bd 100644
+--- a/fs/btrfs/super.c
++++ b/fs/btrfs/super.c
+@@ -1898,7 +1898,6 @@ static inline void btrfs_descending_sort_devices(
+ static int btrfs_calc_avail_data_space(struct btrfs_fs_info *fs_info,
+ 				       u64 *free_bytes)
+ {
+-	struct btrfs_root *root = fs_info->tree_root;
+ 	struct btrfs_device_info *devices_info;
+ 	struct btrfs_fs_devices *fs_devices = fs_info->fs_devices;
+ 	struct btrfs_device *device;
+@@ -1932,7 +1931,7 @@ static int btrfs_calc_avail_data_space(struct btrfs_fs_info *fs_info,
+ 		return -ENOMEM;
+ 
+ 	/* calc min stripe number for data space allocation */
+-	type = btrfs_get_alloc_profile(root, 1);
++	type = btrfs_data_alloc_profile(fs_info);
+ 	if (type & BTRFS_BLOCK_GROUP_RAID0) {
+ 		min_stripes = 2;
+ 		num_stripes = nr_devices;
+diff --git a/fs/btrfs/volumes.c b/fs/btrfs/volumes.c
+index e37f95976443..e28c113785bb 100644
+--- a/fs/btrfs/volumes.c
++++ b/fs/btrfs/volumes.c
+@@ -5019,20 +5019,19 @@ int btrfs_alloc_chunk(struct btrfs_trans_handle *trans,
+ static noinline int init_first_rw_device(struct btrfs_trans_handle *trans,
+ 					 struct btrfs_fs_info *fs_info)
+ {
+-	struct btrfs_root *extent_root = fs_info->extent_root;
+ 	u64 chunk_offset;
+ 	u64 sys_chunk_offset;
+ 	u64 alloc_profile;
+ 	int ret;
+ 
+ 	chunk_offset = find_next_chunk(fs_info);
+-	alloc_profile = btrfs_get_alloc_profile(extent_root, 0);
++	alloc_profile = btrfs_metadata_alloc_profile(fs_info);
+ 	ret = __btrfs_alloc_chunk(trans, chunk_offset, alloc_profile);
+ 	if (ret)
+ 		return ret;
+ 
+ 	sys_chunk_offset = find_next_chunk(fs_info);
+-	alloc_profile = btrfs_get_alloc_profile(fs_info->chunk_root, 0);
++	alloc_profile = btrfs_system_alloc_profile(fs_info);
+ 	ret = __btrfs_alloc_chunk(trans, sys_chunk_offset, alloc_profile);
+ 	return ret;
+ }
+

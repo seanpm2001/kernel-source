@@ -1,0 +1,66 @@
+From deac642d7e0fd83efd3372c4093fe60ac7436db6 Mon Sep 17 00:00:00 2001
+From: David Sterba <dsterba@suse.com>
+Date: Fri, 23 Jun 2017 03:47:28 +0200
+Patch-mainline: v4.16
+Git-commit: deac642d7e0fd83efd3372c4093fe60ac7436db6
+References: bsc#1168273
+Subject: [PATCH 3/7] btrfs: sink get_extent parameter to
+ extent_write_full_page
+
+There's only one caller.
+
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/extent_io.c | 3 +--
+ fs/btrfs/extent_io.h | 1 -
+ fs/btrfs/inode.c     | 2 +-
+ 3 files changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/fs/btrfs/extent_io.c b/fs/btrfs/extent_io.c
+index d9a76e33ac3c..7754124b07b8 100644
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -4058,14 +4058,13 @@ static noinline void flush_write_bio(void *data)
+ }
+ 
+ int extent_write_full_page(struct extent_io_tree *tree, struct page *page,
+-			  get_extent_t *get_extent,
+ 			  struct writeback_control *wbc)
+ {
+ 	int ret;
+ 	struct extent_page_data epd = {
+ 		.bio = NULL,
+ 		.tree = tree,
+-		.get_extent = get_extent,
++		.get_extent = btrfs_get_extent,
+ 		.extent_locked = 0,
+ 		.sync_io = wbc->sync_mode == WB_SYNC_ALL,
+ 	};
+diff --git a/fs/btrfs/extent_io.h b/fs/btrfs/extent_io.h
+index b67fc0153b73..abe4feea1539 100644
+--- a/fs/btrfs/extent_io.h
++++ b/fs/btrfs/extent_io.h
+@@ -404,7 +404,6 @@ int find_first_extent_bit(struct extent_io_tree *tree, u64 start,
+ int extent_invalidatepage(struct extent_io_tree *tree,
+ 			  struct page *page, unsigned long offset);
+ int extent_write_full_page(struct extent_io_tree *tree, struct page *page,
+-			  get_extent_t *get_extent,
+ 			  struct writeback_control *wbc);
+ int extent_write_locked_range(struct extent_io_tree *tree, struct inode *inode,
+ 			      u64 start, u64 end, int mode);
+diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
+index ae62d59edd4b..7403ef8856bd 100644
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -8891,7 +8891,7 @@ static int btrfs_writepage(struct page *page, struct writeback_control *wbc)
+ 		return AOP_WRITEPAGE_ACTIVATE;
+ 	}
+ 	tree = &BTRFS_I(page->mapping->host)->io_tree;
+-	ret = extent_write_full_page(tree, page, btrfs_get_extent, wbc);
++	ret = extent_write_full_page(tree, page, wbc);
+ 	btrfs_add_delayed_iput(inode);
+ 	return ret;
+ }
+-- 
+2.26.0
+

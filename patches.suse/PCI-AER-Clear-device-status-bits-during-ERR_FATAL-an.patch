@@ -1,0 +1,86 @@
+From ec752f5d54d723af3df03959637f963079643cd8 Mon Sep 17 00:00:00 2001
+From: Oza Pawandeep <poza@codeaurora.org>
+Date: Thu, 19 Jul 2018 17:58:09 -0500
+Subject: [PATCH] PCI/AER: Clear device status bits during ERR_FATAL and ERR_NONFATAL
+Git-commit: ec752f5d54d723af3df03959637f963079643cd8
+Patch-mainline: v4.19-rc1
+References: bsc#1161561
+
+Clear the device status bits while handling both ERR_FATAL and ERR_NONFATAL
+cases.
+
+Signed-off-by: Oza Pawandeep <poza@codeaurora.org>
+[bhelgaas: rename to pci_aer_clear_device_status(), declare internal to PCI
+core instead of exposing it everywhere]
+
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/pci/pcie/aer/aerdrv.c      |    7 +------
+ drivers/pci/pcie/aer/aerdrv_core.c |    8 ++++++++
+ drivers/pci/pcie/err.c             |    1 +
+ include/linux/aer.h                |    2 ++
+ 4 files changed, 12 insertions(+), 6 deletions(-)
+
+--- a/drivers/pci/pcie/aer/aerdrv_core.c
++++ b/drivers/pci/pcie/aer/aerdrv_core.c
+@@ -53,6 +53,14 @@ int pci_disable_pcie_error_reporting(str
+ }
+ EXPORT_SYMBOL_GPL(pci_disable_pcie_error_reporting);
+ 
++void pci_aer_clear_device_status(struct pci_dev *dev)
++{
++	u16 sta;
++
++	pcie_capability_read_word(dev, PCI_EXP_DEVSTA, &sta);
++	pcie_capability_write_word(dev, PCI_EXP_DEVSTA, sta);
++}
++
+ int pci_cleanup_aer_uncorrect_error_status(struct pci_dev *dev)
+ {
+ 	int pos;
+--- a/drivers/pci/pcie/err.c
++++ b/drivers/pci/pcie/err.c
+@@ -318,6 +318,7 @@ void pcie_do_fatal_recovery(struct pci_d
+ 		 * of the bridge and clear the error status of the bridge.
+ 		 */
+ 		pci_aer_clear_fatal_status(dev);
++		pci_aer_clear_device_status(dev);
+ 	}
+ 
+ 	if (result == PCI_ERS_RESULT_RECOVERED) {
+--- a/include/linux/aer.h
++++ b/include/linux/aer.h
+@@ -46,6 +46,7 @@ int pci_disable_pcie_error_reporting(str
+ int pci_cleanup_aer_uncorrect_error_status(struct pci_dev *dev);
+ int pci_cleanup_aer_error_status_regs(struct pci_dev *dev);
+ void pci_aer_clear_fatal_status(struct pci_dev *dev);
++void pci_aer_clear_device_status(struct pci_dev *dev);
+ #else
+ static inline int pci_enable_pcie_error_reporting(struct pci_dev *dev)
+ {
+@@ -64,6 +65,7 @@ static inline int pci_cleanup_aer_error_
+ 	return -EINVAL;
+ }
+ static inline void pci_aer_clear_fatal_status(struct pci_dev *dev) { }
++static inline void pci_aer_clear_device_status(struct pci_dev *dev) { }
+ #endif
+ 
+ void cper_print_aer(struct pci_dev *dev, int aer_severity,
+--- a/drivers/pci/pcie/aer/aerdrv.c
++++ b/drivers/pci/pcie/aer/aerdrv.c
+@@ -347,12 +347,7 @@ static pci_ers_result_t aer_root_reset(s
+  */
+ static void aer_error_resume(struct pci_dev *dev)
+ {
+-	u16 reg16;
+-
+-	/* Clean up Root device status */
+-	pcie_capability_read_word(dev, PCI_EXP_DEVSTA, &reg16);
+-	pcie_capability_write_word(dev, PCI_EXP_DEVSTA, reg16);
+-
++	pci_aer_clear_device_status(dev);
+ 	pci_cleanup_aer_uncorrect_error_status(dev);
+ }
+ 

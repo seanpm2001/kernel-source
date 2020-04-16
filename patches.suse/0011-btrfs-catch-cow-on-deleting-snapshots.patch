@@ -1,0 +1,65 @@
+From: Josef Bacik <jbacik@fb.com>
+Date: Fri, 30 Nov 2018 11:52:13 -0500
+Subject: btrfs: catch cow on deleting snapshots
+Git-commit: 83354f0772cd07828b0fcdf1ef2872fd2032acb8
+Patch-mainline: v5.0-rc1
+References: bsc#1165949
+
+When debugging some weird extent reference bug I suspected that we were
+changing a snapshot while we were deleting it, which could explain my
+bug.  This was indeed what was happening, and this patch helped me
+verify my theory.  It is never correct to modify the snapshot once it's
+being deleted, so mark the root when we are deleting it and make sure we
+complain about it when it happens.
+
+Reviewed-by: Filipe Manana <fdmanana@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/ctree.c       |    4 ++++
+ fs/btrfs/ctree.h       |    1 +
+ fs/btrfs/extent-tree.c |    9 +++++++++
+ 3 files changed, 14 insertions(+)
+
+--- a/fs/btrfs/ctree.c
++++ b/fs/btrfs/ctree.c
+@@ -1522,6 +1522,10 @@ noinline int btrfs_cow_block(struct btrf
+ 	u64 search_start;
+ 	int ret;
+ 
++	if (test_bit(BTRFS_ROOT_DELETING, &root->state))
++		btrfs_err(fs_info,
++			"COW'ing blocks on a fs root that's being dropped");
++
+ 	if (trans->transaction != fs_info->running_transaction)
+ 		WARN(1, KERN_CRIT "trans %llu running %llu\n",
+ 		       trans->transid,
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -1179,6 +1179,7 @@ struct btrfs_subvolume_writers {
+ #define BTRFS_ROOT_FORCE_COW		6
+ #define BTRFS_ROOT_MULTI_LOG_TASKS	7
+ #define BTRFS_ROOT_DIRTY		8
++#define BTRFS_ROOT_DELETING		9
+ 
+ /*
+  * in ram representation of the tree.  extent_root is used for all allocations
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -9275,6 +9275,15 @@ int btrfs_drop_snapshot(struct btrfs_roo
+ 	if (block_rsv)
+ 		trans->block_rsv = block_rsv;
+ 
++	/*
++	 * This will help us catch people modifying the fs tree while we're
++	 * dropping it.  It is unsafe to mess with the fs tree while it's being
++	 * dropped as we unlock the root node and parent nodes as we walk down
++	 * the tree, assuming nothing will change.  If something does change
++	 * then we'll have stale information and drop references to blocks we've
++	 * already dropped.
++	 */
++	set_bit(BTRFS_ROOT_DELETING, &root->state);
+ 	if (btrfs_disk_key_objectid(&root_item->drop_progress) == 0) {
+ 		level = btrfs_header_level(root->node);
+ 		path->nodes[level] = btrfs_lock_root_node(root);

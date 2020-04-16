@@ -1,0 +1,60 @@
+From 25b860e038915ffb6c3d8d3fe8c46272a8d471fe Mon Sep 17 00:00:00 2001
+From: David Sterba <dsterba@suse.com>
+Date: Fri, 23 Jun 2017 04:30:28 +0200
+Patch-mainline: v4.16
+Git-commit: 25b860e038915ffb6c3d8d3fe8c46272a8d471fe
+References: bsc#1168273
+Subject: [PATCH 5/7] btrfs: sink flush_fn to extent_write_cache_pages
+
+All callers pass the same value flush_write_bio.
+
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/extent_io.c | 10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/fs/btrfs/extent_io.c b/fs/btrfs/extent_io.c
+index f1842d59fffe..cf106d46a2fd 100644
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -3906,8 +3906,7 @@ int btree_write_cache_pages(struct address_space *mapping,
+  */
+ static int extent_write_cache_pages(struct address_space *mapping,
+ 			     struct writeback_control *wbc,
+-			     writepage_t writepage, void *data,
+-			     void (*flush_fn)(void *))
++			     writepage_t writepage, void *data)
+ {
+ 	struct inode *inode = mapping->host;
+ 	int ret = 0;
+@@ -3971,7 +3970,7 @@ static int extent_write_cache_pages(struct address_space *mapping,
+ 			 * mapping
+ 			 */
+ 			if (!trylock_page(page)) {
+-				flush_fn(data);
++				flush_write_bio(data);
+ 				lock_page(page);
+ 			}
+ 
+@@ -3982,7 +3981,7 @@ static int extent_write_cache_pages(struct address_space *mapping,
+ 
+ 			if (wbc->sync_mode != WB_SYNC_NONE) {
+ 				if (PageWriteback(page))
+-					flush_fn(data);
++					flush_write_bio(data);
+ 				wait_on_page_writeback(page);
+ 			}
+ 
+@@ -4123,8 +4122,7 @@ int extent_writepages(struct extent_io_tree *tree,
+ 		.sync_io = wbc->sync_mode == WB_SYNC_ALL,
+ 	};
+ 
+-	ret = extent_write_cache_pages(mapping, wbc, __extent_writepage, &epd,
+-				       flush_write_bio);
++	ret = extent_write_cache_pages(mapping, wbc, __extent_writepage, &epd);
+ 	flush_write_bio(&epd);
+ 	return ret;
+ }
+-- 
+2.26.0
+

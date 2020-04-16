@@ -1,0 +1,43 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 11 Jan 2019 10:21:01 -0500
+Subject: btrfs: run delayed iputs before committing
+Git-commit: 3ec9a4c81c8cc2a8d9673588dd84d9cc7c31019b
+Patch-mainline: v5.0-rc3
+References: bsc#1165949
+
+Delayed iputs means we can have final iputs of deleted inodes in the
+queue, which could potentially generate a lot of pinned space that could
+be free'd.  So before we decide to commit the transaction for ENOPSC
+reasons, run the delayed iputs so that any potential space is free'd up.
+If there is and we freed enough we can then commit the transaction and
+potentially be able to make our reservation.
+
+Reviewed-by: Omar Sandoval <osandov@fb.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/extent-tree.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/fs/btrfs/extent-tree.c b/fs/btrfs/extent-tree.c
+index 6f6fae410fc1..d81035b7ea7d 100644
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -4952,6 +4952,15 @@ static void flush_space(struct btrfs_fs_info *fs_info,
+ 			ret = 0;
+ 		break;
+ 	case COMMIT_TRANS:
++		/*
++		 * If we have pending delayed iputs then we could free up a
++		 * bunch of pinned space, so make sure we run the iputs before
++		 * we do our pinned bytes check below.
++		 */
++		mutex_lock(&fs_info->cleaner_delayed_iput_mutex);
++		btrfs_run_delayed_iputs(fs_info);
++		mutex_unlock(&fs_info->cleaner_delayed_iput_mutex);
++
+ 		ret = may_commit_transaction(fs_info, space_info);
+ 		break;
+ 	default:
+

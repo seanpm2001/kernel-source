@@ -1,0 +1,92 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Wed, 19 Jun 2019 15:11:59 -0400
+Subject: btrfs: migrate btrfs_trans_release_chunk_metadata
+Git-commit: fb6dea26601b60e41d70c310537dd1e2617b25b6
+Patch-mainline: v5.3-rc1
+References: bsc#1165949
+
+Move this into transaction.c with the rest of the transaction related
+code.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/ctree.h       |    1 -
+ fs/btrfs/extent-tree.c |   18 ------------------
+ fs/btrfs/transaction.c |   18 ++++++++++++++++++
+ fs/btrfs/transaction.h |    1 +
+ 4 files changed, 19 insertions(+), 19 deletions(-)
+
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -2764,7 +2764,6 @@ void btrfs_free_reserved_data_space_noqu
+ 					    u64 len);
+ void btrfs_trans_release_metadata(struct btrfs_trans_handle *trans,
+ 				  struct btrfs_fs_info *fs_info);
+-void btrfs_trans_release_chunk_metadata(struct btrfs_trans_handle *trans);
+ int btrfs_subvolume_reserve_metadata(struct btrfs_root *root,
+ 				     struct btrfs_block_rsv *rsv,
+ 				     int nitems,
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -4573,24 +4573,6 @@ void btrfs_trans_release_metadata(struct
+ }
+ 
+ /*
+- * To be called after all the new block groups attached to the transaction
+- * handle have been created (btrfs_create_pending_block_groups()).
+- */
+-void btrfs_trans_release_chunk_metadata(struct btrfs_trans_handle *trans)
+-{
+-	struct btrfs_fs_info *fs_info = trans->fs_info;
+-
+-	if (!trans->chunk_bytes_reserved)
+-		return;
+-
+-	WARN_ON_ONCE(!list_empty(&trans->new_bgs));
+-
+-	btrfs_block_rsv_release(fs_info, &fs_info->chunk_block_rsv,
+-				trans->chunk_bytes_reserved);
+-	trans->chunk_bytes_reserved = 0;
+-}
+-
+-/*
+  * btrfs_subvolume_reserve_metadata() - reserve space for subvolume operation
+  * root: the root of the parent directory
+  * rsv: block reservation
+--- a/fs/btrfs/transaction.c
++++ b/fs/btrfs/transaction.c
+@@ -183,6 +183,24 @@ static inline int extwriter_counter_read
+ }
+ 
+ /*
++ * To be called after all the new block groups attached to the transaction
++ * handle have been created (btrfs_create_pending_block_groups()).
++ */
++void btrfs_trans_release_chunk_metadata(struct btrfs_trans_handle *trans)
++{
++	struct btrfs_fs_info *fs_info = trans->fs_info;
++
++	if (!trans->chunk_bytes_reserved)
++		return;
++
++	WARN_ON_ONCE(!list_empty(&trans->new_bgs));
++
++	btrfs_block_rsv_release(fs_info, &fs_info->chunk_block_rsv,
++				trans->chunk_bytes_reserved);
++	trans->chunk_bytes_reserved = 0;
++}
++
++/*
+  * either allocate a new transaction or hop into the existing one
+  */
+ static noinline int join_transaction(struct btrfs_fs_info *fs_info,
+--- a/fs/btrfs/transaction.h
++++ b/fs/btrfs/transaction.h
+@@ -234,4 +234,5 @@ void btrfs_put_transaction(struct btrfs_
+ void btrfs_apply_pending_changes(struct btrfs_fs_info *fs_info);
+ void btrfs_add_dropped_root(struct btrfs_trans_handle *trans,
+ 			    struct btrfs_root *root);
++void btrfs_trans_release_chunk_metadata(struct btrfs_trans_handle *trans);
+ #endif
