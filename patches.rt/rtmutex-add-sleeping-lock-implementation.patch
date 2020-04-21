@@ -104,7 +104,7 @@ Signed-off-by: Daniel Wagner <dwagner@suse.de>
   * @lock: the mutex to be queried
 --- a/include/linux/sched.h
 +++ b/include/linux/sched.h
-@@ -138,6 +138,9 @@ struct task_group;
+@@ -140,6 +140,9 @@ struct task_group;
  		smp_store_mb(current->state, (state_value));	\
  	} while (0)
  
@@ -114,7 +114,7 @@ Signed-off-by: Daniel Wagner <dwagner@suse.de>
  #define set_special_state(state_value)					\
  	do {								\
  		unsigned long flags; /* may shadow */			\
-@@ -147,6 +150,7 @@ struct task_group;
+@@ -149,6 +152,7 @@ struct task_group;
  		current->state = (state_value);				\
  		raw_spin_unlock_irqrestore(&current->pi_lock, flags);	\
  	} while (0)
@@ -122,7 +122,7 @@ Signed-off-by: Daniel Wagner <dwagner@suse.de>
  #else
  /*
   * set_current_state() includes a barrier so that the write of current->state
-@@ -191,6 +195,9 @@ struct task_group;
+@@ -193,6 +197,9 @@ struct task_group;
  #define set_current_state(state_value)					\
  	smp_store_mb(current->state, (state_value))
  
@@ -132,7 +132,7 @@ Signed-off-by: Daniel Wagner <dwagner@suse.de>
  /*
   * set_special_state() should be used for those states when the blocking task
   * can not use the regular condition based wait-loop. In that case we must
-@@ -981,6 +988,7 @@ struct task_struct {
+@@ -960,6 +967,7 @@ struct task_struct {
  	raw_spinlock_t			pi_lock;
  
  	struct wake_q_node		wake_q;
@@ -387,7 +387,7 @@ Signed-off-by: Daniel Wagner <dwagner@suse.de>
  
 --- a/kernel/futex.c
 +++ b/kernel/futex.c
-@@ -1556,6 +1556,7 @@ static int wake_futex_pi(u32 __user *uad
+@@ -1557,6 +1557,7 @@ static int wake_futex_pi(u32 __user *uad
  	struct task_struct *new_owner;
  	bool postunlock = false;
  	DEFINE_WAKE_Q(wake_q);
@@ -395,7 +395,7 @@ Signed-off-by: Daniel Wagner <dwagner@suse.de>
  	int ret = 0;
  
  	new_owner = rt_mutex_next_owner(&pi_state->pi_mutex);
-@@ -1615,13 +1616,13 @@ static int wake_futex_pi(u32 __user *uad
+@@ -1616,13 +1617,13 @@ static int wake_futex_pi(u32 __user *uad
  	pi_state->owner = new_owner;
  	raw_spin_unlock(&new_owner->pi_lock);
  
@@ -412,7 +412,7 @@ Signed-off-by: Daniel Wagner <dwagner@suse.de>
  
  	return ret;
  }
-@@ -2963,7 +2964,7 @@ static int futex_lock_pi(u32 __user *uad
+@@ -2964,7 +2965,7 @@ retry_private:
  		goto no_block;
  	}
  
@@ -421,7 +421,7 @@ Signed-off-by: Daniel Wagner <dwagner@suse.de>
  
  	/*
  	 * On PREEMPT_RT_FULL, when hb->lock becomes an rt_mutex, we must not
-@@ -3349,7 +3350,7 @@ static int futex_wait_requeue_pi(u32 __u
+@@ -3350,7 +3351,7 @@ static int futex_wait_requeue_pi(u32 __u
  	 * The waiter is allocated on our stack, manipulated by the requeue
  	 * code while we sleep on uaddr.
  	 */
@@ -564,11 +564,11 @@ Signed-off-by: Daniel Wagner <dwagner@suse.de>
  			/*
  			 * The current top waiter stays enqueued. We
  			 * don't have to change anything in the lock
-@@ -925,6 +961,296 @@ static int try_to_take_rt_mutex(struct r
+@@ -925,6 +961,296 @@ takeit:
  	return 1;
  }
  
-+#ifdef CONFIG_PREEMPT_RT_FULL
++#ifdef CONFIG_PREEMPT_RT
 +/*
 + * preemptible spin_lock functions:
 + */
@@ -769,7 +769,7 @@ Signed-off-by: Daniel Wagner <dwagner@suse.de>
 +void __lockfunc rt_spin_unlock(spinlock_t *lock)
 +{
 +	/* NOTE: we always pass in '1' for nested, for simplicity */
-+	spin_release(&lock->dep_map, 1, _RET_IP_);
++	spin_release(&lock->dep_map, _RET_IP_);
 +	rt_spin_lock_fastunlock(&lock->lock, rt_spin_lock_slowunlock);
 +	migrate_enable();
 +}
@@ -849,7 +849,7 @@ Signed-off-by: Daniel Wagner <dwagner@suse.de>
 +}
 +EXPORT_SYMBOL(__rt_spin_lock_init);
 +
-+#endif /* PREEMPT_RT_FULL */
++#endif /* PREEMPT_RT */
 +
 +static inline int
 +try_to_take_rt_mutex(struct rt_mutex *lock, struct task_struct *task,
@@ -971,7 +971,7 @@ Signed-off-by: Daniel Wagner <dwagner@suse.de>
 @@ -1672,16 +2008,13 @@ void __sched __rt_mutex_unlock(struct rt
  void __sched rt_mutex_unlock(struct rt_mutex *lock)
  {
- 	mutex_release(&lock->dep_map, 1, _RET_IP_);
+ 	mutex_release(&lock->dep_map, _RET_IP_);
 -	rt_mutex_fastunlock(lock, rt_mutex_slowunlock);
 +	__rt_mutex_unlock(lock);
  }
