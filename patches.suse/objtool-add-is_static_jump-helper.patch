@@ -1,0 +1,55 @@
+From: Josh Poimboeuf <jpoimboe@redhat.com>
+Date: Mon, 10 Feb 2020 12:32:39 -0600
+Subject: objtool: Add is_static_jump() helper
+Git-commit: a22961409c02b93ffa7ed78f67fb57a1ba6c787d
+Patch-mainline: v5.7-rc1
+References: bsc#1169514
+
+There are several places where objtool tests for a non-dynamic (aka
+direct) jump.  Move the check to a helper function.
+
+Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Reviewed-by: Julien Thierry <jthierry@redhat.com>
+Link: https://lkml.kernel.org/r/9b8b438df918276315e4765c60d2587f3c7ad698.1581359535.git.jpoimboe@redhat.com
+
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ tools/objtool/check.c |   12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+--- a/tools/objtool/check.c
++++ b/tools/objtool/check.c
+@@ -104,6 +104,12 @@ static struct instruction *next_insn_sam
+ 	for (insn = next_insn_same_sec(file, insn); insn;		\
+ 	     insn = next_insn_same_sec(file, insn))
+ 
++static bool is_static_jump(struct instruction *insn)
++{
++	return insn->type == INSN_JUMP_CONDITIONAL ||
++	       insn->type == INSN_JUMP_UNCONDITIONAL;
++}
++
+ /*
+  * Check if the function has been manually whitelisted with the
+  * STACK_FRAME_NON_STANDARD macro, or if it should be automatically whitelisted
+@@ -495,8 +501,7 @@ static int add_jump_destinations(struct
+ 	unsigned long dest_off;
+ 
+ 	for_each_insn(file, insn) {
+-		if (insn->type != INSN_JUMP_CONDITIONAL &&
+-		    insn->type != INSN_JUMP_UNCONDITIONAL)
++		if (!is_static_jump(insn))
+ 			continue;
+ 
+ 		if (insn->ignore)
+@@ -695,8 +700,7 @@ static int handle_group_alt(struct objto
+ 
+ 		insn->ignore = orig_insn->ignore_alts;
+ 
+-		if (insn->type != INSN_JUMP_CONDITIONAL &&
+-		    insn->type != INSN_JUMP_UNCONDITIONAL)
++		if (!is_static_jump(insn))
+ 			continue;
+ 
+ 		if (!insn->immediate)

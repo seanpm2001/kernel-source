@@ -1,0 +1,73 @@
+From a2c1058846ff070a4a38ba268cdb18daee06b75a Mon Sep 17 00:00:00 2001
+From: Oliver Neukum <oneukum@suse.com>
+Date: Tue, 28 Apr 2020 13:44:03 +0200
+Subject: [PATCH] kABI fix for early XHCI debug
+Patch-mainline: Never, kABI fixup
+References: git-fixes
+
+We must keep the old defines, hence teh constants need to
+be renamed
+
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/usb/early/xhci-dbc.c | 8 ++++----
+ drivers/usb/early/xhci-dbc.h | 8 ++++++--
+ 2 files changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/usb/early/xhci-dbc.c b/drivers/usb/early/xhci-dbc.c
+index 21244c5..290bb3f 100644
+--- a/drivers/usb/early/xhci-dbc.c
++++ b/drivers/usb/early/xhci-dbc.c
+@@ -738,19 +738,19 @@ static void xdbc_handle_tx_event(struct xdbc_trb *evt_trb)
+ 	case COMP_USB_TRANSACTION_ERROR:
+ 	case COMP_STALL_ERROR:
+ 	default:
+-		if (ep_id == XDBC_EPID_OUT || ep_id == XDBC_EPID_OUT_INTEL)
++		if (ep_id == XDBC_EPID_OUT_AMD || ep_id == XDBC_EPID_OUT_INTEL)
+ 			xdbc.flags |= XDBC_FLAGS_OUT_STALL;
+-		if (ep_id == XDBC_EPID_IN || ep_id == XDBC_EPID_IN_INTEL)
++		if (ep_id == XDBC_EPID_IN_AMD || ep_id == XDBC_EPID_IN_INTEL)
+ 			xdbc.flags |= XDBC_FLAGS_IN_STALL;
+ 
+ 		xdbc_trace("endpoint %d stalled\n", ep_id);
+ 		break;
+ 	}
+ 
+-	if (ep_id == XDBC_EPID_IN || ep_id == XDBC_EPID_IN_INTEL) {
++	if (ep_id == XDBC_EPID_IN_AMD || ep_id == XDBC_EPID_IN_INTEL) {
+ 		xdbc.flags &= ~XDBC_FLAGS_IN_PROCESS;
+ 		xdbc_bulk_transfer(NULL, XDBC_MAX_PACKET, true);
+-	} else if (ep_id == XDBC_EPID_OUT || ep_id == XDBC_EPID_OUT_INTEL) {
++	} else if (ep_id == XDBC_EPID_OUT_AMD || ep_id == XDBC_EPID_OUT_INTEL) {
+ 		xdbc.flags &= ~XDBC_FLAGS_OUT_PROCESS;
+ 	} else {
+ 		xdbc_trace("invalid endpoint id %d\n", ep_id);
+diff --git a/drivers/usb/early/xhci-dbc.h b/drivers/usb/early/xhci-dbc.h
+index 6c9200d..243ea29 100644
+--- a/drivers/usb/early/xhci-dbc.h
++++ b/drivers/usb/early/xhci-dbc.h
+@@ -123,6 +123,10 @@ struct xdbc_ring {
+ 	u32			cycle_state;
+ };
+ 
++/* restored for kABI */
++#define XDBC_EPID_OUT		2
++#define XDBC_EPID_IN		3
++
+ /*
+  * These are the "Endpoint ID" (also known as "Context Index") values for the
+  * OUT Transfer Ring and the IN Transfer Ring of a Debug Capability Context data
+@@ -135,8 +139,8 @@ struct xdbc_ring {
+  * Luckily the values from Intel don't overlap with those from AMD, so we can
+  * just test for both.
+  */
+-#define XDBC_EPID_OUT		0
+-#define XDBC_EPID_IN		1
++#define XDBC_EPID_OUT_AMD	0
++#define XDBC_EPID_IN_AMD	1
+ #define XDBC_EPID_OUT_INTEL	2
+ #define XDBC_EPID_IN_INTEL	3
+ 
+-- 
+2.16.4
+

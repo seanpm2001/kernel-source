@@ -1,0 +1,45 @@
+From ab18a9c9ca27f8208c4960a1b25e8475b9f9dda5 Mon Sep 17 00:00:00 2001
+From: Oliver Neukum <oneukum@suse.com>
+Date: Wed, 17 Jan 2018 16:33:54 +0100
+Subject: [PATCH] usbnet: silence an unnecessary warning
+Git-commit: ab18a9c9ca27f8208c4960a1b25e8475b9f9dda5
+References: bsc#1170770
+Patch-mainline: v4.15
+
+That a kevent could not be scheduled is not an error.
+Such handlers must be able to deal with multiple events anyway.
+As the successful scheduling of a work is a debug event, make
+the failure debug priority, too.
+
+V2: coding style
+
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+Reported-by: Cristian Caravena <caravena@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ drivers/net/usb/usbnet.c | 8 +++-----
+ 1 file changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/usb/usbnet.c b/drivers/net/usb/usbnet.c
+index d56fe32bf48d..8a22ff67b026 100644
+--- a/drivers/net/usb/usbnet.c
++++ b/drivers/net/usb/usbnet.c
+@@ -457,12 +457,10 @@ static enum skb_state defer_bh(struct usbnet *dev, struct sk_buff *skb,
+ void usbnet_defer_kevent (struct usbnet *dev, int work)
+ {
+ 	set_bit (work, &dev->flags);
+-	if (!schedule_work (&dev->kevent)) {
+-		if (net_ratelimit())
+-			netdev_err(dev->net, "kevent %d may have been dropped\n", work);
+-	} else {
++	if (!schedule_work (&dev->kevent))
++		netdev_dbg(dev->net, "kevent %d may have been dropped\n", work);
++	else
+ 		netdev_dbg(dev->net, "kevent %d scheduled\n", work);
+-	}
+ }
+ EXPORT_SYMBOL_GPL(usbnet_defer_kevent);
+ 
+-- 
+2.16.4
+

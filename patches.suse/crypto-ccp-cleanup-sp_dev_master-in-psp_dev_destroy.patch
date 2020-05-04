@@ -1,0 +1,68 @@
+From: John Allen <john.allen@amd.com>
+Date: Tue, 3 Mar 2020 07:57:24 -0600
+Subject: crypto: ccp - Cleanup sp_dev_master in psp_dev_destroy()
+Git-commit: 15f7a4c65293d188651e21a9c5ab6bd8f99a1459
+Patch-mainline: v5.7-rc1
+References: bsc#1114279
+
+Introduce clear_psp_master_device() to ensure that sp_dev_master gets
+properly cleared on the release of a psp device.
+
+Fixes: 2a6170dfe755 ("crypto: ccp: Add Platform Security Processor (PSP) device support")
+Signed-off-by: John Allen <john.allen@amd.com>
+Acked-by: Tom Lendacky <thomas.lendacky@amd.com>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Acked-by: Borislav Petkov <bp@suse.de>
+---
+ drivers/crypto/ccp/psp-dev.c |    3 +++
+ drivers/crypto/ccp/sp-dev.h  |    1 +
+ drivers/crypto/ccp/sp-pci.c  |    9 +++++++++
+ 3 files changed, 13 insertions(+)
+
+--- a/drivers/crypto/ccp/psp-dev.c
++++ b/drivers/crypto/ccp/psp-dev.c
+@@ -953,6 +953,9 @@ void psp_dev_destroy(struct sp_device *s
+ 		kref_put(&misc_dev->refcount, sev_exit);
+ 
+ 	sp_free_psp_irq(sp, psp);
++
++	if (sp->clear_psp_master_device)
++		sp->clear_psp_master_device(sp);
+ }
+ 
+ int sev_issue_cmd_external_user(struct file *filep, unsigned int cmd,
+--- a/drivers/crypto/ccp/sp-dev.h
++++ b/drivers/crypto/ccp/sp-dev.h
+@@ -80,6 +80,7 @@ struct sp_device {
+ 	/* get and set master device */
+ 	struct sp_device*(*get_psp_master_device)(void);
+ 	void (*set_psp_master_device)(struct sp_device *);
++	void (*clear_psp_master_device)(struct sp_device *);
+ 
+ 	bool irq_registered;
+ 	bool use_tasklet;
+--- a/drivers/crypto/ccp/sp-pci.c
++++ b/drivers/crypto/ccp/sp-pci.c
+@@ -149,6 +149,14 @@ static struct sp_device *psp_get_master(
+ 	return sp_dev_master;
+ }
+ 
++static void psp_clear_master(struct sp_device *sp)
++{
++	if (sp == sp_dev_master) {
++		sp_dev_master = NULL;
++		dev_dbg(sp->dev, "Cleared sp_dev_master\n");
++	}
++}
++
+ static int sp_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+ {
+ 	struct sp_device *sp;
+@@ -209,6 +217,7 @@ static int sp_pci_probe(struct pci_dev *
+ 	pci_set_master(pdev);
+ 	sp->set_psp_master_device = psp_set_master;
+ 	sp->get_psp_master_device = psp_get_master;
++	sp->clear_psp_master_device = psp_clear_master;
+ 
+ 	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(48));
+ 	if (ret) {

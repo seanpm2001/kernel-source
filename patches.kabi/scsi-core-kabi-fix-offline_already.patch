@@ -1,0 +1,37 @@
+From: Daniel Wagner <dwagner@suse.de>
+Date: Thu, 09 Apr 2020 12:34:53 +0200
+Subject: [PATCH] scsi: core: kABI fix offline_already
+References: bsc#1145929
+Patch-Mainline: never, fixes/linux-4.12 specific kABI fix.
+
+b0962c53bde9 ("scsi: core: avoid repetitive logging of device offline
+messages") changes the size of struct scsi_device. Turn the bool into
+a bitfield and append it to the existing bitfields. There are still a
+few unused bits in the unsigned left.
+
+Signed-off-by: Daniel Wagner <dwagner@suse.de>
+---
+ include/scsi/scsi_device.h |    5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+--- a/include/scsi/scsi_device.h
++++ b/include/scsi/scsi_device.h
+@@ -194,6 +194,9 @@ struct scsi_device {
+ 	unsigned broken_fua:1;		/* Don't set FUA bit */
+ 	unsigned lun_in_cdb:1;		/* Store LUN bits in CDB[1] */
+ 	unsigned unmap_limit_for_ws:1;	/* Use the UNMAP limit for WRITE SAME */
++#ifndef __GENKSYMS__
++	unsigned offline_already:1;	/* Device offline message logged */
++#endif
+ 
+ 	atomic_t disk_events_disable_depth; /* disable depth for disk events */
+ 
+@@ -204,8 +207,6 @@ struct scsi_device {
+ 
+ 	unsigned int max_device_blocked; /* what device_blocked counts down from  */
+ 
+-	bool offline_already;		/* Device offline message logged */
+-
+ #define SCSI_DEFAULT_DEVICE_BLOCKED	3
+ 
+ 	atomic_t iorequest_cnt;

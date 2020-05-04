@@ -1,0 +1,28 @@
+From 0c8e9c2d668278652af028c3cc068c65f66342f4 Mon Sep 17 00:00:00 2001
+From: Mikulas Patocka <mpatocka@redhat.com>
+Date: Mon, 26 Aug 2019 02:41:17 -0400
+Subject: [PATCH] dm zoned: fix invalid memory access
+Git-commit: 0c8e9c2d668278652af028c3cc068c65f66342f4
+Patch-mainline: v5.4-rc1
+References: git fixes (block drivers)
+
+Commit 75d66ffb48efb30f2dd42f041ba8b39c5b2bd115 ("dm zoned: properly
+handle backing device failure") triggers a coverity warning:
+
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/dm-zoned-target.c |    2 --
+ 1 file changed, 2 deletions(-)
+
+--- a/drivers/md/dm-zoned-target.c
++++ b/drivers/md/dm-zoned-target.c
+@@ -133,8 +133,6 @@ static int dmz_submit_bio(struct dmz_tar
+ 
+ 	atomic_inc(&bioctx->ref);
+ 	generic_make_request(clone);
+-	if (clone->bi_status == BLK_STS_IOERR)
+-		return -EIO;
+ 
+ 	if (bio_op(bio) == REQ_OP_WRITE && dmz_is_seq(zone))
+ 		zone->wp_block += nr_blocks;

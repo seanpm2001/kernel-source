@@ -1,0 +1,67 @@
+From ece841abbed2da71fa10710c687c9ce9efb6bf69 Mon Sep 17 00:00:00 2001
+From: Justin Tee <justin.tee@broadcom.com>
+Date: Thu, 5 Dec 2019 10:09:01 +0800
+Subject: [PATCH] block: fix memleak of bio integrity data
+Git-commit: ece841abbed2da71fa10710c687c9ce9efb6bf69
+Patch-mainline: v5.5-rc1
+References: git fixes (block drivers)
+
+7c20f11680a4 ("bio-integrity: stop abusing bi_end_io") moves
+bio_integrity_free from bio_uninit() to bio_integrity_verify_fn()
+and bio_endio(). This way looks wrong because bio may be freed
+without calling bio_endio(), for example, blk_rq_unprep_clone() is
+called from dm_mq_queue_rq() when the underlying queue of dm-mpath
+is busy.
+
+So memory leak of bio integrity data is caused by commit 7c20f11680a4.
+
+Fixes this issue by re-adding bio_integrity_free() to bio_uninit().
+
+Fixes: 7c20f11680a4 ("bio-integrity: stop abusing bi_end_io")
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by Justin Tee <justin.tee@broadcom.com>
+
+Add commit log, and simplify/fix the original patch wroten by Justin.
+
+(Coly Li: rebased for fixes/linux-4.12 code base)
+
+Signed-off-by: Ming Lei <ming.lei@redhat.com>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ block/bio-integrity.c |    2 +-
+ block/blk.h           |    4 ++++
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+
+--- a/block/bio-integrity.c
++++ b/block/bio-integrity.c
+@@ -102,7 +102,7 @@ EXPORT_SYMBOL(bio_integrity_alloc);
+  * Description: Used to free the integrity portion of a bio. Usually
+  * called from bio_free().
+  */
+-static void bio_integrity_free(struct bio *bio)
++void bio_integrity_free(struct bio *bio)
+ {
+ 	struct bio_integrity_payload *bip = bio_integrity(bio);
+ 	struct bio_set *bs = bio->bi_pool;
+--- a/block/blk.h
++++ b/block/blk.h
+@@ -83,6 +83,7 @@ static inline void blk_queue_enter_live(
+ #ifdef CONFIG_BLK_DEV_INTEGRITY
+ void blk_flush_integrity(void);
+ bool __bio_integrity_endio(struct bio *);
++void bio_integrity_free(struct bio *bio);
+ static inline bool bio_integrity_endio(struct bio *bio)
+ {
+ 	if (bio_integrity(bio))
+@@ -97,6 +98,9 @@ static inline bool bio_integrity_endio(s
+ {
+ 	return true;
+ }
++static inline void bio_integrity_free(struct bio *bio)
++{
++}
+ #endif /* CONFIG_BLK_DEV_INTEGRITY */
+ 
+ void blk_timeout_work(struct work_struct *work);

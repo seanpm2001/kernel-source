@@ -1,0 +1,220 @@
+From: Takashi Iwai <tiwai@suse.de>
+Subject: kABI workaround for ptp_clock struct change
+Patch-mainline: Never, kABI workaround
+References: CVE-2020-10690 bsc#1170056
+
+The patch
+  patches.suse/ptp-fix-the-race-between-the-release-of-ptp_clock-an.patch
+changed the dev field of struct ptp_clock from the pointer to the
+embedded device object, and it breaks kABI.
+For restoring kABI compatibility, revert to the struct device pointer
+again and allocate the object dynamically.
+
+Also, struct posix_clock was reverted.  The kref and release are just
+placeholders and unused.  The device pointer is retrieved in a tricky
+way from cdev->kobj.parent.
+
+The posix_clock_register() function is renamed with prefix for
+avoiding the kABI conflict, while keeping the old function intact.
+
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/ptp/ptp_clock.c     |   27 +++++++++++++++++----------
+ drivers/ptp/ptp_private.h   |    2 +-
+ include/linux/posix-clock.h |    9 ++++++---
+ kernel/time/posix-clock.c   |   39 +++++++++++++++++++++++++++++++--------
+ 4 files changed, 55 insertions(+), 22 deletions(-)
+
+--- a/drivers/ptp/ptp_clock.c
++++ b/drivers/ptp/ptp_clock.c
+@@ -176,13 +176,14 @@ static struct posix_clock_operations ptp
+ 
+ static void ptp_clock_release(struct device *dev)
+ {
+-	struct ptp_clock *ptp = container_of(dev, struct ptp_clock, dev);
++	struct ptp_clock *ptp = dev_get_drvdata(dev);
+ 
+ 	ptp_cleanup_pin_groups(ptp);
+ 	mutex_destroy(&ptp->tsevq_mux);
+ 	mutex_destroy(&ptp->pincfg_mux);
+ 	ida_simple_remove(&ptp_clocks_map, ptp->index);
+ 	kfree(ptp);
++	kfree(dev);
+ }
+ 
+ /* public interface */
+@@ -236,18 +237,23 @@ struct ptp_clock *ptp_clock_register(str
+ 		}
+ 	}
+ 
++	ptp->dev = kzalloc(sizeof(*ptp->dev), GFP_KERNEL);
++	if (!ptp->dev) {
++		err = -ENOMEM;
++		goto no_clock;
++	}
+ 	/* Initialize a new device of our class in our clock structure. */
+-	device_initialize(&ptp->dev);
+-	ptp->dev.devt = ptp->devid;
+-	ptp->dev.class = ptp_class;
+-	ptp->dev.parent = parent;
+-	ptp->dev.groups = ptp->pin_attr_groups;
+-	ptp->dev.release = ptp_clock_release;
+-	dev_set_drvdata(&ptp->dev, ptp);
+-	dev_set_name(&ptp->dev, "ptp%d", ptp->index);
++	device_initialize(ptp->dev);
++	ptp->dev->devt = ptp->devid;
++	ptp->dev->class = ptp_class;
++	ptp->dev->parent = parent;
++	ptp->dev->groups = ptp->pin_attr_groups;
++	ptp->dev->release = ptp_clock_release;
++	dev_set_drvdata(ptp->dev, ptp);
++	dev_set_name(ptp->dev, "ptp%d", ptp->index);
+ 
+ 	/* Create a posix clock and link it to the device. */
+-	err = posix_clock_register(&ptp->clock, &ptp->dev);
++	err = __posix_clock_register(&ptp->clock, 0, ptp->dev);
+ 	if (err) {
+ 		pr_err("failed to create posix clock\n");
+ 		goto no_clock;
+@@ -256,6 +262,7 @@ struct ptp_clock *ptp_clock_register(str
+ 	return ptp;
+ 
+ no_clock:
++	kfree(ptp->dev);
+ 	if (ptp->pps_source)
+ 		pps_unregister_source(ptp->pps_source);
+ no_pps:
+--- a/drivers/ptp/ptp_private.h
++++ b/drivers/ptp/ptp_private.h
+@@ -40,7 +40,7 @@ struct timestamp_event_queue {
+ 
+ struct ptp_clock {
+ 	struct posix_clock clock;
+-	struct device dev;
++	struct device *dev; /* XXX: changed back to a pointer for kABI */
+ 	struct ptp_clock_info *info;
+ 	dev_t devid;
+ 	int index; /* index into clocks.map */
+--- a/include/linux/posix-clock.h
++++ b/include/linux/posix-clock.h
+@@ -120,13 +120,14 @@ struct posix_clock_operations {
+ struct posix_clock {
+ 	struct posix_clock_operations ops;
+ 	struct cdev cdev;
+-	struct device *dev;
++	struct kref kref;	/* XXX not really used, just for kABI */
+ 	struct rw_semaphore rwsem;
+ 	bool zombie;
++	void (*release)(struct posix_clock *clk);	/* just for kABI */
+ };
+ 
+ /**
+- * posix_clock_register() - register a new clock
++ * __posix_clock_register() - register a new clock
+  * @clk:   Pointer to the clock. Caller must provide 'ops' field
+  * @dev:   Pointer to the initialized device. Caller must provide
+  *         'release' field
+@@ -138,7 +139,9 @@ struct posix_clock {
+  *
+  * Returns zero on success, non-zero otherwise.
+  */
+-int posix_clock_register(struct posix_clock *clk, struct device *dev);
++int __posix_clock_register(struct posix_clock *clk, dev_t devid,
++			   struct device *dev);
++int posix_clock_register(struct posix_clock *clk, dev_t devid);
+ 
+ /**
+  * posix_clock_unregister() - unregister a clock
+--- a/kernel/time/posix-clock.c
++++ b/kernel/time/posix-clock.c
+@@ -148,6 +148,13 @@ static long posix_clock_compat_ioctl(str
+ }
+ #endif
+ 
++static struct device *get_clock_dev(struct posix_clock *clk)
++{
++	if (!clk->cdev.kobj.parent)
++		return NULL;
++	return kobj_to_dev(clk->cdev.kobj.parent);
++}
++
+ static int posix_clock_open(struct inode *inode, struct file *fp)
+ {
+ 	int err;
+@@ -166,7 +173,7 @@ static int posix_clock_open(struct inode
+ 		err = 0;
+ 
+ 	if (!err) {
+-		get_device(clk->dev);
++		get_device(get_clock_dev(clk));
+ 		fp->private_data = clk;
+ 	}
+ out:
+@@ -182,7 +189,7 @@ static int posix_clock_release(struct in
+ 	if (clk->ops.release)
+ 		err = clk->ops.release(clk);
+ 
+-	put_device(clk->dev);
++	put_device(get_clock_dev(clk));
+ 
+ 	fp->private_data = NULL;
+ 
+@@ -204,35 +211,51 @@ static const struct file_operations posi
+ #endif
+ };
+ 
+-int posix_clock_register(struct posix_clock *clk, struct device *dev)
++/* XXX modified version due to kABI compatibility XXX */
++int __posix_clock_register(struct posix_clock *clk, dev_t devid,
++			   struct device *dev)
+ {
+ 	int err;
+ 
++	kref_init(&clk->kref);
+ 	init_rwsem(&clk->rwsem);
+ 
+ 	cdev_init(&clk->cdev, &posix_clock_file_operations);
+-	err = cdev_device_add(&clk->cdev, dev);
++	if (dev)
++		err = cdev_device_add(&clk->cdev, dev);
++	else
++		err = cdev_add(&clk->cdev, devid, 1);
+ 	if (err) {
+ 		pr_err("%s unable to add device %d:%d\n",
+-			dev_name(dev), MAJOR(dev->devt), MINOR(dev->devt));
++		       dev_name(dev), MAJOR(dev->devt), MINOR(dev->devt));
+ 		return err;
+ 	}
+ 	clk->cdev.owner = clk->ops.owner;
+-	clk->dev = dev;
+ 
+ 	return 0;
+ }
++EXPORT_SYMBOL_GPL(__posix_clock_register);
++
++int posix_clock_register(struct posix_clock *clk, dev_t devid)
++{
++	return __posix_clock_register(clk, devid, NULL);
++}
+ EXPORT_SYMBOL_GPL(posix_clock_register);
+ 
+ void posix_clock_unregister(struct posix_clock *clk)
+ {
+-	cdev_device_del(&clk->cdev, clk->dev);
++	struct device *dev = get_clock_dev(clk);
++
++	if (dev)
++		cdev_device_del(&clk->cdev, dev);
++	else
++		cdev_del(&clk->cdev);
+ 
+ 	down_write(&clk->rwsem);
+ 	clk->zombie = true;
+ 	up_write(&clk->rwsem);
+ 
+-	put_device(clk->dev);
++	put_device(dev);
+ }
+ EXPORT_SYMBOL_GPL(posix_clock_unregister);
+ 

@@ -1,0 +1,99 @@
+Patch-mainline: 5.7-rc1
+Git-commit: f3cd4c865b8ad61ff6dc61feba759a98ca06f039
+References: bsc#1065600
+From: Baoquan He <bhe@redhat.com>
+Date: Mon, 6 Apr 2020 20:06:50 -0700
+Subject: [PATCH] mm/memory_hotplug.c: only respect mem= parameter during boot
+ stage
+
+In commit 357b4da50a62 ("x86: respect memory size limiting via mem=
+parameter") a global varialbe max_mem_size is added to store the value
+parsed from 'mem= ', then checked when memory region is added.  This truly
+stops those DIMMs from being added into system memory during boot-time.
+
+However, it also limits the later memory hotplug functionality.  Any DIMM
+can't be hotplugged any more if its region is beyond the max_mem_size.  We
+will get errors like:
+
+[  216.387164] acpi PNP0C80:02: add_memory failed
+[  216.389301] acpi PNP0C80:02: acpi_memory_enable_device() error
+[  216.392187] acpi PNP0C80:02: Enumeration failure
+
+This will cause issue in a known use case where 'mem=' is added to the
+hypervisor.  The memory that lies after 'mem=' boundary will be assigned
+to KVM guests.  After commit 357b4da50a62 merged, memory can't be extended
+dynamically if system memory on hypervisor is not sufficient.
+
+So fix it by also checking if it's during boot-time restricting to add
+memory.  Otherwise, skip the restriction.
+
+And also add this use case to document of 'mem=' kernel parameter.
+
+Fixes: 357b4da50a62 ("x86: respect memory size limiting via mem= parameter")
+Signed-off-by: Baoquan He <bhe@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+Acked-by: Michal Hocko <mhocko@suse.com>
+Cc: Ingo Molnar <mingo@kernel.org>
+Cc: William Kucharski <william.kucharski@oracle.com>
+Cc: David Hildenbrand <david@redhat.com>
+Cc: Balbir Singh <bsingharora@gmail.com>
+Link: http://lkml.kernel.org/r/20200204050643.20925-1-bhe@redhat.com
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+---
+ Documentation/admin-guide/kernel-parameters.txt | 13 +++++++++++--
+ mm/memory_hotplug.c                             |  8 +++++++-
+ 2 files changed, 18 insertions(+), 3 deletions(-)
+
+diff --git a/Documentation/admin-guide/kernel-parameters.txt b/Documentation/admin-guide/kernel-parameters.txt
+index 2d31d811a52d..86aae1fa099a 100644
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -2265,13 +2265,22 @@
+ 			For details see: Documentation/admin-guide/hw-vuln/mds.rst
+ 
+ 	mem=nn[KMG]	[KNL,BOOT] Force usage of a specific amount of memory
+-			Amount of memory to be used when the kernel is not able
+-			to see the whole system memory or for test.
++			Amount of memory to be used in cases as follows:
++
++			1 for test;
++			2 when the kernel is not able to see the whole system memory;
++			3 memory that lies after 'mem=' boundary is excluded from
++			 the hypervisor, then assigned to KVM guests.
++
+ 			[X86] Work as limiting max address. Use together
+ 			with memmap= to avoid physical address space collisions.
+ 			Without memmap= PCI devices could be placed at addresses
+ 			belonging to unused RAM.
+ 
++			Note that this only takes effects during boot time since
++			in above case 3, memory may need be hot added after boot
++			if system memory of hypervisor is not sufficient.
++
+ 	mem=nopentium	[BUGS=X86-32] Disable usage of 4MB pages for kernel
+ 			memory.
+ 
+diff --git a/mm/memory_hotplug.c b/mm/memory_hotplug.c
+index 005eab3411e5..d6f813cc12c1 100644
+--- a/mm/memory_hotplug.c
++++ b/mm/memory_hotplug.c
+@@ -161,7 +161,13 @@ static struct resource *register_memory_resource(u64 start, u64 size)
+ 	unsigned long flags =  IORESOURCE_SYSTEM_RAM | IORESOURCE_BUSY;
+ 	char *resource_name = "System RAM";
+ 
+-	if (start + size > max_mem_size)
++	/*
++	 * Make sure value parsed from 'mem=' only restricts memory adding
++	 * while booting, so that memory hotplug won't be impacted. Please
++	 * refer to document of 'mem=' in kernel-parameters.txt for more
++	 * details.
++	 */
++	if (start + size > max_mem_size && system_state < SYSTEM_RUNNING)
+ 		return ERR_PTR(-E2BIG);
+ 
+ 	/*
+-- 
+2.16.4
+

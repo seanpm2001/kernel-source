@@ -1,0 +1,95 @@
+From bf61099a21f5a4da3b0551a88d7b3551fa4fff08 Mon Sep 17 00:00:00 2001
+From: Ryder Lee <ryder.lee@mediatek.com>
+Date: Tue, 17 Apr 2018 20:30:27 +0800
+Subject: [PATCH] clk: mediatek: correct the clocks for MT2701 HDMI PHY module
+Git-commit: bf61099a21f5a4da3b0551a88d7b3551fa4fff08
+Patch-mainline: v4.18-rc1
+References: bsc#1051510
+
+The hdmitx_dig_cts clock signal is not a child of clk26m,
+and the actual output of the PLL block is derived from
+the tvdpll via a configurable PLL post-divider.
+
+It is used as the PLL reference input to the HDMI PHY module.
+
+Fixes: e9862118272a ("clk: mediatek: Add MT2701 clock support")
+Signed-off-by: Chunhui Dai <chunhui.dai@mediatek.com>
+Signed-off-by: Ryder Lee <ryder.lee@mediatek.com>
+Signed-off-by: Stephen Boyd <sboyd@kernel.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/clk/mediatek/clk-mt2701.c      |  8 ++++++--
+ include/dt-bindings/clock/mt2701-clk.h | 16 ++++++++--------
+ 2 files changed, 14 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/clk/mediatek/clk-mt2701.c b/drivers/clk/mediatek/clk-mt2701.c
+index deca7527f92f..4dda8988b2f0 100644
+--- a/drivers/clk/mediatek/clk-mt2701.c
++++ b/drivers/clk/mediatek/clk-mt2701.c
+@@ -46,8 +46,6 @@ static const struct mtk_fixed_clk top_fixed_clks[] = {
+ 		340 * MHZ),
+ 	FIXED_CLK(CLK_TOP_HDMI_0_PLL340M, "hdmi_0_pll340m", "clk26m",
+ 		340 * MHZ),
+-	FIXED_CLK(CLK_TOP_HDMITX_CLKDIG_CTS, "hdmitx_dig_cts", "clk26m",
+-		300 * MHZ),
+ 	FIXED_CLK(CLK_TOP_HADDS2_FB, "hadds2_fbclk", "clk26m",
+ 		27 * MHZ),
+ 	FIXED_CLK(CLK_TOP_WBG_DIG_416M, "wbg_dig_ck_416m", "clk26m",
+@@ -977,6 +975,10 @@ static const struct mtk_pll_data apmixed_plls[] = {
+ 				21, 0x2d0, 4, 0x0, 0x2d4, 0),
+ };
+ 
++static const struct mtk_fixed_factor apmixed_fixed_divs[] = {
++	FACTOR(CLK_APMIXED_HDMI_REF, "hdmi_ref", "tvdpll", 1, 1),
++};
++
+ static int mtk_apmixedsys_init(struct platform_device *pdev)
+ {
+ 	struct clk_onecell_data *clk_data;
+@@ -988,6 +990,8 @@ static int mtk_apmixedsys_init(struct platform_device *pdev)
+ 
+ 	mtk_clk_register_plls(node, apmixed_plls, ARRAY_SIZE(apmixed_plls),
+ 								clk_data);
++	mtk_clk_register_factors(apmixed_fixed_divs, ARRAY_SIZE(apmixed_fixed_divs),
++								clk_data);
+ 
+ 	return of_clk_add_provider(node, of_clk_src_onecell_get, clk_data);
+ }
+diff --git a/include/dt-bindings/clock/mt2701-clk.h b/include/dt-bindings/clock/mt2701-clk.h
+index 24e93dfcee9f..1956ebba4ab9 100644
+--- a/include/dt-bindings/clock/mt2701-clk.h
++++ b/include/dt-bindings/clock/mt2701-clk.h
+@@ -171,13 +171,12 @@
+ #define CLK_TOP_8BDAC				151
+ #define CLK_TOP_WBG_DIG_416M			152
+ #define CLK_TOP_DPI				153
+-#define CLK_TOP_HDMITX_CLKDIG_CTS		154
+-#define CLK_TOP_DSI0_LNTC_DSI			155
+-#define CLK_TOP_AUD_EXT1			156
+-#define CLK_TOP_AUD_EXT2			157
+-#define CLK_TOP_NFI1X_PAD			158
+-#define CLK_TOP_AXISEL_D4			159
+-#define CLK_TOP_NR				160
++#define CLK_TOP_DSI0_LNTC_DSI			154
++#define CLK_TOP_AUD_EXT1			155
++#define CLK_TOP_AUD_EXT2			156
++#define CLK_TOP_NFI1X_PAD			157
++#define CLK_TOP_AXISEL_D4			158
++#define CLK_TOP_NR				159
+ 
+ /* APMIXEDSYS */
+ 
+@@ -194,7 +193,8 @@
+ #define CLK_APMIXED_HADDS2PLL			11
+ #define CLK_APMIXED_AUD2PLL			12
+ #define CLK_APMIXED_TVD2PLL			13
+-#define CLK_APMIXED_NR				14
++#define CLK_APMIXED_HDMI_REF			14
++#define CLK_APMIXED_NR				15
+ 
+ /* DDRPHY */
+ 
+-- 
+2.16.4
+

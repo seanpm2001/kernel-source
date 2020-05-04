@@ -1,0 +1,312 @@
+From: NeilBrown <neilb@suse.com>
+Date: Fri, 17 Aug 2018 15:44:41 -0700
+Subject: [PATCH] fs/seq_file.c: simplify seq_file iteration code and interface
+Git-commit: 1f4aace60b0edc2d885aaa263abf4df42c8c65a8
+Patch-mainline: v4.19
+References: bsc#1170125
+
+The documentation for seq_file suggests that it is necessary to be able
+to move the iterator to a given offset, however that is not the case.
+If the iterator is stored in the private data and is stable from one
+read() syscall to the next, it is only necessary to support first/next
+interactions.  Implementing this in a client is a little clumsy.
+
+ - if ->start() is given a pos of zero, it should go to start of
+   sequence.
+
+ - if ->start() is given the name pos that was given to the most recent
+   next() or start(), it should restore the iterator to state just
+   before that last call
+
+ - if ->start is given another number, it should set the iterator one
+   beyond the start just before the last ->start or ->next call.
+
+Also, the documentation says that the implementation can interpret the
+pos however it likes (other than zero meaning start), but seq_file
+increments the pos sometimes which does impose on the implementation.
+
+This patch simplifies the interface for first/next iteration and
+simplifies the code, while maintaining complete backward compatability.
+Now: 
+
+ - if ->start() is given a pos of zero, it should return an iterator
+   placed at the start of the sequence
+
+ - if ->start() is given a non-zero pos, it should return the iterator
+   in the same state it was after the last ->start or ->next.
+
+This is particularly useful for interators which walk the multiple
+chains in a hash table, e.g.  using rhashtable_walk*.  See
+fs/gfs2/glock.c and drivers/staging/lustre/lustre/llite/vvp_dev.c
+
+A large part of achieving this is to *always* call ->next after ->show
+has successfully stored all of an entry in the buffer.  Never just
+increment the index instead.  Also:
+
+ - always pass &m->index to ->start() and ->next(), never a temp
+   variable
+
+ - don't clear ->from when ->count is zero, as ->from is dead when
+   ->count is zero.
+
+Some ->next functions do not increment *pos when they return NULL.  To
+maintain compatability with this, we still need to increment m->index in
+one place, if ->next didn't increment it.  Note that such ->next
+functions are buggy and should be fixed.  A simple demonstration is
+
+   dd if=/proc/swaps bs=1000 skip=1
+
+Choose any block size larger than the size of /proc/swaps.  This will
+always show the whole last line of /proc/swaps.
+
+This patch doesn't work around buggy next() functions for this case.
+
+[neilb@suse.com: ensure ->from is valid]
+  Link: http://lkml.kernel.org/r/87601ryb8a.fsf@notabene.neil.brown.name
+Signed-off-by: NeilBrown <neilb@suse.com>
+Acked-by: Jonathan Corbet <corbet@lwn.net>	[docs]
+Tested-by: Jann Horn <jannh@google.com>
+Cc: Alexander Viro <viro@zeniv.linux.org.uk>
+Cc: Kees Cook <keescook@chromium.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+
+---
+ Documentation/filesystems/seq_file.txt |   63 ++++++++++++++++++++++-----------
+ fs/seq_file.c                          |   54 +++++++++++-----------------
+ 2 files changed, 63 insertions(+), 54 deletions(-)
+
+--- a/Documentation/filesystems/seq_file.txt
++++ b/Documentation/filesystems/seq_file.txt
+@@ -66,23 +66,39 @@ kernel 3.10. Current versions require th
+ 
+ The iterator interface
+ 
+-Modules implementing a virtual file with seq_file must implement a simple
+-iterator object that allows stepping through the data of interest.
+-Iterators must be able to move to a specific position - like the file they
+-implement - but the interpretation of that position is up to the iterator
+-itself. A seq_file implementation that is formatting firewall rules, for
+-example, could interpret position N as the Nth rule in the chain.
+-Positioning can thus be done in whatever way makes the most sense for the
+-generator of the data, which need not be aware of how a position translates
+-to an offset in the virtual file. The one obvious exception is that a
+-position of zero should indicate the beginning of the file.
++Modules implementing a virtual file with seq_file must implement an
++iterator object that allows stepping through the data of interest
++during a "session" (roughly one read() system call).  If the iterator
++is able to move to a specific position - like the file they implement,
++though with freedom to map the position number to a sequence location
++in whatever way is convenient - the iterator need only exist
++transiently during a session.  If the iterator cannot easily find a
++numerical position but works well with a first/next interface, the
++iterator can be stored in the private data area and continue from one
++session to the next.
++
++A seq_file implementation that is formatting firewall rules from a
++table, for example, could provide a simple iterator that interprets
++position N as the Nth rule in the chain.  A seq_file implementation
++that presents the content of a, potentially volatile, linked list
++might record a pointer into that list, providing that can be done
++without risk of the current location being removed.
++
++Positioning can thus be done in whatever way makes the most sense for
++the generator of the data, which need not be aware of how a position
++translates to an offset in the virtual file. The one obvious exception
++is that a position of zero should indicate the beginning of the file.
+ 
+ The /proc/sequence iterator just uses the count of the next number it
+ will output as its position.
+ 
+-Four functions must be implemented to make the iterator work. The first,
+-called start() takes a position as an argument and returns an iterator
+-which will start reading at that position. For our simple sequence example,
++Four functions must be implemented to make the iterator work. The
++first, called start(), starts a session and takes a position as an
++argument, returning an iterator which will start reading at that
++position.  The pos passed to start() will always be either zero, or
++the most recent pos used in the previous session.
++
++For our simple sequence example,
+ the start() function looks like:
+ 
+ 	static void *ct_seq_start(struct seq_file *s, loff_t *pos)
+@@ -101,11 +117,12 @@ implementations; in most cases the start
+ "past end of file" condition and return NULL if need be.
+ 
+ For more complicated applications, the private field of the seq_file
+-structure can be used. There is also a special value which can be returned
+-by the start() function called SEQ_START_TOKEN; it can be used if you wish
+-to instruct your show() function (described below) to print a header at the
+-top of the output. SEQ_START_TOKEN should only be used if the offset is
+-zero, however.
++structure can be used to hold state from session to session.  There is
++also a special value which can be returned by the start() function
++called SEQ_START_TOKEN; it can be used if you wish to instruct your
++show() function (described below) to print a header at the top of the
++output. SEQ_START_TOKEN should only be used if the offset is zero,
++however.
+ 
+ The next function to implement is called, amazingly, next(); its job is to
+ move the iterator forward to the next position in the sequence.  The
+@@ -121,9 +138,13 @@ complete. Here's the example version:
+ 	        return spos;
+ 	}
+ 
+-The stop() function is called when iteration is complete; its job, of
+-course, is to clean up. If dynamic memory is allocated for the iterator,
+-stop() is the place to free it.
++The stop() function closes a session; its job, of course, is to clean
++up. If dynamic memory is allocated for the iterator, stop() is the
++place to free it; if a lock was taken by start(), stop() must release
++that lock.  The value that *pos was set to by the last next() call
++before stop() is remembered, and used for the first start() call of
++the next session unless lseek() has been called on the file; in that
++case next start() will be asked to start at position zero.
+ 
+ 	static void ct_seq_stop(struct seq_file *s, void *v)
+ 	{
+--- a/fs/seq_file.c
++++ b/fs/seq_file.c
+@@ -86,23 +86,22 @@ EXPORT_SYMBOL(seq_open);
+ 
+ static int traverse(struct seq_file *m, loff_t offset)
+ {
+-	loff_t pos = 0, index;
++	loff_t pos = 0;
+ 	int error = 0;
+ 	void *p;
+ 
+ 	m->version = 0;
+-	index = 0;
++	m->index = 0;
+ 	m->count = m->from = 0;
+-	if (!offset) {
+-		m->index = index;
++	if (!offset)
+ 		return 0;
+-	}
++
+ 	if (!m->buf) {
+ 		m->buf = seq_buf_alloc(m->size = PAGE_SIZE);
+ 		if (!m->buf)
+ 			return -ENOMEM;
+ 	}
+-	p = m->op->start(m, &index);
++	p = m->op->start(m, &m->index);
+ 	while (p) {
+ 		error = PTR_ERR(p);
+ 		if (IS_ERR(p))
+@@ -119,20 +118,15 @@ static int traverse(struct seq_file *m,
+ 		if (pos + m->count > offset) {
+ 			m->from = offset - pos;
+ 			m->count -= m->from;
+-			m->index = index;
+ 			break;
+ 		}
+ 		pos += m->count;
+ 		m->count = 0;
+-		if (pos == offset) {
+-			index++;
+-			m->index = index;
++		p = m->op->next(m, p, &m->index);
++		if (pos == offset)
+ 			break;
+-		}
+-		p = m->op->next(m, p, &index);
+ 	}
+ 	m->op->stop(m, p);
+-	m->index = index;
+ 	return error;
+ 
+ Eoverflow:
+@@ -156,7 +150,6 @@ ssize_t seq_read(struct file *file, char
+ {
+ 	struct seq_file *m = file->private_data;
+ 	size_t copied = 0;
+-	loff_t pos;
+ 	size_t n;
+ 	void *p;
+ 	int err = 0;
+@@ -219,16 +212,12 @@ ssize_t seq_read(struct file *file, char
+ 		size -= n;
+ 		buf += n;
+ 		copied += n;
+-		if (!m->count) {
+-			m->from = 0;
+-			m->index++;
+-		}
+ 		if (!size)
+ 			goto Done;
+ 	}
+ 	/* we need at least one record in buffer */
+-	pos = m->index;
+-	p = m->op->start(m, &pos);
++	m->from = 0;
++	p = m->op->start(m, &m->index);
+ 	while (1) {
+ 		err = PTR_ERR(p);
+ 		if (!p || IS_ERR(p))
+@@ -239,8 +228,7 @@ ssize_t seq_read(struct file *file, char
+ 		if (unlikely(err))
+ 			m->count = 0;
+ 		if (unlikely(!m->count)) {
+-			p = m->op->next(m, p, &pos);
+-			m->index = pos;
++			p = m->op->next(m, p, &m->index);
+ 			continue;
+ 		}
+ 		if (m->count < m->size)
+@@ -252,29 +240,33 @@ ssize_t seq_read(struct file *file, char
+ 		if (!m->buf)
+ 			goto Enomem;
+ 		m->version = 0;
+-		pos = m->index;
+-		p = m->op->start(m, &pos);
++		p = m->op->start(m, &m->index);
+ 	}
+ 	m->op->stop(m, p);
+ 	m->count = 0;
+ 	goto Done;
+ Fill:
+ 	/* they want more? let's try to get some more */
+-	while (m->count < size) {
++	while (1) {
+ 		size_t offs = m->count;
+-		loff_t next = pos;
+-		p = m->op->next(m, p, &next);
++		loff_t pos = m->index;
++
++		p = m->op->next(m, p, &m->index);
++		if (pos == m->index)
++			/* Buggy ->next function */
++			m->index++;
+ 		if (!p || IS_ERR(p)) {
+ 			err = PTR_ERR(p);
+ 			break;
+ 		}
++		if (m->count >= size)
++			break;
+ 		err = m->op->show(m, p);
+ 		if (seq_has_overflowed(m) || err) {
+ 			m->count = offs;
+ 			if (likely(err <= 0))
+ 				break;
+ 		}
+-		pos = next;
+ 	}
+ 	m->op->stop(m, p);
+ 	n = min(m->count, size);
+@@ -283,11 +275,7 @@ Fill:
+ 		goto Efault;
+ 	copied += n;
+ 	m->count -= n;
+-	if (m->count)
+-		m->from = n;
+-	else
+-		pos++;
+-	m->index = pos;
++	m->from = n;
+ Done:
+ 	if (!copied)
+ 		copied = err;

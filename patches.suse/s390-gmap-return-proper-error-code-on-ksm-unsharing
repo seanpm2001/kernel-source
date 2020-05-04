@@ -1,0 +1,48 @@
+From: Christian Borntraeger <borntraeger@de.ibm.com>
+Date: Fri, 27 Mar 2020 08:06:42 +0100
+Subject: s390/gmap: return proper error code on ksm unsharing
+Git-commit: 7a2653612bb6f18fb236c5b0c4d28f7b459bf7c2
+Patch-mainline: v5.7-rc1
+References: git-fixes
+
+If a signal is pending we might return -ENOMEM instead of -EINTR.
+We should propagate the proper error during KSM unsharing.
+unmerge_ksm_pages returns -ERESTARTSYS on signal_pending. This gets
+translated by entry.S to -EINTR. It is important to get this error
+code so that userspace can retry.
+
+To make this clearer we also add -EINTR to the documentation of the
+PV_ENABLE call, which calls unmerge_ksm_pages.
+
+Fixes: 3ac8e38015d4 ("s390/mm: disable KSM for storage key enabled pages")
+Reviewed-by: Janosch Frank <frankja@linux.vnet.ibm.com>
+Reported-by: Marc Hartmayer <mhartmay@linux.ibm.com>
+Tested-by: Marc Hartmayer <mhartmay@linux.ibm.com>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+[ ptesarik: Documentaiton part omitted, becase SLE15 lacks upstream
+  commit 04ed89dc4aeba57ab99df16edbd9d06e43d0a2c4.
+  The patched code is in s390_enable_skey(), because we do not have
+  commit fa0c5eabbdd33012b369cf75d6a39389cc9ae707 either. ]
+Acked-by: Petr Tesarik <ptesarik@suse.com>
+---
+ arch/s390/mm/gmap.c |    6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+--- a/arch/s390/mm/gmap.c
++++ b/arch/s390/mm/gmap.c
+@@ -2198,10 +2198,10 @@ int s390_enable_skey(void)
+ 
+ 	mm->context.uses_skeys = 1;
+ 	for (vma = mm->mmap; vma; vma = vma->vm_next) {
+-		if (ksm_madvise(vma, vma->vm_start, vma->vm_end,
+-				MADV_UNMERGEABLE, &vma->vm_flags)) {
++		rc = ksm_madvise(vma, vma->vm_start, vma->vm_end,
++				 MADV_UNMERGEABLE, &vma->vm_flags);
++		if (rc) {
+ 			mm->context.uses_skeys = 0;
+-			rc = -ENOMEM;
+ 			goto out_up;
+ 		}
+ 	}

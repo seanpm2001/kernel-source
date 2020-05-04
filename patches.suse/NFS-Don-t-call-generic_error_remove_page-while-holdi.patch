@@ -1,0 +1,33 @@
+From: Trond Myklebust <trondmy@gmail.com>
+Date: Sun, 7 Apr 2019 13:59:03 -0400
+Subject: [PATCH] NFS: Don't call generic_error_remove_page() while holding
+ locks
+Git-commit: 22876f540bdf19af9e4fca893ce02ba7ee65ebcc
+Patch-mainline: v5.2
+References: bsc#1170457
+
+The NFS read code can trigger writeback while holding the page lock.
+If an error then triggers a call to nfs_write_error_remove_page(),
+we can deadlock.
+
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/write.c |    3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+--- a/fs/nfs/write.c
++++ b/fs/nfs/write.c
+@@ -605,9 +605,8 @@ try_again:
+ static void nfs_write_error_remove_page(struct nfs_page *req)
+ {
+ 	nfs_unlock_request(req);
++	SetPageError(req->wb_page);
+ 	nfs_end_page_writeback(req);
+-	generic_error_remove_page(page_file_mapping(req->wb_page),
+-				  req->wb_page);
+ 	nfs_release_request(req);
+ }
+ 

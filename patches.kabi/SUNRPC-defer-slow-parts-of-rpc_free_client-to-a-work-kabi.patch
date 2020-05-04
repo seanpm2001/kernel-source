@@ -1,0 +1,34 @@
+Subject: kabi fix for
+From: NeilBrown <neilb@suse.de>
+References: bsc#1168202
+Patch-mainline: Never, kabi
+
+Kabi fix
+
+Acked-by: NeilBrown <neilb@suse.com>
+Signed-off-by: Neil Brown <neilb@suse.com>
+
+---
+ include/linux/sunrpc/clnt.h |    5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/include/linux/sunrpc/clnt.h
++++ b/include/linux/sunrpc/clnt.h
+@@ -68,13 +68,17 @@ struct rpc_clnt {
+ #if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
+ 	struct dentry		*cl_debugfs;	/* debugfs directory */
+ #endif
++#ifdef __GENKSYMS__
++	struct rpc_xprt_iter	cl_xpi;
++#else
+ 	/* cl_work is only needed after cl_xpi is no longer used,
+ 	 * and that are of similar size
+ 	 */
+ 	union {
+ 		struct rpc_xprt_iter	cl_xpi;
+ 		struct work_struct	cl_work;
+ 	};
++#endif
+ };
+ 
+ /*

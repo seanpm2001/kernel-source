@@ -1,0 +1,42 @@
+From: Firo Yang <firo.yang@suse.com>
+Date: Mon, 20 Apr 2020 17:10:01 +0200
+Subject: net: fix race condition in __inet_lookup_established()
+Patch-mainline: Never, mainline solution (v5.5-rc3) too intrusive
+References: bsc#1151794
+
+Listening and established sockets share the same slab cache which has
+SLAB_TYPESAFE_BY_RCU flag set but this only protects from a slab page being
+freed and reused for a different slab cache (or other purpose), not from
+being reused for a new object from the same slab cache. Therefore the loop
+in __inet_lookup_established() can skip from an established socket to
+a listening one.
+
+Since commit 3b24d854cb35 ("tcp/dccp: do not touch listener sk_refcnt under
+synflood"), listener hashtable no longer uses "nulls" lists so that after
+such switch, sk_nulls_for_each_rcu() loop in __inet_lookup_established()
+would hit NULL as end marker which it would fail to recognize.
+
+The upstream solution, commit 8dbd76e79a16 ("tcp/dccp: fix possible race
+__inet_lookup_established()"), is rather intrusive and would break kABI
+in a way which would be impossible to work around reliably. Therefore we
+use a simpler patch which is safer at the expense of a minor performance
+penalty.
+
+Fixes: 3b24d854cb35 ("tcp/dccp: do not touch listener sk_refcnt under synflood")
+Signed-off-by: Firo Yang <firo.yang@suse.com>
+Signed-off-by: Michal Kubecek <mkubecek@suse.cz>
+---
+ net/ipv4/inet_hashtables.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/net/ipv4/inet_hashtables.c
++++ b/net/ipv4/inet_hashtables.c
+@@ -283,6 +283,8 @@ struct sock *__inet_lookup_established(struct net *net,
+ 
+ begin:
+ 	sk_nulls_for_each_rcu(sk, node, &head->chain) {
++		if (unlikely(!node))
++			goto begin;
+ 		if (sk->sk_hash != hash)
+ 			continue;
+ 		if (likely(INET_MATCH(sk, net, acookie,

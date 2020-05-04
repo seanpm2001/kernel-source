@@ -1,7 +1,6 @@
 From: Juergen Gross <jgross@suse.com>
 Date: Thu, 14 Feb 2019 11:42:39 +0100
-Patch-mainline: Queued in subsystem maintainer repository
-Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/xen/tip.git
+Patch-mainline: v5.1-rc1
 Git-commit: 357b4da50a62e2fd70eacee21cdbd22d4c7a7b60
 References: bsc#1117645
 Subject: x86: respect memory size limiting via mem= parameter
@@ -22,11 +21,13 @@ Acked-by: Ingo Molnar <mingo@kernel.org>
 Reviewed-by: William Kucharski <william.kucharski@oracle.com>
 Signed-off-by: Juergen Gross <jgross@suse.com>
 ---
- arch/x86/kernel/e820.c         |    5 +++++
- include/linux/memory_hotplug.h |    2 ++
- mm/memory_hotplug.c            |    5 +++++
- 3 files changed, 12 insertions(+)
+ arch/x86/kernel/e820.c         | 5 +++++
+ include/linux/memory_hotplug.h | 2 ++
+ mm/memory_hotplug.c            | 6 ++++++
+ 3 files changed, 13 insertions(+)
 
+diff --git a/arch/x86/kernel/e820.c b/arch/x86/kernel/e820.c
+index 50895c2f937d..e67513e2cbbb 100644
 --- a/arch/x86/kernel/e820.c
 +++ b/arch/x86/kernel/e820.c
 @@ -15,6 +15,7 @@
@@ -37,7 +38,7 @@ Signed-off-by: Juergen Gross <jgross@suse.com>
  
  #include <asm/e820/api.h>
  #include <asm/setup.h>
-@@ -880,6 +881,10 @@ static int __init parse_memopt(char *p)
+@@ -859,6 +860,10 @@ static int __init parse_memopt(char *p)
  
  	e820__range_remove(mem_size, ULLONG_MAX - mem_size, E820_TYPE_RAM, 1);
  
@@ -48,9 +49,11 @@ Signed-off-by: Juergen Gross <jgross@suse.com>
  	return 0;
  }
  early_param("mem", parse_memopt);
+diff --git a/include/linux/memory_hotplug.h b/include/linux/memory_hotplug.h
+index 368267c1b71b..cfd12078172a 100644
 --- a/include/linux/memory_hotplug.h
 +++ b/include/linux/memory_hotplug.h
-@@ -115,6 +115,8 @@ extern void __online_page_free(struct pa
+@@ -114,6 +114,8 @@ extern void __online_page_free(struct page *page);
  
  extern int try_online_node(int nid);
  
@@ -59,9 +62,11 @@ Signed-off-by: Juergen Gross <jgross@suse.com>
  extern bool memhp_auto_online;
  
  #ifdef CONFIG_MEMORY_HOTREMOVE
+diff --git a/mm/memory_hotplug.c b/mm/memory_hotplug.c
+index 124e794867c5..519f9db063ff 100644
 --- a/mm/memory_hotplug.c
 +++ b/mm/memory_hotplug.c
-@@ -154,6 +154,8 @@ void mem_hotplug_done(void)
+@@ -156,10 +156,16 @@ void mem_hotplug_done(void)
  	mutex_unlock(&memory_add_remove_lock);
  }
  
@@ -70,13 +75,14 @@ Signed-off-by: Juergen Gross <jgross@suse.com>
  /* add this memory to iomem resource */
  static struct resource *register_memory_resource(u64 start, u64 size)
  {
-@@ -161,6 +163,9 @@ static struct resource *register_memory_
- 	unsigned long flags =  IORESOURCE_SYSTEM_RAM | IORESOURCE_BUSY;
- 	char *resource_name = "System RAM";
- 
+ 	struct resource *res, *conflict;
++
 +	if (start + size > max_mem_size)
 +		return ERR_PTR(-E2BIG);
 +
- 	/*
- 	 * Request ownership of the new memory range.  This might be
- 	 * a child of an existing resource that was present but
+ 	res = kzalloc(sizeof(struct resource), GFP_KERNEL);
+ 	if (!res)
+ 		return ERR_PTR(-ENOMEM);
+-- 
+2.16.4
+

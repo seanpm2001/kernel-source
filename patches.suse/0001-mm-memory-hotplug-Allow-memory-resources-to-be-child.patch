@@ -82,11 +82,18 @@ diff --git a/mm/memory_hotplug.c b/mm/memory_hotplug.c
 index e198974c968d..b37f3a5c4833 100644
 --- a/mm/memory_hotplug.c
 +++ b/mm/memory_hotplug.c
-@@ -99,19 +99,21 @@ void mem_hotplug_done(void)
+@@ -99,23 +99,24 @@ void mem_hotplug_done(void)
  /* add this memory to iomem resource */
  static struct resource *register_memory_resource(u64 start, u64 size)
  {
 -	struct resource *res, *conflict;
++	struct resource *res;
++	unsigned long flags =  IORESOURCE_SYSTEM_RAM | IORESOURCE_BUSY;
++	char *resource_name = "System RAM";
+ 
+ 	if (start + size > max_mem_size)
+ 		return ERR_PTR(-E2BIG);
+ 
 -	res = kzalloc(sizeof(struct resource), GFP_KERNEL);
 -	if (!res)
 -		return ERR_PTR(-ENOMEM);
@@ -99,10 +106,6 @@ index e198974c968d..b37f3a5c4833 100644
 -	if (conflict) {
 -		pr_debug("System RAM resource %pR cannot be added\n", res);
 -		kfree(res);
-+	struct resource *res;
-+	unsigned long flags =  IORESOURCE_SYSTEM_RAM | IORESOURCE_BUSY;
-+	char *resource_name = "System RAM";
-+
 +	/*
 +	 * Request ownership of the new memory range.  This might be
 +	 * a child of an existing resource that was present but

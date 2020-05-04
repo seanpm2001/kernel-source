@@ -1,0 +1,53 @@
+From: Russell King <rmk+kernel@armlinux.org.uk>
+Date: Fri, 28 Feb 2020 19:39:41 +0000
+Subject: net: dsa: mv88e6xxx: fix lockup on warm boot
+Git-commit: 0395823b8d9a4d87bd1bf74359123461c2ae801b
+Patch-mainline: 5.6-rc6
+References: networking-stable-20_03_14
+
+If the switch is not hardware reset on a warm boot, interrupts can be
+left enabled, and possibly pending. This will cause us to enter an
+infinite loop trying to service an interrupt we are unable to handle,
+thereby preventing the kernel from booting.
+
+Ensure that the global 2 interrupt sources are disabled before we claim
+the parent interrupt.
+
+Observed on the ZII development revision B and C platforms with
+reworked serdes support, and using reboot -f to reboot the platform.
+
+[js] no mv88e6xxx_reg_lock, mv88e6xxx_g2_int_mask helpers in 4.12 yet.
+
+Fixes: dc30c35be720 ("net: dsa: mv88e6xxx: Implement interrupt support.")
+Signed-off-by: Russell King <rmk+kernel@armlinux.org.uk>
+Reviewed-by: Andrew Lunn <andrew@lunn.ch>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ drivers/net/dsa/mv88e6xxx/global2.c |    8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/dsa/mv88e6xxx/global2.c
++++ b/drivers/net/dsa/mv88e6xxx/global2.c
+@@ -965,6 +965,13 @@ int mv88e6xxx_g2_irq_setup(struct mv88e6
+ 	if (!chip->dev->of_node)
+ 		return -EINVAL;
+ 
++	chip->g2_irq.masked = ~0;
++	mutex_lock(&chip->reg_lock);
++	err = mv88e6xxx_g2_write(chip, GLOBAL2_INT_MASK, ~chip->g2_irq.masked);
++	mutex_unlock(&chip->reg_lock);
++	if (err)
++		return err;
++
+ 	chip->g2_irq.domain = irq_domain_add_simple(
+ 		chip->dev->of_node, 16, 0, &mv88e6xxx_g2_irq_domain_ops, chip);
+ 	if (!chip->g2_irq.domain)
+@@ -974,7 +981,6 @@ int mv88e6xxx_g2_irq_setup(struct mv88e6
+ 		irq_create_mapping(chip->g2_irq.domain, irq);
+ 
+ 	chip->g2_irq.chip = mv88e6xxx_g2_irq_chip;
+-	chip->g2_irq.masked = ~0;
+ 
+ 	chip->device_irq = irq_find_mapping(chip->g1_irq.domain,
+ 					    GLOBAL_STATUS_IRQ_DEVICE);
