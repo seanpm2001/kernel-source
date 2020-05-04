@@ -1,0 +1,248 @@
+From: Mark Gross <mgross@linux.intel.com>
+Date: Thu, 16 Apr 2020 17:23:10 +0200
+Subject: x86/cpu: Add a steppings field to struct x86_cpu_id
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git
+Patch-mainline: Queued for 5.7
+Git-commit: e9d7144597b10ff13ff2264c059f7d4a7fbc89ac
+References: bsc#1154824 CVE-2020-0543
+
+Intel uses the same family/model for several CPUs. Sometimes the
+stepping must be checked to tell them apart.
+
+On x86 there can be at most 16 steppings. Add a steppings bitmask to
+x86_cpu_id and a X86_MATCH_VENDOR_FAMILY_MODEL_STEPPING_FEATURE macro
+and support for matching against family/model/stepping.
+
+ [ bp: Massage. ]
+
+Signed-off-by: Mark Gross <mgross@linux.intel.com>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Reviewed-by: Tony Luck <tony.luck@intel.com>
+Reviewed-by: Josh Poimboeuf <jpoimboe@redhat.com>
+[ ptesarik: Add drivers/platform/x86/intel_pmc_core.c ]
+Signed-off-by: Petr Tesarik <ptesarik@suse.com>
+---
+ arch/x86/events/intel/cstate.c                 |    2 -
+ arch/x86/events/intel/rapl.c                   |    2 -
+ arch/x86/events/intel/uncore.c                 |    2 -
+ arch/x86/include/asm/cpu_device_id.h           |   27 ++++++++++++++++++++++---
+ arch/x86/kernel/cpu/match.c                    |    7 +++++-
+ drivers/cpufreq/intel_pstate.c                 |    2 -
+ drivers/edac/pnd2_edac.c                       |    4 +--
+ drivers/edac/sb_edac.c                         |    2 -
+ drivers/idle/intel_idle.c                      |    2 -
+ drivers/platform/x86/intel_pmc_core.c          |    2 -
+ drivers/platform/x86/intel_telemetry_debugfs.c |    2 -
+ drivers/platform/x86/intel_telemetry_pltdrv.c  |    2 -
+ include/linux/mod_devicetable.h                |    2 +
+ 13 files changed, 43 insertions(+), 15 deletions(-)
+
+--- a/arch/x86/events/intel/cstate.c
++++ b/arch/x86/events/intel/cstate.c
+@@ -508,7 +508,7 @@ static const struct cstate_model knl_cst
+ 
+ 
+ #define X86_CSTATES_MODEL(model, states)				\
+-	{ X86_VENDOR_INTEL, 6, model, X86_FEATURE_ANY, (unsigned long) &(states) }
++	{ X86_VENDOR_INTEL, 6, model, X86_STEPPING_ANY, X86_FEATURE_ANY, (unsigned long) &(states) }
+ 
+ static const struct x86_cpu_id intel_cstates_match[] __initconst = {
+ 	X86_CSTATES_MODEL(INTEL_FAM6_NEHALEM,    nhm_cstates),
+--- a/arch/x86/events/intel/rapl.c
++++ b/arch/x86/events/intel/rapl.c
+@@ -703,7 +703,7 @@ static int __init init_rapl_pmus(void)
+ }
+ 
+ #define X86_RAPL_MODEL_MATCH(model, init)	\
+-	{ X86_VENDOR_INTEL, 6, model, X86_FEATURE_ANY, (unsigned long)&init }
++	{ X86_VENDOR_INTEL, 6, model, X86_STEPPING_ANY, X86_FEATURE_ANY, (unsigned long)&init }
+ 
+ struct intel_rapl_init_fun {
+ 	bool apply_quirk;
+--- a/arch/x86/events/intel/uncore.c
++++ b/arch/x86/events/intel/uncore.c
+@@ -1244,7 +1244,7 @@ err:
+ }
+ 
+ #define X86_UNCORE_MODEL_MATCH(model, init)	\
+-	{ X86_VENDOR_INTEL, 6, model, X86_FEATURE_ANY, (unsigned long)&init }
++	{ X86_VENDOR_INTEL, 6, model, X86_STEPPING_ANY, X86_FEATURE_ANY, (unsigned long)&init }
+ 
+ struct intel_uncore_init_fun {
+ 	void	(*cpu_init)(void);
+--- a/arch/x86/include/asm/cpu_device_id.h
++++ b/arch/x86/include/asm/cpu_device_id.h
+@@ -19,12 +19,14 @@
+ #define X86_CENTAUR_FAM6_C7_D		0xd
+ #define X86_CENTAUR_FAM6_NANO		0xf
+ 
++#define X86_STEPPINGS(mins, maxs)    GENMASK(maxs, mins)
+ /**
+- * X86_MATCH_VENDOR_FAM_MODEL_FEATURE - Base macro for CPU matching
++ * X86_MATCH_VENDOR_FAM_MODEL_STEPPINGS_FEATURE - Base macro for CPU matching
+  * @_vendor:	The vendor name, e.g. INTEL, AMD, HYGON, ..., ANY
+  *		The name is expanded to X86_VENDOR_@_vendor
+  * @_family:	The family number or X86_FAMILY_ANY
+  * @_model:	The model number, model constant or X86_MODEL_ANY
++ * @_steppings:	Bitmask for steppings, stepping constant or X86_STEPPING_ANY
+  * @_feature:	A X86_FEATURE bit or X86_FEATURE_ANY
+  * @_data:	Driver specific data or NULL. The internal storage
+  *		format is unsigned long. The supplied value, pointer
+@@ -36,16 +38,35 @@
+  * into another macro at the usage site for good reasons, then please
+  * start this local macro with X86_MATCH to allow easy grepping.
+  */
+-#define X86_MATCH_VENDOR_FAM_MODEL_FEATURE(_vendor, _family, _model,	\
+-					   _feature, _data) {		\
++#define X86_MATCH_VENDOR_FAM_MODEL_STEPPINGS_FEATURE(_vendor, _family, _model, \
++						    _steppings, _feature, _data) { \
+ 	.vendor		= X86_VENDOR_##_vendor,				\
+ 	.family		= _family,					\
+ 	.model		= _model,					\
++	.steppings	= _steppings,					\
+ 	.feature	= _feature,					\
+ 	.driver_data	= (unsigned long) _data				\
+ }
+ 
+ /**
++ * X86_MATCH_VENDOR_FAM_MODEL_FEATURE - Macro for CPU matching
++ * @_vendor:	The vendor name, e.g. INTEL, AMD, HYGON, ..., ANY
++ *		The name is expanded to X86_VENDOR_@_vendor
++ * @_family:	The family number or X86_FAMILY_ANY
++ * @_model:	The model number, model constant or X86_MODEL_ANY
++ * @_feature:	A X86_FEATURE bit or X86_FEATURE_ANY
++ * @_data:	Driver specific data or NULL. The internal storage
++ *		format is unsigned long. The supplied value, pointer
++ *		etc. is casted to unsigned long internally.
++ *
++ * The steppings arguments of X86_MATCH_VENDOR_FAM_MODEL_STEPPINGS_FEATURE() is
++ * set to wildcards.
++ */
++#define X86_MATCH_VENDOR_FAM_MODEL_FEATURE(vendor, family, model, feature, data) \
++	X86_MATCH_VENDOR_FAM_MODEL_STEPPINGS_FEATURE(vendor, family, model, \
++						X86_STEPPING_ANY, feature, data)
++
++/**
+  * X86_MATCH_VENDOR_FAM_FEATURE - Macro for matching vendor, family and CPU feature
+  * @vendor:	The vendor name, e.g. INTEL, AMD, HYGON, ..., ANY
+  *		The name is expanded to X86_VENDOR_@vendor
+--- a/arch/x86/kernel/cpu/match.c
++++ b/arch/x86/kernel/cpu/match.c
+@@ -38,13 +38,18 @@ const struct x86_cpu_id *x86_match_cpu(c
+ 	const struct x86_cpu_id *m;
+ 	struct cpuinfo_x86 *c = &boot_cpu_data;
+ 
+-	for (m = match; m->vendor | m->family | m->model | m->feature; m++) {
++	for (m = match;
++	     m->vendor | m->family | m->model | m->steppings | m->feature;
++	     m++) {
+ 		if (m->vendor != X86_VENDOR_ANY && c->x86_vendor != m->vendor)
+ 			continue;
+ 		if (m->family != X86_FAMILY_ANY && c->x86 != m->family)
+ 			continue;
+ 		if (m->model != X86_MODEL_ANY && c->x86_model != m->model)
+ 			continue;
++		if (m->steppings != X86_STEPPING_ANY &&
++		    !(BIT(c->x86_mask) & m->steppings))
++			continue;
+ 		if (m->feature != X86_FEATURE_ANY && !cpu_has(c, m->feature))
+ 			continue;
+ 		return m;
+--- a/drivers/cpufreq/intel_pstate.c
++++ b/drivers/cpufreq/intel_pstate.c
+@@ -2014,7 +2014,7 @@ static const struct pstate_funcs knl_fun
+ };
+ 
+ #define ICPU(model, policy) \
+-	{ X86_VENDOR_INTEL, 6, model, X86_FEATURE_APERFMPERF,\
++	{ X86_VENDOR_INTEL, 6, model, X86_STEPPING_ANY, X86_FEATURE_APERFMPERF,\
+ 			(unsigned long)&policy }
+ 
+ static const struct x86_cpu_id intel_pstate_cpu_ids[] = {
+--- a/drivers/edac/pnd2_edac.c
++++ b/drivers/edac/pnd2_edac.c
+@@ -1540,8 +1540,8 @@ static struct dunit_ops dnv_ops = {
+ };
+ 
+ static const struct x86_cpu_id pnd2_cpuids[] = {
+-	{ X86_VENDOR_INTEL, 6, INTEL_FAM6_ATOM_GOLDMONT, 0, (kernel_ulong_t)&apl_ops },
+-	{ X86_VENDOR_INTEL, 6, INTEL_FAM6_ATOM_GOLDMONT_X, 0, (kernel_ulong_t)&dnv_ops },
++	{ X86_VENDOR_INTEL, 6, INTEL_FAM6_ATOM_GOLDMONT, X86_STEPPING_ANY, 0, (kernel_ulong_t)&apl_ops },
++	{ X86_VENDOR_INTEL, 6, INTEL_FAM6_ATOM_GOLDMONT_X, X86_STEPPING_ANY, 0, (kernel_ulong_t)&dnv_ops },
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(x86cpu, pnd2_cpuids);
+--- a/drivers/edac/sb_edac.c
++++ b/drivers/edac/sb_edac.c
+@@ -3313,7 +3313,7 @@ fail0:
+ }
+ 
+ #define ICPU(model, table) \
+-	{ X86_VENDOR_INTEL, 6, model, 0, (unsigned long)&table }
++	{ X86_VENDOR_INTEL, 6, model, X86_STEPPING_ANY, 0, (unsigned long)&table }
+ 
+ static const struct x86_cpu_id sbridge_cpuids[] = {
+ 	ICPU(INTEL_FAM6_SANDYBRIDGE_X,	  pci_dev_descr_sbridge_table),
+--- a/drivers/idle/intel_idle.c
++++ b/drivers/idle/intel_idle.c
+@@ -1060,7 +1060,7 @@ static const struct idle_cpu idle_cpu_dn
+ };
+ 
+ #define ICPU(model, cpu) \
+-	{ X86_VENDOR_INTEL, 6, model, X86_FEATURE_MWAIT, (unsigned long)&cpu }
++	{ X86_VENDOR_INTEL, 6, model, X86_STEPPING_ANY, X86_FEATURE_MWAIT, (unsigned long)&cpu }
+ 
+ static const struct x86_cpu_id intel_idle_ids[] __initconst = {
+ 	ICPU(INTEL_FAM6_NEHALEM_EP,		idle_cpu_nehalem),
+--- a/drivers/platform/x86/intel_pmc_core.c
++++ b/drivers/platform/x86/intel_pmc_core.c
+@@ -37,7 +37,7 @@
+ #include "intel_pmc_core.h"
+ 
+ #define ICPU(model, data) \
+-	{ X86_VENDOR_INTEL, 6, model, X86_FEATURE_MWAIT, (kernel_ulong_t)data }
++	{ X86_VENDOR_INTEL, 6, model, X86_STEPPING_ANY, X86_FEATURE_MWAIT, (kernel_ulong_t)data }
+ 
+ static struct pmc_dev pmc;
+ 
+--- a/drivers/platform/x86/intel_telemetry_debugfs.c
++++ b/drivers/platform/x86/intel_telemetry_debugfs.c
+@@ -79,7 +79,7 @@
+ #define TELEM_EVT_LEN(x) (sizeof(x)/sizeof((x)[0]))
+ 
+ #define TELEM_DEBUGFS_CPU(model, data) \
+-	{ X86_VENDOR_INTEL, 6, model, X86_FEATURE_ANY, (unsigned long)&data}
++	{ X86_VENDOR_INTEL, 6, model, X86_STEPPING_ANY, X86_FEATURE_ANY, (unsigned long)&data}
+ 
+ #define TELEM_CHECK_AND_PARSE_EVTS(EVTID, EVTNUM, BUF, EVTLOG, EVTDAT, MASK) { \
+ 	if (evtlog[index].telem_evtid == (EVTID)) { \
+--- a/drivers/platform/x86/intel_telemetry_pltdrv.c
++++ b/drivers/platform/x86/intel_telemetry_pltdrv.c
+@@ -83,7 +83,7 @@
+ #define TELEM_SET_VERBOSITY_BITS(x, y)	((x) |= ((y) << 27))
+ 
+ #define TELEM_CPU(model, data) \
+-	{ X86_VENDOR_INTEL, 6, model, X86_FEATURE_ANY, (unsigned long)&data }
++	{ X86_VENDOR_INTEL, 6, model, X86_STEPPING_ANY, X86_FEATURE_ANY, (unsigned long)&data }
+ 
+ enum telemetry_action {
+ 	TELEM_UPDATE = 0,
+--- a/include/linux/mod_devicetable.h
++++ b/include/linux/mod_devicetable.h
+@@ -591,6 +591,7 @@ struct x86_cpu_id {
+ 	__u16 vendor;
+ 	__u16 family;
+ 	__u16 model;
++	__u16 steppings;
+ 	__u16 feature;	/* bit index */
+ 	kernel_ulong_t driver_data;
+ };
+@@ -599,6 +600,7 @@ struct x86_cpu_id {
+ #define X86_VENDOR_ANY 0xffff
+ #define X86_FAMILY_ANY 0
+ #define X86_MODEL_ANY  0
++#define X86_STEPPING_ANY 0
+ #define X86_FEATURE_ANY 0	/* Same as FPU, you can't test for that */
+ 
+ /*
