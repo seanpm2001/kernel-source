@@ -1,0 +1,835 @@
+From: Borislav Petkov <bp@suse.de>
+Date: Wed May 13 12:48:16 CEST 2020
+Subject: x86: Add a struct x86_cpu_id kABI workaround
+Patch-mainline: never, SUSE-specific
+References: bsc#1154824 CVE-2020-0543
+
+Add a workaround to struct x86_cpu_id due to the upstream addition of a new
+member "steppings".
+
+For that, since drivers have arrays of that struct, add a
+
+  const struct x86_cpu_id_legacy *x86_match_cpu(const struct x86_cpu_id_legacy *match)
+
+signature, which uses a legacy variant of the structure without the new member
+so that old modules can see the same layout and x86_match_cpu() can work for
+them without change.
+
+Rename the new variant to x86_match_cpu_stp() to denote that it matches
+steppings too and have modules which are recompiled, use that instead.
+
+Signed-off-by: Borislav Petkov <bp@suse.de>
+
+---
+ arch/x86/crypto/aesni-intel_glue.c                    |    2 
+ arch/x86/crypto/crc32-pclmul_glue.c                   |    2 
+ arch/x86/crypto/crc32c-intel_glue.c                   |    2 
+ arch/x86/crypto/crct10dif-pclmul_glue.c               |    2 
+ arch/x86/crypto/ghash-clmulni-intel_glue.c            |    2 
+ arch/x86/events/amd/power.c                           |    2 
+ arch/x86/events/intel/cstate.c                        |    2 
+ arch/x86/events/intel/rapl.c                          |    2 
+ arch/x86/events/intel/uncore.c                        |    2 
+ arch/x86/include/asm/cpu_device_id.h                  |    7 ++-
+ arch/x86/kernel/cpu/common.c                          |    2 
+ arch/x86/kernel/cpu/match.c                           |   39 +++++++++++++++++-
+ arch/x86/kernel/smpboot.c                             |    2 
+ arch/x86/platform/atom/punit_atom_debug.c             |    2 
+ arch/x86/platform/intel-mid/device_libs/platform_bt.c |    2 
+ arch/x86/platform/intel-quark/imr.c                   |    2 
+ arch/x86/platform/intel-quark/imr_selftest.c          |    2 
+ arch/x86/power/cpu.c                                  |    2 
+ drivers/acpi/acpi_lpss.c                              |    2 
+ drivers/acpi/x86/utils.c                              |    2 
+ drivers/cpufreq/e_powersaver.c                        |    2 
+ drivers/cpufreq/elanfreq.c                            |    2 
+ drivers/cpufreq/intel_pstate.c                        |   10 ++--
+ drivers/cpufreq/longhaul.c                            |    2 
+ drivers/cpufreq/longrun.c                             |    2 
+ drivers/cpufreq/p4-clockmod.c                         |    2 
+ drivers/cpufreq/powernow-k6.c                         |    2 
+ drivers/cpufreq/powernow-k7.c                         |    2 
+ drivers/cpufreq/powernow-k8.c                         |    2 
+ drivers/cpufreq/sc520_freq.c                          |    2 
+ drivers/cpufreq/speedstep-centrino.c                  |    2 
+ drivers/cpufreq/speedstep-ich.c                       |    2 
+ drivers/cpufreq/speedstep-smi.c                       |    2 
+ drivers/crypto/padlock-aes.c                          |    2 
+ drivers/crypto/padlock-sha.c                          |    2 
+ drivers/edac/amd64_edac.c                             |    2 
+ drivers/edac/pnd2_edac.c                              |    2 
+ drivers/edac/sb_edac.c                                |    2 
+ drivers/edac/skx_edac.c                               |    2 
+ drivers/hwmon/coretemp.c                              |    2 
+ drivers/hwmon/via-cputemp.c                           |    2 
+ drivers/idle/intel_idle.c                             |    2 
+ drivers/mmc/host/sdhci-acpi.c                         |    4 -
+ drivers/pci/pci-mid.c                                 |    2 
+ drivers/platform/x86/intel_int0002_vgpio.c            |    2 
+ drivers/platform/x86/intel_mid_powerbtn.c             |    2 
+ drivers/platform/x86/intel_pmc_core.c                 |    2 
+ drivers/platform/x86/intel_telemetry_debugfs.c        |    2 
+ drivers/platform/x86/intel_telemetry_pltdrv.c         |    2 
+ drivers/platform/x86/intel_turbo_max_3.c              |    2 
+ drivers/powercap/intel_rapl.c                         |    2 
+ drivers/thermal/intel_powerclamp.c                    |    2 
+ drivers/thermal/intel_quark_dts_thermal.c             |    2 
+ drivers/thermal/intel_soc_dts_thermal.c               |    2 
+ drivers/thermal/x86_pkg_temp_thermal.c                |    2 
+ include/linux/mod_devicetable.h                       |   10 ++++
+ sound/soc/intel/atom/sst/sst_acpi.c                   |    2 
+ sound/soc/intel/boards/bytcr_rt5640.c                 |    2 
+ sound/soc/intel/boards/cht_bsw_rt5645.c               |    2 
+ 59 files changed, 115 insertions(+), 63 deletions(-)
+
+--- a/arch/x86/crypto/aesni-intel_glue.c
++++ b/arch/x86/crypto/aesni-intel_glue.c
+@@ -1104,7 +1104,7 @@ static int __init aesni_init(void)
+ 	int err;
+ 	int i;
+ 
+-	if (!x86_match_cpu(aesni_cpu_id))
++	if (!x86_match_cpu_stp(aesni_cpu_id))
+ 		return -ENODEV;
+ #ifdef CONFIG_X86_64
+ #ifdef CONFIG_AS_AVX2
+--- a/arch/x86/crypto/crc32c-intel_glue.c
++++ b/arch/x86/crypto/crc32c-intel_glue.c
+@@ -242,7 +242,7 @@ MODULE_DEVICE_TABLE(x86cpu, crc32c_cpu_i
+ 
+ static int __init crc32c_intel_mod_init(void)
+ {
+-	if (!x86_match_cpu(crc32c_cpu_id))
++	if (!x86_match_cpu_stp(crc32c_cpu_id))
+ 		return -ENODEV;
+ #ifdef CONFIG_X86_64
+ 	if (boot_cpu_has(X86_FEATURE_PCLMULQDQ)) {
+--- a/arch/x86/crypto/crc32-pclmul_glue.c
++++ b/arch/x86/crypto/crc32-pclmul_glue.c
+@@ -180,7 +180,7 @@ MODULE_DEVICE_TABLE(x86cpu, crc32pclmul_
+ static int __init crc32_pclmul_mod_init(void)
+ {
+ 
+-	if (!x86_match_cpu(crc32pclmul_cpu_id)) {
++	if (!x86_match_cpu_stp(crc32pclmul_cpu_id)) {
+ 		pr_info("PCLMULQDQ-NI instructions are not detected.\n");
+ 		return -ENODEV;
+ 	}
+--- a/arch/x86/crypto/crct10dif-pclmul_glue.c
++++ b/arch/x86/crypto/crct10dif-pclmul_glue.c
+@@ -126,7 +126,7 @@ MODULE_DEVICE_TABLE(x86cpu, crct10dif_cp
+ 
+ static int __init crct10dif_intel_mod_init(void)
+ {
+-	if (!x86_match_cpu(crct10dif_cpu_id))
++	if (!x86_match_cpu_stp(crct10dif_cpu_id))
+ 		return -ENODEV;
+ 
+ 	return crypto_register_shash(&alg);
+--- a/arch/x86/crypto/ghash-clmulni-intel_glue.c
++++ b/arch/x86/crypto/ghash-clmulni-intel_glue.c
+@@ -335,7 +335,7 @@ static int __init ghash_pclmulqdqni_mod_
+ {
+ 	int err;
+ 
+-	if (!x86_match_cpu(pcmul_cpu_id))
++	if (!x86_match_cpu_stp(pcmul_cpu_id))
+ 		return -ENODEV;
+ 
+ 	err = crypto_register_shash(&ghash_alg);
+--- a/arch/x86/events/amd/power.c
++++ b/arch/x86/events/amd/power.c
+@@ -276,7 +276,7 @@ static int __init amd_power_pmu_init(voi
+ {
+ 	int ret;
+ 
+-	if (!x86_match_cpu(cpu_match))
++	if (!x86_match_cpu_stp(cpu_match))
+ 		return -ENODEV;
+ 
+ 	if (!boot_cpu_has(X86_FEATURE_ACC_POWER))
+--- a/arch/x86/events/intel/cstate.c
++++ b/arch/x86/events/intel/cstate.c
+@@ -653,7 +653,7 @@ static int __init cstate_pmu_init(void)
+ 	if (boot_cpu_has(X86_FEATURE_HYPERVISOR))
+ 		return -ENODEV;
+ 
+-	id = x86_match_cpu(intel_cstates_match);
++	id = x86_match_cpu_stp(intel_cstates_match);
+ 	if (!id)
+ 		return -ENODEV;
+ 
+--- a/arch/x86/events/intel/rapl.c
++++ b/arch/x86/events/intel/rapl.c
+@@ -776,7 +776,7 @@ static int __init rapl_pmu_init(void)
+ 	bool apply_quirk;
+ 	int ret;
+ 
+-	id = x86_match_cpu(rapl_cpu_match);
++	id = x86_match_cpu_stp(rapl_cpu_match);
+ 	if (!id)
+ 		return -ENODEV;
+ 
+--- a/arch/x86/events/intel/uncore.c
++++ b/arch/x86/events/intel/uncore.c
+@@ -1347,7 +1347,7 @@ static int __init intel_uncore_init(void
+ 	struct intel_uncore_init_fun *uncore_init;
+ 	int pret = 0, cret = 0, ret;
+ 
+-	id = x86_match_cpu(intel_uncore_match);
++	id = x86_match_cpu_stp(intel_uncore_match);
+ 	if (!id)
+ 		return -ENODEV;
+ 
+--- a/arch/x86/include/asm/cpu_device_id.h
++++ b/arch/x86/include/asm/cpu_device_id.h
+@@ -159,6 +159,11 @@
+ #define X86_MATCH_INTEL_FAM6_MODEL(model, data)				\
+ 	X86_MATCH_VENDOR_FAM_MODEL(INTEL, 6, INTEL_FAM6_##model, data)
+ 
+-extern const struct x86_cpu_id *x86_match_cpu(const struct x86_cpu_id *match);
++#ifndef __GENKSYMS__
++const struct x86_cpu_id_legacy *x86_match_cpu(const struct x86_cpu_id_legacy *match);
++#else
++const struct x86_cpu_id *x86_match_cpu(const struct x86_cpu_id *match);
++#endif
+ 
++const struct x86_cpu_id *x86_match_cpu_stp(const struct x86_cpu_id *match);
+ #endif
+--- a/arch/x86/kernel/cpu/common.c
++++ b/arch/x86/kernel/cpu/common.c
+@@ -996,7 +996,7 @@ static const struct x86_cpu_id cpu_vuln_
+ 
+ static bool __init cpu_matches(const struct x86_cpu_id *table, unsigned long which)
+ {
+-	const struct x86_cpu_id *m = x86_match_cpu(table);
++	const struct x86_cpu_id *m = x86_match_cpu_stp(table);
+ 
+ 	return m && !!(m->driver_data & which);
+ }
+--- a/arch/x86/kernel/cpu/match.c
++++ b/arch/x86/kernel/cpu/match.c
+@@ -33,7 +33,44 @@
+  * This always matches against the boot cpu, assuming models and features are
+  * consistent over all CPUs.
+  */
++
++/*
++ * kABI workaround notes: since drivers have arrays of that struct, add the
++ * function signature which uses a legacy variant of the structure without the
++ * new member so that old modules can see the same layout and x86_match_cpu()
++ * can work for them without change.
++ *
++ * Rename the new variant to x86_match_cpu_stp() to denote that it matches
++ * steppings too and have modules which are recompiled, use that instead.
++ */
++#ifndef __GENKSYMS__
++const struct x86_cpu_id_legacy *x86_match_cpu(const struct x86_cpu_id_legacy *match)
++#else
+ const struct x86_cpu_id *x86_match_cpu(const struct x86_cpu_id *match)
++#endif
++{
++	const struct x86_cpu_id_legacy *m;
++	struct cpuinfo_x86 *c = &boot_cpu_data;
++
++	for (m = match;
++	     m->vendor | m->family | m->model | m->feature;
++	     m++) {
++		if (m->vendor != X86_VENDOR_ANY && c->x86_vendor != m->vendor)
++			continue;
++		if (m->family != X86_FAMILY_ANY && c->x86 != m->family)
++			continue;
++		if (m->model != X86_MODEL_ANY && c->x86_model != m->model)
++			continue;
++		if (m->feature != X86_FEATURE_ANY && !cpu_has(c, m->feature))
++			continue;
++		return m;
++	}
++	return NULL;
++}
++EXPORT_SYMBOL(x86_match_cpu);
++
++/* As above but with steppings. */
++const struct x86_cpu_id *x86_match_cpu_stp(const struct x86_cpu_id *match)
+ {
+ 	const struct x86_cpu_id *m;
+ 	struct cpuinfo_x86 *c = &boot_cpu_data;
+@@ -56,4 +93,4 @@ const struct x86_cpu_id *x86_match_cpu(c
+ 	}
+ 	return NULL;
+ }
+-EXPORT_SYMBOL(x86_match_cpu);
++EXPORT_SYMBOL(x86_match_cpu_stp);
+--- a/arch/x86/kernel/smpboot.c
++++ b/arch/x86/kernel/smpboot.c
+@@ -499,7 +499,7 @@ static bool match_llc(struct cpuinfo_x86
+ 	 * means 'c' does not share the LLC of 'o'. This will be
+ 	 * reflected to userspace.
+ 	 */
+-	if (!topology_same_node(c, o) && x86_match_cpu(snc_cpu))
++	if (!topology_same_node(c, o) && x86_match_cpu_stp(snc_cpu))
+ 		return false;
+ 
+ 	return topology_sane(c, o, "llc");
+--- a/arch/x86/platform/atom/punit_atom_debug.c
++++ b/arch/x86/platform/atom/punit_atom_debug.c
+@@ -166,7 +166,7 @@ static int __init punit_atom_debug_init(
+ 	const struct x86_cpu_id *id;
+ 	int ret;
+ 
+-	id = x86_match_cpu(intel_punit_cpu_ids);
++	id = x86_match_cpu_stp(intel_punit_cpu_ids);
+ 	if (!id)
+ 		return -ENODEV;
+ 
+--- a/arch/x86/platform/intel-mid/device_libs/platform_bt.c
++++ b/arch/x86/platform/intel-mid/device_libs/platform_bt.c
+@@ -77,7 +77,7 @@ static int __init bt_sfi_init(void)
+ 	struct bt_sfi_data *ddata;
+ 	int ret;
+ 
+-	id = x86_match_cpu(bt_sfi_cpu_ids);
++	id = x86_match_cpu_stp(bt_sfi_cpu_ids);
+ 	if (!id)
+ 		return -ENODEV;
+ 
+--- a/arch/x86/platform/intel-quark/imr.c
++++ b/arch/x86/platform/intel-quark/imr.c
+@@ -601,7 +601,7 @@ static int __init imr_init(void)
+ 	struct imr_device *idev = &imr_dev;
+ 	int ret;
+ 
+-	if (!x86_match_cpu(imr_ids) || !iosf_mbi_available())
++	if (!x86_match_cpu_stp(imr_ids) || !iosf_mbi_available())
+ 		return -ENODEV;
+ 
+ 	idev->max_imr = QUARK_X1000_IMR_MAX;
+--- a/arch/x86/platform/intel-quark/imr_selftest.c
++++ b/arch/x86/platform/intel-quark/imr_selftest.c
+@@ -113,7 +113,7 @@ static const struct x86_cpu_id imr_ids[]
+  */
+ static int __init imr_self_test_init(void)
+ {
+-	if (x86_match_cpu(imr_ids))
++	if (x86_match_cpu_stp(imr_ids))
+ 		imr_self_test();
+ 	return 0;
+ }
+--- a/arch/x86/power/cpu.c
++++ b/arch/x86/power/cpu.c
+@@ -477,7 +477,7 @@ static int pm_cpu_check(const struct x86
+ 	const struct x86_cpu_id *m;
+ 	int ret = 0;
+ 
+-	m = x86_match_cpu(msr_save_cpu_table);
++	m = x86_match_cpu_stp(msr_save_cpu_table);
+ 	if (m) {
+ 		pm_cpu_match_t fn;
+ 
+--- a/drivers/acpi/acpi_lpss.c
++++ b/drivers/acpi/acpi_lpss.c
+@@ -1016,7 +1016,7 @@ void __init acpi_lpss_init(void)
+ 	if (ret)
+ 		return;
+ 
+-	id = x86_match_cpu(lpss_cpu_ids);
++	id = x86_match_cpu_stp(lpss_cpu_ids);
+ 	if (id)
+ 		lpss_quirks |= LPSS_QUIRK_ALWAYS_POWER_ON;
+ 
+--- a/drivers/acpi/x86/utils.c
++++ b/drivers/acpi/x86/utils.c
+@@ -109,7 +109,7 @@ bool acpi_device_always_present(struct a
+ 		    strcmp(adev->pnp.unique_id, always_present_ids[i].uid))
+ 			continue;
+ 
+-		if (!x86_match_cpu(always_present_ids[i].cpu_ids))
++		if (!x86_match_cpu_stp(always_present_ids[i].cpu_ids))
+ 			continue;
+ 
+ 		if (always_present_ids[i].dmi_ids[0].matches[0].slot &&
+--- a/drivers/cpufreq/elanfreq.c
++++ b/drivers/cpufreq/elanfreq.c
+@@ -211,7 +211,7 @@ MODULE_DEVICE_TABLE(x86cpu, elan_id);
+ 
+ static int __init elanfreq_init(void)
+ {
+-	if (!x86_match_cpu(elan_id))
++	if (!x86_match_cpu_stp(elan_id))
+ 		return -ENODEV;
+ 	return cpufreq_register_driver(&elanfreq_driver);
+ }
+--- a/drivers/cpufreq/e_powersaver.c
++++ b/drivers/cpufreq/e_powersaver.c
+@@ -400,7 +400,7 @@ MODULE_DEVICE_TABLE(x86cpu, eps_cpu_id);
+ 
+ static int __init eps_init(void)
+ {
+-	if (!x86_match_cpu(eps_cpu_id) || boot_cpu_data.x86_model < 10)
++	if (!x86_match_cpu_stp(eps_cpu_id) || boot_cpu_data.x86_model < 10)
+ 		return -ENODEV;
+ 	if (cpufreq_register_driver(&eps_driver))
+ 		return -EINVAL;
+--- a/drivers/cpufreq/intel_pstate.c
++++ b/drivers/cpufreq/intel_pstate.c
+@@ -2121,13 +2121,13 @@ static int intel_pstate_init_cpu(unsigne
+ 	if (hwp_active) {
+ 		const struct x86_cpu_id *id;
+ 
+-		id = x86_match_cpu(intel_pstate_cpu_ee_disable_ids);
++		id = x86_match_cpu_stp(intel_pstate_cpu_ee_disable_ids);
+ 		if (id)
+ 			intel_pstate_disable_ee(cpunum);
+ 
+ 		intel_pstate_hwp_enable(cpu);
+ 
+-		id = x86_match_cpu(intel_pstate_hwp_boost_ids);
++		id = x86_match_cpu_stp(intel_pstate_hwp_boost_ids);
+ 		if (id && intel_pstate_acpi_pm_profile_server())
+ 			hwp_boost = true;
+ 	} else if (pid_in_use()) {
+@@ -2716,7 +2716,7 @@ static bool __init intel_pstate_platform
+ 	u64 misc_pwr;
+ 	int idx;
+ 
+-	id = x86_match_cpu(intel_pstate_cpu_oob_ids);
++	id = x86_match_cpu_stp(intel_pstate_cpu_oob_ids);
+ 	if (id) {
+ 		rdmsrl(MSR_MISC_PWR_MGMT, misc_pwr);
+ 		if ( misc_pwr & (1 << 8))
+@@ -2779,7 +2779,7 @@ static int __init intel_pstate_init(void
+ 	if (no_load)
+ 		return -ENODEV;
+ 
+-	id = x86_match_cpu(hwp_support_ids);
++	id = x86_match_cpu_stp(hwp_support_ids);
+ 	if (id) {
+ 		copy_cpu_funcs(&core_funcs);
+ 		if (no_hwp) {
+@@ -2791,7 +2791,7 @@ static int __init intel_pstate_init(void
+ 			goto hwp_cpu_matched;
+ 		}
+ 	} else {
+-		id = x86_match_cpu(intel_pstate_cpu_ids);
++		id = x86_match_cpu_stp(intel_pstate_cpu_ids);
+ 		if (!id)
+ 			return -ENODEV;
+ 
+--- a/drivers/cpufreq/longhaul.c
++++ b/drivers/cpufreq/longhaul.c
+@@ -918,7 +918,7 @@ static int __init longhaul_init(void)
+ {
+ 	struct cpuinfo_x86 *c = &cpu_data(0);
+ 
+-	if (!x86_match_cpu(longhaul_id))
++	if (!x86_match_cpu_stp(longhaul_id))
+ 		return -ENODEV;
+ 
+ 	if (!enable) {
+--- a/drivers/cpufreq/longrun.c
++++ b/drivers/cpufreq/longrun.c
+@@ -299,7 +299,7 @@ MODULE_DEVICE_TABLE(x86cpu, longrun_ids)
+  */
+ static int __init longrun_init(void)
+ {
+-	if (!x86_match_cpu(longrun_ids))
++	if (!x86_match_cpu_stp(longrun_ids))
+ 		return -ENODEV;
+ 	return cpufreq_register_driver(&longrun_driver);
+ }
+--- a/drivers/cpufreq/p4-clockmod.c
++++ b/drivers/cpufreq/p4-clockmod.c
+@@ -252,7 +252,7 @@ static int __init cpufreq_p4_init(void)
+ 	 * THERM_CONTROL is architectural for IA32 now, so
+ 	 * we can rely on the capability checks
+ 	 */
+-	if (!x86_match_cpu(cpufreq_p4_id) || !boot_cpu_has(X86_FEATURE_ACPI))
++	if (!x86_match_cpu_stp(cpufreq_p4_id) || !boot_cpu_has(X86_FEATURE_ACPI))
+ 		return -ENODEV;
+ 
+ 	ret = cpufreq_register_driver(&p4clockmod_driver);
+--- a/drivers/cpufreq/powernow-k6.c
++++ b/drivers/cpufreq/powernow-k6.c
+@@ -273,7 +273,7 @@ MODULE_DEVICE_TABLE(x86cpu, powernow_k6_
+  */
+ static int __init powernow_k6_init(void)
+ {
+-	if (!x86_match_cpu(powernow_k6_ids))
++	if (!x86_match_cpu_stp(powernow_k6_ids))
+ 		return -ENODEV;
+ 
+ 	if (!request_region(POWERNOW_IOPORT, 16, "PowerNow!")) {
+--- a/drivers/cpufreq/powernow-k7.c
++++ b/drivers/cpufreq/powernow-k7.c
+@@ -119,7 +119,7 @@ static int check_powernow(void)
+ 	struct cpuinfo_x86 *c = &cpu_data(0);
+ 	unsigned int maxei, eax, ebx, ecx, edx;
+ 
+-	if (!x86_match_cpu(powernow_k7_cpuids))
++	if (!x86_match_cpu_stp(powernow_k7_cpuids))
+ 		return 0;
+ 
+ 	/* Get maximum capabilities */
+--- a/drivers/cpufreq/powernow-k8.c
++++ b/drivers/cpufreq/powernow-k8.c
+@@ -1199,7 +1199,7 @@ static int powernowk8_init(void)
+ 		return -ENODEV;
+ 	}
+ 
+-	if (!x86_match_cpu(powernow_k8_ids))
++	if (!x86_match_cpu_stp(powernow_k8_ids))
+ 		return -ENODEV;
+ 
+ 	get_online_cpus();
+--- a/drivers/cpufreq/sc520_freq.c
++++ b/drivers/cpufreq/sc520_freq.c
+@@ -107,7 +107,7 @@ static int __init sc520_freq_init(void)
+ {
+ 	int err;
+ 
+-	if (!x86_match_cpu(sc520_ids))
++	if (!x86_match_cpu_stp(sc520_ids))
+ 		return -ENODEV;
+ 
+ 	cpuctl = ioremap((unsigned long)(MMCR_BASE + OFFS_CPUCTL), 1);
+--- a/drivers/cpufreq/speedstep-centrino.c
++++ b/drivers/cpufreq/speedstep-centrino.c
+@@ -542,7 +542,7 @@ static const struct x86_cpu_id centrino_
+  */
+ static int __init centrino_init(void)
+ {
+-	if (!x86_match_cpu(centrino_ids))
++	if (!x86_match_cpu_stp(centrino_ids))
+ 		return -ENODEV;
+ 	return cpufreq_register_driver(&centrino_driver);
+ }
+--- a/drivers/cpufreq/speedstep-ich.c
++++ b/drivers/cpufreq/speedstep-ich.c
+@@ -333,7 +333,7 @@ static const struct x86_cpu_id ss_smi_id
+  */
+ static int __init speedstep_init(void)
+ {
+-	if (!x86_match_cpu(ss_smi_ids))
++	if (!x86_match_cpu_stp(ss_smi_ids))
+ 		return -ENODEV;
+ 
+ 	/* detect processor */
+--- a/drivers/cpufreq/speedstep-smi.c
++++ b/drivers/cpufreq/speedstep-smi.c
+@@ -314,7 +314,7 @@ static const struct x86_cpu_id ss_smi_id
+  */
+ static int __init speedstep_init(void)
+ {
+-	if (!x86_match_cpu(ss_smi_ids))
++	if (!x86_match_cpu_stp(ss_smi_ids))
+ 		return -ENODEV;
+ 
+ 	speedstep_processor = speedstep_detect_processor();
+--- a/drivers/crypto/padlock-aes.c
++++ b/drivers/crypto/padlock-aes.c
+@@ -497,7 +497,7 @@ static int __init padlock_init(void)
+ 	int ret;
+ 	struct cpuinfo_x86 *c = &cpu_data(0);
+ 
+-	if (!x86_match_cpu(padlock_cpu_id))
++	if (!x86_match_cpu_stp(padlock_cpu_id))
+ 		return -ENODEV;
+ 
+ 	if (!boot_cpu_has(X86_FEATURE_XCRYPT_EN)) {
+--- a/drivers/crypto/padlock-sha.c
++++ b/drivers/crypto/padlock-sha.c
+@@ -522,7 +522,7 @@ static int __init padlock_init(void)
+ 	struct shash_alg *sha1;
+ 	struct shash_alg *sha256;
+ 
+-	if (!x86_match_cpu(padlock_sha_ids) || !boot_cpu_has(X86_FEATURE_PHE_EN))
++	if (!x86_match_cpu_stp(padlock_sha_ids) || !boot_cpu_has(X86_FEATURE_PHE_EN))
+ 		return -ENODEV;
+ 
+ 	/* Register the newly added algorithm module if on *
+--- a/drivers/edac/amd64_edac.c
++++ b/drivers/edac/amd64_edac.c
+@@ -3451,7 +3451,7 @@ static int __init amd64_edac_init(void)
+ 	if (owner && strncmp(owner, EDAC_MOD_STR, sizeof(EDAC_MOD_STR)))
+ 		return -EBUSY;
+ 
+-	if (!x86_match_cpu(amd64_cpuids))
++	if (!x86_match_cpu_stp(amd64_cpuids))
+ 		return -ENODEV;
+ 
+ 	if (amd_cache_northbridges() < 0)
+--- a/drivers/edac/pnd2_edac.c
++++ b/drivers/edac/pnd2_edac.c
+@@ -1558,7 +1558,7 @@ static int __init pnd2_init(void)
+ 	if (owner && strncmp(owner, EDAC_MOD_STR, sizeof(EDAC_MOD_STR)))
+ 		return -EBUSY;
+ 
+-	id = x86_match_cpu(pnd2_cpuids);
++	id = x86_match_cpu_stp(pnd2_cpuids);
+ 	if (!id)
+ 		return -ENODEV;
+ 
+--- a/drivers/edac/sb_edac.c
++++ b/drivers/edac/sb_edac.c
+@@ -3412,7 +3412,7 @@ static int __init sbridge_init(void)
+ 	if (owner && strncmp(owner, EDAC_MOD_STR, sizeof(EDAC_MOD_STR)))
+ 		return -EBUSY;
+ 
+-	id = x86_match_cpu(sbridge_cpuids);
++	id = x86_match_cpu_stp(sbridge_cpuids);
+ 	if (!id)
+ 		return -ENODEV;
+ 
+--- a/drivers/edac/skx_edac.c
++++ b/drivers/edac/skx_edac.c
+@@ -1112,7 +1112,7 @@ static int __init skx_init(void)
+ 	if (owner && strncmp(owner, EDAC_MOD_STR, sizeof(EDAC_MOD_STR)))
+ 		return -EBUSY;
+ 
+-	id = x86_match_cpu(skx_cpuids);
++	id = x86_match_cpu_stp(skx_cpuids);
+ 	if (!id)
+ 		return -ENODEV;
+ 
+--- a/drivers/hwmon/coretemp.c
++++ b/drivers/hwmon/coretemp.c
+@@ -737,7 +737,7 @@ static int __init coretemp_init(void)
+ 	 * sensors. We check this bit only, all the early CPUs
+ 	 * without thermal sensors will be filtered out.
+ 	 */
+-	if (!x86_match_cpu(coretemp_ids))
++	if (!x86_match_cpu_stp(coretemp_ids))
+ 		return -ENODEV;
+ 
+ 	max_zones = topology_max_packages() * topology_max_die_per_package();
+--- a/drivers/hwmon/via-cputemp.c
++++ b/drivers/hwmon/via-cputemp.c
+@@ -293,7 +293,7 @@ static int __init via_cputemp_init(void)
+ {
+ 	int err;
+ 
+-	if (!x86_match_cpu(cputemp_ids))
++	if (!x86_match_cpu_stp(cputemp_ids))
+ 		return -ENODEV;
+ 
+ 	err = platform_driver_register(&via_cputemp_driver);
+--- a/drivers/idle/intel_idle.c
++++ b/drivers/idle/intel_idle.c
+@@ -1113,7 +1113,7 @@ static int __init intel_idle_probe(void)
+ 		return -EPERM;
+ 	}
+ 
+-	id = x86_match_cpu(intel_idle_ids);
++	id = x86_match_cpu_stp(intel_idle_ids);
+ 	if (!id) {
+ 		if (boot_cpu_data.x86_vendor == X86_VENDOR_INTEL &&
+ 		    boot_cpu_data.x86 == 6)
+--- a/drivers/mmc/host/sdhci-acpi.c
++++ b/drivers/mmc/host/sdhci-acpi.c
+@@ -132,7 +132,7 @@ static bool sdhci_acpi_byt(void)
+ 		{}
+ 	};
+ 
+-	return x86_match_cpu(byt);
++	return x86_match_cpu_stp(byt);
+ }
+ 
+ static bool sdhci_acpi_cht(void)
+@@ -142,7 +142,7 @@ static bool sdhci_acpi_cht(void)
+ 		{}
+ 	};
+ 
+-	return x86_match_cpu(cht);
++	return x86_match_cpu_stp(cht);
+ }
+ 
+ #define BYT_IOSF_SCCEP			0x63
+--- a/drivers/pci/pci-mid.c
++++ b/drivers/pci/pci-mid.c
+@@ -78,7 +78,7 @@ static int __init mid_pci_init(void)
+ {
+ 	const struct x86_cpu_id *id;
+ 
+-	id = x86_match_cpu(lpss_cpu_ids);
++	id = x86_match_cpu_stp(lpss_cpu_ids);
+ 	if (id)
+ 		pci_set_platform_pm(&mid_pci_platform_pm);
+ 	return 0;
+--- a/drivers/platform/x86/intel_int0002_vgpio.c
++++ b/drivers/platform/x86/intel_int0002_vgpio.c
+@@ -140,7 +140,7 @@ static int int0002_probe(struct platform
+ 	int irq, ret;
+ 
+ 	/* Menlow has a different INT0002 device? <sigh> */
+-	cpu_id = x86_match_cpu(int0002_cpu_ids);
++	cpu_id = x86_match_cpu_stp(int0002_cpu_ids);
+ 	if (!cpu_id)
+ 		return -ENODEV;
+ 
+--- a/drivers/platform/x86/intel_mid_powerbtn.c
++++ b/drivers/platform/x86/intel_mid_powerbtn.c
+@@ -135,7 +135,7 @@ static int mid_pb_probe(struct platform_
+ 	int irq = platform_get_irq(pdev, 0);
+ 	int error;
+ 
+-	id = x86_match_cpu(mid_pb_cpu_ids);
++	id = x86_match_cpu_stp(mid_pb_cpu_ids);
+ 	if (!id)
+ 		return -ENODEV;
+ 
+--- a/drivers/platform/x86/intel_pmc_core.c
++++ b/drivers/platform/x86/intel_pmc_core.c
+@@ -495,7 +495,7 @@ static int pmc_core_probe(struct pci_dev
+ 	const struct pmc_reg_map *map = (struct pmc_reg_map *)id->driver_data;
+ 	int err;
+ 
+-	cpu_id = x86_match_cpu(intel_pmc_core_ids);
++	cpu_id = x86_match_cpu_stp(intel_pmc_core_ids);
+ 	if (!cpu_id) {
+ 		dev_dbg(&dev->dev, "PMC Core: cpuid mismatch.\n");
+ 		return -EINVAL;
+--- a/drivers/platform/x86/intel_telemetry_debugfs.c
++++ b/drivers/platform/x86/intel_telemetry_debugfs.c
+@@ -938,7 +938,7 @@ static int __init telemetry_debugfs_init
+ 	struct dentry *f;
+ 
+ 	/* Only APL supported for now */
+-	id = x86_match_cpu(telemetry_debugfs_cpu_ids);
++	id = x86_match_cpu_stp(telemetry_debugfs_cpu_ids);
+ 	if (!id)
+ 		return -ENODEV;
+ 
+--- a/drivers/platform/x86/intel_telemetry_pltdrv.c
++++ b/drivers/platform/x86/intel_telemetry_pltdrv.c
+@@ -1098,7 +1098,7 @@ static int telemetry_pltdrv_probe(struct
+ 	const struct x86_cpu_id *id;
+ 	int size, ret = -ENOMEM;
+ 
+-	id = x86_match_cpu(telemetry_cpu_ids);
++	id = x86_match_cpu_stp(telemetry_cpu_ids);
+ 	if (!id)
+ 		return -ENODEV;
+ 
+--- a/drivers/platform/x86/intel_turbo_max_3.c
++++ b/drivers/platform/x86/intel_turbo_max_3.c
+@@ -131,7 +131,7 @@ static int __init itmt_legacy_init(void)
+ 	const struct x86_cpu_id *id;
+ 	int ret;
+ 
+-	id = x86_match_cpu(itmt_legacy_cpu_ids);
++	id = x86_match_cpu_stp(itmt_legacy_cpu_ids);
+ 	if (!id)
+ 		return -ENODEV;
+ 
+--- a/drivers/powercap/intel_rapl.c
++++ b/drivers/powercap/intel_rapl.c
+@@ -1544,7 +1544,7 @@ static int __init rapl_init(void)
+ 	const struct x86_cpu_id *id;
+ 	int ret;
+ 
+-	id = x86_match_cpu(rapl_ids);
++	id = x86_match_cpu_stp(rapl_ids);
+ 	if (!id) {
+ 		pr_err("driver does not support CPU family %d model %d\n",
+ 			boot_cpu_data.x86, boot_cpu_data.x86_model);
+--- a/drivers/thermal/intel_powerclamp.c
++++ b/drivers/thermal/intel_powerclamp.c
+@@ -674,7 +674,7 @@ MODULE_DEVICE_TABLE(x86cpu, intel_powerc
+ static int __init powerclamp_probe(void)
+ {
+ 
+-	if (!x86_match_cpu(intel_powerclamp_ids)) {
++	if (!x86_match_cpu_stp(intel_powerclamp_ids)) {
+ 		pr_err("CPU does not support MWAIT");
+ 		return -ENODEV;
+ 	}
+--- a/drivers/thermal/intel_quark_dts_thermal.c
++++ b/drivers/thermal/intel_quark_dts_thermal.c
+@@ -439,7 +439,7 @@ static int __init intel_quark_thermal_in
+ {
+ 	int err = 0;
+ 
+-	if (!x86_match_cpu(qrk_thermal_ids) || !iosf_mbi_available())
++	if (!x86_match_cpu_stp(qrk_thermal_ids) || !iosf_mbi_available())
+ 		return -ENODEV;
+ 
+ 	soc_dts = alloc_soc_dts();
+--- a/drivers/thermal/intel_soc_dts_thermal.c
++++ b/drivers/thermal/intel_soc_dts_thermal.c
+@@ -53,7 +53,7 @@ static int __init intel_soc_thermal_init
+ 	int err = 0;
+ 	const struct x86_cpu_id *match_cpu;
+ 
+-	match_cpu = x86_match_cpu(soc_thermal_ids);
++	match_cpu = x86_match_cpu_stp(soc_thermal_ids);
+ 	if (!match_cpu)
+ 		return -ENODEV;
+ 
+--- a/drivers/thermal/x86_pkg_temp_thermal.c
++++ b/drivers/thermal/x86_pkg_temp_thermal.c
+@@ -514,7 +514,7 @@ static int __init pkg_temp_thermal_init(
+ {
+ 	int ret;
+ 
+-	if (!x86_match_cpu(pkg_temp_thermal_ids))
++	if (!x86_match_cpu_stp(pkg_temp_thermal_ids))
+ 		return -ENODEV;
+ 
+ 	max_id = topology_max_packages() * topology_max_die_per_package();
+--- a/include/linux/mod_devicetable.h
++++ b/include/linux/mod_devicetable.h
+@@ -587,11 +587,21 @@ struct mips_cdmm_device_id {
+  * Although gcc seems to ignore this error, clang fails without this define.
+  */
+ #define x86cpu_device_id x86_cpu_id
++struct x86_cpu_id_legacy {
++	__u16 vendor;
++	__u16 family;
++	__u16 model;
++	__u16 feature;	/* bit index */
++	kernel_ulong_t driver_data;
++};
++
+ struct x86_cpu_id {
+ 	__u16 vendor;
+ 	__u16 family;
+ 	__u16 model;
++#ifndef __GENKSYMS__
+ 	__u16 steppings;
++#endif
+ 	__u16 feature;	/* bit index */
+ 	kernel_ulong_t driver_data;
+ };
+--- a/sound/soc/intel/atom/sst/sst_acpi.c
++++ b/sound/soc/intel/atom/sst/sst_acpi.c
+@@ -251,7 +251,7 @@ static int is_byt_cr(struct device *dev,
+ 		};
+ 		u32 bios_status;
+ 
+-		if (!x86_match_cpu(cpu_ids) || !iosf_mbi_available()) {
++		if (!x86_match_cpu_stp(cpu_ids) || !iosf_mbi_available()) {
+ 			/* bail silently */
+ 			return status;
+ 		}
+--- a/sound/soc/intel/boards/bytcr_rt5640.c
++++ b/sound/soc/intel/boards/bytcr_rt5640.c
+@@ -746,7 +746,7 @@ static bool is_valleyview(void)
+ 		{}
+ 	};
+ 
+-	if (!x86_match_cpu(cpu_ids))
++	if (!x86_match_cpu_stp(cpu_ids))
+ 		return false;
+ 	return true;
+ }
+--- a/sound/soc/intel/boards/cht_bsw_rt5645.c
++++ b/sound/soc/intel/boards/cht_bsw_rt5645.c
+@@ -540,7 +540,7 @@ static bool is_valleyview(void)
+ 		{}
+ 	};
+ 
+-	if (!x86_match_cpu(cpu_ids))
++	if (!x86_match_cpu_stp(cpu_ids))
+ 		return false;
+ 	return true;
+ }
