@@ -127,7 +127,7 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
 -EXPORT_SYMBOL_GPL(devm_nsio_disable);
 --- a/drivers/nvdimm/namespace_devs.c
 +++ b/drivers/nvdimm/namespace_devs.c
-@@ -1771,6 +1771,23 @@ struct nd_namespace_common *nvdimm_names
+@@ -1768,6 +1768,23 @@ struct nd_namespace_common *nvdimm_names
  }
  EXPORT_SYMBOL(nvdimm_namespace_common_probe);
  
@@ -153,10 +153,10 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  	struct nd_namespace_io *nsio;
 --- a/drivers/nvdimm/nd-core.h
 +++ b/drivers/nvdimm/nd-core.h
-@@ -189,4 +189,21 @@ ssize_t nd_namespace_store(struct device
- 		struct nd_namespace_common **_ndns, const char *buf,
- 		size_t len);
+@@ -204,6 +204,23 @@ ssize_t nd_namespace_store(struct device
  struct nd_pfn *to_nd_pfn_safe(struct device *dev);
+ bool is_nvdimm_bus(struct device *dev);
+ 
 +#if IS_ENABLED(CONFIG_ND_CLAIM)
 +int devm_nsio_enable(struct device *dev, struct nd_namespace_io *nsio,
 +		resource_size_t size);
@@ -174,7 +174,9 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
 +}
 +#endif
 +
- #endif /* __ND_CORE_H__ */
+ #ifdef CONFIG_PROVE_LOCKING
+ extern struct class *nd_class;
+ 
 --- a/drivers/nvdimm/nd.h
 +++ b/drivers/nvdimm/nd.h
 @@ -219,6 +219,11 @@ struct nd_dax {
@@ -237,7 +239,7 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  	do {
  		unsigned long zero_len;
  		u64 nsoff;
-@@ -581,11 +590,6 @@ int nd_pfn_probe(struct device *dev, str
+@@ -589,11 +598,6 @@ int nd_pfn_probe(struct device *dev, str
  }
  EXPORT_SYMBOL(nd_pfn_probe);
  
@@ -249,7 +251,7 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  /*
   * We hotplug memory at section granularity, pad the reserved area from
   * the previous section base to the namespace base address.
-@@ -599,7 +603,7 @@ static unsigned long init_altmap_base(re
+@@ -607,7 +611,7 @@ static unsigned long init_altmap_base(re
  
  static unsigned long init_altmap_reserve(resource_size_t base)
  {
@@ -258,7 +260,7 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  	unsigned long base_pfn = PHYS_PFN(base);
  
  	reserve += base_pfn - PFN_SECTION_ALIGN_DOWN(base_pfn);
-@@ -614,7 +618,7 @@ static int __nvdimm_setup_pfn(struct nd_
+@@ -622,7 +626,7 @@ static int __nvdimm_setup_pfn(struct nd_
  	u64 offset = le64_to_cpu(pfn_sb->dataoff);
  	u32 start_pad = __le32_to_cpu(pfn_sb->start_pad);
  	u32 end_trunc = __le32_to_cpu(pfn_sb->end_trunc);
@@ -267,7 +269,7 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  	struct nd_namespace_common *ndns = nd_pfn->ndns;
  	struct nd_namespace_io *nsio = to_nd_namespace_io(&ndns->dev);
  	resource_size_t base = nsio->res.start + start_pad;
-@@ -696,7 +700,7 @@ static int nd_pfn_init(struct nd_pfn *nd
+@@ -704,7 +708,7 @@ static int nd_pfn_init(struct nd_pfn *nd
  	u32 dax_label_reserve = is_nd_dax(&nd_pfn->dev) ? SZ_128K : 0;
  	struct nd_namespace_common *ndns = nd_pfn->ndns;
  	struct nd_namespace_io *nsio = to_nd_namespace_io(&ndns->dev);
