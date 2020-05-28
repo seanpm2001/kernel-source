@@ -1,0 +1,49 @@
+From 22a07038c0eaf4d1315a493ce66dcd255accba19 Mon Sep 17 00:00:00 2001
+From: Joe Moriarty <joe.moriarty@oracle.com>
+Date: Mon, 12 Feb 2018 14:51:42 -0500
+Subject: drm: NULL pointer dereference [null-pointer-deref] (CWE 476) problem
+Git-commit: 22a07038c0eaf4d1315a493ce66dcd255accba19
+Patch-mainline: v4.17-rc1
+References: FATE#326289 FATE#326079 FATE#326049 FATE#322398 FATE#326166
+  bsc#1114279
+
+The Parfait (version 2.1.0) static code analysis tool found the
+following NULL pointer derefernce problem.
+
+- drivers/gpu/drm/drm_dp_mst_topology.c
+The call to drm_dp_calculate_rad() in function drm_dp_port_setup_pdt()
+could result in a NULL pointer being returned to port->mstb due to a
+failure to allocate memory for port->mstb.
+
+Signed-off-by: Joe Moriarty <joe.moriarty@oracle.com>
+Reviewed-by: Steven Sistare <steven.sistare@oracle.com>
+Signed-off-by: Daniel Vetter <daniel.vetter@ffwll.ch>
+Link: https://patchwork.freedesktop.org/patch/msgid/20180212195144.98323-3-joe.moriarty@oracle.com
+Acked-by: Thomas Zimmermann <tzimmermann@suse.de>
+---
+ drivers/gpu/drm/drm_dp_mst_topology.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/gpu/drm/drm_dp_mst_topology.c b/drivers/gpu/drm/drm_dp_mst_topology.c
+index 36df7df5fe1a0c..6fac4129e6a258 100644
+--- a/drivers/gpu/drm/drm_dp_mst_topology.c
++++ b/drivers/gpu/drm/drm_dp_mst_topology.c
+@@ -1082,10 +1082,12 @@ static bool drm_dp_port_setup_pdt(struct drm_dp_mst_port *port)
+ 		lct = drm_dp_calculate_rad(port, rad);
+ 
+ 		port->mstb = drm_dp_add_mst_branch_device(lct, rad);
+-		port->mstb->mgr = port->mgr;
+-		port->mstb->port_parent = port;
++		if (port->mstb) {
++			port->mstb->mgr = port->mgr;
++			port->mstb->port_parent = port;
+ 
+-		send_link = true;
++			send_link = true;
++		}
+ 		break;
+ 	}
+ 	return send_link;
+-- 
+2.26.0
+

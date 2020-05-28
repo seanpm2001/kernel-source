@@ -1,0 +1,93 @@
+From: Jaghathiswari Rankappagounder Natarajan <jaghu@google.com>
+Date: Wed, 30 Aug 2017 16:34:33 -0700
+Subject: drivers: w1: add hwmon support structures
+Git-commit: 2eb7954809bf26de27bc3a2fea4eef606bbf4482
+Patch-mainline: v4.14-rc1
+References: jsc#SLE-11048
+
+This patch has changes to w1.h/w1.c generic files to add (optional) hwmon
+support structures.
+
+Signed-off-by: Jaghathiswari Rankappagounder Natarajan <jaghu@google.com>
+Acked-by: Evgeniy Polyakov <zbr@ioremap.net>
+Acked-by: Guenter Roeck <linux@roeck-us.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Acked-by: Nicolas Saenz Julienne <nsaenzjulienne@suse.de>
+---
+ drivers/w1/w1.c    | 18 +++++++++++++++++-
+ include/linux/w1.h |  4 ++++
+ 2 files changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/w1/w1.c b/drivers/w1/w1.c
+index 3c76e1ca4b83..0c2a5a8327bd 100644
+--- a/drivers/w1/w1.c
++++ b/drivers/w1/w1.c
+@@ -25,6 +25,7 @@
+ #include <linux/sched.h>
+ #include <linux/kthread.h>
+ #include <linux/freezer.h>
++#include <linux/hwmon.h>
+ 
+ #include <linux/atomic.h>
+ 
+@@ -649,9 +650,24 @@ static int w1_family_notify(unsigned long action, struct w1_slave *sl)
+ 				return err;
+ 			}
+ 		}
+-
++		if (IS_REACHABLE(CONFIG_HWMON) && fops->chip_info) {
++			struct device *hwmon
++				= hwmon_device_register_with_info(&sl->dev,
++						"w1_slave_temp", sl,
++						fops->chip_info,
++						NULL);
++			if (IS_ERR(hwmon)) {
++				dev_warn(&sl->dev,
++					 "could not create hwmon device\n");
++			} else {
++				sl->hwmon = hwmon;
++			}
++		}
+ 		break;
+ 	case BUS_NOTIFY_DEL_DEVICE:
++		if (IS_REACHABLE(CONFIG_HWMON) && fops->chip_info &&
++			    sl->hwmon)
++			hwmon_device_unregister(sl->hwmon);
+ 		if (fops->remove_slave)
+ 			sl->family->fops->remove_slave(sl);
+ 		if (fops->groups)
+diff --git a/include/linux/w1.h b/include/linux/w1.h
+index 90cbe7e65059..5b2972946dda 100644
+--- a/include/linux/w1.h
++++ b/include/linux/w1.h
+@@ -68,6 +68,7 @@ struct w1_reg_num {
+  * @family: module for device family type
+  * @family_data: pointer for use by the family module
+  * @dev: kernel device identifier
++ * @hwmon: pointer to hwmon device
+  *
+  */
+ struct w1_slave {
+@@ -83,6 +84,7 @@ struct w1_slave {
+ 	struct w1_family	*family;
+ 	void			*family_data;
+ 	struct device		dev;
++	struct device		*hwmon;
+ };
+ 
+ typedef void (*w1_slave_found_callback)(struct w1_master *, u64);
+@@ -250,11 +252,13 @@ void w1_remove_master_device(struct w1_bus_master *master);
+  * @add_slave: add_slave
+  * @remove_slave: remove_slave
+  * @groups: sysfs group
++ * @chip_info: pointer to struct hwmon_chip_info
+  */
+ struct w1_family_ops {
+ 	int  (*add_slave)(struct w1_slave *sl);
+ 	void (*remove_slave)(struct w1_slave *sl);
+ 	const struct attribute_group **groups;
++	const struct hwmon_chip_info *chip_info;
+ };
+ 
+ /**
+

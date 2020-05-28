@@ -1,0 +1,81 @@
+From 744d4cd546dfa6be16144e8eeacfd4dde276709d Mon Sep 17 00:00:00 2001
+From: Oliver Neukum <oneukum@suse.com>
+Date: Tue, 14 Jan 2020 11:20:23 +0100
+Subject: [PATCH] make some Fujitsu systems run
+Patch-mainline: Never (experimental)
+References: bsc#1141558
+
+On some systems the presense bit must be obeyed even if the
+link is indicated to be active.
+
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/pci/hotplug/pciehp.h      |    3 +++
+ drivers/pci/hotplug/pciehp_core.c |   17 +++++++++++++++++
+ drivers/pci/hotplug/pciehp_ctrl.c |    3 +++
+ 3 files changed, 23 insertions(+)
+
+--- a/drivers/pci/hotplug/pciehp.h
++++ b/drivers/pci/hotplug/pciehp.h
+@@ -113,6 +113,9 @@ struct controller {
+ 	unsigned int cmd_busy:1;
+ 	unsigned int link_active_reporting:1;
+ 	unsigned int notification_enabled:1;
++#ifndef __GENKSYMS__
++	bool always_heed_presense_bit;
++#endif
+ 	unsigned int power_fault_detected;
+ 	atomic_t pending_events;
+ 	u8 state;
+--- a/drivers/pci/hotplug/pciehp_core.c
++++ b/drivers/pci/hotplug/pciehp_core.c
+@@ -36,6 +36,7 @@
+ #include <linux/slab.h>
+ #include <linux/types.h>
+ #include <linux/pci.h>
++#include <linux/dmi.h>
+ #include "pciehp.h"
+ #include <linux/interrupt.h>
+ #include <linux/time.h>
+@@ -206,6 +207,20 @@ static void pciehp_check_presence(struct
+ 	up_read(&ctrl->reset_lock);
+ }
+ 
++static void check_for_broken_active_bit(struct controller *ctrl)
++{
++	const char *product_name = dmi_get_system_info(DMI_PRODUCT_NAME);
++
++	if (!product_name)
++		return;
++
++	if (	strstr(product_name, "PRIMEQUEST 2400E3") ||
++		strstr(product_name, "PRIMEQUEST 2400L3") ||
++		strstr(product_name, "PRIMEQUEST 2800E3") ||
++		strstr(product_name, "PRIMEQUEST 2800L3"))
++			ctrl->always_heed_presense_bit = true;
++}
++
+ static int pciehp_probe(struct pcie_device *dev)
+ {
+ 	int rc;
+@@ -229,6 +244,8 @@ static int pciehp_probe(struct pcie_devi
+ 	}
+ 	set_service_data(dev, ctrl);
+ 
++	check_for_broken_active_bit(ctrl);
++
+ 	/* Setup the slot information structures */
+ 	rc = init_slot(ctrl);
+ 	if (rc) {
+--- a/drivers/pci/hotplug/pciehp_ctrl.c
++++ b/drivers/pci/hotplug/pciehp_ctrl.c
+@@ -300,6 +300,9 @@ static int __pciehp_enable_slot(struct c
+ {
+ 	u8 getstatus = 0;
+ 
++	if (ctrl->always_heed_presense_bit && !pciehp_card_present(ctrl))
++		return -ENODEV;
++
+ 	if (MRL_SENS(ctrl)) {
+ 		pciehp_get_latch_status(ctrl, &getstatus);
+ 		if (getstatus) {

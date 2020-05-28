@@ -1,0 +1,43 @@
+From e0638fa400eaccf9fa8060f67140264c4e276552 Mon Sep 17 00:00:00 2001
+From: Lixin Wang <alan.1.wang@nokia-sbell.com>
+Date: Mon, 27 Nov 2017 15:06:55 +0800
+Subject: [PATCH] i2c: core: decrease reference count of device node in
+ i2c_unregister_device
+Git-commit: e0638fa400eaccf9fa8060f67140264c4e276552
+Patch-mainline: v4.15-rc9
+References: git-fixes
+
+Reference count of device node was increased in of_i2c_register_device,
+but without decreasing it in i2c_unregister_device. Then the added
+device node will never be released. Fix this by adding the of_node_put.
+
+Signed-off-by: Lixin Wang <alan.1.wang@nokia-sbell.com>
+Tested-by: Wolfram Sang <wsa@the-dreams.de>
+Signed-off-by: Wolfram Sang <wsa@the-dreams.de>
+Cc: stable@kernel.org
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/i2c/i2c-core-base.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/i2c/i2c-core-base.c b/drivers/i2c/i2c-core-base.c
+index 706164b4c5be..f7829a74140c 100644
+--- a/drivers/i2c/i2c-core.c
++++ b/drivers/i2c/i2c-core.c
+@@ -821,8 +821,12 @@ void i2c_unregister_device(struct i2c_client *client)
+ {
+ 	if (!client)
+ 		return;
+-	if (client->dev.of_node)
++
++	if (client->dev.of_node) {
+ 		of_node_clear_flag(client->dev.of_node, OF_POPULATED);
++		of_node_put(client->dev.of_node);
++	}
++
+ 	if (ACPI_COMPANION(&client->dev))
+ 		acpi_device_clear_enumerated(ACPI_COMPANION(&client->dev));
+ 	device_unregister(&client->dev);
+-- 
+2.16.4
+

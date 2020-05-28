@@ -1,0 +1,31 @@
+From 499df9674c54a733f4deb3329dfcfc5487eb7738 Mon Sep 17 00:00:00 2001
+From: "Hook, Gary" <Gary.Hook@amd.com>
+Date: Tue, 14 May 2019 21:53:16 +0000
+Subject: [PATCH] crypto: ccp - AES CFB mode is a stream cipher
+Git-commit: 499df9674c54a733f4deb3329dfcfc5487eb7738
+Patch-mainline: v5.3-rc1
+References: git-fixes
+
+CFB mode should be treated as a stream cipher, not block.
+
+Fixes: 63b945091a07 ('crypto: ccp - CCP device driver and interface support')
+
+Signed-off-by: Gary R Hook <gary.hook@amd.com>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/crypto/ccp/ccp-ops.c |    3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+--- a/drivers/crypto/ccp/ccp-ops.c
++++ b/drivers/crypto/ccp/ccp-ops.c
+@@ -893,8 +893,7 @@ static int ccp_run_aes_cmd(struct ccp_cm
+ 		return -EINVAL;
+ 
+ 	if (((aes->mode == CCP_AES_MODE_ECB) ||
+-	     (aes->mode == CCP_AES_MODE_CBC) ||
+-	     (aes->mode == CCP_AES_MODE_CFB)) &&
++	     (aes->mode == CCP_AES_MODE_CBC)) &&
+ 	    (aes->src_len & (AES_BLOCK_SIZE - 1)))
+ 		return -EINVAL;
+ 

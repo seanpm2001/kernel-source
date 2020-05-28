@@ -1,0 +1,74 @@
+From: Trond Myklebust <trondmy@gmail.com>
+Date: Wed, 27 Nov 2019 17:05:51 -0500
+Subject: [PATCH] nfsd: Ensure CLONE persists data and metadata changes to the
+ target file
+Git-commit: a25e3726b32c746c0098125d4c7463bb84df72bb
+Patch-mainline: v5.5
+References: git-fixes
+
+The NFSv4.2 CLONE operation has implicit persistence requirements on the
+target file, since there is no protocol requirement that the client issue
+a separate operation to persist data.
+For that reason, we should call vfs_fsync_range() on the destination file
+after a successful call to vfs_clone_file_range().
+
+Fixes: ffa0160a1039 ("nfsd: implement the NFSv4.2 CLONE operation")
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Cc: stable@vger.kernel.org # v4.5+
+Signed-off-by: J. Bruce Fields <bfields@redhat.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfsd/nfs4proc.c |    3 ++-
+ fs/nfsd/vfs.c      |   15 ++++++++++++---
+ fs/nfsd/vfs.h      |    2 +-
+ 3 files changed, 15 insertions(+), 5 deletions(-)
+
+--- a/fs/nfsd/nfs4proc.c
++++ b/fs/nfsd/nfs4proc.c
+@@ -1056,7 +1056,8 @@ nfsd4_clone(struct svc_rqst *rqstp, stru
+ 		goto out;
+ 
+ 	status = nfsd4_clone_file_range(src, clone->cl_src_pos,
+-			dst, clone->cl_dst_pos, clone->cl_count);
++			dst, clone->cl_dst_pos, clone->cl_count,
++			EX_ISSYNC(cstate->current_fh.fh_export));
+ 
+ 	fput(dst);
+ 	fput(src);
+--- a/fs/nfsd/vfs.c
++++ b/fs/nfsd/vfs.c
+@@ -538,10 +538,19 @@ __be32 nfsd4_set_nfs4_label(struct svc_r
+ #endif
+ 
+ __be32 nfsd4_clone_file_range(struct file *src, u64 src_pos, struct file *dst,
+-		u64 dst_pos, u64 count)
++		u64 dst_pos, u64 count, bool sync)
+ {
+-	return nfserrno(vfs_clone_file_range(src, src_pos, dst, dst_pos,
+-					     count));
++	int ret = vfs_clone_file_range(src, src_pos, dst, dst_pos,
++				       count);
++	if (ret)
++		return nfserrno(ret);
++	if (sync) {
++		loff_t dst_end = count ? dst_pos + count - 1 : LLONG_MAX;
++		int status = vfs_fsync_range(dst, dst_pos, dst_end, 0);
++		if (status < 0)
++			return nfserrno(status);
++	}
++	return 0;
+ }
+ 
+ ssize_t nfsd_copy_file_range(struct file *src, u64 src_pos, struct file *dst,
+--- a/fs/nfsd/vfs.h
++++ b/fs/nfsd/vfs.h
+@@ -57,7 +57,7 @@ __be32          nfsd4_set_nfs4_label(str
+ __be32		nfsd4_vfs_fallocate(struct svc_rqst *, struct svc_fh *,
+ 				    struct file *, loff_t, loff_t, int);
+ __be32		nfsd4_clone_file_range(struct file *, u64, struct file *,
+-			u64, u64);
++				       u64, u64, bool);
+ #endif /* CONFIG_NFSD_V4 */
+ __be32		nfsd_create_locked(struct svc_rqst *, struct svc_fh *,
+ 				char *name, int len, struct iattr *attrs,
