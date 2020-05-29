@@ -1,0 +1,478 @@
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Tue, 27 Aug 2019 21:48:22 +0200
+Subject: x86/intel: Aggregate big core mobile naming
+Git-commit: af239c44e3f976762e9bc052f0d5796b90ea530b
+Patch-mainline: v5.4-rc1
+References: bsc#1154824 CVE-2020-0543
+
+Currently big core mobile chips have either:
+
+ - _L
+ - _ULT
+ - _MOBILE
+
+Make it uniformly: _L.
+
+for i in `git grep -l "\(INTEL_FAM6_\|VULNWL_INTEL\|INTEL_CPU_FAM6\).*_\(MOBILE\|ULT\)"`
+do
+	sed -i -e 's/\(\(INTEL_FAM6_\|VULNWL_INTEL\|INTEL_CPU_FAM6\).*\)_\(MOBILE\|ULT\)/\1_L/g' ${i}
+done
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Tony Luck <tony.luck@intel.com>
+Cc: x86@kernel.org
+Cc: Dave Hansen <dave.hansen@intel.com>
+Cc: Borislav Petkov <bp@alien8.de>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Link: https://lkml.kernel.org/r/20190827195122.568978530@infradead.org
+
+Acked-by: Borislav Petkov <bp@suse.de>
+---
+ arch/x86/events/intel/core.c          |    6 ++---
+ arch/x86/events/intel/cstate.c        |    8 +++---
+ arch/x86/events/intel/rapl.c          |    6 ++---
+ arch/x86/events/intel/uncore.c        |    6 ++---
+ arch/x86/events/msr.c                 |    6 ++---
+ arch/x86/include/asm/intel-family.h   |    6 ++---
+ arch/x86/kernel/cpu/bugs.c            |   10 ++++----
+ arch/x86/kernel/cpu/intel.c           |    6 ++---
+ arch/x86/kernel/tsc.c                 |    4 +--
+ drivers/cpufreq/intel_pstate.c        |    4 +--
+ drivers/idle/intel_idle.c             |    6 ++---
+ drivers/platform/x86/intel_pmc_core.c |    4 +--
+ drivers/powercap/intel_rapl.c         |    6 ++---
+ tools/power/x86/turbostat/turbostat.c |   40 +++++++++++++++++-----------------
+ 14 files changed, 59 insertions(+), 59 deletions(-)
+
+--- a/arch/x86/events/intel/core.c
++++ b/arch/x86/events/intel/core.c
+@@ -4034,7 +4034,7 @@ __init int intel_pmu_init(void)
+ 
+ 	case INTEL_FAM6_HASWELL:
+ 	case INTEL_FAM6_HASWELL_X:
+-	case INTEL_FAM6_HASWELL_ULT:
++	case INTEL_FAM6_HASWELL_L:
+ 	case INTEL_FAM6_HASWELL_GT3E:
+ 		x86_add_quirk(intel_ht_bug);
+ 		x86_pmu.late_ack = true;
+@@ -4114,10 +4114,10 @@ __init int intel_pmu_init(void)
+ 		pr_cont("Knights Landing/Mill events, ");
+ 		break;
+ 
+-	case INTEL_FAM6_SKYLAKE_MOBILE:
+ 	case INTEL_FAM6_SKYLAKE_X:
++	case INTEL_FAM6_SKYLAKE_L:
+ 	case INTEL_FAM6_SKYLAKE:
+-	case INTEL_FAM6_KABYLAKE_MOBILE:
++	case INTEL_FAM6_KABYLAKE_L:
+ 	case INTEL_FAM6_KABYLAKE:
+ 		x86_pmu.late_ack = true;
+ 		memcpy(hw_cache_event_ids, skl_hw_cache_event_ids, sizeof(hw_cache_event_ids));
+--- a/arch/x86/events/intel/cstate.c
++++ b/arch/x86/events/intel/cstate.c
+@@ -529,7 +529,7 @@ static const struct x86_cpu_id intel_cst
+ 	X86_CSTATES_MODEL(INTEL_FAM6_HASWELL_X,	   snb_cstates),
+ 	X86_CSTATES_MODEL(INTEL_FAM6_HASWELL_GT3E, snb_cstates),
+ 
+-	X86_CSTATES_MODEL(INTEL_FAM6_HASWELL_ULT, hswult_cstates),
++	X86_CSTATES_MODEL(INTEL_FAM6_HASWELL_L, hswult_cstates),
+ 
+ 	X86_CSTATES_MODEL(INTEL_FAM6_ATOM_SILVERMONT, slm_cstates),
+ 	X86_CSTATES_MODEL(INTEL_FAM6_ATOM_SILVERMONT_X, slm_cstates),
+@@ -540,11 +540,11 @@ static const struct x86_cpu_id intel_cst
+ 	X86_CSTATES_MODEL(INTEL_FAM6_BROADWELL_GT3E,   snb_cstates),
+ 	X86_CSTATES_MODEL(INTEL_FAM6_BROADWELL_X,      snb_cstates),
+ 
+-	X86_CSTATES_MODEL(INTEL_FAM6_SKYLAKE_MOBILE, snb_cstates),
++	X86_CSTATES_MODEL(INTEL_FAM6_SKYLAKE_L, snb_cstates),
+ 	X86_CSTATES_MODEL(INTEL_FAM6_SKYLAKE,        snb_cstates),
+ 
+-	X86_CSTATES_MODEL(INTEL_FAM6_KABYLAKE_MOBILE,  snb_cstates),
+-	X86_CSTATES_MODEL(INTEL_FAM6_KABYLAKE,	       snb_cstates),
++	X86_CSTATES_MODEL(INTEL_FAM6_KABYLAKE_L, hswult_cstates),
++	X86_CSTATES_MODEL(INTEL_FAM6_KABYLAKE,   hswult_cstates),
+ 
+ 	X86_CSTATES_MODEL(INTEL_FAM6_XEON_PHI_KNL, knl_cstates),
+ 	X86_CSTATES_MODEL(INTEL_FAM6_XEON_PHI_KNM, knl_cstates),
+--- a/arch/x86/events/intel/rapl.c
++++ b/arch/x86/events/intel/rapl.c
+@@ -756,7 +756,7 @@ static const struct x86_cpu_id rapl_cpu_
+ 
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_HASWELL,	hsw_rapl_init),
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_HASWELL_X,    hsw_rapl_init),
+-	X86_RAPL_MODEL_MATCH(INTEL_FAM6_HASWELL_ULT,  hsw_rapl_init),
++	X86_RAPL_MODEL_MATCH(INTEL_FAM6_HASWELL_L,	hsw_rapl_init),
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_HASWELL_GT3E, hsw_rapl_init),
+ 
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_BROADWELL,	  hsw_rapl_init),
+@@ -767,11 +767,11 @@ static const struct x86_cpu_id rapl_cpu_
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_XEON_PHI_KNL, knl_rapl_init),
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_XEON_PHI_KNM, knl_rapl_init),
+ 
+-	X86_RAPL_MODEL_MATCH(INTEL_FAM6_SKYLAKE_MOBILE,  skl_rapl_init),
++	X86_RAPL_MODEL_MATCH(INTEL_FAM6_SKYLAKE_L,	skl_rapl_init),
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_SKYLAKE,	 skl_rapl_init),
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_SKYLAKE_X,	 hsx_rapl_init),
+ 
+-	X86_RAPL_MODEL_MATCH(INTEL_FAM6_KABYLAKE_MOBILE,  skl_rapl_init),
++	X86_RAPL_MODEL_MATCH(INTEL_FAM6_KABYLAKE_L,	skl_rapl_init),
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_KABYLAKE,	  skl_rapl_init),
+ 
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_ATOM_GOLDMONT, hsw_rapl_init),
+--- a/arch/x86/events/intel/uncore.c
++++ b/arch/x86/events/intel/uncore.c
+@@ -1322,7 +1322,7 @@ static const struct x86_cpu_id intel_unc
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_SANDYBRIDGE,	  snb_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_IVYBRIDGE,	  ivb_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_HASWELL,	  hsw_uncore_init),
+-	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_HASWELL_ULT,	  hsw_uncore_init),
++	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_HASWELL_L,	  hsw_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_HASWELL_GT3E,	  hsw_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_BROADWELL,	  bdw_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_BROADWELL_GT3E, bdw_uncore_init),
+@@ -1336,9 +1336,9 @@ static const struct x86_cpu_id intel_unc
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_XEON_PHI_KNL,	  knl_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_XEON_PHI_KNM,	  knl_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_SKYLAKE,	  skl_uncore_init),
+-	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_SKYLAKE_MOBILE, skl_uncore_init),
++	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_SKYLAKE_L,	  skl_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_SKYLAKE_X,      skx_uncore_init),
+-	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_KABYLAKE_MOBILE, skl_uncore_init),
++	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_KABYLAKE_L,	  skl_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_KABYLAKE,	  skl_uncore_init),
+ 	{},
+ };
+--- a/arch/x86/events/msr.c
++++ b/arch/x86/events/msr.c
+@@ -53,7 +53,7 @@ static bool test_intel(int idx)
+ 
+ 	case INTEL_FAM6_HASWELL:
+ 	case INTEL_FAM6_HASWELL_X:
+-	case INTEL_FAM6_HASWELL_ULT:
++	case INTEL_FAM6_HASWELL_L:
+ 	case INTEL_FAM6_HASWELL_GT3E:
+ 
+ 	case INTEL_FAM6_BROADWELL:
+@@ -68,10 +68,10 @@ static bool test_intel(int idx)
+ 			return true;
+ 		break;
+ 
+-	case INTEL_FAM6_SKYLAKE_MOBILE:
++	case INTEL_FAM6_SKYLAKE_L:
+ 	case INTEL_FAM6_SKYLAKE:
+ 	case INTEL_FAM6_SKYLAKE_X:
+-	case INTEL_FAM6_KABYLAKE_MOBILE:
++	case INTEL_FAM6_KABYLAKE_L:
+ 	case INTEL_FAM6_KABYLAKE:
+ 		if (idx == PERF_MSR_SMI || idx == PERF_MSR_PPERF)
+ 			return true;
+--- a/arch/x86/include/asm/intel-family.h
++++ b/arch/x86/include/asm/intel-family.h
+@@ -34,7 +34,7 @@
+ 
+ #define INTEL_FAM6_HASWELL		0x3C
+ #define INTEL_FAM6_HASWELL_X		0x3F
+-#define INTEL_FAM6_HASWELL_ULT		0x45
++#define INTEL_FAM6_HASWELL_L		0x45
+ #define INTEL_FAM6_HASWELL_GT3E		0x46
+ 
+ #define INTEL_FAM6_BROADWELL		0x3D
+@@ -42,15 +42,15 @@
+ #define INTEL_FAM6_BROADWELL_X		0x4F
+ #define INTEL_FAM6_BROADWELL_XEON_D	0x56
+ 
+-#define INTEL_FAM6_SKYLAKE_MOBILE	0x4E
++#define INTEL_FAM6_SKYLAKE_L		0x4E
+ #define INTEL_FAM6_SKYLAKE		0x5E
+ #define INTEL_FAM6_SKYLAKE_X		0x55
+-#define INTEL_FAM6_KABYLAKE_MOBILE	0x8E
++#define INTEL_FAM6_KABYLAKE_L		0x8E
+ #define INTEL_FAM6_KABYLAKE		0x9E
+ 
+-#define INTEL_FAM6_CANNONLAKE_MOBILE	0x66
++#define INTEL_FAM6_CANNONLAKE_L	0x66
+ 
+-#define INTEL_FAM6_ICELAKE_MOBILE	0x7E
++#define INTEL_FAM6_ICELAKE_L		0x7E
+ 
+ /* "Small Core" Processors (Atom) */
+ 
+--- a/arch/x86/kernel/cpu/bugs.c
++++ b/arch/x86/kernel/cpu/bugs.c
+@@ -246,13 +246,13 @@ static void override_cache_bits(struct c
+ 	case INTEL_FAM6_SANDYBRIDGE:
+ 	case INTEL_FAM6_IVYBRIDGE:
+ 	case INTEL_FAM6_HASWELL:
+-	case INTEL_FAM6_HASWELL_ULT:
++	case INTEL_FAM6_HASWELL_L:
+ 	case INTEL_FAM6_HASWELL_GT3E:
+ 	case INTEL_FAM6_BROADWELL:
+ 	case INTEL_FAM6_BROADWELL_GT3E:
+-	case INTEL_FAM6_SKYLAKE_MOBILE:
++	case INTEL_FAM6_SKYLAKE_L:
+ 	case INTEL_FAM6_SKYLAKE:
+-	case INTEL_FAM6_KABYLAKE_MOBILE:
++	case INTEL_FAM6_KABYLAKE_L:
+ 	case INTEL_FAM6_KABYLAKE:
+ 		if (c->x86_cache_bits < 44)
+ 			c->x86_cache_bits = 44;
+@@ -751,10 +751,10 @@ static bool __init is_skylake_era(void)
+ 	if (boot_cpu_data.x86_vendor == X86_VENDOR_INTEL &&
+ 	    boot_cpu_data.x86 == 6) {
+ 		switch (boot_cpu_data.x86_model) {
+-		case INTEL_FAM6_SKYLAKE_MOBILE:
++		case INTEL_FAM6_SKYLAKE_L:
+ 		case INTEL_FAM6_SKYLAKE:
+ 		case INTEL_FAM6_SKYLAKE_X:
+-		case INTEL_FAM6_KABYLAKE_MOBILE:
++		case INTEL_FAM6_KABYLAKE_L:
+ 		case INTEL_FAM6_KABYLAKE:
+ 			return true;
+ 		}
+--- a/arch/x86/kernel/cpu/intel.c
++++ b/arch/x86/kernel/cpu/intel.c
+@@ -118,8 +118,8 @@ static const struct sku_microcode spectr
+ 	{ INTEL_FAM6_KABYLAKE,		0x0B,	0x80 },
+ 	{ INTEL_FAM6_KABYLAKE,		0x0A,	0x80 },
+ 	{ INTEL_FAM6_KABYLAKE,		0x09,	0x80 },
+-	{ INTEL_FAM6_KABYLAKE_MOBILE,	0x0A,	0x80 },
+-	{ INTEL_FAM6_KABYLAKE_MOBILE,	0x09,	0x80 },
++	{ INTEL_FAM6_KABYLAKE_L,	0x0A,	0x80 },
++	{ INTEL_FAM6_KABYLAKE_L,	0x09,	0x80 },
+ 	{ INTEL_FAM6_SKYLAKE_X,		0x03,	0x0100013e },
+ 	{ INTEL_FAM6_SKYLAKE_X,		0x04,	0x0200003c },
+ 	{ INTEL_FAM6_BROADWELL,		0x04,	0x28 },
+@@ -127,7 +127,7 @@ static const struct sku_microcode spectr
+ 	{ INTEL_FAM6_BROADWELL_XEON_D,	0x02,	0x14 },
+ 	{ INTEL_FAM6_BROADWELL_XEON_D,	0x03,	0x07000011 },
+ 	{ INTEL_FAM6_BROADWELL_X,	0x01,	0x0b000025 },
+-	{ INTEL_FAM6_HASWELL_ULT,	0x01,	0x21 },
++	{ INTEL_FAM6_HASWELL_L,		0x01,	0x21 },
+ 	{ INTEL_FAM6_HASWELL_GT3E,	0x01,	0x18 },
+ 	{ INTEL_FAM6_HASWELL,		0x03,	0x23 },
+ 	{ INTEL_FAM6_HASWELL_X,		0x02,	0x3b },
+--- a/arch/x86/kernel/tsc.c
++++ b/arch/x86/kernel/tsc.c
+@@ -614,9 +614,9 @@ unsigned long native_calibrate_tsc(void)
+ 
+ 	if (crystal_khz == 0) {
+ 		switch (boot_cpu_data.x86_model) {
+-		case INTEL_FAM6_SKYLAKE_MOBILE:
++		case INTEL_FAM6_SKYLAKE_L:
+ 		case INTEL_FAM6_SKYLAKE:
+-		case INTEL_FAM6_KABYLAKE_MOBILE:
++		case INTEL_FAM6_KABYLAKE_L:
+ 		case INTEL_FAM6_KABYLAKE:
+ 			crystal_khz = 24000;	/* 24.0 MHz */
+ 			break;
+--- a/drivers/cpufreq/intel_pstate.c
++++ b/drivers/cpufreq/intel_pstate.c
+@@ -2026,11 +2026,11 @@ static const struct x86_cpu_id intel_pst
+ 	ICPU(INTEL_FAM6_BROADWELL,		core_funcs),
+ 	ICPU(INTEL_FAM6_IVYBRIDGE_X,		core_funcs),
+ 	ICPU(INTEL_FAM6_HASWELL_X,		core_funcs),
+-	ICPU(INTEL_FAM6_HASWELL_ULT,		core_funcs),
++	ICPU(INTEL_FAM6_HASWELL_L,		core_funcs),
+ 	ICPU(INTEL_FAM6_HASWELL_GT3E,		core_funcs),
+ 	ICPU(INTEL_FAM6_BROADWELL_GT3E,		core_funcs),
+ 	ICPU(INTEL_FAM6_ATOM_AIRMONT,		airmont_funcs),
+-	ICPU(INTEL_FAM6_SKYLAKE_MOBILE,		core_funcs),
++	ICPU(INTEL_FAM6_SKYLAKE_L,		core_funcs),
+ 	ICPU(INTEL_FAM6_BROADWELL_X,		core_funcs),
+ 	ICPU(INTEL_FAM6_SKYLAKE,		core_funcs),
+ 	ICPU(INTEL_FAM6_BROADWELL_XEON_D,	core_funcs),
+--- a/drivers/idle/intel_idle.c
++++ b/drivers/idle/intel_idle.c
+@@ -1082,16 +1082,16 @@ static const struct x86_cpu_id intel_idl
+ 	ICPU(INTEL_FAM6_IVYBRIDGE_X,		idle_cpu_ivt),
+ 	ICPU(INTEL_FAM6_HASWELL,		idle_cpu_hsw),
+ 	ICPU(INTEL_FAM6_HASWELL_X,		idle_cpu_hsw),
+-	ICPU(INTEL_FAM6_HASWELL_ULT,		idle_cpu_hsw),
++	ICPU(INTEL_FAM6_HASWELL_L,		idle_cpu_hsw),
+ 	ICPU(INTEL_FAM6_HASWELL_GT3E,		idle_cpu_hsw),
+ 	ICPU(INTEL_FAM6_ATOM_SILVERMONT_X,	idle_cpu_avn),
+ 	ICPU(INTEL_FAM6_BROADWELL,		idle_cpu_bdw),
+ 	ICPU(INTEL_FAM6_BROADWELL_GT3E,		idle_cpu_bdw),
+ 	ICPU(INTEL_FAM6_BROADWELL_X,		idle_cpu_bdw),
+ 	ICPU(INTEL_FAM6_BROADWELL_XEON_D,	idle_cpu_bdw),
+-	ICPU(INTEL_FAM6_SKYLAKE_MOBILE,		idle_cpu_skl),
++	ICPU(INTEL_FAM6_SKYLAKE_L,		idle_cpu_skl),
+ 	ICPU(INTEL_FAM6_SKYLAKE,		idle_cpu_skl),
+-	ICPU(INTEL_FAM6_KABYLAKE_MOBILE,	idle_cpu_skl),
++	ICPU(INTEL_FAM6_KABYLAKE_L,		idle_cpu_skl),
+ 	ICPU(INTEL_FAM6_KABYLAKE,		idle_cpu_skl),
+ 	ICPU(INTEL_FAM6_SKYLAKE_X,		idle_cpu_skx),
+ 	ICPU(INTEL_FAM6_XEON_PHI_KNL,		idle_cpu_knl),
+--- a/drivers/platform/x86/intel_pmc_core.c
++++ b/drivers/platform/x86/intel_pmc_core.c
+@@ -480,12 +480,12 @@ static inline void pmc_core_dbgfs_unregi
+ #endif /* CONFIG_DEBUG_FS */
+ 
+ static const struct x86_cpu_id intel_pmc_core_ids[] = {
+-	ICPU(INTEL_FAM6_SKYLAKE_MOBILE, &spt_reg_map),
++	ICPU(INTEL_FAM6_SKYLAKE_L, &spt_reg_map),
+ 	ICPU(INTEL_FAM6_SKYLAKE, &spt_reg_map),
+-	ICPU(INTEL_FAM6_KABYLAKE_MOBILE, &spt_reg_map),
++	ICPU(INTEL_FAM6_KABYLAKE_L, &spt_reg_map),
+ 	ICPU(INTEL_FAM6_KABYLAKE, &spt_reg_map),
+-	ICPU(INTEL_FAM6_CANNONLAKE_MOBILE, &cnp_reg_map),
+-	ICPU(INTEL_FAM6_ICELAKE_MOBILE, &icl_reg_map),
++	ICPU(INTEL_FAM6_CANNONLAKE_L, &cnp_reg_map),
++	ICPU(INTEL_FAM6_ICELAKE_L, &icl_reg_map),
+ 	{}
+ };
+ 
+--- a/drivers/powercap/intel_rapl.c
++++ b/drivers/powercap/intel_rapl.c
+@@ -1149,7 +1149,7 @@ static const struct x86_cpu_id rapl_ids[
+ 	RAPL_CPU(INTEL_FAM6_IVYBRIDGE_X,	rapl_defaults_core),
+ 
+ 	RAPL_CPU(INTEL_FAM6_HASWELL,		rapl_defaults_core),
+-	RAPL_CPU(INTEL_FAM6_HASWELL_ULT,	rapl_defaults_core),
++	RAPL_CPU(INTEL_FAM6_HASWELL_L,		rapl_defaults_core),
+ 	RAPL_CPU(INTEL_FAM6_HASWELL_GT3E,	rapl_defaults_core),
+ 	RAPL_CPU(INTEL_FAM6_HASWELL_X,		rapl_defaults_hsw_server),
+ 
+@@ -1159,11 +1159,11 @@ static const struct x86_cpu_id rapl_ids[
+ 	RAPL_CPU(INTEL_FAM6_BROADWELL_X,	rapl_defaults_hsw_server),
+ 
+ 	RAPL_CPU(INTEL_FAM6_SKYLAKE,		rapl_defaults_core),
+-	RAPL_CPU(INTEL_FAM6_SKYLAKE_MOBILE,	rapl_defaults_core),
++	RAPL_CPU(INTEL_FAM6_SKYLAKE_L,		rapl_defaults_core),
+ 	RAPL_CPU(INTEL_FAM6_SKYLAKE_X,		rapl_defaults_hsw_server),
+-	RAPL_CPU(INTEL_FAM6_KABYLAKE_MOBILE,	rapl_defaults_core),
++	RAPL_CPU(INTEL_FAM6_KABYLAKE_L,		rapl_defaults_core),
+ 	RAPL_CPU(INTEL_FAM6_KABYLAKE,		rapl_defaults_core),
+-	RAPL_CPU(INTEL_FAM6_CANNONLAKE_MOBILE,	rapl_defaults_core),
++	RAPL_CPU(INTEL_FAM6_CANNONLAKE_L,	rapl_defaults_core),
+ 
+ 	RAPL_CPU(INTEL_FAM6_ATOM_SILVERMONT,	rapl_defaults_byt),
+ 	RAPL_CPU(INTEL_FAM6_ATOM_AIRMONT,	rapl_defaults_cht),
+--- a/tools/power/x86/turbostat/turbostat.c
++++ b/tools/power/x86/turbostat/turbostat.c
+@@ -2684,15 +2684,15 @@ int probe_nhm_msrs(unsigned int family,
+ 		break;
+ 	case INTEL_FAM6_HASWELL:	/* HSW */
+ 	case INTEL_FAM6_HASWELL_X:	/* HSX */
+-	case INTEL_FAM6_HASWELL_ULT:	/* HSW */
++	case INTEL_FAM6_HASWELL_L:	/* HSW */
+ 	case INTEL_FAM6_HASWELL_GT3E:	/* HSW */
+ 	case INTEL_FAM6_BROADWELL:	/* BDW */
+ 	case INTEL_FAM6_BROADWELL_GT3E:	/* BDW */
+ 	case INTEL_FAM6_BROADWELL_X:	/* BDX */
+ 	case INTEL_FAM6_BROADWELL_XEON_D:	/* BDX-DE */
+-	case INTEL_FAM6_SKYLAKE_MOBILE:	/* SKL */
++	case INTEL_FAM6_SKYLAKE_L:	/* SKL */
+ 	case INTEL_FAM6_SKYLAKE_DESKTOP:	/* SKL */
+-	case INTEL_FAM6_KABYLAKE_MOBILE:	/* KBL */
++	case INTEL_FAM6_KABYLAKE_L:	/* KBL */
+ 	case INTEL_FAM6_KABYLAKE_DESKTOP:	/* KBL */
+ 		pkg_cstate_limits = hsw_pkg_cstate_limits;
+ 		has_misc_feature_control = 1;
+@@ -2889,15 +2889,15 @@ int has_config_tdp(unsigned int family,
+ 	case INTEL_FAM6_IVYBRIDGE:	/* IVB */
+ 	case INTEL_FAM6_HASWELL:	/* HSW */
+ 	case INTEL_FAM6_HASWELL_X:	/* HSX */
+-	case INTEL_FAM6_HASWELL_ULT:	/* HSW */
++	case INTEL_FAM6_HASWELL_L:	/* HSW */
+ 	case INTEL_FAM6_HASWELL_GT3E:	/* HSW */
+ 	case INTEL_FAM6_BROADWELL:	/* BDW */
+ 	case INTEL_FAM6_BROADWELL_GT3E:	/* BDW */
+ 	case INTEL_FAM6_BROADWELL_X:	/* BDX */
+ 	case INTEL_FAM6_BROADWELL_XEON_D:	/* BDX-DE */
+-	case INTEL_FAM6_SKYLAKE_MOBILE:	/* SKL */
++	case INTEL_FAM6_SKYLAKE_L:	/* SKL */
+ 	case INTEL_FAM6_SKYLAKE_DESKTOP:	/* SKL */
+-	case INTEL_FAM6_KABYLAKE_MOBILE:	/* KBL */
++	case INTEL_FAM6_KABYLAKE_L:	/* KBL */
+ 	case INTEL_FAM6_KABYLAKE_DESKTOP:	/* KBL */
+ 	case INTEL_FAM6_SKYLAKE_X:	/* SKX */
+ 
+@@ -3326,7 +3326,7 @@ void rapl_probe(unsigned int family, uns
+ 	case INTEL_FAM6_SANDYBRIDGE:
+ 	case INTEL_FAM6_IVYBRIDGE:
+ 	case INTEL_FAM6_HASWELL:	/* HSW */
+-	case INTEL_FAM6_HASWELL_ULT:	/* HSW */
++	case INTEL_FAM6_HASWELL_L:	/* HSW */
+ 	case INTEL_FAM6_HASWELL_GT3E:	/* HSW */
+ 	case INTEL_FAM6_BROADWELL:	/* BDW */
+ 	case INTEL_FAM6_BROADWELL_GT3E:	/* BDW */
+@@ -3349,9 +3349,9 @@ void rapl_probe(unsigned int family, uns
+ 		else
+ 			BIC_PRESENT(BIC_PkgWatt);
+ 		break;
+-	case INTEL_FAM6_SKYLAKE_MOBILE:	/* SKL */
++	case INTEL_FAM6_SKYLAKE_L:	/* SKL */
+ 	case INTEL_FAM6_SKYLAKE_DESKTOP:	/* SKL */
+-	case INTEL_FAM6_KABYLAKE_MOBILE:	/* KBL */
++	case INTEL_FAM6_KABYLAKE_L:	/* KBL */
+ 	case INTEL_FAM6_KABYLAKE_DESKTOP:	/* KBL */
+ 		do_rapl = RAPL_PKG | RAPL_CORES | RAPL_CORE_POLICY | RAPL_DRAM | RAPL_DRAM_PERF_STATUS | RAPL_PKG_PERF_STATUS | RAPL_GFX | RAPL_PKG_POWER_INFO;
+ 		BIC_PRESENT(BIC_PKG__);
+@@ -3466,7 +3466,7 @@ void perf_limit_reasons_probe(unsigned i
+ 
+ 	switch (model) {
+ 	case INTEL_FAM6_HASWELL:	/* HSW */
+-	case INTEL_FAM6_HASWELL_ULT:	/* HSW */
++	case INTEL_FAM6_HASWELL_L:	/* HSW */
+ 	case INTEL_FAM6_HASWELL_GT3E:	/* HSW */
+ 		do_gfx_perf_limit_reasons = 1;
+ 	case INTEL_FAM6_HASWELL_X:	/* HSX */
+@@ -3672,15 +3672,15 @@ int has_snb_msrs(unsigned int family, un
+ 	case INTEL_FAM6_IVYBRIDGE_X:	/* IVB Xeon */
+ 	case INTEL_FAM6_HASWELL:	/* HSW */
+ 	case INTEL_FAM6_HASWELL_X:	/* HSW */
+-	case INTEL_FAM6_HASWELL_ULT:	/* HSW */
++	case INTEL_FAM6_HASWELL_L:	/* HSW */
+ 	case INTEL_FAM6_HASWELL_GT3E:	/* HSW */
+ 	case INTEL_FAM6_BROADWELL:	/* BDW */
+ 	case INTEL_FAM6_BROADWELL_GT3E:	/* BDW */
+ 	case INTEL_FAM6_BROADWELL_X:	/* BDX */
+ 	case INTEL_FAM6_BROADWELL_XEON_D:	/* BDX-DE */
+-	case INTEL_FAM6_SKYLAKE_MOBILE:	/* SKL */
++	case INTEL_FAM6_SKYLAKE_L:	/* SKL */
+ 	case INTEL_FAM6_SKYLAKE_DESKTOP:	/* SKL */
+-	case INTEL_FAM6_KABYLAKE_MOBILE:	/* KBL */
++	case INTEL_FAM6_KABYLAKE_L:	/* KBL */
+ 	case INTEL_FAM6_KABYLAKE_DESKTOP:	/* KBL */
+ 	case INTEL_FAM6_SKYLAKE_X:	/* SKX */
+ 	case INTEL_FAM6_ATOM_GOLDMONT:	/* BXT */
+@@ -3709,11 +3709,11 @@ int has_hsw_msrs(unsigned int family, un
+ 		return 0;
+ 
+ 	switch (model) {
+-	case INTEL_FAM6_HASWELL_ULT:	/* HSW */
++	case INTEL_FAM6_HASWELL_L:	/* HSW */
+ 	case INTEL_FAM6_BROADWELL:	/* BDW */
+-	case INTEL_FAM6_SKYLAKE_MOBILE:	/* SKL */
++	case INTEL_FAM6_SKYLAKE_L:	/* SKL */
+ 	case INTEL_FAM6_SKYLAKE_DESKTOP:	/* SKL */
+-	case INTEL_FAM6_KABYLAKE_MOBILE:	/* KBL */
++	case INTEL_FAM6_KABYLAKE_L:	/* KBL */
+ 	case INTEL_FAM6_KABYLAKE_DESKTOP:	/* KBL */
+ 	case INTEL_FAM6_ATOM_GOLDMONT:	/* BXT */
+ 	case INTEL_FAM6_ATOM_GOLDMONT_PLUS:
+@@ -3736,9 +3736,9 @@ int has_skl_msrs(unsigned int family, un
+ 		return 0;
+ 
+ 	switch (model) {
+-	case INTEL_FAM6_SKYLAKE_MOBILE:	/* SKL */
++	case INTEL_FAM6_SKYLAKE_L:	/* SKL */
+ 	case INTEL_FAM6_SKYLAKE_DESKTOP:	/* SKL */
+-	case INTEL_FAM6_KABYLAKE_MOBILE:	/* KBL */
++	case INTEL_FAM6_KABYLAKE_L:	/* KBL */
+ 	case INTEL_FAM6_KABYLAKE_DESKTOP:	/* KBL */
+ 		return 1;
+ 	}
+@@ -4099,9 +4099,9 @@ void process_cpuid()
+ 
+ 			if (crystal_hz == 0)
+ 				switch(model) {
+-				case INTEL_FAM6_SKYLAKE_MOBILE:	/* SKL */
++				case INTEL_FAM6_SKYLAKE_L:	/* SKL */
+ 				case INTEL_FAM6_SKYLAKE_DESKTOP:	/* SKL */
+-				case INTEL_FAM6_KABYLAKE_MOBILE:	/* KBL */
++				case INTEL_FAM6_KABYLAKE_L:	/* KBL */
+ 				case INTEL_FAM6_KABYLAKE_DESKTOP:	/* KBL */
+ 					crystal_hz = 24000000;	/* 24.0 MHz */
+ 					break;
