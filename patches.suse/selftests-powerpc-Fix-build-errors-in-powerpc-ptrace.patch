@@ -1,0 +1,85 @@
+From f36dbfe1a504b85c7b3bf89fdd99991afbaa0f74 Mon Sep 17 00:00:00 2001
+From: Simon Guo <wei.guo.simon@gmail.com>
+Date: Fri, 1 Sep 2017 10:17:14 +0800
+Subject: [PATCH] selftests/powerpc: Fix build errors in powerpc ptrace selftests
+Git-commit: f36dbfe1a504b85c7b3bf89fdd99991afbaa0f74
+Patch-mainline: v4.16-rc1
+References: boo#1124278
+
+GCC 7 will take "r2" in clobber list as an error and it will get
+following build errors for powerpc ptrace selftests even with -fno-pic
+Option: ptrace-tm-vsx.c: In function ‘tm_vsx’:
+  ptrace-tm-vsx.c:42:2: error: PIC register clobbered by ‘r2’ in ‘asm’
+    asm __volatile__(
+    ^~~
+  make[1]: *** [ptrace-tm-vsx] Error 1
+  ptrace-tm-spd-vsx.c: In function ‘tm_spd_vsx’:
+  ptrace-tm-spd-vsx.c:55:2: error: PIC register clobbered by ‘r2’ in ‘asm’
+    asm __volatile__(
+    ^~~
+  make[1]: *** [ptrace-tm-spd-vsx] Error 1
+  ptrace-tm-spr.c: In function ‘tm_spr’:
+  ptrace-tm-spr.c:46:2: error: PIC register clobbered by ‘r2’ in ‘asm’
+    asm __volatile__(
+    ^~~
+
+Fix the build error by removing "r2" from the clobber list. None of
+these asm blocks actually clobber r2.
+
+Reported-by: Seth Forshee <seth.forshee@canonical.com>
+Signed-off-by: Simon Guo <wei.guo.simon@gmail.com>
+Tested-by: Seth Forshee <seth.forshee@canonical.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Torsten Duwe <duwe@suse.de>
+
+---
+ tools/testing/selftests/powerpc/ptrace/ptrace-tm-spd-vsx.c | 4 ++--
+ tools/testing/selftests/powerpc/ptrace/ptrace-tm-spr.c     | 3 +--
+ tools/testing/selftests/powerpc/ptrace/ptrace-tm-vsx.c     | 2 +-
+ 3 files changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/tools/testing/selftests/powerpc/ptrace/ptrace-tm-spd-vsx.c b/tools/testing/selftests/powerpc/ptrace/ptrace-tm-spd-vsx.c
+index 0df3c23b7888..277dade1b382 100644
+--- a/tools/testing/selftests/powerpc/ptrace/ptrace-tm-spd-vsx.c
++++ b/tools/testing/selftests/powerpc/ptrace/ptrace-tm-spd-vsx.c
+@@ -79,8 +79,8 @@ void tm_spd_vsx(void)
+ 		: [res] "=r" (result), [texasr] "=r" (texasr)
+ 		: [fp_load] "r" (fp_load), [fp_load_ckpt] "r" (fp_load_ckpt),
+ 		[sprn_texasr] "i"  (SPRN_TEXASR)
+-		: "memory", "r0", "r1", "r2", "r3", "r4",
+-		"r8", "r9", "r10", "r11"
++		: "memory", "r0", "r1", "r3", "r4",
++		"r7", "r8", "r9", "r10", "r11"
+ 		);
+ 
+ 	if (result) {
+diff --git a/tools/testing/selftests/powerpc/ptrace/ptrace-tm-spr.c b/tools/testing/selftests/powerpc/ptrace/ptrace-tm-spr.c
+index 94e57cb89769..51427a2465f6 100644
+--- a/tools/testing/selftests/powerpc/ptrace/ptrace-tm-spr.c
++++ b/tools/testing/selftests/powerpc/ptrace/ptrace-tm-spr.c
+@@ -76,8 +76,7 @@ void tm_spr(void)
+ 		: [tfhar] "=r" (tfhar), [res] "=r" (result),
+ 		[texasr] "=r" (texasr), [cptr1] "=r" (cptr1)
+ 		: [sprn_texasr] "i"  (SPRN_TEXASR)
+-		: "memory", "r0", "r1", "r2", "r3", "r4",
+-		"r8", "r9", "r10", "r11", "r31"
++		: "memory", "r0", "r8", "r31"
+ 		);
+ 
+ 	/* There are 2 32bit instructions before tbegin. */
+diff --git a/tools/testing/selftests/powerpc/ptrace/ptrace-tm-vsx.c b/tools/testing/selftests/powerpc/ptrace/ptrace-tm-vsx.c
+index b4081e2b22d5..17c23cabac3e 100644
+--- a/tools/testing/selftests/powerpc/ptrace/ptrace-tm-vsx.c
++++ b/tools/testing/selftests/powerpc/ptrace/ptrace-tm-vsx.c
+@@ -67,7 +67,7 @@ void tm_vsx(void)
+ 		: [res] "=r" (result), [texasr] "=r" (texasr)
+ 		: [fp_load] "r" (fp_load), [fp_load_ckpt] "r" (fp_load_ckpt),
+ 		[sprn_texasr] "i"  (SPRN_TEXASR), [cptr1] "r" (&cptr[1])
+-		: "memory", "r0", "r1", "r2", "r3", "r4",
++		: "memory", "r0", "r1", "r3", "r4",
+ 		"r7", "r8", "r9", "r10", "r11"
+ 		);
+ 
+-- 
+2.16.4
+

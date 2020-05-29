@@ -1,0 +1,52 @@
+From: Sean Christopherson <sean.j.christopherson@intel.com>
+Date: Wed, 4 Mar 2020 17:34:33 -0800
+Subject: KVM x86: Extend AMD specific guest behavior to Hygon virtual CPUs
+Git-commit: 23493d0a1731205a4bccaa0e283da642ca6f6e29
+Patch-mainline: v5.7-rc1
+References: bsc#1152489
+
+Extend guest_cpuid_is_amd() to cover Hygon virtual CPUs and rename it
+accordingly.  Hygon CPUs use an AMD-based core and so have the same
+basic behavior as AMD CPUs.
+
+Fixes: b8f4abb652146 ("x86/kvm: Add Hygon Dhyana support to KVM")
+Cc: Pu Wen <puwen@hygon.cn>
+Signed-off-by: Sean Christopherson <sean.j.christopherson@intel.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Borislav Petkov <bp@suse.de>
+---
+ arch/x86/kvm/cpuid.h |    6 ++++--
+ arch/x86/kvm/mmu.c   |    3 ++-
+ 2 files changed, 6 insertions(+), 3 deletions(-)
+
+--- a/arch/x86/kvm/cpuid.h
++++ b/arch/x86/kvm/cpuid.h
+@@ -112,12 +112,14 @@ static __always_inline void guest_cpuid_
+ 		*reg &= ~bit(x86_feature);
+ }
+ 
+-static inline bool guest_cpuid_is_amd(struct kvm_vcpu *vcpu)
++static inline bool guest_cpuid_is_amd_or_hygon(struct kvm_vcpu *vcpu)
+ {
+ 	struct kvm_cpuid_entry2 *best;
+ 
+ 	best = kvm_find_cpuid_entry(vcpu, 0, 0);
+-	return best && best->ebx == X86EMUL_CPUID_VENDOR_AuthenticAMD_ebx;
++	return best &&
++		(best->ebx == X86EMUL_CPUID_VENDOR_AuthenticAMD_ebx ||
++		 best->ebx == X86EMUL_CPUID_VENDOR_HygonGenuine_ebx);
+ }
+ 
+ static inline int guest_cpuid_family(struct kvm_vcpu *vcpu)
+--- a/arch/x86/kvm/mmu.c
++++ b/arch/x86/kvm/mmu.c
+@@ -4251,7 +4251,8 @@ static void reset_rsvds_bits_mask(struct
+ 				cpuid_maxphyaddr(vcpu), context->root_level,
+ 				context->nx,
+ 				guest_cpuid_has(vcpu, X86_FEATURE_GBPAGES),
+-				is_pse(vcpu), guest_cpuid_is_amd(vcpu));
++				is_pse(vcpu),
++				guest_cpuid_is_amd_or_hygon(vcpu));
+ }
+ 
+ static void

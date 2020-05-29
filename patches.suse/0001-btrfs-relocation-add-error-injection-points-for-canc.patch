@@ -1,0 +1,75 @@
+From 726a342120eba8197b3bc5e01af1bd2dbf80f77f Mon Sep 17 00:00:00 2001
+From: Qu Wenruo <wqu@suse.com>
+Date: Mon, 17 Feb 2020 14:16:52 +0800
+Patch-mainline: v5.7-rc1
+Git-commit: 726a342120eba8197b3bc5e01af1bd2dbf80f77f
+References: bsc#1171417
+Subject: [PATCH 1/3] btrfs: relocation: add error injection points for
+ cancelling balance
+
+Introduce a new error injection point, should_cancel_balance().
+
+It's just a wrapper of atomic_read(&fs_info->balance_cancel_req), but
+allows us to override the return value.
+
+Currently there are only one locations using this function:
+
+- btrfs_balance()
+  It checks cancel before each block group.
+
+There are other locations checking fs_info->balance_cancel_req, but they
+are not used as an indicator to exit, so there is no need to use the
+wrapper.
+
+But there will be more locations coming, and some locations can cause
+kernel panic if not handled properly.  So introduce this error injection
+to provide better test interface.
+
+Reviewed-by: Johannes Thumshirn <johannes.thumshirn@wdc.com>
+Signed-off-by: Qu Wenruo <wqu@suse.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/ctree.h      |    1 +
+ fs/btrfs/relocation.c |    8 ++++++++
+ fs/btrfs/volumes.c    |    2 +-
+ 3 files changed, 10 insertions(+), 1 deletion(-)
+
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -3471,6 +3471,7 @@ void btrfs_reloc_pre_snapshot(struct btr
+ 			      u64 *bytes_to_reserve);
+ int btrfs_reloc_post_snapshot(struct btrfs_trans_handle *trans,
+ 			      struct btrfs_pending_snapshot *pending);
++int btrfs_should_cancel_balance(struct btrfs_fs_info *fs_info);
+ 
+ /* scrub.c */
+ int btrfs_scrub_dev(struct btrfs_fs_info *fs_info, u64 devid, u64 start,
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -3311,6 +3311,14 @@ int setup_extent_mapping(struct inode *i
+ 	return ret;
+ }
+ 
++/*
++ * Allow error injection to test balance cancellation
++ */
++int btrfs_should_cancel_balance(struct btrfs_fs_info *fs_info)
++{
++	return atomic_read(&fs_info->balance_cancel_req);
++}
++
+ static int relocate_file_extent_cluster(struct inode *inode,
+ 					struct file_extent_cluster *cluster)
+ {
+--- a/fs/btrfs/volumes.c
++++ b/fs/btrfs/volumes.c
+@@ -3864,7 +3864,7 @@ int btrfs_balance(struct btrfs_balance_c
+ 
+ 	if (btrfs_fs_closing(fs_info) ||
+ 	    atomic_read(&fs_info->balance_pause_req) ||
+-	    atomic_read(&fs_info->balance_cancel_req)) {
++	    btrfs_should_cancel_balance(fs_info)) {
+ 		ret = -EINVAL;
+ 		goto out;
+ 	}

@@ -1,0 +1,30 @@
+From: Arvind Yadav <arvind.yadav.cs@gmail.com>
+Date: Tue, 6 Mar 2018 15:54:06 +0530
+Subject: w1: use put_device() if device_register() fail
+Git-commit: 0ec4eb71b4956548a9c652f6c26232995916008c
+Patch-mainline: v4.17-rc1
+References: jsc#SLE-11048
+
+If device_register() returned an error! Always use put_device()
+to give up the reference initialized in device_register().
+
+Signed-off-by: Arvind Yadav <arvind.yadav.cs@gmail.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Acked-by: Nicolas Saenz Julienne <nsaenzjulienne@suse.de>
+---
+ drivers/w1/w1.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/w1/w1.c b/drivers/w1/w1.c
+index 0c2a5a8327bd..80a778b02f28 100644
+--- a/drivers/w1/w1.c
++++ b/drivers/w1/w1.c
+@@ -706,6 +706,7 @@ static int __w1_attach_slave_device(struct w1_slave *sl)
+ 		dev_err(&sl->dev,
+ 			"Device registration [%s] failed. err=%d\n",
+ 			dev_name(&sl->dev), err);
++		put_device(&sl->dev);
+ 		return err;
+ 	}
+ 	w1_family_notify(BUS_NOTIFY_ADD_DEVICE, sl);
+

@@ -1,0 +1,44 @@
+From 107475685abfdee504bb0ef4824f15797f6d2d4d Mon Sep 17 00:00:00 2001
+From: Shubhrajyoti Datta <shubhrajyoti.datta@xilinx.com>
+Date: Fri, 24 May 2019 14:41:28 +0530
+Subject: [PATCH] serial: uartps: Move the spinlock after the read of the tx
+ empty
+Git-commit: 107475685abfdee504bb0ef4824f15797f6d2d4d
+Patch-mainline: v5.3-rc1
+References: git-fixes
+
+Currently we are doing a read of the status register.
+Move the spinlock after that as the reads need not be spinlock
+protected. This patch prevents relaxing the cpu with spinlock held.
+
+Signed-off-by: Shubhrajyoti Datta <shubhrajyoti.datta@xilinx.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/tty/serial/xilinx_uartps.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/tty/serial/xilinx_uartps.c b/drivers/tty/serial/xilinx_uartps.c
+index 605354fd60b1..33ac898fb36e 100644
+--- a/drivers/tty/serial/xilinx_uartps.c
++++ b/drivers/tty/serial/xilinx_uartps.c
+@@ -686,8 +686,6 @@ static void cdns_uart_set_termios(struct uart_port *port,
+ 	unsigned long flags;
+ 	unsigned int ctrl_reg, mode_reg;
+ 
+-	spin_lock_irqsave(&port->lock, flags);
+-
+ 	/* Wait for the transmit FIFO to empty before making changes */
+ 	if (!(readl(port->membase + CDNS_UART_CR) &
+ 				CDNS_UART_CR_TX_DIS)) {
+@@ -696,6 +694,7 @@ static void cdns_uart_set_termios(struct uart_port *port,
+ 			cpu_relax();
+ 		}
+ 	}
++	spin_lock_irqsave(&port->lock, flags);
+ 
+ 	/* Disable the TX and RX to set baud rate */
+ 	ctrl_reg = readl(port->membase + CDNS_UART_CR);
+-- 
+2.16.4
+
