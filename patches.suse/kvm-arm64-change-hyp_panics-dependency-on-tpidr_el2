@@ -3,7 +3,7 @@ Date: Mon, 8 Jan 2018 15:38:05 +0000
 Subject: KVM: arm64: Change hyp_panic()s dependency on tpidr_el2
 Git-commit: c97e166e54b662717d20ec2e36761758d2b6a7c2
 Patch-mainline: v4.16-rc1
-References: fate#326420 fate#325360
+References: bsc#1133021 fate#326420 fate#325360
 
 Make tpidr_el2 a cpu-offset for per-cpu variables in the same way the
 host uses tpidr_el1. This lets tpidr_el{1,2} have the same value, and
@@ -29,19 +29,17 @@ reference to the 'running vcpu' in the host cpu context to preserve this.
 Signed-off-by: James Morse <james.morse@arm.com>
 Reviewed-by: Christoffer Dall <cdall@linaro.org>
 Signed-off-by: Catalin Marinas <catalin.marinas@arm.com>
-Signed-off-by: Matthias Brugger <mbrugger@suse.com>
+Acked-by: Petr Tesarik <ptesarik@suse.com>
 ---
- arch/arm64/include/asm/kvm_host.h |  2 ++
- arch/arm64/kvm/hyp/hyp-entry.S    | 12 ++++++++++++
- arch/arm64/kvm/hyp/s2-setup.c     |  3 +++
- arch/arm64/kvm/hyp/switch.c       | 25 +++++++++++++------------
+ arch/arm64/include/asm/kvm_host.h |    2 ++
+ arch/arm64/kvm/hyp/hyp-entry.S    |   12 ++++++++++++
+ arch/arm64/kvm/hyp/s2-setup.c     |    3 +++
+ arch/arm64/kvm/hyp/switch.c       |   25 +++++++++++++------------
  4 files changed, 30 insertions(+), 12 deletions(-)
 
-diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
-index ea6cb5b24258..7ee72b402907 100644
 --- a/arch/arm64/include/asm/kvm_host.h
 +++ b/arch/arm64/include/asm/kvm_host.h
-@@ -192,6 +192,8 @@ struct kvm_cpu_context {
+@@ -191,6 +191,8 @@ struct kvm_cpu_context {
  		u64 sys_regs[NR_SYS_REGS];
  		u32 copro[NR_COPRO_REGS];
  	};
@@ -50,8 +48,6 @@ index ea6cb5b24258..7ee72b402907 100644
  };
  
  typedef struct kvm_cpu_context kvm_cpu_context_t;
-diff --git a/arch/arm64/kvm/hyp/hyp-entry.S b/arch/arm64/kvm/hyp/hyp-entry.S
-index fce7cc507e0a..e4f37b9dd47c 100644
 --- a/arch/arm64/kvm/hyp/hyp-entry.S
 +++ b/arch/arm64/kvm/hyp/hyp-entry.S
 @@ -163,6 +163,18 @@ ENTRY(__hyp_do_panic)
@@ -73,11 +69,9 @@ index fce7cc507e0a..e4f37b9dd47c 100644
  .macro invalid_vector	label, target = __hyp_panic
  	.align	2
  \label:
-diff --git a/arch/arm64/kvm/hyp/s2-setup.c b/arch/arm64/kvm/hyp/s2-setup.c
-index 603e1ee83e89..74306c33a6de 100644
 --- a/arch/arm64/kvm/hyp/s2-setup.c
 +++ b/arch/arm64/kvm/hyp/s2-setup.c
-@@ -86,5 +86,8 @@ u32 __hyp_text __init_stage2_translation(void)
+@@ -86,5 +86,8 @@ u32 __hyp_text __init_stage2_translation
  
  	write_sysreg(val, vtcr_el2);
  
@@ -86,11 +80,9 @@ index 603e1ee83e89..74306c33a6de 100644
 +
  	return parange;
  }
-diff --git a/arch/arm64/kvm/hyp/switch.c b/arch/arm64/kvm/hyp/switch.c
-index 170e1917f83c..324f4202cdd5 100644
 --- a/arch/arm64/kvm/hyp/switch.c
 +++ b/arch/arm64/kvm/hyp/switch.c
-@@ -306,9 +306,9 @@ int __hyp_text __kvm_vcpu_run(struct kvm_vcpu *vcpu)
+@@ -306,9 +306,9 @@ int __hyp_text __kvm_vcpu_run(struct kvm
  	u64 exit_code;
  
  	vcpu = kern_hyp_va(vcpu);
@@ -101,7 +93,7 @@ index 170e1917f83c..324f4202cdd5 100644
  	guest_ctxt = &vcpu->arch.ctxt;
  
  	__sysreg_save_host_state(host_ctxt);
-@@ -443,7 +443,8 @@ int __hyp_text __kvm_vcpu_run(struct kvm_vcpu *vcpu)
+@@ -443,7 +443,8 @@ again:
  
  static const char __hyp_panic_string[] = "HYP panic:\nPS:%08llx PC:%016llx ESR:%08llx\nFAR:%016llx HPFAR:%016llx PAR:%016llx\nVCPU:%p\n";
  
@@ -111,7 +103,7 @@ index 170e1917f83c..324f4202cdd5 100644
  {
  	unsigned long str_va;
  
-@@ -457,35 +458,35 @@ static void __hyp_text __hyp_call_panic_nvhe(u64 spsr, u64 elr, u64 par)
+@@ -457,35 +458,35 @@ static void __hyp_text __hyp_call_panic_
  	__hyp_do_panic(str_va,
  		       spsr,  elr,
  		       read_sysreg(esr_el2),   read_sysreg_el2(far),
@@ -156,7 +148,7 @@ index 170e1917f83c..324f4202cdd5 100644
  		__timer_disable_traps(vcpu);
  		__deactivate_traps(vcpu);
  		__deactivate_vm(vcpu);
-@@ -493,7 +494,7 @@ void __hyp_text __noreturn __hyp_panic(void)
+@@ -493,7 +494,7 @@ void __hyp_text __noreturn __hyp_panic(v
  	}
  
  	/* Call panic for real */
@@ -165,6 +157,3 @@ index 170e1917f83c..324f4202cdd5 100644
  
  	unreachable();
  }
--- 
-2.19.0
-
