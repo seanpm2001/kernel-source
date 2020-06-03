@@ -1,0 +1,47 @@
+From: Geert Uytterhoeven <geert+renesas@glider.be>
+Date: Fri, 25 Oct 2019 11:41:27 +0200
+Subject: mmc: atmel-mci: Fix debugfs on 64-bit platforms
+Git-commit: 785bbb804a70eb5ee752643919c860155b6b56c6
+Patch-mainline: v5.5-rc1
+References: git-fixes
+
+"atmel_mci.pending_events" and "atmel_mci.completed_events" are
+"unsigned long", i.e. 32-bit or 64-bit, depending on the platform.
+Hence casting their addresses to "u32 *", and calling
+debugfs_create_x32() breaks operation on 64-bit platforms.
+
+Fix this by using the new debugfs_create_xul() helper instead.
+
+Fixes: deec9ae31e607955 ("atmel-mci: debugfs support")
+Signed-off-by: Geert Uytterhoeven <geert+renesas@glider.be>
+Acked-by: Ulf Hansson <ulf.hansson@linaro.org>
+Link: https://lore.kernel.org/r/20191025094130.26033-5-geert+renesas@glider.be
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Acked-by: Nicolas Saenz Julienne <nsaenzjulienne@suse.de>
+---
+ drivers/mmc/host/atmel-mci.c |   14 ++++----------
+ 1 file changed, 4 insertions(+), 10 deletions(-)
+
+--- a/drivers/mmc/host/atmel-mci.c
++++ b/drivers/mmc/host/atmel-mci.c
+@@ -629,16 +629,10 @@ static void atmci_init_debugfs(struct at
+ 	if (!node)
+ 		goto err;
+ 
+-	node = debugfs_create_x32("pending_events", S_IRUSR, root,
+-				     (u32 *)&host->pending_events);
+-	if (!node)
+-		goto err;
+-
+-	node = debugfs_create_x32("completed_events", S_IRUSR, root,
+-				     (u32 *)&host->completed_events);
+-	if (!node)
+-		goto err;
+-
++	debugfs_create_xul("pending_events", S_IRUSR, root,
++			   &host->pending_events);
++	debugfs_create_xul("completed_events", S_IRUSR, root,
++			   &host->completed_events);
+ 	return;
+ 
+ err:

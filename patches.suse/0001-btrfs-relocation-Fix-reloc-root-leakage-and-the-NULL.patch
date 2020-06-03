@@ -93,12 +93,12 @@ merge_reloc_roots() time, so that we won't leak reloc roots.
 Fixes: d2311e698578 ("btrfs: relocation: Delay reloc tree deletion after merge_reloc_roots")
 Signed-off-by: Qu Wenruo <wqu@suse.com>
 ---
- fs/btrfs/relocation.c |   13 ++++++++++---
- 1 file changed, 10 insertions(+), 3 deletions(-)
+ fs/btrfs/relocation.c |   10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
 
 --- a/fs/btrfs/relocation.c
 +++ b/fs/btrfs/relocation.c
-@@ -2567,12 +2567,11 @@ again:
+@@ -2567,9 +2567,9 @@ again:
  		reloc_root = list_entry(reloc_roots.next,
  					struct btrfs_root, root_list);
  
@@ -109,20 +109,15 @@ Signed-off-by: Qu Wenruo <wqu@suse.com>
 -					    reloc_root->root_key.offset);
  			BUG_ON(IS_ERR(root));
  			BUG_ON(root->reloc_root != reloc_root);
--
- 			ret = merge_reloc_root(rc, root);
- 			if (ret) {
- 				if (list_empty(&reloc_root->root_list))
-@@ -2581,6 +2580,14 @@ again:
+ 
+@@ -2581,6 +2581,12 @@ again:
  				goto out;
  			}
  		} else {
 +			if (!IS_ERR(root)) {
 +				if (root->reloc_root == reloc_root) {
 +					root->reloc_root = NULL;
-+					btrfs_put_fs_root(reloc_root);
 +				}
-+				btrfs_put_fs_root(root);
 +			}
 +
  			list_del_init(&reloc_root->root_list);

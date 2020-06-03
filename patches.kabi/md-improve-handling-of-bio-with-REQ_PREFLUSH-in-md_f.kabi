@@ -1,0 +1,135 @@
+From: NeilBrown <neilb@suse.de>
+Subject: kabi for for md: improve handling of bio with REQ_PREFLUSH in md_flush_request()
+Patch-mainline: never, kabi
+References: git-fixes
+
+1/ Don't mark 'make_request' method as '__must_check'
+
+2/ Instead of changing return value of md_flush_request(),
+  create a new md_flush_request2(), and leave md_flush_request()
+  with the old (slughtly buggy) behaviour.
+
+Signed-off-by: NeilBrown <neilb@suse.de>
+---
+ drivers/md/md-linear.c    |    2 +-
+ drivers/md/md-multipath.c |    2 +-
+ drivers/md/md.c           |    9 ++++++++-
+ drivers/md/md.h           |    5 +++--
+ drivers/md/raid0.c        |    2 +-
+ drivers/md/raid1.c        |    2 +-
+ drivers/md/raid10.c       |    2 +-
+ drivers/md/raid5.c        |    2 +-
+ 8 files changed, 17 insertions(+), 9 deletions(-)
+
+--- a/drivers/md/md-linear.c
++++ b/drivers/md/md-linear.c
+@@ -253,7 +253,7 @@ static bool linear_make_request(struct m
+ 	sector_t bio_sector = bio->bi_iter.bi_sector;
+ 
+ 	if (unlikely(bio->bi_opf & REQ_PREFLUSH)
+-	    && md_flush_request(mddev, bio))
++	    && md_flush_request2(mddev, bio))
+ 		return true;
+ 
+ 	tmp_dev = which_dev(mddev, bio_sector);
+--- a/drivers/md/md-multipath.c
++++ b/drivers/md/md-multipath.c
+@@ -113,7 +113,7 @@ static bool multipath_make_request(struc
+ 	struct multipath_info *multipath;
+ 
+ 	if (unlikely(bio->bi_opf & REQ_PREFLUSH)
+-	    && md_flush_request(mddev, bio))
++	    && md_flush_request2(mddev, bio))
+ 		return true;
+ 
+ 	mp_bh = mempool_alloc(conf->pool, GFP_NOIO);
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -494,7 +494,7 @@ static void md_submit_flush_data(struct
+  * being finished in another context.  Returns false if the flushing is
+  * complete but still needs the I/O portion of the bio to be processed.
+  */
+-bool md_flush_request(struct mddev *mddev, struct bio *bio)
++bool md_flush_request2(struct mddev *mddev, struct bio *bio)
+ {
+ 	ktime_t start = ktime_get_boottime();
+ 	spin_lock_irq(&mddev->lock);
+@@ -524,6 +524,13 @@ bool md_flush_request(struct mddev *mdde
+ 	}
+ 	return true;
+ }
++EXPORT_SYMBOL(md_flush_request2);
++
++void md_flush_request(struct mddev *mddev, struct bio *bio)
++{
++	if (!md_flush_request2(mddev, bio))
++		mddev->pers->make_request(mddev, bio);
++}
+ EXPORT_SYMBOL(md_flush_request);
+ 
+ static inline struct mddev *mddev_get(struct mddev *mddev)
+--- a/drivers/md/md.h
++++ b/drivers/md/md.h
+@@ -536,7 +536,7 @@ struct md_personality
+ 	int level;
+ 	struct list_head list;
+ 	struct module *owner;
+-	bool __must_check (*make_request)(struct mddev *mddev, struct bio *bio);
++	bool (*make_request)(struct mddev *mddev, struct bio *bio);
+ 	/*
+ 	 * start up works that do NOT require md_thread. tasks that
+ 	 * requires md_thread should go into start()
+@@ -682,7 +682,8 @@ extern void md_error(struct mddev *mddev
+ extern void md_finish_reshape(struct mddev *mddev);
+ 
+ extern int mddev_congested(struct mddev *mddev, int bits);
+-extern bool __must_check md_flush_request(struct mddev *mddev, struct bio *bio);
++extern void md_flush_request(struct mddev *mddev, struct bio *bio);
++extern bool __must_check md_flush_request2(struct mddev *mddev, struct bio *bio);
+ extern void md_super_write(struct mddev *mddev, struct md_rdev *rdev,
+ 			   sector_t sector, int size, struct page *page);
+ extern int md_super_wait(struct mddev *mddev);
+--- a/drivers/md/raid0.c
++++ b/drivers/md/raid0.c
+@@ -578,7 +578,7 @@ static bool raid0_make_request(struct md
+ 	unsigned sectors;
+ 
+ 	if (unlikely(bio->bi_opf & REQ_PREFLUSH)
+-	    && md_flush_request(mddev, bio))
++	    && md_flush_request2(mddev, bio))
+ 		return true;
+ 
+ 	if (unlikely((bio_op(bio) == REQ_OP_DISCARD))) {
+--- a/drivers/md/raid1.c
++++ b/drivers/md/raid1.c
+@@ -1539,7 +1539,7 @@ static bool raid1_make_request(struct md
+ 	sector_t sectors;
+ 
+ 	if (unlikely(bio->bi_opf & REQ_PREFLUSH)
+-	    && md_flush_request(mddev, bio))
++	    && md_flush_request2(mddev, bio))
+ 		return true;
+ 
+ 	/*
+--- a/drivers/md/raid10.c
++++ b/drivers/md/raid10.c
+@@ -1575,7 +1575,7 @@ static bool raid10_make_request(struct m
+ 	int sectors = bio_sectors(bio);
+ 
+ 	if (unlikely(bio->bi_opf & REQ_PREFLUSH)
+-	    && md_flush_request(mddev, bio))
++	    && md_flush_request2(mddev, bio))
+ 		return true;
+ 
+ 	if (!md_write_start(mddev, bio))
+--- a/drivers/md/raid5.c
++++ b/drivers/md/raid5.c
+@@ -5584,7 +5584,7 @@ static bool raid5_make_request(struct md
+ 		if (ret == 0)
+ 			return true;
+ 		if (ret == -ENODEV) {
+-			if (md_flush_request(mddev, bi))
++			if (md_flush_request2(mddev, bi))
+ 				return true;
+ 		}
+ 		/* ret == -EAGAIN, fallback */
