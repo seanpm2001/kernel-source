@@ -1,0 +1,142 @@
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Fri, 20 Mar 2020 14:13:56 +0100
+Subject: platform/x86: Convert to new CPU match macros
+Git-commit: a69b3b1d4cf061d9197d835dcf539d2dd7b9e46f
+Patch-mainline: v5.7-rc1
+References: bsc#1154824 CVE-2020-0543
+
+The new macro set has a consistent namespace and uses C99 initializers
+instead of the grufty C89 ones.
+
+Get rid the of the local macro wrappers for consistency.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Reviewed-by: Andy Shevchenko <andy.shevchenko@gmail.com>
+Reviewed-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Link: https://lkml.kernel.org/r/20200320131509.766573641@linutronix.de
+---
+ drivers/platform/x86/intel_int0002_vgpio.c     |    4 +---
+ drivers/platform/x86/intel_mid_powerbtn.c      |    7 ++-----
+ drivers/platform/x86/intel_pmc_core.c          |   12 ++++--------
+ drivers/platform/x86/intel_telemetry_debugfs.c |    6 +-----
+ drivers/platform/x86/intel_telemetry_pltdrv.c  |    5 +----
+ drivers/platform/x86/intel_turbo_max_3.c       |    4 +---
+ 6 files changed, 10 insertions(+), 28 deletions(-)
+
+--- a/drivers/platform/x86/intel_int0002_vgpio.c
++++ b/drivers/platform/x86/intel_int0002_vgpio.c
+@@ -54,15 +54,13 @@
+ #define GPE0A_STS_PORT			0x420
+ #define GPE0A_EN_PORT			0x428
+ 
+-#define ICPU(model)	{ X86_VENDOR_INTEL, 6, model, X86_FEATURE_ANY, }
+-
+ static const struct x86_cpu_id int0002_cpu_ids[] = {
+ /*
+  * Limit ourselves to Cherry Trail for now, until testing shows we
+  * need to handle the INT0002 device on Baytrail too.
+  *	ICPU(INTEL_FAM6_ATOM_SILVERMONT),	 * Valleyview, Bay Trail *
+  */
+-	ICPU(INTEL_FAM6_ATOM_AIRMONT),		/* Braswell, Cherry Trail */
++	X86_MATCH_INTEL_FAM6_MODEL(ATOM_AIRMONT, NULL),
+ 	{}
+ };
+ 
+--- a/drivers/platform/x86/intel_mid_powerbtn.c
++++ b/drivers/platform/x86/intel_mid_powerbtn.c
+@@ -121,12 +121,9 @@ static struct mid_pb_ddata mrfld_ddata =
+ 	.setup	= mrfld_setup,
+ };
+ 
+-#define ICPU(model, ddata)	\
+-	{ X86_VENDOR_INTEL, 6, model, X86_FEATURE_ANY, (kernel_ulong_t)&ddata }
+-
+ static const struct x86_cpu_id mid_pb_cpu_ids[] = {
+-	ICPU(INTEL_FAM6_ATOM_SALTWELL_MID,		mfld_ddata),
+-	ICPU(INTEL_FAM6_ATOM_SILVERMONT_MID,	mrfld_ddata),
++	X86_MATCH_INTEL_FAM6_MODEL(ATOM_SALTWELL_MID,	&mfld_ddata),
++	X86_MATCH_INTEL_FAM6_MODEL(ATOM_SILVERMONT_MID,	&mrfld_ddata),
+ 	{}
+ };
+ 
+--- a/drivers/platform/x86/intel_pmc_core.c
++++ b/drivers/platform/x86/intel_pmc_core.c
+@@ -480,14 +480,10 @@ static inline void pmc_core_dbgfs_unregi
+ #endif /* CONFIG_DEBUG_FS */
+ 
+ static const struct x86_cpu_id intel_pmc_core_ids[] = {
+-	{ X86_VENDOR_INTEL, 6, INTEL_FAM6_SKYLAKE_L, X86_FEATURE_MWAIT,
+-		(kernel_ulong_t)NULL},
+-	{ X86_VENDOR_INTEL, 6, INTEL_FAM6_SKYLAKE, X86_FEATURE_MWAIT,
+-		(kernel_ulong_t)NULL},
+-	{ X86_VENDOR_INTEL, 6, INTEL_FAM6_KABYLAKE_L, X86_FEATURE_MWAIT,
+-		(kernel_ulong_t)NULL},
+-	{ X86_VENDOR_INTEL, 6, INTEL_FAM6_KABYLAKE, X86_FEATURE_MWAIT,
+-		(kernel_ulong_t)NULL},
++	X86_MATCH_VENDOR_FAM_MODEL_FEATURE(INTEL, 6, INTEL_FAM6_SKYLAKE_L, X86_FEATURE_MWAIT, NULL),
++	X86_MATCH_VENDOR_FAM_MODEL_FEATURE(INTEL, 6, INTEL_FAM6_SKYLAKE, X86_FEATURE_MWAIT, NULL),
++	X86_MATCH_VENDOR_FAM_MODEL_FEATURE(INTEL, 6, INTEL_FAM6_KABYLAKE_L, X86_FEATURE_MWAIT, NULL),
++	X86_MATCH_VENDOR_FAM_MODEL_FEATURE(INTEL, 6, INTEL_FAM6_KABYLAKE, X86_FEATURE_MWAIT, NULL),
+ 	{}
+ };
+ 
+--- a/drivers/platform/x86/intel_telemetry_debugfs.c
++++ b/drivers/platform/x86/intel_telemetry_debugfs.c
+@@ -78,9 +78,6 @@
+ 
+ #define TELEM_EVT_LEN(x) (sizeof(x)/sizeof((x)[0]))
+ 
+-#define TELEM_DEBUGFS_CPU(model, data) \
+-	{ X86_VENDOR_INTEL, 6, model, X86_FEATURE_ANY, (unsigned long)&data}
+-
+ #define TELEM_CHECK_AND_PARSE_EVTS(EVTID, EVTNUM, BUF, EVTLOG, EVTDAT, MASK) { \
+ 	if (evtlog[index].telem_evtid == (EVTID)) { \
+ 		for (idx = 0; idx < (EVTNUM); idx++) \
+@@ -330,10 +327,9 @@ static struct telemetry_debugfs_conf tel
+ };
+ 
+ static const struct x86_cpu_id telemetry_debugfs_cpu_ids[] = {
+-	TELEM_DEBUGFS_CPU(INTEL_FAM6_ATOM_GOLDMONT, telem_apl_debugfs_conf),
++	X86_MATCH_INTEL_FAM6_MODEL(ATOM_GOLDMONT,	&telem_apl_debugfs_conf),
+ 	{}
+ };
+-
+ MODULE_DEVICE_TABLE(x86cpu, telemetry_debugfs_cpu_ids);
+ 
+ static int telemetry_debugfs_check_evts(void)
+--- a/drivers/platform/x86/intel_telemetry_pltdrv.c
++++ b/drivers/platform/x86/intel_telemetry_pltdrv.c
+@@ -82,9 +82,6 @@
+ #define TELEM_CLEAR_VERBOSITY_BITS(x)	((x) &= ~(BIT(27) | BIT(28)))
+ #define TELEM_SET_VERBOSITY_BITS(x, y)	((x) |= ((y) << 27))
+ 
+-#define TELEM_CPU(model, data) \
+-	{ X86_VENDOR_INTEL, 6, model, X86_FEATURE_ANY, (unsigned long)&data }
+-
+ enum telemetry_action {
+ 	TELEM_UPDATE = 0,
+ 	TELEM_ADD,
+@@ -164,7 +161,7 @@ static struct telemetry_plt_config telem
+ };
+ 
+ static const struct x86_cpu_id telemetry_cpu_ids[] = {
+-	TELEM_CPU(INTEL_FAM6_ATOM_GOLDMONT, telem_apl_config),
++	X86_MATCH_INTEL_FAM6_MODEL(ATOM_GOLDMONT,	&telem_apl_config),
+ 	{}
+ };
+ 
+--- a/drivers/platform/x86/intel_turbo_max_3.c
++++ b/drivers/platform/x86/intel_turbo_max_3.c
+@@ -121,10 +121,8 @@ static int itmt_legacy_cpu_online(unsign
+ 	return 0;
+ }
+ 
+-#define ICPU(model)     { X86_VENDOR_INTEL, 6, model, X86_FEATURE_ANY, }
+-
+ static const struct x86_cpu_id itmt_legacy_cpu_ids[] = {
+-	ICPU(INTEL_FAM6_BROADWELL_X),
++	X86_MATCH_INTEL_FAM6_MODEL(BROADWELL_X,	NULL),
+ 	{}
+ };
+ 
