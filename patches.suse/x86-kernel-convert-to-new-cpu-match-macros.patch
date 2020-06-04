@@ -1,0 +1,62 @@
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Fri, 20 Mar 2020 14:13:51 +0100
+Subject: x86/kernel: Convert to new CPU match macros
+Git-commit: adefe55e725821e8ae23207992ded5994f1650a9
+Patch-mainline: v5.7-rc1
+References: bsc#1154824 CVE-2020-0543
+
+The new macro set has a consistent namespace and uses C99 initializers
+instead of the grufty C89 ones.
+
+Get rid the of the local macro wrappers for consistency.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Reviewed-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Link: https://lkml.kernel.org/r/20200320131509.250559388@linutronix.de
+---
+ arch/x86/kernel/smpboot.c   |  2 +-
+ arch/x86/power/cpu.c        | 16 ++--------------
+ 4 files changed, 23 insertions(+), 41 deletions(-)
+
+diff --git a/arch/x86/kernel/smpboot.c b/arch/x86/kernel/smpboot.c
+index 69881b2d446c..3076ef0864dd 100644
+--- a/arch/x86/kernel/smpboot.c
++++ b/arch/x86/kernel/smpboot.c
+@@ -466,7 +466,7 @@ static bool match_smt(struct cpuinfo_x86 *c, struct cpuinfo_x86 *o)
+  */
+ 
+ static const struct x86_cpu_id snc_cpu[] = {
+-	{ X86_VENDOR_INTEL, 6, INTEL_FAM6_SKYLAKE_X },
++	X86_MATCH_INTEL_FAM6_MODEL(SKYLAKE_X, NULL),
+ 	{}
+ };
+ 
+diff --git a/arch/x86/power/cpu.c b/arch/x86/power/cpu.c
+index 915bb1639763..aaff9ed7ff45 100644
+--- a/arch/x86/power/cpu.c
++++ b/arch/x86/power/cpu.c
+@@ -475,20 +475,8 @@ static int msr_save_cpuid_features(const struct x86_cpu_id *c)
+ }
+ 
+ static const struct x86_cpu_id msr_save_cpu_table[] = {
+-	{
+-		.vendor = X86_VENDOR_AMD,
+-		.family = 0x15,
+-		.model = X86_MODEL_ANY,
+-		.feature = X86_FEATURE_ANY,
+-		.driver_data = (kernel_ulong_t)msr_save_cpuid_features,
+-	},
+-	{
+-		.vendor = X86_VENDOR_AMD,
+-		.family = 0x16,
+-		.model = X86_MODEL_ANY,
+-		.feature = X86_FEATURE_ANY,
+-		.driver_data = (kernel_ulong_t)msr_save_cpuid_features,
+-	},
++	X86_MATCH_VENDOR_FAM(AMD, 0x15, &msr_save_cpuid_features),
++	X86_MATCH_VENDOR_FAM(AMD, 0x16, &msr_save_cpuid_features),
+ 	{}
+ };
+ 
+

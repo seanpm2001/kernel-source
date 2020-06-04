@@ -25,14 +25,12 @@ kernel command line in case it doesn't work out in the field.
 
 Signed-off-by: Mel Gorman <mgorman@suse.com
 ---
- drivers/cpufreq/intel_pstate.c | 62 +++++++++++++++++++++++++-----------------
+ drivers/cpufreq/intel_pstate.c |   62 ++++++++++++++++++++++++-----------------
  1 file changed, 37 insertions(+), 25 deletions(-)
 
-diff --git a/drivers/cpufreq/intel_pstate.c b/drivers/cpufreq/intel_pstate.c
-index 60712f4c04b3..8270dfa23c96 100644
 --- a/drivers/cpufreq/intel_pstate.c
 +++ b/drivers/cpufreq/intel_pstate.c
-@@ -1793,7 +1793,7 @@ static struct pstate_funcs core_funcs = {
+@@ -1980,7 +1980,7 @@ static struct pstate_funcs core_funcs =
  	.get_turbo = core_get_turbo_pstate,
  	.get_scaling = core_get_scaling,
  	.get_val = core_get_val,
@@ -41,7 +39,7 @@ index 60712f4c04b3..8270dfa23c96 100644
  };
  
  static const struct pstate_funcs silvermont_funcs = {
-@@ -1826,7 +1826,7 @@ static const struct pstate_funcs knl_funcs = {
+@@ -2013,7 +2013,7 @@ static const struct pstate_funcs knl_fun
  	.get_aperf_mperf_shift = knl_get_aperf_mperf_shift,
  	.get_scaling = core_get_scaling,
  	.get_val = core_get_val,
@@ -49,8 +47,8 @@ index 60712f4c04b3..8270dfa23c96 100644
 +	.update_util = intel_pstate_update_util,
  };
  
- #define ICPU(model, policy) \
-@@ -2374,6 +2374,7 @@ static int no_hwp __initdata;
+ #define X86_MATCH(model, policy)					 \
+@@ -2571,6 +2571,7 @@ static int no_hwp __initdata;
  static int hwp_only __initdata;
  static int __initdata vanilla_policy;
  static int __initdata server_policy;
@@ -58,7 +56,7 @@ index 60712f4c04b3..8270dfa23c96 100644
  static unsigned int force_load __initdata;
  
  static int __init intel_pstate_msrs_not_valid(void)
-@@ -2386,24 +2387,6 @@ static int __init intel_pstate_msrs_not_valid(void)
+@@ -2583,24 +2584,6 @@ static int __init intel_pstate_msrs_not_
  	return 0;
  }
  
@@ -83,7 +81,7 @@ index 60712f4c04b3..8270dfa23c96 100644
  static void __init copy_cpu_funcs(struct pstate_funcs *funcs)
  {
  	pstate_funcs.get_max   = funcs->get_max;
-@@ -2415,8 +2398,6 @@ static void __init copy_cpu_funcs(struct pstate_funcs *funcs)
+@@ -2612,8 +2595,6 @@ static void __init copy_cpu_funcs(struct
  	pstate_funcs.get_vid   = funcs->get_vid;
  	pstate_funcs.update_util = funcs->update_util;
  	pstate_funcs.get_aperf_mperf_shift = funcs->get_aperf_mperf_shift;
@@ -92,7 +90,7 @@ index 60712f4c04b3..8270dfa23c96 100644
  }
  
  #ifdef CONFIG_ACPI
-@@ -2585,6 +2566,18 @@ static int __init intel_pstate_init(void)
+@@ -2806,6 +2787,18 @@ hwp_cpu_matched:
  #if IS_ENABLED(CONFIG_ACPI)
  	if (!vanilla_policy) {
  		switch (acpi_gbl_FADT.preferred_profile) {
@@ -111,7 +109,7 @@ index 60712f4c04b3..8270dfa23c96 100644
  		case PM_WORKSTATION:
  			profile = "Workstation";
  			break;
-@@ -2603,17 +2596,24 @@ static int __init intel_pstate_init(void)
+@@ -2824,17 +2817,24 @@ hwp_cpu_matched:
  		};
  
  		if (profile) {
@@ -137,7 +135,7 @@ index 60712f4c04b3..8270dfa23c96 100644
  #endif
  
  	all_cpu_data = vzalloc(sizeof(void *) * num_possible_cpus());
-@@ -2657,10 +2657,22 @@ static int __init intel_pstate_setup(char *str)
+@@ -2878,10 +2878,22 @@ static int __init intel_pstate_setup(cha
  		force_load = 1;
  	if (!strcmp(str, "hwp_only"))
  		hwp_only = 1;

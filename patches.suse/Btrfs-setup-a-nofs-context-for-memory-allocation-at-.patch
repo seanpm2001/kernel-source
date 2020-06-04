@@ -1,0 +1,55 @@
+From: Filipe Manana <fdmanana@suse.com>
+Date: Thu, 13 Dec 2018 21:16:45 +0000
+Git-commit: b89f6d1fcb30a8cbdc18ce00c7d93792076af453
+Patch-mainline: 5.1
+References: bsc#1172127
+Subject: [PATCH] Btrfs: setup a nofs context for memory allocation at
+ btrfs_create_tree()
+
+We are holding a transaction handle when creating a tree, therefore we can
+not allocate the root using GFP_KERNEL, as we could deadlock if reclaim is
+triggered by the allocation, therefore setup a nofs context.
+
+Fixes: 74e4d82757f74 ("btrfs: let callers of btrfs_alloc_root pass gfp flags")
+CC: stable@vger.kernel.org # 4.9+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Filipe Manana <fdmanana@suse.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/disk-io.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/fs/btrfs/disk-io.c b/fs/btrfs/disk-io.c
+index c7824aeec02b..047a194155fb 100644
+--- a/fs/btrfs/disk-io.c
++++ b/fs/btrfs/disk-io.c
+@@ -30,6 +30,7 @@
+ #include <linux/ratelimit.h>
+ #include <linux/uuid.h>
+ #include <linux/semaphore.h>
++#include <linux/sched/mm.h>
+ #include <asm/unaligned.h>
+ #include "ctree.h"
+ #include "disk-io.h"
+@@ -1321,10 +1322,17 @@ struct btrfs_root *btrfs_create_tree(struct btrfs_trans_handle *trans,
+ 	struct btrfs_root *tree_root = fs_info->tree_root;
+ 	struct btrfs_root *root;
+ 	struct btrfs_key key;
++	unsigned int nofs_flag;
+ 	int ret = 0;
+ 	uuid_le uuid;
+ 
++	/*
++	 * We're holding a transaction handle, so use a NOFS memory allocation
++	 * context to avoid deadlock if reclaim happens.
++	 */
++	nofs_flag = memalloc_nofs_save();
+ 	root = btrfs_alloc_root(fs_info, GFP_KERNEL);
++	memalloc_nofs_restore(nofs_flag);
+ 	if (!root)
+ 		return ERR_PTR(-ENOMEM);
+ 
+-- 
+2.16.4
+
