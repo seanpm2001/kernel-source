@@ -4,13 +4,14 @@ Date: Sat, 3 Jun 2017 09:38:03 +0200
 Subject: [PATCH] dm: change ->end_io calling convention
 Git-commit: 1be5690984588953e759af0a4c6ddac182a1806c
 Patch-mainline: v4.13-rc1
-References: fate#322738,fate#322919,fate#322950,fate#323773
+References: fate#322738,fate#322919,fate#322950,fate#323773,bsc#1172378
 
 Turn the error paramter into a pointer so that target drivers can change
 the value, and make sure only DM_ENDIO_* values are returned from the
 methods.
 
 [ hare: rebased for SLE15 SP1 ]
+[ jeffm: added missing chunk in mirror_end_io ]
 
 Signed-off-by: Christoph Hellwig <hch@lst.de>
 Signed-off-by: Mike Snitzer <snitzer@redhat.com>
@@ -21,13 +22,13 @@ Signed-off-by: Hannes Reinecke <hare@suse.com>
  drivers/md/dm-flakey.c        |    8 ++++----
  drivers/md/dm-log-writes.c    |    4 ++--
  drivers/md/dm-mpath.c         |   11 ++++++-----
- drivers/md/dm-raid1.c         |   12 ++++++------
+ drivers/md/dm-raid1.c         |   14 +++++++-------
  drivers/md/dm-snap.c          |    4 ++--
  drivers/md/dm-stripe.c        |   14 +++++++-------
  drivers/md/dm-thin.c          |    4 ++--
  drivers/md/dm.c               |   36 ++++++++++++++++++------------------
  include/linux/device-mapper.h |    2 +-
- 10 files changed, 50 insertions(+), 49 deletions(-)
+ 10 files changed, 51 insertions(+), 50 deletions(-)
 
 --- a/drivers/md/dm-cache-target.c
 +++ b/drivers/md/dm-cache-target.c
@@ -102,7 +103,7 @@ Signed-off-by: Hannes Reinecke <hare@suse.com>
  /*
 --- a/drivers/md/dm-mpath.c
 +++ b/drivers/md/dm-mpath.c
-@@ -1517,14 +1517,15 @@ static int multipath_end_io(struct dm_ta
+@@ -1516,14 +1516,15 @@ static int multipath_end_io(struct dm_ta
  	return r;
  }
  
@@ -120,7 +121,7 @@ Signed-off-by: Hannes Reinecke <hare@suse.com>
  		goto done;
  
  	if (pgpath)
-@@ -1533,7 +1534,7 @@ static int multipath_end_io_bio(struct d
+@@ -1532,7 +1533,7 @@ static int multipath_end_io_bio(struct d
  	if (atomic_read(&m->nr_valid_paths) == 0 &&
  	    !test_bit(MPATHF_QUEUE_IF_NO_PATH, &m->flags)) {
  		dm_report_EIO(m);
@@ -129,7 +130,7 @@ Signed-off-by: Hannes Reinecke <hare@suse.com>
  		goto done;
  	}
  
-@@ -1546,7 +1547,7 @@ static int multipath_end_io_bio(struct d
+@@ -1545,7 +1546,7 @@ static int multipath_end_io_bio(struct d
  	if (!test_bit(MPATHF_QUEUE_IO, &m->flags))
  		queue_work(kmultipathd, &m->process_queued_bios);
  
@@ -138,7 +139,7 @@ Signed-off-by: Hannes Reinecke <hare@suse.com>
  done:
  	if (pgpath) {
  		struct path_selector *ps = &pgpath->pg->ps;
-@@ -1555,7 +1556,7 @@ done:
+@@ -1554,7 +1555,7 @@ done:
  			ps->type->end_io(ps, &pgpath->path, mpio->nr_bytes);
  	}
  
@@ -179,6 +180,15 @@ Signed-off-by: Hannes Reinecke <hare@suse.com>
  		if (!bio_record->details.bi_bdev) {
  			/*
  			 * There wasn't enough memory to record necessary
+@@ -1272,7 +1272,7 @@ static int mirror_end_io(struct dm_targe
+ 			 * mirror in-sync.
+ 			 */
+ 			DMERR_LIMIT("Mirror read failed.");
+-			return -EIO;
++			return DM_ENDIO_DONE;
+ 		}
+ 
+ 		m = bio_record->m;
 @@ -1302,7 +1302,7 @@ static int mirror_end_io(struct dm_targe
  out:
  	bio_record->details.bi_bdev = NULL;

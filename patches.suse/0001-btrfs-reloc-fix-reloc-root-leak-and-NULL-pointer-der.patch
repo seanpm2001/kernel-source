@@ -1,12 +1,11 @@
-From b471ac73d73952aa2f14d17f068d61d0440b16e7 Mon Sep 17 00:00:00 2001
+From 51415b6c1b117e223bc083e30af675cb5c5498f3 Mon Sep 17 00:00:00 2001
 From: Qu Wenruo <wqu@suse.com>
-Date: Mon, 18 May 2020 15:44:32 +0800
-References: bsc#1171417
-Subject: [PATCH 1/2] btrfs: relocation: Fix reloc root leakage and the NULL
- pointer reference caused by the leakage
-Git-repo: https://github.com/kdave/btrfs-devel.git
+Date: Tue, 19 May 2020 10:13:20 +0800
+Patch-mainline: v5.8-rc1
 Git-commit: 51415b6c1b117e223bc083e30af675cb5c5498f3
-Patch-mainline: Queued
+References: bsc#1171417 bsc#1160947 bsc#1172366
+Subject: [PATCH 1/2] btrfs: reloc: fix reloc root leak and NULL pointer
+ dereference
 
 [BUG]
 When balance is canceled, there is a pretty high chance that unmounting
@@ -46,11 +45,12 @@ the fs can lead to lead the NULL pointer dereference:
   RIP: 0033:0x7fd028ef740b
 
 [CAUSE]
-When balance is canceled, all reloc roots are marked orphan, and orphan
-reloc roots are going to be cleaned up.
+When balance is canceled, all reloc roots are marked as orphan, and
+orphan reloc roots are going to be cleaned up.
 
 However for orphan reloc roots and merged reloc roots, their lifespan
 are quite different:
+
 	Merged reloc roots	|	Orphan reloc roots by cancel
 --------------------------------------------------------------------
 create_reloc_root()		| create_reloc_root()
@@ -91,26 +91,38 @@ The fix is to clear fs_root->reloc_root and put it at
 merge_reloc_roots() time, so that we won't leak reloc roots.
 
 Fixes: d2311e698578 ("btrfs: relocation: Delay reloc tree deletion after merge_reloc_roots")
+CC: stable@vger.kernel.org # 5.1+
+Tested-by: Johannes Thumshirn <johannes.thumshirn@wdc.com>
 Signed-off-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
 ---
- fs/btrfs/relocation.c |   10 ++++++++--
- 1 file changed, 8 insertions(+), 2 deletions(-)
+NOTE: Since we don't have the btrfs_put_root() refactor from Josef,
+there is no need to call btrfs_put_fs_root(), or we can easily screw up
+the root memories and leads to unexpected behavior.
+
+We'd better backport that series of patches before it's going to affect
+more and more backports.
+---
+ fs/btrfs/relocation.c |   10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
 
 --- a/fs/btrfs/relocation.c
 +++ b/fs/btrfs/relocation.c
-@@ -2567,9 +2567,9 @@ again:
+@@ -2524,12 +2524,10 @@ again:
  		reloc_root = list_entry(reloc_roots.next,
  					struct btrfs_root, root_list);
  
-+		root = read_fs_root(fs_info,
-+				    reloc_root->root_key.offset);
++		root = read_fs_root(fs_info, reloc_root->root_key.offset);
  		if (btrfs_root_refs(&reloc_root->root_item) > 0) {
 -			root = read_fs_root(fs_info,
 -					    reloc_root->root_key.offset);
  			BUG_ON(IS_ERR(root));
  			BUG_ON(root->reloc_root != reloc_root);
- 
-@@ -2581,6 +2581,12 @@ again:
+-
+ 			ret = merge_reloc_root(rc, root);
+ 			if (ret) {
+ 				if (list_empty(&reloc_root->root_list))
+@@ -2538,6 +2536,12 @@ again:
  				goto out;
  			}
  		} else {
