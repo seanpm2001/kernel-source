@@ -10,8 +10,8 @@ Signed-off-by: Neil Brown <neilb@suse.com>
 Acked-by: Coly Li <colyli@suse.de>
 ---
  drivers/md/md-cluster.h |    7 +++++--
- drivers/md/md.h         |   40 ++++++++++++++++++++++++++--------------
- 2 files changed, 31 insertions(+), 16 deletions(-)
+ drivers/md/md.h         |   42 +++++++++++++++++++++++++++---------------
+ 2 files changed, 32 insertions(+), 17 deletions(-)
 
 --- a/drivers/md/md-cluster.h
 +++ b/drivers/md/md-cluster.h
@@ -71,7 +71,7 @@ Acked-by: Coly Li <colyli@suse.de>
  };
  enum flag_bits {
  	Faulty,			/* device is known to have a fault */
-@@ -486,25 +488,32 @@ struct mddev {
+@@ -486,26 +488,33 @@ struct mddev {
  	struct bio_set			*sync_set; /* for sync operations like
  						   * metadata and bitmap writes
  						   */
@@ -96,6 +96,7 @@ Acked-by: Coly Li <colyli@suse.de>
  	void (*sync_super)(struct mddev *mddev, struct md_rdev *rdev);
  	struct md_cluster_info		*cluster_info;
  	unsigned int			good_device_nr;	/* good device num within cluster raid */
+-	unsigned int			noio_flag; /* for memalloc scope API */
  
  	bool	has_superblocks:1;
 +
@@ -105,12 +106,13 @@ Acked-by: Coly Li <colyli@suse.de>
 +					  */
 +	struct work_struct flush_work;
 +	mempool_t *serial_info_pool;
++	unsigned int			noio_flag; /* for memalloc scope API */
  	bool	fail_last_dev:1;
 +#endif
  };
  
  enum recovery_flags {
-@@ -584,7 +593,6 @@ struct md_personality
+@@ -585,7 +594,6 @@ struct md_personality
  	int (*check_reshape) (struct mddev *mddev);
  	int (*start_reshape) (struct mddev *mddev);
  	void (*finish_reshape) (struct mddev *mddev);
@@ -118,7 +120,7 @@ Acked-by: Coly Li <colyli@suse.de>
  	/* quiesce suspends or resumes internal processing.
  	 * 1 - stop new actions and wait for action io to complete
  	 * 0 - return to normal behaviour
-@@ -605,6 +613,10 @@ struct md_personality
+@@ -606,6 +614,10 @@ struct md_personality
  	int (*congested)(struct mddev *mddev, int bits);
  	/* Changes the consistency policy of an active array. */
  	int (*change_consistency_policy)(struct mddev *mddev, const char *buf);
