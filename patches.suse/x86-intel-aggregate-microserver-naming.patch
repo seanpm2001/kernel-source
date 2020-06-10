@@ -1,0 +1,439 @@
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Tue, 27 Aug 2019 21:48:24 +0200
+Subject: x86/intel: Aggregate microserver naming
+Git-commit: 5ebb34edbefa8ea6a7e109179d5fc7b3529dbeba
+Patch-mainline: v5.4-rc1
+References: bsc#1154824 CVE-2020-0543
+
+Currently big microservers have _XEON_D while small microservers have
+_X, Make it uniformly: _D.
+
+for i in `git grep -l "\(INTEL_FAM6_\|VULNWL_INTEL\|INTEL_CPU_FAM6\).*_\(X\|XEON_D\)"`
+do
+	sed -i -e 's/\(\(INTEL_FAM6_\|VULNWL_INTEL\|INTEL_CPU_FAM6\).*ATOM.*\)_X/\1_D/g' \
+	       -e 's/\(\(INTEL_FAM6_\|VULNWL_INTEL\|INTEL_CPU_FAM6\).*\)_XEON_D/\1_D/g' ${i}
+done
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Tony Luck <tony.luck@intel.com>
+Cc: x86@kernel.org
+Cc: Dave Hansen <dave.hansen@intel.com>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: Borislav Petkov <bp@alien8.de>
+Link: https://lkml.kernel.org/r/20190827195122.677152989@infradead.org
+
+Acked-by: Borislav Petkov <bp@suse.de>
+---
+ arch/x86/events/intel/core.c           |    6 +++---
+ arch/x86/events/intel/cstate.c         |   10 +++++-----
+ arch/x86/events/intel/pt.c             |    2 +-
+ arch/x86/events/intel/rapl.c           |    2 +-
+ arch/x86/events/intel/uncore.c         |    2 +-
+ arch/x86/events/msr.c                  |    4 ++--
+ arch/x86/include/asm/intel-family.h    |    8 ++++----
+ arch/x86/kernel/cpu/common.c           |    4 ++--
+ arch/x86/kernel/cpu/intel.c            |    4 ++--
+ arch/x86/kernel/cpu/mcheck/mce_intel.c |    2 +-
+ arch/x86/kernel/tsc.c                  |    2 +-
+ drivers/cpufreq/intel_pstate.c         |    6 +++---
+ drivers/edac/pnd2_edac.c               |    2 +-
+ drivers/edac/sb_edac.c                 |    2 +-
+ drivers/idle/intel_idle.c              |   10 +++++-----
+ drivers/powercap/intel_rapl.c          |    6 +++---
+ tools/power/x86/turbostat/turbostat.c  |   22 +++++++++++-----------
+ 17 files changed, 47 insertions(+), 47 deletions(-)
+
+--- a/arch/x86/events/intel/core.c
++++ b/arch/x86/events/intel/core.c
+@@ -3888,7 +3888,7 @@ __init int intel_pmu_init(void)
+ 		break;
+ 
+ 	case INTEL_FAM6_ATOM_SILVERMONT:
+-	case INTEL_FAM6_ATOM_SILVERMONT_X:
++	case INTEL_FAM6_ATOM_SILVERMONT_D:
+ 	case INTEL_FAM6_ATOM_AIRMONT:
+ 		memcpy(hw_cache_event_ids, slm_hw_cache_event_ids,
+ 			sizeof(hw_cache_event_ids));
+@@ -3908,7 +3908,7 @@ __init int intel_pmu_init(void)
+ 		break;
+ 
+ 	case INTEL_FAM6_ATOM_GOLDMONT:
+-	case INTEL_FAM6_ATOM_GOLDMONT_X:
++	case INTEL_FAM6_ATOM_GOLDMONT_D:
+ 		memcpy(hw_cache_event_ids, glm_hw_cache_event_ids,
+ 		       sizeof(hw_cache_event_ids));
+ 		memcpy(hw_cache_extra_regs, glm_hw_cache_extra_regs,
+@@ -4060,7 +4060,7 @@ __init int intel_pmu_init(void)
+ 		break;
+ 
+ 	case INTEL_FAM6_BROADWELL:
+-	case INTEL_FAM6_BROADWELL_XEON_D:
++	case INTEL_FAM6_BROADWELL_D:
+ 	case INTEL_FAM6_BROADWELL_G:
+ 	case INTEL_FAM6_BROADWELL_X:
+ 		x86_pmu.late_ack = true;
+--- a/arch/x86/events/intel/cstate.c
++++ b/arch/x86/events/intel/cstate.c
+@@ -532,13 +532,13 @@ static const struct x86_cpu_id intel_cst
+ 	X86_CSTATES_MODEL(INTEL_FAM6_HASWELL_L, hswult_cstates),
+ 
+ 	X86_CSTATES_MODEL(INTEL_FAM6_ATOM_SILVERMONT, slm_cstates),
+-	X86_CSTATES_MODEL(INTEL_FAM6_ATOM_SILVERMONT_X, slm_cstates),
++	X86_CSTATES_MODEL(INTEL_FAM6_ATOM_SILVERMONT_D, slm_cstates),
+ 	X86_CSTATES_MODEL(INTEL_FAM6_ATOM_AIRMONT,     slm_cstates),
+ 
+-	X86_CSTATES_MODEL(INTEL_FAM6_BROADWELL,	       snb_cstates),
+-	X86_CSTATES_MODEL(INTEL_FAM6_BROADWELL_XEON_D, snb_cstates),
+-	X86_CSTATES_MODEL(INTEL_FAM6_BROADWELL_G,      snb_cstates),
+-	X86_CSTATES_MODEL(INTEL_FAM6_BROADWELL_X,      snb_cstates),
++	X86_CSTATES_MODEL(INTEL_FAM6_BROADWELL,   snb_cstates),
++	X86_CSTATES_MODEL(INTEL_FAM6_BROADWELL_D, snb_cstates),
++	X86_CSTATES_MODEL(INTEL_FAM6_BROADWELL_G, snb_cstates),
++	X86_CSTATES_MODEL(INTEL_FAM6_BROADWELL_X, snb_cstates),
+ 
+ 	X86_CSTATES_MODEL(INTEL_FAM6_SKYLAKE_L, snb_cstates),
+ 	X86_CSTATES_MODEL(INTEL_FAM6_SKYLAKE,        snb_cstates),
+--- a/arch/x86/events/intel/pt.c
++++ b/arch/x86/events/intel/pt.c
+@@ -205,7 +205,7 @@ static int __init pt_pmu_hw_init(void)
+ 	/* model-specific quirks */
+ 	switch (boot_cpu_data.x86_model) {
+ 	case INTEL_FAM6_BROADWELL:
+-	case INTEL_FAM6_BROADWELL_XEON_D:
++	case INTEL_FAM6_BROADWELL_D:
+ 	case INTEL_FAM6_BROADWELL_G:
+ 	case INTEL_FAM6_BROADWELL_X:
+ 		/* not setting BRANCH_EN will #GP, erratum BDM106 */
+--- a/arch/x86/events/intel/rapl.c
++++ b/arch/x86/events/intel/rapl.c
+@@ -762,7 +762,7 @@ static const struct x86_cpu_id rapl_cpu_
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_BROADWELL,	  hsw_rapl_init),
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_BROADWELL_G,   hsw_rapl_init),
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_BROADWELL_X,	  hsx_rapl_init),
+-	X86_RAPL_MODEL_MATCH(INTEL_FAM6_BROADWELL_XEON_D, hsw_rapl_init),
++	X86_RAPL_MODEL_MATCH(INTEL_FAM6_BROADWELL_D, hsw_rapl_init),
+ 
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_XEON_PHI_KNL, knl_rapl_init),
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_XEON_PHI_KNM, knl_rapl_init),
+--- a/arch/x86/events/intel/uncore.c
++++ b/arch/x86/events/intel/uncore.c
+@@ -1332,7 +1332,7 @@ static const struct x86_cpu_id intel_unc
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_IVYBRIDGE_X,	  ivbep_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_HASWELL_X,	  hswep_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_BROADWELL_X,	  bdx_uncore_init),
+-	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_BROADWELL_XEON_D, bdx_uncore_init),
++	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_BROADWELL_D,	  bdx_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_XEON_PHI_KNL,	  knl_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_XEON_PHI_KNM,	  knl_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_SKYLAKE,	  skl_uncore_init),
+--- a/arch/x86/events/msr.c
++++ b/arch/x86/events/msr.c
+@@ -57,12 +57,12 @@ static bool test_intel(int idx)
+ 	case INTEL_FAM6_HASWELL_G:
+ 
+ 	case INTEL_FAM6_BROADWELL:
+-	case INTEL_FAM6_BROADWELL_XEON_D:
++	case INTEL_FAM6_BROADWELL_D:
+ 	case INTEL_FAM6_BROADWELL_G:
+ 	case INTEL_FAM6_BROADWELL_X:
+ 
+ 	case INTEL_FAM6_ATOM_SILVERMONT:
+-	case INTEL_FAM6_ATOM_SILVERMONT_X:
++	case INTEL_FAM6_ATOM_SILVERMONT_D:
+ 	case INTEL_FAM6_ATOM_AIRMONT:
+ 		if (idx == PERF_MSR_SMI)
+ 			return true;
+--- a/arch/x86/include/asm/intel-family.h
++++ b/arch/x86/include/asm/intel-family.h
+@@ -40,7 +40,7 @@
+ #define INTEL_FAM6_BROADWELL		0x3D
+ #define INTEL_FAM6_BROADWELL_G		0x47
+ #define INTEL_FAM6_BROADWELL_X		0x4F
+-#define INTEL_FAM6_BROADWELL_XEON_D	0x56
++#define INTEL_FAM6_BROADWELL_D		0x56
+ 
+ #define INTEL_FAM6_SKYLAKE_L		0x4E
+ #define INTEL_FAM6_SKYLAKE		0x5E
+@@ -58,14 +58,14 @@
+ #define INTEL_FAM6_ATOM_SALTWELL_TABLET	0x35
+ #define INTEL_FAM6_ATOM_SALTWELL	0x36
+ #define INTEL_FAM6_ATOM_SILVERMONT	0x37 /* BayTrail/BYT / Valleyview */
+-#define INTEL_FAM6_ATOM_SILVERMONT_X	0x4D /* Avaton/Rangely */
++#define INTEL_FAM6_ATOM_SILVERMONT_D	0x4D /* Avaton, Rangely */
+ #define INTEL_FAM6_ATOM_AIRMONT		0x4C /* CherryTrail / Braswell */
+ #define INTEL_FAM6_ATOM_SILVERMONT_MID	0x4A /* Tangier */
+ #define INTEL_FAM6_ATOM_AIRMONT_MID	0x5A /* Anniedale */
+ #define INTEL_FAM6_ATOM_GOLDMONT	0x5C
+-#define INTEL_FAM6_ATOM_GOLDMONT_X	0x5F /* Goldmont Microserver */
++#define INTEL_FAM6_ATOM_GOLDMONT_D	0x5F /* Denverton */
+ #define INTEL_FAM6_ATOM_GOLDMONT_PLUS	0x7A
+-#define INTEL_FAM6_ATOM_TREMONT_X	0x86 /* Jacobswille */
++#define INTEL_FAM6_ATOM_TREMONT_D	0x86 /* Jacobsville */
+ 
+ /* Xeon Phi */
+ 
+--- a/arch/x86/kernel/cpu/common.c
++++ b/arch/x86/kernel/cpu/common.c
+@@ -936,7 +936,7 @@ static const __initconst struct x86_cpu_
+ 	VULNWL_INTEL(ATOM_BONNELL_MID,		NO_SPECULATION),
+ 
+ 	VULNWL_INTEL(ATOM_SILVERMONT,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
+-	VULNWL_INTEL(ATOM_SILVERMONT_X,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
++	VULNWL_INTEL(ATOM_SILVERMONT_D,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
+ 	VULNWL_INTEL(ATOM_SILVERMONT_MID,	NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
+ 	VULNWL_INTEL(ATOM_AIRMONT,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
+ 	VULNWL_INTEL(XEON_PHI_KNL,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
+@@ -947,7 +947,7 @@ static const __initconst struct x86_cpu_
+ 	VULNWL_INTEL(ATOM_AIRMONT_MID,		NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
+ 
+ 	VULNWL_INTEL(ATOM_GOLDMONT,		NO_MDS | NO_L1TF | NO_SWAPGS),
+-	VULNWL_INTEL(ATOM_GOLDMONT_X,		NO_MDS | NO_L1TF | NO_SWAPGS),
++	VULNWL_INTEL(ATOM_GOLDMONT_D,		NO_MDS | NO_L1TF | NO_SWAPGS),
+ 	VULNWL_INTEL(ATOM_GOLDMONT_PLUS,	NO_MDS | NO_L1TF | NO_SWAPGS),
+ 
+ 	/*
+--- a/arch/x86/kernel/cpu/intel.c
++++ b/arch/x86/kernel/cpu/intel.c
+@@ -124,8 +124,8 @@ static const struct sku_microcode spectr
+ 	{ INTEL_FAM6_SKYLAKE_X,		0x04,	0x0200003c },
+ 	{ INTEL_FAM6_BROADWELL,		0x04,	0x28 },
+ 	{ INTEL_FAM6_BROADWELL_G,	0x01,	0x1b },
+-	{ INTEL_FAM6_BROADWELL_XEON_D,	0x02,	0x14 },
+-	{ INTEL_FAM6_BROADWELL_XEON_D,	0x03,	0x07000011 },
++	{ INTEL_FAM6_BROADWELL_D,	0x02,	0x14 },
++	{ INTEL_FAM6_BROADWELL_D,	0x03,	0x07000011 },
+ 	{ INTEL_FAM6_BROADWELL_X,	0x01,	0x0b000025 },
+ 	{ INTEL_FAM6_HASWELL_L,		0x01,	0x21 },
+ 	{ INTEL_FAM6_HASWELL_G,		0x01,	0x18 },
+--- a/arch/x86/kernel/cpu/mcheck/mce_intel.c
++++ b/arch/x86/kernel/cpu/mcheck/mce_intel.c
+@@ -478,7 +478,7 @@ static void intel_ppin_init(struct cpuin
+ 	switch (c->x86_model) {
+ 	case INTEL_FAM6_IVYBRIDGE_X:
+ 	case INTEL_FAM6_HASWELL_X:
+-	case INTEL_FAM6_BROADWELL_XEON_D:
++	case INTEL_FAM6_BROADWELL_D:
+ 	case INTEL_FAM6_BROADWELL_X:
+ 	case INTEL_FAM6_SKYLAKE_X:
+ 	case INTEL_FAM6_XEON_PHI_KNL:
+--- a/arch/x86/kernel/tsc.c
++++ b/arch/x86/kernel/tsc.c
+@@ -620,7 +620,7 @@ unsigned long native_calibrate_tsc(void)
+ 		case INTEL_FAM6_KABYLAKE:
+ 			crystal_khz = 24000;	/* 24.0 MHz */
+ 			break;
+-		case INTEL_FAM6_ATOM_GOLDMONT_X:
++		case INTEL_FAM6_ATOM_GOLDMONT_D:
+ 			crystal_khz = 25000;	/* 25.0 MHz */
+ 			break;
+ 		case INTEL_FAM6_ATOM_GOLDMONT:
+--- a/drivers/cpufreq/intel_pstate.c
++++ b/drivers/cpufreq/intel_pstate.c
+@@ -2033,7 +2033,7 @@ static const struct x86_cpu_id intel_pst
+ 	ICPU(INTEL_FAM6_SKYLAKE_L,		core_funcs),
+ 	ICPU(INTEL_FAM6_BROADWELL_X,		core_funcs),
+ 	ICPU(INTEL_FAM6_SKYLAKE,		core_funcs),
+-	ICPU(INTEL_FAM6_BROADWELL_XEON_D,	core_funcs),
++	ICPU(INTEL_FAM6_BROADWELL_D,		core_funcs),
+ 	ICPU(INTEL_FAM6_XEON_PHI_KNL,		knl_funcs),
+ 	ICPU(INTEL_FAM6_XEON_PHI_KNM,		knl_funcs),
+ 	ICPU(INTEL_FAM6_ATOM_GOLDMONT,		core_funcs),
+@@ -2044,7 +2044,7 @@ static const struct x86_cpu_id intel_pst
+ MODULE_DEVICE_TABLE(x86cpu, intel_pstate_cpu_ids);
+ 
+ static const struct x86_cpu_id intel_pstate_cpu_oob_ids[] __initconst = {
+-	ICPU(INTEL_FAM6_BROADWELL_XEON_D, core_funcs),
++	ICPU(INTEL_FAM6_BROADWELL_D, core_funcs),
+ 	ICPU(INTEL_FAM6_BROADWELL_X, core_funcs),
+ 	ICPU(INTEL_FAM6_SKYLAKE_X, core_funcs),
+ 	{}
+@@ -2746,7 +2746,7 @@ static inline void intel_pstate_request_
+ 
+ static const struct x86_cpu_id hwp_support_ids[] __initconst = {
+ 	ICPU_HWP(INTEL_FAM6_BROADWELL_X, INTEL_PSTATE_HWP_BROADWELL),
+-	ICPU_HWP(INTEL_FAM6_BROADWELL_XEON_D, INTEL_PSTATE_HWP_BROADWELL),
++	ICPU_HWP(INTEL_FAM6_BROADWELL_D, INTEL_PSTATE_HWP_BROADWELL),
+ 	ICPU_HWP(X86_MODEL_ANY, 0),
+ 	{}
+ };
+--- a/drivers/edac/pnd2_edac.c
++++ b/drivers/edac/pnd2_edac.c
+@@ -1541,7 +1541,7 @@ static struct dunit_ops dnv_ops = {
+ 
+ static const struct x86_cpu_id pnd2_cpuids[] = {
+ 	{ X86_VENDOR_INTEL, 6, INTEL_FAM6_ATOM_GOLDMONT, 0, (kernel_ulong_t)&apl_ops },
+-	{ X86_VENDOR_INTEL, 6, INTEL_FAM6_ATOM_GOLDMONT_X, 0, (kernel_ulong_t)&dnv_ops },
++	{ X86_VENDOR_INTEL, 6, INTEL_FAM6_ATOM_GOLDMONT_D, 0, (kernel_ulong_t)&dnv_ops },
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(x86cpu, pnd2_cpuids);
+--- a/drivers/edac/sb_edac.c
++++ b/drivers/edac/sb_edac.c
+@@ -3327,7 +3327,7 @@ static const struct x86_cpu_id sbridge_c
+ 	ICPU(INTEL_FAM6_IVYBRIDGE_X,	  pci_dev_descr_ibridge_table),
+ 	ICPU(INTEL_FAM6_HASWELL_X,	  pci_dev_descr_haswell_table),
+ 	ICPU(INTEL_FAM6_BROADWELL_X,	  pci_dev_descr_broadwell_table),
+-	ICPU(INTEL_FAM6_BROADWELL_XEON_D, pci_dev_descr_broadwell_table),
++	ICPU(INTEL_FAM6_BROADWELL_D,	  pci_dev_descr_broadwell_table),
+ 	ICPU(INTEL_FAM6_XEON_PHI_KNL,	  pci_dev_descr_knl_table),
+ 	ICPU(INTEL_FAM6_XEON_PHI_KNM,	  pci_dev_descr_knl_table),
+ 	{ }
+--- a/drivers/idle/intel_idle.c
++++ b/drivers/idle/intel_idle.c
+@@ -1070,7 +1070,7 @@ static const struct x86_cpu_id intel_idl
+ 	ICPU(INTEL_FAM6_WESTMERE_EP,		idle_cpu_nehalem),
+ 	ICPU(INTEL_FAM6_NEHALEM_EX,		idle_cpu_nehalem),
+ 	ICPU(INTEL_FAM6_ATOM_BONNELL,		idle_cpu_atom),
+-	ICPU(INTEL_FAM6_ATOM_BONNELL_MID,		idle_cpu_lincroft),
++	ICPU(INTEL_FAM6_ATOM_BONNELL_MID,	idle_cpu_lincroft),
+ 	ICPU(INTEL_FAM6_WESTMERE_EX,		idle_cpu_nehalem),
+ 	ICPU(INTEL_FAM6_SANDYBRIDGE,		idle_cpu_snb),
+ 	ICPU(INTEL_FAM6_SANDYBRIDGE_X,		idle_cpu_snb),
+@@ -1084,11 +1084,11 @@ static const struct x86_cpu_id intel_idl
+ 	ICPU(INTEL_FAM6_HASWELL_X,		idle_cpu_hsw),
+ 	ICPU(INTEL_FAM6_HASWELL_L,		idle_cpu_hsw),
+ 	ICPU(INTEL_FAM6_HASWELL_G,		idle_cpu_hsw),
+-	ICPU(INTEL_FAM6_ATOM_SILVERMONT_X,	idle_cpu_avn),
++	ICPU(INTEL_FAM6_ATOM_SILVERMONT_D,	idle_cpu_avn),
+ 	ICPU(INTEL_FAM6_BROADWELL,		idle_cpu_bdw),
+ 	ICPU(INTEL_FAM6_BROADWELL_G,		idle_cpu_bdw),
+ 	ICPU(INTEL_FAM6_BROADWELL_X,		idle_cpu_bdw),
+-	ICPU(INTEL_FAM6_BROADWELL_XEON_D,	idle_cpu_bdw),
++	ICPU(INTEL_FAM6_BROADWELL_D,		idle_cpu_bdw),
+ 	ICPU(INTEL_FAM6_SKYLAKE_L,		idle_cpu_skl),
+ 	ICPU(INTEL_FAM6_SKYLAKE,		idle_cpu_skl),
+ 	ICPU(INTEL_FAM6_KABYLAKE_L,		idle_cpu_skl),
+@@ -1098,8 +1098,8 @@ static const struct x86_cpu_id intel_idl
+ 	ICPU(INTEL_FAM6_XEON_PHI_KNM,		idle_cpu_knl),
+ 	ICPU(INTEL_FAM6_ATOM_GOLDMONT,		idle_cpu_bxt),
+ 	ICPU(INTEL_FAM6_ATOM_GOLDMONT_PLUS,	idle_cpu_bxt),
+-	ICPU(INTEL_FAM6_ATOM_GOLDMONT_X,		idle_cpu_dnv),
+-	ICPU(INTEL_FAM6_ATOM_TREMONT_X,		idle_cpu_dnv),
++	ICPU(INTEL_FAM6_ATOM_GOLDMONT_D,	idle_cpu_dnv),
++	ICPU(INTEL_FAM6_ATOM_TREMONT_D,		idle_cpu_dnv),
+ 	{}
+ };
+ 
+--- a/drivers/powercap/intel_rapl.c
++++ b/drivers/powercap/intel_rapl.c
+@@ -1155,7 +1155,7 @@ static const struct x86_cpu_id rapl_ids[
+ 
+ 	RAPL_CPU(INTEL_FAM6_BROADWELL,		rapl_defaults_core),
+ 	RAPL_CPU(INTEL_FAM6_BROADWELL_G,	rapl_defaults_core),
+-	RAPL_CPU(INTEL_FAM6_BROADWELL_XEON_D,	rapl_defaults_core),
++	RAPL_CPU(INTEL_FAM6_BROADWELL_D,	rapl_defaults_core),
+ 	RAPL_CPU(INTEL_FAM6_BROADWELL_X,	rapl_defaults_hsw_server),
+ 
+ 	RAPL_CPU(INTEL_FAM6_SKYLAKE,		rapl_defaults_core),
+@@ -1170,8 +1170,8 @@ static const struct x86_cpu_id rapl_ids[
+ 	RAPL_CPU(INTEL_FAM6_ATOM_AIRMONT_MID,	rapl_defaults_ann),
+ 	RAPL_CPU(INTEL_FAM6_ATOM_GOLDMONT,	rapl_defaults_core),
+ 	RAPL_CPU(INTEL_FAM6_ATOM_GOLDMONT_PLUS,	rapl_defaults_core),
+-	RAPL_CPU(INTEL_FAM6_ATOM_GOLDMONT_X,	rapl_defaults_core),
+-	RAPL_CPU(INTEL_FAM6_ATOM_TREMONT_X,	rapl_defaults_core),
++	RAPL_CPU(INTEL_FAM6_ATOM_GOLDMONT_D,	rapl_defaults_core),
++	RAPL_CPU(INTEL_FAM6_ATOM_TREMONT_D,	rapl_defaults_core),
+ 
+ 	RAPL_CPU(INTEL_FAM6_XEON_PHI_KNL,	rapl_defaults_hsw_server),
+ 	RAPL_CPU(INTEL_FAM6_XEON_PHI_KNM,	rapl_defaults_hsw_server),
+--- a/tools/power/x86/turbostat/turbostat.c
++++ b/tools/power/x86/turbostat/turbostat.c
+@@ -1839,7 +1839,7 @@ int has_turbo_ratio_group_limits(int fam
+ 	switch (model) {
+ 	case INTEL_FAM6_ATOM_GOLDMONT:
+ 	case INTEL_FAM6_SKYLAKE_X:
+-	case INTEL_FAM6_ATOM_GOLDMONT_X:
++	case INTEL_FAM6_ATOM_GOLDMONT_D:
+ 		return 1;
+ 	}
+ 	return 0;
+@@ -2703,7 +2703,7 @@ int probe_nhm_msrs(unsigned int family,
+ 		break;
+ 	case INTEL_FAM6_ATOM_SILVERMONT:	/* BYT */
+ 		no_MSR_MISC_PWR_MGMT = 1;
+-	case INTEL_FAM6_ATOM_SILVERMONT_X:	/* AVN */
++	case INTEL_FAM6_ATOM_SILVERMONT_D:	/* AVN */
+ 		pkg_cstate_limits = slv_pkg_cstate_limits;
+ 		break;
+ 	case INTEL_FAM6_ATOM_AIRMONT:	/* AMT */
+@@ -2716,7 +2716,7 @@ int probe_nhm_msrs(unsigned int family,
+ 		break;
+ 	case INTEL_FAM6_ATOM_GOLDMONT:	/* BXT */
+ 	case INTEL_FAM6_ATOM_GOLDMONT_PLUS:
+-	case INTEL_FAM6_ATOM_GOLDMONT_X:	/* DNV */
++	case INTEL_FAM6_ATOM_GOLDMONT_D:	/* DNV */
+ 		pkg_cstate_limits = bxt_pkg_cstate_limits;
+ 		break;
+ 	default:
+@@ -2759,7 +2759,7 @@ int is_dnv(unsigned int family, unsigned
+ 		return 0;
+ 
+ 	switch (model) {
+-	case INTEL_FAM6_ATOM_GOLDMONT_X:
++	case INTEL_FAM6_ATOM_GOLDMONT_D:
+ 		return 1;
+ 	}
+ 	return 0;
+@@ -2894,7 +2894,7 @@ int has_config_tdp(unsigned int family,
+ 	case INTEL_FAM6_BROADWELL:	/* BDW */
+ 	case INTEL_FAM6_BROADWELL_G:	/* BDW */
+ 	case INTEL_FAM6_BROADWELL_X:	/* BDX */
+-	case INTEL_FAM6_BROADWELL_XEON_D:	/* BDX-DE */
++	case INTEL_FAM6_BROADWELL_D:	/* BDX-DE */
+ 	case INTEL_FAM6_SKYLAKE_L:	/* SKL */
+ 	case INTEL_FAM6_SKYLAKE_DESKTOP:	/* SKL */
+ 	case INTEL_FAM6_KABYLAKE_L:	/* KBL */
+@@ -3276,7 +3276,7 @@ double get_tdp(unsigned int model)
+ 
+ 	switch (model) {
+ 	case INTEL_FAM6_ATOM_SILVERMONT:
+-	case INTEL_FAM6_ATOM_SILVERMONT_X:
++	case INTEL_FAM6_ATOM_SILVERMONT_D:
+ 		return 30.0;
+ 	default:
+ 		return 135.0;
+@@ -3401,7 +3401,7 @@ void rapl_probe(unsigned int family, uns
+ 		}
+ 		break;
+ 	case INTEL_FAM6_ATOM_SILVERMONT:	/* BYT */
+-	case INTEL_FAM6_ATOM_SILVERMONT_X:	/* AVN */
++	case INTEL_FAM6_ATOM_SILVERMONT_D:	/* AVN */
+ 		do_rapl = RAPL_PKG | RAPL_CORES;
+ 		if (rapl_joules) {
+ 			BIC_PRESENT(BIC_Pkg_J);
+@@ -3411,7 +3411,7 @@ void rapl_probe(unsigned int family, uns
+ 			BIC_PRESENT(BIC_CorWatt);
+ 		}
+ 		break;
+-	case INTEL_FAM6_ATOM_GOLDMONT_X:	/* DNV */
++	case INTEL_FAM6_ATOM_GOLDMONT_D:	/* DNV */
+ 		do_rapl = RAPL_PKG | RAPL_DRAM | RAPL_DRAM_POWER_INFO | RAPL_DRAM_PERF_STATUS | RAPL_PKG_PERF_STATUS | RAPL_PKG_POWER_INFO | RAPL_CORES_ENERGY_STATUS;
+ 		BIC_PRESENT(BIC_PKG__);
+ 		BIC_PRESENT(BIC_RAM__);
+@@ -3685,7 +3685,7 @@ int has_snb_msrs(unsigned int family, un
+ 	case INTEL_FAM6_SKYLAKE_X:	/* SKX */
+ 	case INTEL_FAM6_ATOM_GOLDMONT:	/* BXT */
+ 	case INTEL_FAM6_ATOM_GOLDMONT_PLUS:
+-	case INTEL_FAM6_ATOM_GOLDMONT_X:	/* DNV */
++	case INTEL_FAM6_ATOM_GOLDMONT_D:	/* DNV */
+ 		return 1;
+ 	}
+ 	return 0;
+@@ -3751,7 +3751,7 @@ int is_slm(unsigned int family, unsigned
+ 		return 0;
+ 	switch (model) {
+ 	case INTEL_FAM6_ATOM_SILVERMONT:	/* BYT */
+-	case INTEL_FAM6_ATOM_SILVERMONT_X:	/* AVN */
++	case INTEL_FAM6_ATOM_SILVERMONT_D:	/* AVN */
+ 		return 1;
+ 	}
+ 	return 0;
+@@ -4106,7 +4106,7 @@ void process_cpuid()
+ 					crystal_hz = 24000000;	/* 24.0 MHz */
+ 					break;
+ 				case INTEL_FAM6_SKYLAKE_X:	/* SKX */
+-				case INTEL_FAM6_ATOM_GOLDMONT_X:	/* DNV */
++				case INTEL_FAM6_ATOM_GOLDMONT_D:	/* DNV */
+ 					crystal_hz = 25000000;	/* 25.0 MHz */
+ 					break;
+ 				case INTEL_FAM6_ATOM_GOLDMONT:	/* BXT */

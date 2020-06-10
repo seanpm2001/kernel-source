@@ -1,0 +1,45 @@
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Fri, 20 Mar 2020 14:13:57 +0100
+Subject: hwmon: Convert to new X86 CPU match macros
+Git-commit: 5cfc7ac7c1bf6014e9d22c41a724258d6c37a471
+Patch-mainline: v5.7-rc1
+References: bsc#1154824 CVE-2020-0543
+
+The new macro set has a consistent namespace and uses C99 initializers
+instead of the grufty C89 ones.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Reviewed-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Link: https://lkml.kernel.org/r/20200320131509.859324598@linutronix.de
+---
+ drivers/hwmon/coretemp.c    |    2 +-
+ drivers/hwmon/via-cputemp.c |    6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+--- a/drivers/hwmon/coretemp.c
++++ b/drivers/hwmon/coretemp.c
+@@ -721,7 +721,7 @@ static int coretemp_cpu_offline(unsigned
+ 	return 0;
+ }
+ static const struct x86_cpu_id __initconst coretemp_ids[] = {
+-	{ X86_VENDOR_INTEL, X86_FAMILY_ANY, X86_MODEL_ANY, X86_FEATURE_DTHERM },
++	X86_MATCH_VENDOR_FEATURE(INTEL, X86_FEATURE_DTHERM, NULL),
+ 	{}
+ };
+ MODULE_DEVICE_TABLE(x86cpu, coretemp_ids);
+--- a/drivers/hwmon/via-cputemp.c
++++ b/drivers/hwmon/via-cputemp.c
+@@ -280,9 +280,9 @@ static int via_cputemp_down_prep(unsigne
+ }
+ 
+ static const struct x86_cpu_id __initconst cputemp_ids[] = {
+-	{ X86_VENDOR_CENTAUR, 6, 0xa, }, /* C7 A */
+-	{ X86_VENDOR_CENTAUR, 6, 0xd, }, /* C7 D */
+-	{ X86_VENDOR_CENTAUR, 6, 0xf, }, /* Nano */
++	X86_MATCH_VENDOR_FAM_MODEL(CENTAUR, 6, X86_CENTAUR_FAM6_C7_A,	NULL),
++	X86_MATCH_VENDOR_FAM_MODEL(CENTAUR, 6, X86_CENTAUR_FAM6_C7_D,	NULL),
++	X86_MATCH_VENDOR_FAM_MODEL(CENTAUR, 6, X86_CENTAUR_FAM6_NANO,	NULL),
+ 	{}
+ };
+ MODULE_DEVICE_TABLE(x86cpu, cputemp_ids);
