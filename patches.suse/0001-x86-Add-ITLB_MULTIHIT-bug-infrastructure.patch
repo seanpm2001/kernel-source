@@ -36,28 +36,18 @@ Signed-off-by: Pawan Gupta <pawan.kumar.gupta@linux.intel.com>
 Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
 Signed-off-by: Joerg Roedel <jroedel@suse.de>
 ---
- Documentation/ABI/testing/sysfs-devices-system-cpu |  1 +
- arch/x86/include/asm/cpufeatures.h                 |  1 +
- arch/x86/include/asm/msr-index.h                   |  7 +++
- arch/x86/kernel/cpu/bugs.c                         | 13 ++++
- arch/x86/kernel/cpu/common.c                       | 71 ++++++++++++----------
- drivers/base/cpu.c                                 |  8 +++
- include/linux/cpu.h                                |  2 +
- 7 files changed, 70 insertions(+), 33 deletions(-)
+ Documentation/ABI/testing/sysfs-devices-system-cpu |    1 
+ arch/x86/include/asm/cpufeatures.h                 |    1 
+ arch/x86/include/asm/msr-index.h                   |    7 ++
+ arch/x86/kernel/cpu/bugs.c                         |   13 ++++
+ arch/x86/kernel/cpu/common.c                       |   63 +++++++++++----------
+ drivers/base/cpu.c                                 |    8 ++
+ include/linux/cpu.h                                |    2 
+ 7 files changed, 66 insertions(+), 29 deletions(-)
 
---- a/Documentation/ABI/testing/sysfs-devices-system-cpu
-+++ b/Documentation/ABI/testing/sysfs-devices-system-cpu
-@@ -382,6 +382,7 @@ What:		/sys/devices/system/cpu/vulnerabi
- 		/sys/devices/system/cpu/vulnerabilities/l1tf
- 		/sys/devices/system/cpu/vulnerabilities/mds
- 		/sys/devices/system/cpu/vulnerabilities/tsx_async_abort
-+		/sys/devices/system/cpu/vulnerabilities/itlb_multihit
- Date:		January 2018
- Contact:	Linux kernel mailing list <linux-kernel@vger.kernel.org>
- Description:	Information about CPU vulnerabilities
 --- a/arch/x86/include/asm/cpufeatures.h
 +++ b/arch/x86/include/asm/cpufeatures.h
-@@ -392,5 +392,6 @@
+@@ -391,5 +391,6 @@
  #define X86_BUG_MSBDS_ONLY		X86_BUG(20) /* CPU is only affected by the  MSDBS variant of BUG_MDS */
  #define X86_BUG_SWAPGS			X86_BUG(21) /* CPU is affected by speculation through SWAPGS */
  #define X86_BUG_TAA			X86_BUG(22) /* CPU is affected by TSX Async Abort(TAA) */
@@ -82,7 +72,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  						 * Not susceptible to
 --- a/arch/x86/kernel/cpu/bugs.c
 +++ b/arch/x86/kernel/cpu/bugs.c
-@@ -1399,6 +1399,11 @@ static ssize_t l1tf_show_state(char *buf
+@@ -1408,6 +1408,11 @@ static ssize_t l1tf_show_state(char *buf
  }
  #endif
  
@@ -94,7 +84,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  static ssize_t mds_show_state(char *buf)
  {
  	if (boot_cpu_has(X86_FEATURE_HYPERVISOR)) {
-@@ -1504,6 +1509,9 @@ static ssize_t cpu_show_common(struct de
+@@ -1513,6 +1518,9 @@ static ssize_t cpu_show_common(struct de
  	case X86_BUG_TAA:
  		return tsx_async_abort_show_state(buf);
  
@@ -104,7 +94,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  	default:
  		break;
  	}
-@@ -1545,4 +1553,9 @@ ssize_t cpu_show_tsx_async_abort(struct
+@@ -1554,4 +1562,9 @@ ssize_t cpu_show_tsx_async_abort(struct
  {
  	return cpu_show_common(dev, attr, buf, X86_BUG_TAA);
  }
@@ -149,7 +139,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
 -	VULNWL_INTEL(ATOM_BONNELL_MID,		NO_SPECULATION),
 -
 -	VULNWL_INTEL(ATOM_SILVERMONT,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
--	VULNWL_INTEL(ATOM_SILVERMONT_X,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
+-	VULNWL_INTEL(ATOM_SILVERMONT_D,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
 -	VULNWL_INTEL(ATOM_SILVERMONT_MID,	NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
 -	VULNWL_INTEL(ATOM_AIRMONT,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
 -	VULNWL_INTEL(XEON_PHI_KNL,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS),
@@ -161,7 +151,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
 +	VULNWL_INTEL(ATOM_BONNELL_MID,		NO_SPECULATION | NO_ITLB_MULTIHIT),
 +
 +	VULNWL_INTEL(ATOM_SILVERMONT,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS | NO_ITLB_MULTIHIT),
-+	VULNWL_INTEL(ATOM_SILVERMONT_X,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS | NO_ITLB_MULTIHIT),
++	VULNWL_INTEL(ATOM_SILVERMONT_D,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS | NO_ITLB_MULTIHIT),
 +	VULNWL_INTEL(ATOM_SILVERMONT_MID,	NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS | NO_ITLB_MULTIHIT),
 +	VULNWL_INTEL(ATOM_AIRMONT,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS | NO_ITLB_MULTIHIT),
 +	VULNWL_INTEL(XEON_PHI_KNL,		NO_SSB | NO_L1TF | MSBDS_ONLY | NO_SWAPGS | NO_ITLB_MULTIHIT),
@@ -173,10 +163,10 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
 +	VULNWL_INTEL(ATOM_AIRMONT_MID,		NO_L1TF | MSBDS_ONLY | NO_SWAPGS | NO_ITLB_MULTIHIT),
  
 -	VULNWL_INTEL(ATOM_GOLDMONT,		NO_MDS | NO_L1TF | NO_SWAPGS),
--	VULNWL_INTEL(ATOM_GOLDMONT_X,		NO_MDS | NO_L1TF | NO_SWAPGS),
+-	VULNWL_INTEL(ATOM_GOLDMONT_D,		NO_MDS | NO_L1TF | NO_SWAPGS),
 -	VULNWL_INTEL(ATOM_GOLDMONT_PLUS,	NO_MDS | NO_L1TF | NO_SWAPGS),
 +	VULNWL_INTEL(ATOM_GOLDMONT,		NO_MDS | NO_L1TF | NO_SWAPGS | NO_ITLB_MULTIHIT),
-+	VULNWL_INTEL(ATOM_GOLDMONT_X,		NO_MDS | NO_L1TF | NO_SWAPGS | NO_ITLB_MULTIHIT),
++	VULNWL_INTEL(ATOM_GOLDMONT_D,		NO_MDS | NO_L1TF | NO_SWAPGS | NO_ITLB_MULTIHIT),
 +	VULNWL_INTEL(ATOM_GOLDMONT_PLUS,	NO_MDS | NO_L1TF | NO_SWAPGS | NO_ITLB_MULTIHIT),
  
  	/*
@@ -213,6 +203,16 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  	if (cpu_matches(NO_SPECULATION))
  		return;
  
+--- a/Documentation/ABI/testing/sysfs-devices-system-cpu
++++ b/Documentation/ABI/testing/sysfs-devices-system-cpu
+@@ -382,6 +382,7 @@ What:		/sys/devices/system/cpu/vulnerabi
+ 		/sys/devices/system/cpu/vulnerabilities/l1tf
+ 		/sys/devices/system/cpu/vulnerabilities/mds
+ 		/sys/devices/system/cpu/vulnerabilities/tsx_async_abort
++		/sys/devices/system/cpu/vulnerabilities/itlb_multihit
+ Date:		January 2018
+ Contact:	Linux kernel mailing list <linux-kernel@vger.kernel.org>
+ Description:	Information about CPU vulnerabilities
 --- a/drivers/base/cpu.c
 +++ b/drivers/base/cpu.c
 @@ -546,6 +546,12 @@ ssize_t __weak cpu_show_tsx_async_abort(
