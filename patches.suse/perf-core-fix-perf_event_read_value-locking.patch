@@ -1,0 +1,63 @@
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Tue, 5 Sep 2017 13:23:44 +0200
+Subject: perf/core: Fix perf_event_read_value() locking
+Git-commit: ca0dd44cf37bfe316751e1701439c3ff44beb05c
+Patch-mainline: v4.15-rc1
+References: git-fixes
+
+perf_event_read_value() is an external accessor, just like
+perf_event_{en,dis}able() and should thus use perf_event_ctx_lock().
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Fixes: f63a8daa5812 ("perf: Fix event->ctx locking")
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+Signed-off-by: Tony Jones <tonyj@suse.de>
+---
+ kernel/events/core.c | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/events/core.c b/kernel/events/core.c
+index 74671e101b92..d636f1d0e2ab 100644
+--- a/kernel/events/core.c
++++ b/kernel/events/core.c
+@@ -4398,7 +4398,7 @@ static int perf_release(struct inode *inode, struct file *file)
+ 	return 0;
+ }
+ 
+-u64 perf_event_read_value(struct perf_event *event, u64 *enabled, u64 *running)
++static u64 __perf_event_read_value(struct perf_event *event, u64 *enabled, u64 *running)
+ {
+ 	struct perf_event *child;
+ 	u64 total = 0;
+@@ -4426,6 +4426,18 @@ u64 perf_event_read_value(struct perf_event *event, u64 *enabled, u64 *running)
+ 
+ 	return total;
+ }
++
++u64 perf_event_read_value(struct perf_event *event, u64 *enabled, u64 *running)
++{
++	struct perf_event_context *ctx;
++	u64 count;
++
++	ctx = perf_event_ctx_lock(event);
++	count = __perf_event_read_value(event, enabled, running);
++	perf_event_ctx_unlock(event, ctx);
++
++	return count;
++}
+ EXPORT_SYMBOL_GPL(perf_event_read_value);
+ 
+ static int __perf_read_group_add(struct perf_event *leader,
+@@ -4528,7 +4540,7 @@ static int perf_read_one(struct perf_event *event,
+ 	u64 values[4];
+ 	int n = 0;
+ 
+-	values[n++] = perf_event_read_value(event, &enabled, &running);
++	values[n++] = __perf_event_read_value(event, &enabled, &running);
+ 	if (read_format & PERF_FORMAT_TOTAL_TIME_ENABLED)
+ 		values[n++] = enabled;
+ 	if (read_format & PERF_FORMAT_TOTAL_TIME_RUNNING)
+
