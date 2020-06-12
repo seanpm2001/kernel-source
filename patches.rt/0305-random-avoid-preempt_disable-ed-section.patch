@@ -19,7 +19,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 
 --- a/drivers/char/random.c
 +++ b/drivers/char/random.c
-@@ -262,6 +262,7 @@
+@@ -263,6 +263,7 @@
  #include <linux/syscalls.h>
  #include <linux/completion.h>
  #include <linux/uuid.h>
@@ -27,17 +27,15 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  #include <crypto/chacha20.h>
  
  #include <asm/processor.h>
-@@ -2047,6 +2048,7 @@ struct batched_entropy {
-  * at any point prior.
+@@ -2175,35 +2176,37 @@ struct batched_entropy {
+  * point prior.
   */
  static DEFINE_PER_CPU(struct batched_entropy, batched_entropy_u64);
 +static DEFINE_LOCAL_IRQ_LOCK(batched_entropy_u64_lock);
  u64 get_random_u64(void)
  {
  	u64 ret;
-@@ -2061,18 +2063,19 @@ u64 get_random_u64(void)
- 	    return ret;
- #endif
+ 	struct batched_entropy *batch;
  
 -	batch = &get_cpu_var(batched_entropy_u64);
 +	batch = &get_locked_var(batched_entropy_u64_lock, batched_entropy_u64);
@@ -57,9 +55,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  u32 get_random_u32(void)
  {
  	u32 ret;
-@@ -2081,13 +2084,13 @@ u32 get_random_u32(void)
- 	if (arch_get_random_int(&ret))
- 		return ret;
+ 	struct batched_entropy *batch;
  
 -	batch = &get_cpu_var(batched_entropy_u32);
 +	batch = &get_locked_var(batched_entropy_u32_lock, batched_entropy_u32);

@@ -10,9 +10,9 @@ waitq.
 Signed-off-by: NeilBrown <neilb@suse.de>
 ---
  fs/nfs/nfs4_fs.h   |    2 --
- fs/nfs/nfs4proc.c  |   10 ++++++----
+ fs/nfs/nfs4proc.c  |   12 +++++++-----
  fs/nfs/nfs4state.c |    1 -
- 3 files changed, 6 insertions(+), 7 deletions(-)
+ 3 files changed, 7 insertions(+), 8 deletions(-)
 
 --- a/fs/nfs/nfs4_fs.h
 +++ b/fs/nfs/nfs4_fs.h
@@ -53,10 +53,10 @@ Signed-off-by: NeilBrown <neilb@suse.de>
  
 -		prepare_to_wait(&state->waitq, &wait, TASK_KILLABLE);
 +		prepare_to_wait(wq_head, &wbq_entry.wq_entry, TASK_KILLABLE);
+ 		if (!test_bit(NFS_STATE_CHANGE_WAIT, &state->flags))
+ 			break;
  		/*
- 		 * Ensure we process the state changes in the same order
- 		 * in which the server processed them by delaying the
-@@ -1549,7 +1551,7 @@ static void nfs_set_open_stateid_locked(
+@@ -1549,12 +1551,12 @@ static void nfs_set_open_stateid_locked(
  				status = 0;
  		} else
  			status = -EINTR;
@@ -65,6 +65,12 @@ Signed-off-by: NeilBrown <neilb@suse.de>
  		rcu_read_lock();
  		spin_lock(&state->owner->so_lock);
  		write_seqlock(&state->seqlock);
+ 	}
+-	finish_wait(&state->waitq, &wait);
++	finish_wait(wq_head, &wbq_entry.wq_entry);
+ 
+ 	if (!nfs4_stateid_match_other(stateid, &state->open_stateid)) {
+ 		nfs4_stateid_copy(freeme, &state->open_stateid);
 --- a/fs/nfs/nfs4state.c
 +++ b/fs/nfs/nfs4state.c
 @@ -658,7 +658,6 @@ nfs4_alloc_open_state(void)

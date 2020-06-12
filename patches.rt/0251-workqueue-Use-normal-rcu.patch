@@ -156,9 +156,9 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		return;
 +	rcu_read_lock();
  retry:
- 	if (req_cpu == WORK_CPU_UNBOUND)
- 		cpu = wq_select_unbound_cpu(raw_smp_processor_id());
-@@ -1441,10 +1445,8 @@ static void __queue_work(int cpu, struct
+ 	/* pwq which will be used unless @work is executing elsewhere */
+ 	if (wq->flags & WQ_UNBOUND) {
+@@ -1443,10 +1447,8 @@ retry:
  	/* pwq determined, queue */
  	trace_workqueue_queue_work(req_cpu, pwq, work);
  
@@ -171,7 +171,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	pwq->nr_in_flight[pwq->work_color]++;
  	work_flags = work_color_to_flags(pwq->work_color);
-@@ -1462,7 +1464,9 @@ static void __queue_work(int cpu, struct
+@@ -1464,7 +1466,9 @@ retry:
  
  	insert_work(pwq, work, worklist, work_flags);
  
@@ -181,7 +181,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  /**
-@@ -2784,14 +2788,14 @@ static bool start_flush_work(struct work
+@@ -2826,14 +2830,14 @@ static bool start_flush_work(struct work
  
  	might_sleep();
  
@@ -199,7 +199,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	/* see the comment in try_to_grab_pending() with the same code */
  	pwq = get_work_pwq(work);
  	if (pwq) {
-@@ -2820,10 +2824,11 @@ static bool start_flush_work(struct work
+@@ -2862,10 +2866,11 @@ static bool start_flush_work(struct work
  	else
  		lock_map_acquire_read(&pwq->wq->lockdep_map);
  	lock_map_release(&pwq->wq->lockdep_map);
@@ -212,7 +212,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	return false;
  }
  
-@@ -3251,7 +3256,7 @@ static void rcu_free_pool(struct rcu_hea
+@@ -3313,7 +3318,7 @@ static void rcu_free_pool(struct rcu_hea
   * put_unbound_pool - put a worker_pool
   * @pool: worker_pool to put
   *
@@ -221,7 +221,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
   * safe manner.  get_unbound_pool() calls this function on its failure path
   * and this function should be able to release pools which went through,
   * successfully or not, init_worker_pool().
-@@ -3305,8 +3310,8 @@ static void put_unbound_pool(struct work
+@@ -3367,8 +3372,8 @@ static void put_unbound_pool(struct work
  	del_timer_sync(&pool->idle_timer);
  	del_timer_sync(&pool->mayday_timer);
  
@@ -232,7 +232,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  /**
-@@ -3413,14 +3418,14 @@ static void pwq_unbound_release_workfn(s
+@@ -3475,14 +3480,14 @@ static void pwq_unbound_release_workfn(s
  	put_unbound_pool(pool);
  	mutex_unlock(&wq_pool_mutex);
  
@@ -249,7 +249,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  /**
-@@ -4088,7 +4093,7 @@ void destroy_workqueue(struct workqueue_
+@@ -4157,7 +4162,7 @@ void destroy_workqueue(struct workqueue_
  		 * The base ref is never dropped on per-cpu pwqs.  Directly
  		 * schedule RCU free.
  		 */
@@ -258,7 +258,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	} else {
  		/*
  		 * We're the sole accessor of @wq at this point.  Directly
-@@ -4182,7 +4187,8 @@ bool workqueue_congested(int cpu, struct
+@@ -4267,7 +4272,8 @@ bool workqueue_congested(int cpu, struct
  	struct pool_workqueue *pwq;
  	bool ret;
  
@@ -268,7 +268,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	if (cpu == WORK_CPU_UNBOUND)
  		cpu = smp_processor_id();
-@@ -4193,7 +4199,8 @@ bool workqueue_congested(int cpu, struct
+@@ -4278,7 +4284,8 @@ bool workqueue_congested(int cpu, struct
  		pwq = unbound_pwq_by_node(wq, cpu_to_node(cpu));
  
  	ret = !list_empty(&pwq->delayed_works);
@@ -278,7 +278,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	return ret;
  }
-@@ -4219,15 +4226,15 @@ unsigned int work_busy(struct work_struc
+@@ -4304,15 +4311,15 @@ unsigned int work_busy(struct work_struc
  	if (work_pending(work))
  		ret |= WORK_BUSY_PENDING;
  
@@ -298,7 +298,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	return ret;
  }
-@@ -4416,7 +4423,7 @@ void show_workqueue_state(void)
+@@ -4502,7 +4509,7 @@ void show_workqueue_state(void)
  	unsigned long flags;
  	int pi;
  
@@ -307,7 +307,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	pr_info("Showing busy workqueues and worker pools:\n");
  
-@@ -4481,7 +4488,7 @@ void show_workqueue_state(void)
+@@ -4567,7 +4574,7 @@ void show_workqueue_state(void)
  		touch_nmi_watchdog();
  	}
  
@@ -316,7 +316,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  /*
-@@ -4842,16 +4849,16 @@ bool freeze_workqueues_busy(void)
+@@ -4928,16 +4935,16 @@ bool freeze_workqueues_busy(void)
  		 * nr_active is monotonically decreasing.  It's safe
  		 * to peek without lock.
  		 */
@@ -336,7 +336,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	}
  out_unlock:
  	mutex_unlock(&wq_pool_mutex);
-@@ -5041,7 +5048,8 @@ static ssize_t wq_pool_ids_show(struct d
+@@ -5127,7 +5134,8 @@ static ssize_t wq_pool_ids_show(struct d
  	const char *delim = "";
  	int node, written = 0;
  
@@ -346,7 +346,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	for_each_node(node) {
  		written += scnprintf(buf + written, PAGE_SIZE - written,
  				     "%s%d:%d", delim, node,
-@@ -5049,7 +5057,8 @@ static ssize_t wq_pool_ids_show(struct d
+@@ -5135,7 +5143,8 @@ static ssize_t wq_pool_ids_show(struct d
  		delim = " ";
  	}
  	written += scnprintf(buf + written, PAGE_SIZE - written, "\n");

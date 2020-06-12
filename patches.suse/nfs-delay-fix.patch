@@ -31,7 +31,7 @@ Signed-off-by: NeilBrown <neilb@suse.com>
 @@ -1534,6 +1532,8 @@ static void nfs_set_open_stateid_locked(
  			break;
  
- 		prepare_to_wait(wq_head, &wbq_entry.wq_entry, TASK_KILLABLE);
+ 		prepare_to_wait(&state->waitq, &wait, TASK_KILLABLE);
 +		if (!test_bit(NFS_STATE_CHANGE_WAIT, &state->flags))
 +			break;
  		/*
@@ -41,7 +41,7 @@ Signed-off-by: NeilBrown <neilb@suse.com>
  		spin_lock(&state->owner->so_lock);
  		write_seqlock(&state->seqlock);
  	}
-+	finish_wait(wq_head, &wbq_entry.wq_entry);
++	finish_wait(&state->waitq, &wait);
  
  	if (!nfs4_stateid_match_other(stateid, &state->open_stateid)) {
  		nfs4_stateid_copy(freeme, &state->open_stateid);
