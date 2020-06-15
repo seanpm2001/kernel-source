@@ -25,12 +25,12 @@ Signed-off-by: Song Liu <songliubraving@fb.com>
 Acked-by: NeilBrown <neilb@suse.com>
 
 ---
- drivers/md/raid1.c |   29 ++++++++++++++++++-----------
- 1 file changed, 18 insertions(+), 11 deletions(-)
+ drivers/md/raid1.c |   28 ++++++++++++++++++----------
+ 1 file changed, 18 insertions(+), 10 deletions(-)
 
 --- a/drivers/md/raid1.c
 +++ b/drivers/md/raid1.c
-@@ -1867,6 +1867,20 @@ static void end_sync_read(struct bio *bi
+@@ -1865,6 +1865,20 @@ static void end_sync_read(struct bio *bi
  		reschedule_retry(r1_bio);
  }
  
@@ -51,7 +51,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  static void end_sync_write(struct bio *bio)
  {
  	int uptodate = !bio->bi_status;
-@@ -1878,16 +1892,7 @@ static void end_sync_write(struct bio *b
+@@ -1876,15 +1890,7 @@ static void end_sync_write(struct bio *b
  	struct md_rdev *rdev = conf->mirrors[find_bio_disk(r1_bio, bio)].rdev;
  
  	if (!uptodate) {
@@ -60,8 +60,7 @@ Acked-by: NeilBrown <neilb@suse.com>
 -		long sectors_to_go = r1_bio->sectors;
 -		/* make sure these bits doesn't get cleared. */
 -		do {
--			bitmap_end_sync(mddev->bitmap, s,
--					&sync_blocks, 1);
+-			md_bitmap_end_sync(mddev->bitmap, s, &sync_blocks, 1);
 -			s += sync_blocks;
 -			sectors_to_go -= sync_blocks;
 -		} while (sectors_to_go > 0);
@@ -69,7 +68,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  		set_bit(WriteErrorSeen, &rdev->flags);
  		if (!test_and_set_bit(WantReplacement, &rdev->flags))
  			set_bit(MD_RECOVERY_NEEDED, &
-@@ -2177,8 +2182,10 @@ static void sync_request_write(struct md
+@@ -2174,8 +2180,10 @@ static void sync_request_write(struct md
  		     (i == r1_bio->read_disk ||
  		      !test_bit(MD_RECOVERY_SYNC, &mddev->recovery))))
  			continue;

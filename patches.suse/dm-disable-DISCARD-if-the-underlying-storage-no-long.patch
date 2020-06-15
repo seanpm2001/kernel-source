@@ -43,28 +43,24 @@ Reported-by: David Jeffery <djeffery@redhat.com>
 Signed-off-by: Mike Snitzer <snitzer@redhat.com>
 Acked-by: Hannes Reinecke <hare@suse.com>
 ---
- drivers/md/dm-core.h |  1 +
- drivers/md/dm-rq.c   | 11 +++++++----
- drivers/md/dm.c      | 19 +++++++++++++++++--
+ drivers/md/dm-core.h |    1 +
+ drivers/md/dm-rq.c   |   11 +++++++----
+ drivers/md/dm.c      |   19 +++++++++++++++++--
  3 files changed, 25 insertions(+), 6 deletions(-)
 
-diff --git a/drivers/md/dm-core.h b/drivers/md/dm-core.h
-index 203144762f36..9fa7362541a0 100644
 --- a/drivers/md/dm-core.h
 +++ b/drivers/md/dm-core.h
-@@ -132,6 +132,7 @@ struct mapped_device {
- void dm_init_md_queue(struct mapped_device *md);
- void dm_init_normal_md_queue(struct mapped_device *md);
+@@ -130,6 +130,7 @@ struct mapped_device {
+ };
+ 
  int md_in_flight(struct mapped_device *md);
 +void disable_discard(struct mapped_device *md);
  void disable_write_same(struct mapped_device *md);
  void disable_write_zeroes(struct mapped_device *md);
  
-diff --git a/drivers/md/dm-rq.c b/drivers/md/dm-rq.c
-index eadfcfd106ff..5c498105ada9 100644
 --- a/drivers/md/dm-rq.c
 +++ b/drivers/md/dm-rq.c
-@@ -295,11 +295,14 @@ static void dm_done(struct request *clone, blk_status_t error, bool mapped)
+@@ -295,11 +295,14 @@ static void dm_done(struct request *clon
  	}
  
  	if (unlikely(error == BLK_STS_TARGET)) {
@@ -83,11 +79,9 @@ index eadfcfd106ff..5c498105ada9 100644
  			disable_write_zeroes(tio->md);
  	}
  
-diff --git a/drivers/md/dm.c b/drivers/md/dm.c
-index 55c525ec997c..d2cd75dfacb9 100644
 --- a/drivers/md/dm.c
 +++ b/drivers/md/dm.c
-@@ -837,6 +837,18 @@ static void dec_pending(struct dm_io *io, blk_status_t error)
+@@ -823,6 +823,18 @@ static void dec_pending(struct dm_io *io
  	}
  }
  
@@ -106,7 +100,7 @@ index 55c525ec997c..d2cd75dfacb9 100644
  void disable_write_same(struct mapped_device *md)
  {
  	struct queue_limits *limits = dm_get_queue_limits(md);
-@@ -862,10 +874,13 @@ static void clone_endio(struct bio *bio)
+@@ -848,10 +860,13 @@ static void clone_endio(struct bio *bio)
  	dm_endio_fn endio = tio->ti->type->end_io;
  
  	if (unlikely(error == BLK_STS_TARGET)) {
@@ -122,6 +116,3 @@ index 55c525ec997c..d2cd75dfacb9 100644
  		    !bio->bi_disk->queue->limits.max_write_zeroes_sectors)
  			disable_write_zeroes(md);
  	}
--- 
-2.16.4
-
