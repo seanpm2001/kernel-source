@@ -1,22 +1,21 @@
+From c12c9a3c3860c76ba273798c0c34c6f1294cc759 Mon Sep 17 00:00:00 2001
 From: Mike Snitzer <snitzer@redhat.com>
 Date: Fri, 12 Jan 2018 09:32:21 -0500
 Subject: [PATCH] dm: various cleanups to md->queue initialization code
 Git-commit: c12c9a3c3860c76ba273798c0c34c6f1294cc759
 Patch-mainline: v4.16-rc1
-References: bsc#1104967,FATE#325924
+References: bsc#1104967,FATE#325924,git-fixes
 
 Also, add dm_sysfs_init() error handling to dm_create().
 
 Signed-off-by: Mike Snitzer <snitzer@redhat.com>
-Acked-by: Hannes Reinecke <hare@suse.com>
+Signed-off-by: Coly Li <colyli@suse.de>
 ---
- drivers/md/dm-core.h |  2 --
- drivers/md/dm-rq.c   |  2 --
- drivers/md/dm.c      | 30 ++++++++++++------------------
+ drivers/md/dm-core.h |    2 --
+ drivers/md/dm-rq.c   |    2 --
+ drivers/md/dm.c      |   30 ++++++++++++------------------
  3 files changed, 12 insertions(+), 22 deletions(-)
 
-diff --git a/drivers/md/dm-core.h b/drivers/md/dm-core.h
-index 124ffa2d6b9a..3222e21cbbf8 100644
 --- a/drivers/md/dm-core.h
 +++ b/drivers/md/dm-core.h
 @@ -129,8 +129,6 @@ struct mapped_device {
@@ -28,11 +27,9 @@ index 124ffa2d6b9a..3222e21cbbf8 100644
  int md_in_flight(struct mapped_device *md);
  void disable_write_same(struct mapped_device *md);
  void disable_write_zeroes(struct mapped_device *md);
-diff --git a/drivers/md/dm-rq.c b/drivers/md/dm-rq.c
-index b78ff6921cfb..c59c59cfd2a5 100644
 --- a/drivers/md/dm-rq.c
 +++ b/drivers/md/dm-rq.c
-@@ -704,7 +704,6 @@ int dm_old_init_request_queue(struct mapped_device *md, struct dm_table *t)
+@@ -700,7 +700,6 @@ int dm_old_init_request_queue(struct map
  	/* disable dm_old_request_fn's merge heuristic by default */
  	md->seq_rq_merge_deadline_usecs = 0;
  
@@ -40,7 +37,7 @@ index b78ff6921cfb..c59c59cfd2a5 100644
  	blk_queue_softirq_done(md->queue, dm_softirq_done);
  
  	/* Initialize the request-based DM worker thread */
-@@ -814,7 +813,6 @@ int dm_mq_init_request_queue(struct mapped_device *md, struct dm_table *t)
+@@ -810,7 +809,6 @@ int dm_mq_init_request_queue(struct mapp
  		err = PTR_ERR(q);
  		goto out_tag_set;
  	}
@@ -48,11 +45,9 @@ index b78ff6921cfb..c59c59cfd2a5 100644
  
  	return 0;
  
-diff --git a/drivers/md/dm.c b/drivers/md/dm.c
-index 67bf11610e4d..148087932679 100644
 --- a/drivers/md/dm.c
 +++ b/drivers/md/dm.c
-@@ -1733,20 +1733,9 @@ static const struct dax_operations dm_dax_ops;
+@@ -1611,20 +1611,9 @@ static const struct dax_operations dm_da
  
  static void dm_wq_work(struct work_struct *work);
  
@@ -74,7 +69,7 @@ index 67bf11610e4d..148087932679 100644
  
  	/*
  	 * Initialize aspects of queue that aren't relevant for blk-mq
-@@ -1846,10 +1835,10 @@ static struct mapped_device *alloc_dev(int minor)
+@@ -1723,10 +1712,10 @@ static struct mapped_device *alloc_dev(i
  	md->queue = blk_alloc_queue_node(GFP_KERNEL, numa_node_id);
  	if (!md->queue)
  		goto bad;
@@ -88,7 +83,7 @@ index 67bf11610e4d..148087932679 100644
  	if (!md->disk)
  		goto bad;
  
-@@ -2082,13 +2071,18 @@ static struct dm_table *__unbind(struct mapped_device *md)
+@@ -1959,13 +1948,18 @@ static struct dm_table *__unbind(struct
   */
  int dm_create(int minor, struct mapped_device **result)
  {
@@ -108,7 +103,7 @@ index 67bf11610e4d..148087932679 100644
  
  	*result = md;
  	return 0;
-@@ -2145,6 +2139,7 @@ int dm_setup_md_queue(struct mapped_device *md, struct dm_table *t)
+@@ -2022,6 +2016,7 @@ int dm_setup_md_queue(struct mapped_devi
  
  	switch (type) {
  	case DM_TYPE_REQUEST_BASED:
@@ -116,7 +111,7 @@ index 67bf11610e4d..148087932679 100644
  		r = dm_old_init_request_queue(md, t);
  		if (r) {
  			DMERR("Cannot initialize queue for request-based mapped device");
-@@ -2236,7 +2231,6 @@ EXPORT_SYMBOL_GPL(dm_device_name);
+@@ -2109,7 +2104,6 @@ EXPORT_SYMBOL_GPL(dm_device_name);
  
  static void __dm_destroy(struct mapped_device *md, bool wait)
  {
@@ -124,7 +119,7 @@ index 67bf11610e4d..148087932679 100644
  	struct dm_table *map;
  	int srcu_idx;
  
-@@ -2247,7 +2241,7 @@ static void __dm_destroy(struct mapped_device *md, bool wait)
+@@ -2120,7 +2114,7 @@ static void __dm_destroy(struct mapped_d
  	set_bit(DMF_FREEING, &md->flags);
  	spin_unlock(&_minor_lock);
  
@@ -133,6 +128,3 @@ index 67bf11610e4d..148087932679 100644
  
  	if (dm_request_based(md) && md->kworker_task)
  		kthread_flush_worker(&md->kworker);
--- 
-2.16.4
-
