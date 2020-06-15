@@ -1,0 +1,34 @@
+From: Trond Myklebust <trondmy@gmail.com>
+Date: Thu, 31 Oct 2019 18:40:33 -0400
+Subject: [PATCH] NFS: Fix an RCU lock leak in
+ nfs4_refresh_delegation_stateid()
+Git-commit: 79cc55422ce99be5964bde208ba8557174720893
+Patch-mainline: v5.4
+References: bsc#1170592
+
+A typo in nfs4_refresh_delegation_stateid() means we're leaking an
+RCU lock, and always returning a value of 'false'. As the function
+description states, we were always supposed to return 'true' if a
+matching delegation was found.
+
+Fixes: 12f275cdd163 ("NFSv4: Retry CLOSE and DELEGRETURN on NFS4ERR_OLD_STATEID.")
+Cc: stable@vger.kernel.org # v4.15+
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/delegation.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/fs/nfs/delegation.c
++++ b/fs/nfs/delegation.c
+@@ -1135,7 +1135,7 @@ bool nfs4_refresh_delegation_stateid(nfs
+ 	if (delegation != NULL &&
+ 	    nfs4_stateid_match_other(dst, &delegation->stateid)) {
+ 		dst->seqid = delegation->stateid.seqid;
+-		return ret;
++		ret = true;
+ 	}
+ 	rcu_read_unlock();
+ out:
