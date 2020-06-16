@@ -1,0 +1,160 @@
+From: Trond Myklebust <trond.myklebust@primarydata.com>
+Date: Mon, 6 Nov 2017 15:28:05 -0500
+Subject: [PATCH] NFSv4: Retry CLOSE and DELEGRETURN on NFS4ERR_OLD_STATEID.
+Git-commit: 12f275cdd1638a163b77b3d65625fc14a81dab2b
+Patch-mainline: v4.15
+References: bsc#1170592
+
+If we're racing with an OPEN, then retry the operation instead of
+declaring it a success.
+
+Signed-off-by: Trond Myklebust <trond.myklebust@primarydata.com>
+[Andrew W Elble: Fix a typo in nfs4_refresh_open_stateid]
+
+Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/delegation.c |   27 +++++++++++++++++++++++++++
+ fs/nfs/delegation.h |    1 +
+ fs/nfs/nfs4_fs.h    |    2 ++
+ fs/nfs/nfs4proc.c   |   21 +++++++++++++++++++--
+ fs/nfs/nfs4state.c  |   16 ++++++++++++++++
+ 5 files changed, 65 insertions(+), 2 deletions(-)
+
+--- a/fs/nfs/delegation.c
++++ b/fs/nfs/delegation.c
+@@ -1041,6 +1041,33 @@ int nfs_delegations_present(struct nfs_c
+ }
+ 
+ /**
++ * nfs4_refresh_delegation_stateid - Update delegation stateid seqid
++ * @dst: stateid to refresh
++ * @inode: inode to check
++ *
++ * Returns "true" and updates "dst->seqid" * if inode had a delegation
++ * that matches our delegation stateid. Otherwise "false" is returned.
++ */
++bool nfs4_refresh_delegation_stateid(nfs4_stateid *dst, struct inode *inode)
++{
++	struct nfs_delegation *delegation;
++	bool ret = false;
++	if (!inode)
++		goto out;
++
++	rcu_read_lock();
++	delegation = rcu_dereference(NFS_I(inode)->delegation);
++	if (delegation != NULL &&
++	    nfs4_stateid_match_other(dst, &delegation->stateid)) {
++		dst->seqid = delegation->stateid.seqid;
++		return ret;
++	}
++	rcu_read_unlock();
++out:
++	return ret;
++}
++
++/**
+  * nfs4_copy_delegation_stateid - Copy inode's state ID information
+  * @inode: inode to check
+  * @flags: delegation type requirement
+--- a/fs/nfs/delegation.h
++++ b/fs/nfs/delegation.h
+@@ -61,6 +61,7 @@ int nfs4_proc_delegreturn(struct inode *
+ int nfs4_open_delegation_recall(struct nfs_open_context *ctx, struct nfs4_state *state, const nfs4_stateid *stateid, fmode_t type);
+ int nfs4_lock_delegation_recall(struct file_lock *fl, struct nfs4_state *state, const nfs4_stateid *stateid);
+ bool nfs4_copy_delegation_stateid(struct inode *inode, fmode_t flags, nfs4_stateid *dst, struct rpc_cred **cred);
++bool nfs4_refresh_delegation_stateid(nfs4_stateid *dst, struct inode *inode);
+ 
+ void nfs_mark_delegation_referenced(struct nfs_delegation *delegation);
+ int nfs4_have_delegation(struct inode *inode, fmode_t flags);
+--- a/fs/nfs/nfs4_fs.h
++++ b/fs/nfs/nfs4_fs.h
+@@ -460,6 +460,8 @@ extern int nfs4_set_lock_state(struct nf
+ extern int nfs4_select_rw_stateid(struct nfs4_state *, fmode_t,
+ 		const struct nfs_lock_context *, nfs4_stateid *,
+ 		struct rpc_cred **);
++extern bool nfs4_refresh_open_stateid(nfs4_stateid *dst,
++		struct nfs4_state *state);
+ 
+ extern struct nfs_seqid *nfs_alloc_seqid(struct nfs_seqid_counter *counter, gfp_t gfp_mask);
+ extern int nfs_wait_on_sequence(struct nfs_seqid *seqid, struct rpc_task *task);
+--- a/fs/nfs/nfs4proc.c
++++ b/fs/nfs/nfs4proc.c
+@@ -3153,13 +3153,21 @@ static void nfs4_close_done(struct rpc_t
+ 
+ 			}
+ 			break;
++		case -NFS4ERR_OLD_STATEID:
++			/* Did we race with OPEN? */
++			if (nfs4_refresh_open_stateid(&calldata->arg.stateid,
++						state)) {
++				task->tk_status = 0;
++				rpc_restart_call_prepare(task);
++			}
++			goto out_release;
+ 		case -NFS4ERR_ADMIN_REVOKED:
+ 		case -NFS4ERR_STALE_STATEID:
+ 		case -NFS4ERR_EXPIRED:
+ 			nfs4_free_revoked_stateid(server,
+ 					&calldata->arg.stateid,
+ 					task->tk_msg.rpc_cred);
+-		case -NFS4ERR_OLD_STATEID:
++			/* Fallthrough */
+ 		case -NFS4ERR_BAD_STATEID:
+ 			if (!nfs4_stateid_match(&calldata->arg.stateid,
+ 						&state->open_stateid)) {
+@@ -3168,6 +3176,7 @@ static void nfs4_close_done(struct rpc_t
+ 			}
+ 			if (calldata->arg.fmode == 0)
+ 				break;
++			/* Fallthrough */
+ 		default:
+ 			if (nfs4_async_handle_error(task, server, state, NULL) == -EAGAIN) {
+ 				rpc_restart_call_prepare(task);
+@@ -5716,11 +5725,19 @@ static void nfs4_delegreturn_done(struct
+ 		nfs4_free_revoked_stateid(data->res.server,
+ 				data->args.stateid,
+ 				task->tk_msg.rpc_cred);
++		/* Fallthrough */
+ 	case -NFS4ERR_BAD_STATEID:
+-	case -NFS4ERR_OLD_STATEID:
+ 	case -NFS4ERR_STALE_STATEID:
+ 		task->tk_status = 0;
+ 		break;
++	case -NFS4ERR_OLD_STATEID:
++		if (nfs4_refresh_delegation_stateid(&data->stateid, data->inode)) {
++			task->tk_status = 0;
++			rpc_restart_call_prepare(task);
++			return;
++		}
++		task->tk_status = 0;
++		break;
+ 	case -NFS4ERR_ACCESS:
+ 		if (data->args.bitmask) {
+ 			data->args.bitmask = NULL;
+--- a/fs/nfs/nfs4state.c
++++ b/fs/nfs/nfs4state.c
+@@ -980,6 +980,22 @@ out:
+ 	return ret;
+ }
+ 
++bool nfs4_refresh_open_stateid(nfs4_stateid *dst, struct nfs4_state *state)
++{
++	bool ret;
++	int seq;
++
++	do {
++		ret = false;
++		seq = read_seqbegin(&state->seqlock);
++		if (nfs4_state_match_open_stateid_other(state, dst)) {
++			dst->seqid = state->open_stateid.seqid;
++			ret = true;
++		}
++	} while (read_seqretry(&state->seqlock, seq));
++	return ret;
++}
++
+ static void nfs4_copy_open_stateid(nfs4_stateid *dst, struct nfs4_state *state)
+ {
+ 	const nfs4_stateid *src;
