@@ -1,0 +1,36 @@
+From d6a553c0c61b0b0219764e4d4fc14e385085f374 Mon Sep 17 00:00:00 2001
+From: Dedy Lansky <dlansky@codeaurora.org>
+Date: Fri, 26 Apr 2019 18:43:36 +0300
+Subject: [PATCH] wil6210: check rx_buff_mgmt before accessing it
+Git-commit: d6a553c0c61b0b0219764e4d4fc14e385085f374
+Patch-mainline: v5.3-rc1
+References: bsc#1111666
+
+Make sure rx_buff_mgmt is initialized before accessing it.
+
+Signed-off-by: Dedy Lansky <dlansky@codeaurora.org>
+Signed-off-by: Maya Erez <merez@codeaurora.org>
+Signed-off-by: Kalle Valo <kvalo@codeaurora.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/net/wireless/ath/wil6210/txrx_edma.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/net/wireless/ath/wil6210/txrx_edma.c b/drivers/net/wireless/ath/wil6210/txrx_edma.c
+index f37a2056ad21..6140db5960c3 100644
+--- a/drivers/net/wireless/ath/wil6210/txrx_edma.c
++++ b/drivers/net/wireless/ath/wil6210/txrx_edma.c
+@@ -269,6 +269,9 @@ static void wil_move_all_rx_buff_to_free_list(struct wil6210_priv *wil,
+ 	struct list_head *active = &wil->rx_buff_mgmt.active;
+ 	dma_addr_t pa;
+ 
++	if (!wil->rx_buff_mgmt.buff_arr)
++		return;
++
+ 	while (!list_empty(active)) {
+ 		struct wil_rx_buff *rx_buff =
+ 			list_first_entry(active, struct wil_rx_buff, list);
+-- 
+2.16.4
+

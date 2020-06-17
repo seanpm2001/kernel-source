@@ -1,0 +1,31 @@
+From: Sagi Grimberg <sagi@grimberg.me>
+Date: Fri, 2 Aug 2019 18:17:52 -0700
+Subject: nvme-tcp: fail command with NVME_SC_HOST_PATH_ERROR send failed
+Patch-mainline: v5.4-rc1
+Git-commit: 16686010085f46783c895f8736e4f0ae74ae88a0
+References: bsc#1158983 bsc#1172538
+
+This is a more appropriate error status for a transport error
+detected by us (the host).
+
+Reviewed-by: Hannes Reinecke <hare@suse.com>
+Reviewed-by: James Smart <james.smart@broadcom.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Chaitanya Kulkarni <chaitanya.kulkarni@wdc.com>
+Signed-off-by: Sagi Grimberg <sagi@grimberg.me>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/nvme/host/tcp.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/nvme/host/tcp.c
++++ b/drivers/nvme/host/tcp.c
+@@ -842,7 +842,7 @@ static inline void nvme_tcp_done_send_re
+ 
+ static void nvme_tcp_fail_request(struct nvme_tcp_request *req)
+ {
+-	nvme_tcp_end_request(blk_mq_rq_from_pdu(req), NVME_SC_DATA_XFER_ERROR);
++	nvme_tcp_end_request(blk_mq_rq_from_pdu(req), NVME_SC_HOST_PATH_ERROR);
+ }
+ 
+ static int nvme_tcp_try_send_data(struct nvme_tcp_request *req)

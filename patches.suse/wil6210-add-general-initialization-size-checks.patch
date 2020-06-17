@@ -1,0 +1,49 @@
+From ac0e541ab2f2951845acee784ef487be40fb4c77 Mon Sep 17 00:00:00 2001
+From: Alexei Avshalom Lazar <ailizaro@codeaurora.org>
+Date: Wed, 31 Oct 2018 10:52:17 +0200
+Subject: [PATCH] wil6210: add general initialization/size checks
+Git-commit: ac0e541ab2f2951845acee784ef487be40fb4c77
+Patch-mainline: v5.0-rc1
+References: bsc#1111666
+
+Initialize unset variable, and verify that mid is valid.
+
+Signed-off-by: Alexei Avshalom Lazar <ailizaro@codeaurora.org>
+Signed-off-by: Maya Erez <merez@codeaurora.org>
+Signed-off-by: Kalle Valo <kvalo@codeaurora.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/net/wireless/ath/wil6210/debugfs.c | 2 ++
+ drivers/net/wireless/ath/wil6210/wmi.c     | 2 +-
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/ath/wil6210/debugfs.c b/drivers/net/wireless/ath/wil6210/debugfs.c
+index aa50813a0595..099a04b91551 100644
+--- a/drivers/net/wireless/ath/wil6210/debugfs.c
++++ b/drivers/net/wireless/ath/wil6210/debugfs.c
+@@ -962,6 +962,8 @@ static ssize_t wil_write_file_txmgmt(struct file *file, const char __user *buf,
+ 	int rc;
+ 	void *frame;
+ 
++	memset(&params, 0, sizeof(params));
++
+ 	if (!len)
+ 		return -EINVAL;
+ 
+diff --git a/drivers/net/wireless/ath/wil6210/wmi.c b/drivers/net/wireless/ath/wil6210/wmi.c
+index fa08a9637f44..f46c703ca570 100644
+--- a/drivers/net/wireless/ath/wil6210/wmi.c
++++ b/drivers/net/wireless/ath/wil6210/wmi.c
+@@ -3148,7 +3148,7 @@ static void wmi_event_handle(struct wil6210_priv *wil,
+ 
+ 		if (mid == MID_BROADCAST)
+ 			mid = 0;
+-		if (mid >= wil->max_vifs) {
++		if (mid >= ARRAY_SIZE(wil->vifs) || mid >= wil->max_vifs) {
+ 			wil_dbg_wmi(wil, "invalid mid %d, event skipped\n",
+ 				    mid);
+ 			return;
+-- 
+2.16.4
+
