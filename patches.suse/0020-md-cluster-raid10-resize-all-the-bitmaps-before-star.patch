@@ -164,14 +164,13 @@ Signed-off-by: Coly Li <colyli@suse.de>
  #include <trace/events/block.h>
  #include "md.h"
  #include "raid10.h"
-@@ -4292,13 +4293,47 @@ static int raid10_start_reshape(struct m
+@@ -4291,12 +4291,47 @@ static int raid10_start_reshape(struct m
  	spin_unlock_irq(&conf->device_lock);
  
  	if (mddev->delta_disks && mddev->bitmap) {
--		ret = bitmap_resize(mddev->bitmap,
--				    raid10_size(mddev, 0,
--						conf->geo.raid_disks),
--				    0, 0);
+-		ret = md_bitmap_resize(mddev->bitmap,
+-				       raid10_size(mddev, 0, conf->geo.raid_disks),
+-				       0, 0);
 +		struct mdp_superblock_1 *sb = NULL;
 +		sector_t oldsize, newsize;
 +
@@ -189,7 +188,7 @@ Signed-off-by: Coly Li <colyli@suse.de>
 +		rdev_for_each(rdev, mddev) {
 +			if (rdev->raid_disk > -1 &&
 +			    !test_bit(Faulty, &rdev->flags))
-+				sb = page_address(rdev->sb_page);
++			     sb = page_address(rdev->sb_page);
 +		}
 +
 +		/*
