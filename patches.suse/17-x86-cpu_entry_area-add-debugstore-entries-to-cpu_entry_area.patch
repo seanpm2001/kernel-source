@@ -4,6 +4,7 @@ Subject: x86/cpu_entry_area: Add debugstore entries to cpu_entry_area
 Git-commit: 10043e02db7f8a4161f76434931051e7d797a5f6
 Patch-mainline: v4.15-rc6
 References: bsc#1068032 CVE-2017-5754
+X-Info: refreshed for git-fixes (2fe1bc1f501d55e5925b4035bcd85781adc76c63)
 
 The Intel PEBS/BTS debug store is a design trainwreck as it expects virtual
 addresses which must be visible in any execution context.
@@ -40,17 +41,20 @@ Cc: hughd@google.com
 Cc: keescook@google.com
 Signed-off-by: Ingo Molnar <mingo@kernel.org>
 Acked-by: Borislav Petkov <bp@suse.de>
+Signed-off-by: Tony Jones <tonyj@suse.de>
 ---
- arch/x86/events/intel/ds.c            |    5 ++--
- arch/x86/events/perf_event.h          |   21 +------------------
- arch/x86/include/asm/cpu_entry_area.h |   13 ++++++++++++
- arch/x86/include/asm/intel_ds.h       |   36 ++++++++++++++++++++++++++++++++++
- arch/x86/mm/cpu_entry_area.c          |   27 +++++++++++++++++++++++++
+ arch/x86/events/intel/ds.c            |  5 +++--
+ arch/x86/events/perf_event.h          | 21 ++------------------
+ arch/x86/include/asm/cpu_entry_area.h | 13 +++++++++++++
+ arch/x86/include/asm/intel_ds.h       | 36 +++++++++++++++++++++++++++++++++++
+ arch/x86/mm/cpu_entry_area.c          | 27 ++++++++++++++++++++++++++
  5 files changed, 81 insertions(+), 21 deletions(-)
 
+diff --git a/arch/x86/events/intel/ds.c b/arch/x86/events/intel/ds.c
+index 3674a4b6f8bd..6522f0279cb8 100644
 --- a/arch/x86/events/intel/ds.c
 +++ b/arch/x86/events/intel/ds.c
-@@ -7,11 +7,12 @@
+@@ -8,11 +8,12 @@
  
  #include "../perf_event.h"
  
@@ -65,6 +69,8 @@ Acked-by: Borislav Petkov <bp@suse.de>
  #define PEBS_FIXUP_SIZE		PAGE_SIZE
  
  /*
+diff --git a/arch/x86/events/perf_event.h b/arch/x86/events/perf_event.h
+index f7aaadf9331f..373f9eda80b1 100644
 --- a/arch/x86/events/perf_event.h
 +++ b/arch/x86/events/perf_event.h
 @@ -14,6 +14,8 @@
@@ -85,10 +91,11 @@ Acked-by: Borislav Petkov <bp@suse.de>
  #define PEBS_COUNTER_MASK	((1ULL << MAX_PEBS_EVENTS) - 1)
  
  /*
-@@ -94,23 +94,6 @@ struct amd_nb {
- 	PERF_SAMPLE_TRANSACTION)
+@@ -95,23 +95,6 @@ struct amd_nb {
+ 	PERF_SAMPLE_TRANSACTION | \
+ 	PERF_SAMPLE_REGS_INTR | PERF_SAMPLE_REGS_USER)
  
- /*
+-/*
 - * A debug store configuration.
 - *
 - * We only support architectures that use 64bit fields.
@@ -105,10 +112,11 @@ Acked-by: Borislav Petkov <bp@suse.de>
 -	u64	pebs_event_reset[MAX_PEBS_EVENTS];
 -};
 -
--/*
-  * Per register state.
-  */
- struct er_account {
+ #define PEBS_REGS \
+ 	(PERF_REG_X86_AX | \
+ 	 PERF_REG_X86_BX | \
+diff --git a/arch/x86/include/asm/cpu_entry_area.h b/arch/x86/include/asm/cpu_entry_area.h
+index 2fbc69a0916e..4a7884b8dca5 100644
 --- a/arch/x86/include/asm/cpu_entry_area.h
 +++ b/arch/x86/include/asm/cpu_entry_area.h
 @@ -5,6 +5,7 @@
@@ -138,6 +146,9 @@ Acked-by: Borislav Petkov <bp@suse.de>
  };
  
  #define CPU_ENTRY_AREA_SIZE	(sizeof(struct cpu_entry_area))
+diff --git a/arch/x86/include/asm/intel_ds.h b/arch/x86/include/asm/intel_ds.h
+new file mode 100644
+index 000000000000..62a9f4966b42
 --- /dev/null
 +++ b/arch/x86/include/asm/intel_ds.h
 @@ -0,0 +1,36 @@
@@ -177,9 +188,11 @@ Acked-by: Borislav Petkov <bp@suse.de>
 +};
 +
 +#endif
+diff --git a/arch/x86/mm/cpu_entry_area.c b/arch/x86/mm/cpu_entry_area.c
+index fe814fd5e014..b9283cc27622 100644
 --- a/arch/x86/mm/cpu_entry_area.c
 +++ b/arch/x86/mm/cpu_entry_area.c
-@@ -38,6 +38,32 @@ cea_map_percpu_pages(void *cea_vaddr, vo
+@@ -38,6 +38,32 @@ cea_map_percpu_pages(void *cea_vaddr, void *ptr, int pages, pgprot_t prot)
  		cea_set_pte(cea_vaddr, per_cpu_ptr_to_phys(ptr), prot);
  }
  
@@ -212,7 +225,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  /* Setup the fixmap mappings only once per-processor */
  static void __init setup_cpu_entry_area(int cpu)
  {
-@@ -109,6 +135,7 @@ static void __init setup_cpu_entry_area(
+@@ -109,6 +135,7 @@ static void __init setup_cpu_entry_area(int cpu)
  	cea_set_pte(&get_cpu_entry_area(cpu)->entry_trampoline,
  		     __pa_symbol(_entry_trampoline), PAGE_KERNEL_RX);
  #endif
@@ -220,3 +233,4 @@ Acked-by: Borislav Petkov <bp@suse.de>
  }
  
  static __init void setup_cpu_entry_area_ptes(void)
+
