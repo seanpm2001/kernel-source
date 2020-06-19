@@ -1,0 +1,59 @@
+From: Jan Kiszka <jan.kiszka@siemens.com>
+Date: Mon, 27 Nov 2017 09:11:43 +0100
+Patch-mainline: v4.16-rc1
+Subject: x86/apic: Install an empty physflat_init_apic_ldr
+Git-commit: 32c9c801a853f181448ed4e8730168c556f9e05a
+References: bsc#1163309
+
+As the comment already stated, there is no need for setting up LDR (and
+DFR) in physflat mode as it remains unused (see SDM, 10.6.2.1).
+flat_init_apic_ldr only served as a placeholder for a nop operation so
+far, causing no harm.
+
+That will change when running over the Jailhouse hypervisor. Here we
+must not touch LDR in a way that destroys the mapping originally set up
+by the Linux root cell. Jailhouse enforces this setting in order to
+efficiently validate any IPI requests sent by a cell.
+
+Avoid a needless clash caused by flat_init_apic_ldr by installing a true
+nop handler.
+
+Signed-off-by: Jan Kiszka <jan.kiszka@siemens.com>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Cc: jailhouse-dev@googlegroups.com
+Link: https://lkml.kernel.org/r/f9867d294cdae4d45ed89d3a2e6adb524f4f6794.1511770314.git.jan.kiszka@siemens.com
+Acked-by: Olaf Hering <ohering@suse.de>
+---
+ arch/x86/kernel/apic/apic_flat_64.c | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/arch/x86/kernel/apic/apic_flat_64.c b/arch/x86/kernel/apic/apic_flat_64.c
+index 25a87028cb3f..4b5547789713 100644
+--- a/arch/x86/kernel/apic/apic_flat_64.c
++++ b/arch/x86/kernel/apic/apic_flat_64.c
+@@ -218,6 +218,15 @@ static int physflat_acpi_madt_oem_check(char *oem_id, char *oem_table_id)
+ 	return 0;
+ }
+ 
++static void physflat_init_apic_ldr(void)
++{
++	/*
++	 * LDR and DFR are not involved in physflat mode, rather:
++	 * "In physical destination mode, the destination processor is
++	 * specified by its local APIC ID [...]." (Intel SDM, 10.6.2.1)
++	 */
++}
++
+ static void physflat_send_IPI_allbutself(int vector)
+ {
+ 	default_send_IPI_mask_allbutself_phys(cpu_online_mask, vector);
+@@ -251,8 +260,7 @@ static struct apic apic_physflat __ro_after_init = {
+ 	.check_apicid_used		= NULL,
+ 
+ 	.vector_allocation_domain	= default_vector_allocation_domain,
+-	/* not needed, but shouldn't hurt: */
+-	.init_apic_ldr			= flat_init_apic_ldr,
++	.init_apic_ldr			= physflat_init_apic_ldr,
+ 
+ 	.ioapic_phys_id_map		= NULL,
+ 	.setup_apic_routing		= NULL,
