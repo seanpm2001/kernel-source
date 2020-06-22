@@ -1,0 +1,37 @@
+From: Arnd Bergmann <arnd@arndb.de>
+Date: Fri, 14 Jul 2017 14:07:04 +0200
+Subject: vmxnet3: avoid format strint overflow warning
+Patch-mainline: v4.13-rc2
+Git-commit: c7673e4dea9a338e00fa26cdd42d3697e8e22319
+References: bsc#1172484
+
+gcc-7 notices that "-event-%d" could be more than 11 characters long
+if we had larger 'vector' numbers:
+
+drivers/net/vmxnet3/vmxnet3_drv.c: In function 'vmxnet3_activate_dev':
+drivers/net/vmxnet3/vmxnet3_drv.c:2095:40: error: 'sprintf' may write a terminating nul past the end of the destination [-Werror=format-overflow=]
+sprintf(intr->event_msi_vector_name, "%s-event-%d",
+                                     ^~~~~~~~~~~~~
+drivers/net/vmxnet3/vmxnet3_drv.c:2095:3: note: 'sprintf' output between 9 and 33 bytes into a destination of size 32
+
+The current code is safe, but making the string a little longer
+is harmless and lets gcc see that it's ok.
+
+Signed-off-by: Arnd Bergmann <arnd@arndb.de>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/vmxnet3/vmxnet3_int.h |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/net/vmxnet3/vmxnet3_int.h
++++ b/drivers/net/vmxnet3/vmxnet3_int.h
+@@ -311,7 +311,7 @@ struct vmxnet3_intr {
+ 	u8  num_intrs;			/* # of intr vectors */
+ 	u8  event_intr_idx;		/* idx of the intr vector for event */
+ 	u8  mod_levels[VMXNET3_LINUX_MAX_MSIX_VECT]; /* moderation level */
+-	char	event_msi_vector_name[IFNAMSIZ+11];
++	char	event_msi_vector_name[IFNAMSIZ+17];
+ #ifdef CONFIG_PCI_MSI
+ 	struct msix_entry msix_entries[VMXNET3_LINUX_MAX_MSIX_VECT];
+ #endif
