@@ -1,0 +1,58 @@
+From: YueHaibing <yuehaibing@huawei.com>
+Date: Thu, 17 May 2018 11:46:41 +0800
+Subject: vmxnet3: Replace msleep(1) with usleep_range()
+Patch-mainline: v4.18-rc1
+Git-commit: 93c65d13d8a0b7c272868d4a9779f96fc973df26
+References: bsc#1172484
+
+As documented in Documentation/timers/timers-howto.txt,
+replace msleep(1) with usleep_range().
+
+Signed-off-by: YueHaibing <yuehaibing@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/vmxnet3/vmxnet3_drv.c     |    6 +++---
+ drivers/net/vmxnet3/vmxnet3_ethtool.c |    2 +-
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+--- a/drivers/net/vmxnet3/vmxnet3_drv.c
++++ b/drivers/net/vmxnet3/vmxnet3_drv.c
+@@ -2949,7 +2949,7 @@ vmxnet3_close(struct net_device *netdev)
+ 	 * completion.
+ 	 */
+ 	while (test_and_set_bit(VMXNET3_STATE_BIT_RESETTING, &adapter->state))
+-		msleep(1);
++		usleep_range(1000, 2000);
+ 
+ 	vmxnet3_quiesce_dev(adapter);
+ 
+@@ -2999,7 +2999,7 @@ vmxnet3_change_mtu(struct net_device *ne
+ 	 * completion.
+ 	 */
+ 	while (test_and_set_bit(VMXNET3_STATE_BIT_RESETTING, &adapter->state))
+-		msleep(1);
++		usleep_range(1000, 2000);
+ 
+ 	if (netif_running(netdev)) {
+ 		vmxnet3_quiesce_dev(adapter);
+@@ -3589,7 +3589,7 @@ static void vmxnet3_shutdown_device(stru
+ 	 * completion.
+ 	 */
+ 	while (test_and_set_bit(VMXNET3_STATE_BIT_RESETTING, &adapter->state))
+-		msleep(1);
++		usleep_range(1000, 2000);
+ 
+ 	if (test_and_set_bit(VMXNET3_STATE_BIT_QUIESCED,
+ 			     &adapter->state)) {
+--- a/drivers/net/vmxnet3/vmxnet3_ethtool.c
++++ b/drivers/net/vmxnet3/vmxnet3_ethtool.c
+@@ -600,7 +600,7 @@ vmxnet3_set_ringparam(struct net_device
+ 	 * completion.
+ 	 */
+ 	while (test_and_set_bit(VMXNET3_STATE_BIT_RESETTING, &adapter->state))
+-		msleep(1);
++		usleep_range(1000, 2000);
+ 
+ 	if (netif_running(netdev)) {
+ 		vmxnet3_quiesce_dev(adapter);
