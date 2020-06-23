@@ -1,0 +1,106 @@
+From b0377fedb6528087ed319b0d054d6ed82240372c Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@zeniv.linux.org.uk>
+Date: Thu, 29 Jun 2017 21:42:43 -0400
+Subject: [PATCH] copy_{to,from}_user(): consolidate object size checks
+Git-commit: b0377fedb6528087ed319b0d054d6ed82240372c
+Patch-mainline: v4.13-rc1
+References: git fixes
+
+... and move them into thread_info.h, next to check_object_size()
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Signed-off-by: Coly Li <colyli@suse.de>
+---
+ include/linux/thread_info.h |   27 +++++++++++++++++++++++++++
+ include/linux/uaccess.h     |   26 ++------------------------
+ 2 files changed, 29 insertions(+), 24 deletions(-)
+
+--- a/include/linux/thread_info.h
++++ b/include/linux/thread_info.h
+@@ -113,6 +113,33 @@ static inline void check_object_size(con
+ { }
+ #endif /* CONFIG_HARDENED_USERCOPY */
+ 
++extern void __compiletime_error("copy source size is too small")
++__bad_copy_from(void);
++extern void __compiletime_error("copy destination size is too small")
++__bad_copy_to(void);
++
++static inline void copy_overflow(int size, unsigned long count)
++{
++	WARN(1, "Buffer overflow detected (%d < %lu)!\n", size, count);
++}
++
++static __always_inline bool
++check_copy_size(const void *addr, size_t bytes, bool is_source)
++{
++	int sz = __compiletime_object_size(addr);
++	if (unlikely(sz >= 0 && sz < bytes)) {
++		if (!__builtin_constant_p(bytes))
++			copy_overflow(sz, bytes);
++		else if (is_source)
++			__bad_copy_from();
++		else
++			__bad_copy_to();
++		return false;
++	}
++	check_object_size(addr, bytes, is_source);
++	return true;
++}
++
+ #ifndef arch_setup_new_exec
+ static inline void arch_setup_new_exec(void) { }
+ #endif
+--- a/include/linux/uaccess.h
++++ b/include/linux/uaccess.h
+@@ -133,29 +133,14 @@ extern unsigned long
+ _copy_to_user(void __user *, const void *, unsigned long);
+ #endif
+ 
+-extern void __compiletime_error("usercopy buffer size is too small")
+-__bad_copy_user(void);
+-
+-static inline void copy_user_overflow(int size, unsigned long count)
+-{
+-	WARN(1, "Buffer overflow detected (%d < %lu)!\n", size, count);
+-}
+-
+ static __always_inline unsigned long __must_check
+ copy_from_user(void *to, const void __user *from, unsigned long n)
+ {
+-	int sz = __compiletime_object_size(to);
+-
+ 	might_fault();
+ 	kasan_check_write(to, n);
+ 
+-	if (likely(sz < 0 || sz >= n)) {
+-		check_object_size(to, n, false);
++	if (likely(check_copy_size(to, n, false)))
+ 		n = _copy_from_user(to, from, n);
+-	} else if (!__builtin_constant_p(n))
+-		copy_user_overflow(sz, n);
+-	else
+-		__bad_copy_user();
+ 
+ 	return n;
+ }
+@@ -163,18 +148,11 @@ copy_from_user(void *to, const void __us
+ static __always_inline unsigned long __must_check
+ copy_to_user(void __user *to, const void *from, unsigned long n)
+ {
+-	int sz = __compiletime_object_size(from);
+-
+ 	kasan_check_read(from, n);
+ 	might_fault();
+ 
+-	if (likely(sz < 0 || sz >= n)) {
+-		check_object_size(from, n, true);
++	if (likely(check_copy_size(from, n, true)))
+ 		n = _copy_to_user(to, from, n);
+-	} else if (!__builtin_constant_p(n))
+-		copy_user_overflow(sz, n);
+-	else
+-		__bad_copy_user();
+ 
+ 	return n;
+ }

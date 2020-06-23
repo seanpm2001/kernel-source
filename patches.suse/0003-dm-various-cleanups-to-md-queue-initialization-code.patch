@@ -1,0 +1,130 @@
+From c12c9a3c3860c76ba273798c0c34c6f1294cc759 Mon Sep 17 00:00:00 2001
+From: Mike Snitzer <snitzer@redhat.com>
+Date: Fri, 12 Jan 2018 09:32:21 -0500
+Subject: [PATCH] dm: various cleanups to md->queue initialization code
+Git-commit: c12c9a3c3860c76ba273798c0c34c6f1294cc759
+Patch-mainline: v4.16-rc1
+References: bsc#1104967,FATE#325924,git-fixes
+
+Also, add dm_sysfs_init() error handling to dm_create().
+
+Signed-off-by: Mike Snitzer <snitzer@redhat.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+---
+ drivers/md/dm-core.h |    2 --
+ drivers/md/dm-rq.c   |    2 --
+ drivers/md/dm.c      |   30 ++++++++++++------------------
+ 3 files changed, 12 insertions(+), 22 deletions(-)
+
+--- a/drivers/md/dm-core.h
++++ b/drivers/md/dm-core.h
+@@ -129,8 +129,6 @@ struct mapped_device {
+ 	struct srcu_struct io_barrier;
+ };
+ 
+-void dm_init_md_queue(struct mapped_device *md);
+-void dm_init_normal_md_queue(struct mapped_device *md);
+ int md_in_flight(struct mapped_device *md);
+ void disable_write_same(struct mapped_device *md);
+ void disable_write_zeroes(struct mapped_device *md);
+--- a/drivers/md/dm-rq.c
++++ b/drivers/md/dm-rq.c
+@@ -700,7 +700,6 @@ int dm_old_init_request_queue(struct map
+ 	/* disable dm_old_request_fn's merge heuristic by default */
+ 	md->seq_rq_merge_deadline_usecs = 0;
+ 
+-	dm_init_normal_md_queue(md);
+ 	blk_queue_softirq_done(md->queue, dm_softirq_done);
+ 
+ 	/* Initialize the request-based DM worker thread */
+@@ -810,7 +809,6 @@ int dm_mq_init_request_queue(struct mapp
+ 		err = PTR_ERR(q);
+ 		goto out_tag_set;
+ 	}
+-	dm_init_md_queue(md);
+ 
+ 	return 0;
+ 
+--- a/drivers/md/dm.c
++++ b/drivers/md/dm.c
+@@ -1611,20 +1611,9 @@ static const struct dax_operations dm_da
+ 
+ static void dm_wq_work(struct work_struct *work);
+ 
+-void dm_init_md_queue(struct mapped_device *md)
+-{
+-	/*
+-	 * Initialize data that will only be used by a non-blk-mq DM queue
+-	 * - must do so here (in alloc_dev callchain) before queue is used
+-	 */
+-	md->queue->queuedata = md;
+-	md->queue->backing_dev_info->congested_data = md;
+-}
+-
+-void dm_init_normal_md_queue(struct mapped_device *md)
++static void dm_init_normal_md_queue(struct mapped_device *md)
+ {
+ 	md->use_blk_mq = false;
+-	dm_init_md_queue(md);
+ 
+ 	/*
+ 	 * Initialize aspects of queue that aren't relevant for blk-mq
+@@ -1723,10 +1712,10 @@ static struct mapped_device *alloc_dev(i
+ 	md->queue = blk_alloc_queue_node(GFP_KERNEL, numa_node_id);
+ 	if (!md->queue)
+ 		goto bad;
++	md->queue->queuedata = md;
++	md->queue->backing_dev_info->congested_data = md;
+ 
+-	dm_init_md_queue(md);
+-
+-	md->disk = alloc_disk_node(1, numa_node_id);
++	md->disk = alloc_disk_node(1, md->numa_node_id);
+ 	if (!md->disk)
+ 		goto bad;
+ 
+@@ -1959,13 +1948,18 @@ static struct dm_table *__unbind(struct
+  */
+ int dm_create(int minor, struct mapped_device **result)
+ {
++	int r;
+ 	struct mapped_device *md;
+ 
+ 	md = alloc_dev(minor);
+ 	if (!md)
+ 		return -ENXIO;
+ 
+-	dm_sysfs_init(md);
++	r = dm_sysfs_init(md);
++	if (r) {
++		free_dev(md);
++		return r;
++	}
+ 
+ 	*result = md;
+ 	return 0;
+@@ -2022,6 +2016,7 @@ int dm_setup_md_queue(struct mapped_devi
+ 
+ 	switch (type) {
+ 	case DM_TYPE_REQUEST_BASED:
++		dm_init_normal_md_queue(md);
+ 		r = dm_old_init_request_queue(md, t);
+ 		if (r) {
+ 			DMERR("Cannot initialize queue for request-based mapped device");
+@@ -2109,7 +2104,6 @@ EXPORT_SYMBOL_GPL(dm_device_name);
+ 
+ static void __dm_destroy(struct mapped_device *md, bool wait)
+ {
+-	struct request_queue *q = dm_get_md_queue(md);
+ 	struct dm_table *map;
+ 	int srcu_idx;
+ 
+@@ -2120,7 +2114,7 @@ static void __dm_destroy(struct mapped_d
+ 	set_bit(DMF_FREEING, &md->flags);
+ 	spin_unlock(&_minor_lock);
+ 
+-	blk_set_queue_dying(q);
++	blk_set_queue_dying(md->queue);
+ 
+ 	if (dm_request_based(md) && md->kworker_task)
+ 		kthread_flush_worker(&md->kworker);
