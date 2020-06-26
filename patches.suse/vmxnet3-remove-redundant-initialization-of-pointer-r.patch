@@ -1,0 +1,45 @@
+From: Colin Ian King <colin.king@canonical.com>
+Date: Thu, 1 Feb 2018 17:29:21 +0000
+Subject: vmxnet3: remove redundant initialization of pointer 'rq'
+Patch-mainline: v4.16-rc1
+Git-commit: 5e264e2b532966bfcfe8869a3fccc9876ec2122c
+References: bsc#1172484
+
+Pointer rq is being initialized but this value is never read, it
+is being updated inside a for-loop. Remove the initialization and
+move it into the scope of the for-loop.
+
+Cleans up clang warning:
+drivers/net/vmxnet3/vmxnet3_drv.c:2763:27: warning: Value stored
+to 'rq' during its initialization is never read
+
+Signed-off-by: Colin Ian King <colin.king@canonical.com>
+Acked-by: Shrikrishna Khare <skhare@vmware.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/vmxnet3/vmxnet3_drv.c |    6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+--- a/drivers/net/vmxnet3/vmxnet3_drv.c
++++ b/drivers/net/vmxnet3/vmxnet3_drv.c
+@@ -2760,9 +2760,6 @@ static void
+ vmxnet3_adjust_rx_ring_size(struct vmxnet3_adapter *adapter)
+ {
+ 	size_t sz, i, ring0_size, ring1_size, comp_size;
+-	struct vmxnet3_rx_queue	*rq = &adapter->rx_queue[0];
+-
+-
+ 	if (adapter->netdev->mtu <= VMXNET3_MAX_SKB_BUF_SIZE -
+ 				    VMXNET3_MAX_ETH_HDR_SIZE) {
+ 		adapter->skb_buf_size = adapter->netdev->mtu +
+@@ -2794,7 +2791,8 @@ vmxnet3_adjust_rx_ring_size(struct vmxne
+ 	comp_size = ring0_size + ring1_size;
+ 
+ 	for (i = 0; i < adapter->num_rx_queues; i++) {
+-		rq = &adapter->rx_queue[i];
++		struct vmxnet3_rx_queue	*rq = &adapter->rx_queue[i];
++
+ 		rq->rx_ring[0].size = ring0_size;
+ 		rq->rx_ring[1].size = ring1_size;
+ 		rq->comp_ring.size = comp_size;
