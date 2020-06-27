@@ -1,0 +1,65 @@
+From: Jeff Layton <jlayton@kernel.org>
+Date: Wed, 1 Apr 2020 18:27:25 -0400
+Subject: ceph: request expedited service on session's last cap flush
+Git-commit: d67c72e6cce99eab5ab9d62c599e33e5141ff8b4
+Patch-mainline: v5.8-rc1
+References: bsc#1167104
+
+When flushing a lot of caps to the MDS's at once (e.g. for syncfs),
+we can end up waiting a substantial amount of time for MDS replies, due
+to the fact that it may delay some of them so that it can batch them up
+together in a single journal transaction. This can lead to stalls when
+calling sync or syncfs.
+
+What we'd really like to do is request expedited service on the _last_
+cap we're flushing back to the server. If the CHECK_CAPS_FLUSH flag is
+set on the request and the current inode was the last one on the
+session->s_cap_dirty list, then mark the request with
+CEPH_CLIENT_CAPS_SYNC.
+
+Note that this heuristic is not perfect. New inodes can race onto the
+list after we've started flushing, but it does seem to fix some common
+use cases.
+
+URL: https://tracker.ceph.com/issues/44744
+Reported-by: Jan Fajerski <jfajerski@suse.com>
+Signed-off-by: Jeff Layton <jlayton@kernel.org>
+Reviewed-by: "Yan, Zheng" <zyan@redhat.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+[luis: had to re-write patch as we don't have commit
+ 0a454bdd501a ("ceph: reorganize __send_cap for less spinlock abuse")]
+Acked-by: Luis Henriques <lhenriques@suse.com>
+---
+ fs/ceph/caps.c |    7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+--- a/fs/ceph/caps.c
++++ b/fs/ceph/caps.c
+@@ -1950,6 +1950,8 @@ retry_locked:
+ 	}
+ 
+ 	for (p = rb_first(&ci->i_caps); p; p = rb_next(p)) {
++		bool sync = false;
++
+ 		cap = rb_entry(p, struct ceph_cap, ci_node);
+ 
+ 		/* avoid looping forever */
+@@ -2085,6 +2087,9 @@ ack:
+ 			flushing = __mark_caps_flushing(inode, session, false,
+ 							&flush_tid,
+ 							&oldest_flush_tid);
++			if (flags & CHECK_CAPS_FLUSH &&
++			    list_empty(&session->s_cap_dirty))
++				sync = true;
+ 		} else {
+ 			flushing = 0;
+ 			flush_tid = 0;
+@@ -2097,7 +2102,7 @@ ack:
+ 		sent++;
+ 
+ 		/* __send_cap drops i_ceph_lock */
+-		delayed += __send_cap(mdsc, cap, CEPH_CAP_OP_UPDATE, false,
++		delayed += __send_cap(mdsc, cap, CEPH_CAP_OP_UPDATE, sync,
+ 				cap_used, want, retain, flushing,
+ 				flush_tid, oldest_flush_tid);
+ 		goto retry; /* retake i_ceph_lock and restart our cap scan. */
