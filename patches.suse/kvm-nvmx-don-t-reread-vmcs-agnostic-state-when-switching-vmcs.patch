@@ -1,0 +1,67 @@
+From: Sean Christopherson <sean.j.christopherson@intel.com>
+Date: Tue, 7 May 2019 09:06:32 -0700
+Subject: KVM: nVMX: Don't reread VMCS-agnostic state when switching VMCS
+Git-commit: 8ef863e67a89c72b5af893a1214f6c35a5f456f8
+Patch-mainline: v5.3-rc1
+References: bsc#1114279
+
+When switching between vmcs01 and vmcs02, there is no need to update
+state tracking for values that aren't tied to any particular VMCS as
+the per-vCPU values are already up-to-date (vmx_switch_vmcs() can only
+be called when the vCPU is loaded).
+
+Avoiding the update eliminates a RDMSR, and potentially a RDPKRU and
+posted-interrupt update (cmpxchg64() and more).
+
+Signed-off-by: Sean Christopherson <sean.j.christopherson@intel.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Borislav Petkov <bp@suse.de>
+---
+ arch/x86/kvm/vmx.c |   20 ++++++++++++++------
+ 1 file changed, 14 insertions(+), 6 deletions(-)
+
+--- a/arch/x86/kvm/vmx.c
++++ b/arch/x86/kvm/vmx.c
+@@ -2483,11 +2483,7 @@ static void decache_tsc_multiplier(struc
+ 	vmcs_write64(TSC_MULTIPLIER, vmx->current_tsc_ratio);
+ }
+ 
+-/*
+- * Switches to specified vcpu, until a matching vcpu_put(), but assumes
+- * vcpu mutex is already taken.
+- */
+-static void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
++void vmx_vcpu_load_vmcs(struct kvm_vcpu *vcpu, int cpu)
+ {
+ 	struct vcpu_vmx *vmx = to_vmx(vcpu);
+ 	bool already_loaded = vmx->loaded_vmcs->cpu == cpu;
+@@ -2548,8 +2544,20 @@ static void vmx_vcpu_load(struct kvm_vcp
+ 	if (kvm_has_tsc_control &&
+ 	    vmx->current_tsc_ratio != vcpu->arch.tsc_scaling_ratio)
+ 		decache_tsc_multiplier(vmx);
++}
++
++/*
++ * Switches to specified vcpu, until a matching vcpu_put(), but assumes
++ * vcpu mutex is already taken.
++ */
++void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
++{
++	struct vcpu_vmx *vmx = to_vmx(vcpu);
++
++	vmx_vcpu_load_vmcs(vcpu, cpu);
+ 
+ 	vmx_vcpu_pi_load(vcpu, cpu);
++
+ 	vmx->host_pkru = read_pkru();
+ }
+ 
+@@ -9956,7 +9964,7 @@ static void vmx_switch_vmcs(struct kvm_v
+ 	cpu = get_cpu();
+ 	vmx_vcpu_put(vcpu);
+ 	vmx->loaded_vmcs = vmcs;
+-	vmx_vcpu_load(vcpu, cpu);
++	vmx_vcpu_load_vmcs(vcpu, cpu);
+ 	put_cpu();
+ }
+ 
