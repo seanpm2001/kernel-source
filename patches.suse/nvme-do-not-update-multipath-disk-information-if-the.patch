@@ -1,0 +1,31 @@
+From 50a713b2f2bbea8fbe89b4938a1abc1f3f2347fa Mon Sep 17 00:00:00 2001
+From: Hannes Reinecke <hare@suse.de>
+Date: Thu, 4 Jun 2020 13:56:02 +0200
+Subject: nvme: do not update multipath disk information if the
+ controller is down
+References: bcs#1171558 bsc#1159058
+Patch-Mainline: submitted linux-nvme3 2020/06/04
+
+When nvme_revalidate_disk() is called while the controller is not live
+we need to avoid revalidating the multipath head device, as any I/O
+sent to the multipath device might not be possible and we would deadlock
+trying to flush the scan thread during reconnect.
+
+Reported-by: Martin George <martin.george@netapp.com>
+Signed-off-by: Hannes Reinecke <hare@suse.de>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/nvme/host/core.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/nvme/host/core.c
++++ b/drivers/nvme/host/core.c
+@@ -1525,7 +1525,7 @@ static void __nvme_revalidate_disk(struc
+ 	if (ns->ndev)
+ 		nvme_nvm_update_nvm_info(ns);
+ #ifdef CONFIG_NVME_MULTIPATH
+-	if (ns->head->disk) {
++	if (ns->head->disk && ns->ctrl->state == NVME_CTRL_LIVE) {
+ 		nvme_update_disk_info(ns->head->disk, ns, id);
+ 		blk_queue_stack_limits(ns->head->disk->queue, ns->queue);
+ 		revalidate_disk(ns->head->disk);
