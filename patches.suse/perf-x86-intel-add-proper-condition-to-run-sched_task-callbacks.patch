@@ -1,0 +1,147 @@
+From: Jiri Olsa <jolsa@redhat.com>
+Date: Wed, 19 Jul 2017 09:52:47 +0200
+Subject: perf/x86/intel: Add proper condition to run sched_task callbacks
+Git-commit: df6c3db8d30fb1699ccbc403196b86324f4257af
+Patch-mainline: v4.13-rc2
+References: git-fixes
+X-Info: dependent patch for 913a90bc5a3a06b1f04c337320e9aeee2328dd77
+
+We have 2 functions using the same sched_task callback:
+
+  - PEBS drain for free running counters
+  - LBR save/store
+
+Both of them are called from intel_pmu_sched_task() and
+either of them can be unwillingly triggered when the
+other one is configured to run.
+
+Let's say there's PEBS drain configured in sched_task
+callback for the event, but in the callback itself
+(intel_pmu_sched_task()) we will also run the code for
+LBR save/restore, which we did not ask for, but the
+code in intel_pmu_sched_task() does not check for that.
+
+This can lead to extra cycles in some perf monitoring,
+like when we monitor PEBS event without LBR data.
+
+  # perf record --no-timestamp -c 10000 -e cycles:p ./perf bench sched pipe -l 1000000
+
+  (We need PEBS, non freq/non timestamp event to enable
+   the sched_task callback)
+
+The perf stat of cycles and msr:write_msr for above
+command before the change:
+  ...
+  Performance counter stats for './perf record --no-timestamp -c 10000 -e cycles:p \
+                                 ./perf bench sched pipe -l 1000000' (5 runs):
+
+    18,519,557,441      cycles:k
+        91,195,527      msr:write_msr
+
+      29.334476406 seconds time elapsed
+
+And after the change:
+  ...
+  Performance counter stats for './perf record --no-timestamp -c 10000 -e cycles:p \
+                                 ./perf bench sched pipe -l 1000000' (5 runs):
+
+    18,704,973,540      cycles:k
+        27,184,720      msr:write_msr
+
+      16.977875900 seconds time elapsed
+
+There's no affect on cycles:k because the sched_task happens
+with events switched off, however the msr:write_msr tracepoint
+counter together with almost 50% of time speedup show the
+improvement.
+
+Monitoring LBR event and having extra PEBS drain processing
+in sched_task callback showed just a little speedup, because
+the drain function does not do much extra work in case there
+is no PEBS data.
+
+Adding conditions to recognize the configured work that needs
+to be done in the x86_pmu's sched_task callback.
+
+Suggested-by: Peter Zijlstra <peterz@infradead.org>
+Signed-off-by: Jiri Olsa <jolsa@kernel.org>
+Acked-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Cc: Kan Liang <kan.liang@intel.com>
+Cc: Alexander Shishkin <alexander.shishkin@linux.intel.com>
+Cc: Jiri Olsa <jolsa@kernel.org>
+Link: http://lkml.kernel.org/r/20170719075247.GA27506@krava
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+Signed-off-by: Tony Jones <tonyj@suse.de>
+---
+ arch/x86/events/intel/core.c |  6 ++----
+ arch/x86/events/intel/ds.c   | 14 ++++++++------
+ arch/x86/events/intel/lbr.c  |  4 ++++
+ 3 files changed, 14 insertions(+), 10 deletions(-)
+
+diff --git a/arch/x86/events/intel/core.c b/arch/x86/events/intel/core.c
+index ede97710c2f4..98b0f0729527 100644
+--- a/arch/x86/events/intel/core.c
++++ b/arch/x86/events/intel/core.c
+@@ -3397,10 +3397,8 @@ static void intel_pmu_cpu_dying(int cpu)
+ static void intel_pmu_sched_task(struct perf_event_context *ctx,
+ 				 bool sched_in)
+ {
+-	if (x86_pmu.pebs_active)
+-		intel_pmu_pebs_sched_task(ctx, sched_in);
+-	if (x86_pmu.lbr_nr)
+-		intel_pmu_lbr_sched_task(ctx, sched_in);
++	intel_pmu_pebs_sched_task(ctx, sched_in);
++	intel_pmu_lbr_sched_task(ctx, sched_in);
+ }
+ 
+ PMU_FORMAT_ATTR(offcore_rsp, "config1:0-63");
+diff --git a/arch/x86/events/intel/ds.c b/arch/x86/events/intel/ds.c
+index 6dc8a59e1bfb..a322fed5f8ed 100644
+--- a/arch/x86/events/intel/ds.c
++++ b/arch/x86/events/intel/ds.c
+@@ -606,12 +606,6 @@ static inline void intel_pmu_drain_pebs_buffer(void)
+ 	x86_pmu.drain_pebs(&regs);
+ }
+ 
+-void intel_pmu_pebs_sched_task(struct perf_event_context *ctx, bool sched_in)
+-{
+-	if (!sched_in)
+-		intel_pmu_drain_pebs_buffer();
+-}
+-
+ /*
+  * PEBS
+  */
+@@ -822,6 +816,14 @@ static inline bool pebs_needs_sched_cb(struct cpu_hw_events *cpuc)
+ 	return cpuc->n_pebs && (cpuc->n_pebs == cpuc->n_large_pebs);
+ }
+ 
++void intel_pmu_pebs_sched_task(struct perf_event_context *ctx, bool sched_in)
++{
++	struct cpu_hw_events *cpuc = this_cpu_ptr(&cpu_hw_events);
++
++	if (!sched_in && pebs_needs_sched_cb(cpuc))
++		intel_pmu_drain_pebs_buffer();
++}
++
+ static inline void pebs_update_threshold(struct cpu_hw_events *cpuc)
+ {
+ 	struct debug_store *ds = cpuc->ds;
+diff --git a/arch/x86/events/intel/lbr.c b/arch/x86/events/intel/lbr.c
+index eb261656a320..955457a30197 100644
+--- a/arch/x86/events/intel/lbr.c
++++ b/arch/x86/events/intel/lbr.c
+@@ -380,8 +380,12 @@ static void __intel_pmu_lbr_save(struct x86_perf_task_context *task_ctx)
+ 
+ void intel_pmu_lbr_sched_task(struct perf_event_context *ctx, bool sched_in)
+ {
++	struct cpu_hw_events *cpuc = this_cpu_ptr(&cpu_hw_events);
+ 	struct x86_perf_task_context *task_ctx;
+ 
++	if (!cpuc->lbr_users)
++		return;
++
+ 	/*
+ 	 * If LBR callstack feature is enabled and the stack was saved when
+ 	 * the task was scheduled out, restore the stack. Otherwise flush
+
