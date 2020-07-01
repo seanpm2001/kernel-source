@@ -1,0 +1,101 @@
+From: Sean Christopherson <sean.j.christopherson@intel.com>
+Date: Fri, 1 May 2020 09:31:17 -0700
+Subject: KVM: nVMX: Skip IBPB when switching between vmcs01 and vmcs02
+Git-commit: 5c911beff20aa8639e7a1f28988736c13e03ed54
+Patch-mainline: v5.8-rc1
+References: bsc#1114279
+
+Skip the Indirect Branch Prediction Barrier that is triggered on a VMCS
+switch when running with spectre_v2_user=on/auto if the switch is
+between two VMCSes in the same guest, i.e. between vmcs01 and vmcs02.
+The IBPB is intended to prevent one guest from attacking another, which
+is unnecessary in the nested case as it's the same guest from KVM's
+perspective.
+
+This all but eliminates the overhead observed for nested VMX transitions
+when running with CONFIG_RETPOLINE=y and spectre_v2_user=on/auto, which
+can be significant, e.g. roughly 3x on current systems.
+
+Reported-by: Alexander Graf <graf@amazon.com>
+Cc: KarimAllah Raslan <karahmed@amazon.de>
+Cc: stable@vger.kernel.org
+Fixes: 15d45071523d ("KVM/x86: Add IBPB support")
+Signed-off-by: Sean Christopherson <sean.j.christopherson@intel.com>
+Message-Id: <20200501163117.4655-1-sean.j.christopherson@intel.com>
+[Invert direction of bool argument. - Paolo]
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+
+ [ bp: prev vmx_switch_vmcs() bits from
+   13b964a29d66 ("KVM: nVMX: Don't "put" vCPU or host state when
+		   switching VMCS") ]
+
+Acked-by: Borislav Petkov <bp@suse.de>
+---
+ arch/x86/kvm/vmx.c |   23 +++++++++++++++++------
+ 1 file changed, 17 insertions(+), 6 deletions(-)
+
+--- a/arch/x86/kvm/vmx.c
++++ b/arch/x86/kvm/vmx.c
+@@ -2493,10 +2493,12 @@ static void decache_tsc_multiplier(struc
+ 	vmcs_write64(TSC_MULTIPLIER, vmx->current_tsc_ratio);
+ }
+ 
+-void vmx_vcpu_load_vmcs(struct kvm_vcpu *vcpu, int cpu)
++void vmx_vcpu_load_vmcs(struct kvm_vcpu *vcpu, int cpu,
++			struct loaded_vmcs *buddy)
+ {
+ 	struct vcpu_vmx *vmx = to_vmx(vcpu);
+ 	bool already_loaded = vmx->loaded_vmcs->cpu == cpu;
++	struct vmcs *prev;
+ 
+ 	if (!already_loaded) {
+ 		loaded_vmcs_clear(vmx->loaded_vmcs);
+@@ -2516,10 +2518,18 @@ void vmx_vcpu_load_vmcs(struct kvm_vcpu
+ 		local_irq_enable();
+ 	}
+ 
+-	if (per_cpu(current_vmcs, cpu) != vmx->loaded_vmcs->vmcs) {
++	prev = per_cpu(current_vmcs, cpu);
++	if (prev != vmx->loaded_vmcs->vmcs) {
+ 		per_cpu(current_vmcs, cpu) = vmx->loaded_vmcs->vmcs;
+ 		vmcs_load(vmx->loaded_vmcs->vmcs);
+-		indirect_branch_prediction_barrier();
++
++		/*
++		 * No indirect branch prediction barrier needed when switching
++		 * the active VMCS within a guest, e.g. on nested VM-Enter.
++		 * The L1 VMM can protect itself with retpolines, IBPB or IBRS.
++		 */
++		if (!buddy || WARN_ON_ONCE(buddy->vmcs != prev))
++			indirect_branch_prediction_barrier();
+ 	}
+ 
+ 	if (!already_loaded) {
+@@ -2564,7 +2574,7 @@ void vmx_vcpu_load(struct kvm_vcpu *vcpu
+ {
+ 	struct vcpu_vmx *vmx = to_vmx(vcpu);
+ 
+-	vmx_vcpu_load_vmcs(vcpu, cpu);
++	vmx_vcpu_load_vmcs(vcpu, cpu, NULL);
+ 
+ 	vmx_vcpu_pi_load(vcpu, cpu);
+ 
+@@ -10023,15 +10033,16 @@ static void vmx_vm_free(struct kvm *kvm)
+ static void vmx_switch_vmcs(struct kvm_vcpu *vcpu, struct loaded_vmcs *vmcs)
+ {
+ 	struct vcpu_vmx *vmx = to_vmx(vcpu);
++	struct loaded_vmcs *prev;
+ 	int cpu;
+ 
+ 	if (vmx->loaded_vmcs == vmcs)
+ 		return;
+ 
+ 	cpu = get_cpu();
+-	vmx_vcpu_put(vcpu);
++	prev = vmx->loaded_vmcs;
+ 	vmx->loaded_vmcs = vmcs;
+-	vmx_vcpu_load_vmcs(vcpu, cpu);
++	vmx_vcpu_load_vmcs(vcpu, cpu, prev);
+ 	put_cpu();
+ }
+ 
