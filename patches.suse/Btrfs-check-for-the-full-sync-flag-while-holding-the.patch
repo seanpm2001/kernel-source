@@ -30,10 +30,10 @@ Signed-off-by: Filipe Manana <fdmanana@suse.com>
  1 file changed, 18 insertions(+), 17 deletions(-)
 
 diff --git a/fs/btrfs/file.c b/fs/btrfs/file.c
-index 320b01580f2e..901aeb7ee81b 100644
+index 9bd2c03..99ffc67 100644
 --- a/fs/btrfs/file.c
 +++ b/fs/btrfs/file.c
-@@ -2059,23 +2059,6 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+@@ -2057,23 +2057,6 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
  	bool full_sync = 0;
  	u64 len;
  
@@ -56,8 +56,8 @@ index 320b01580f2e..901aeb7ee81b 100644
 -	len = (u64)end - (u64)start + 1;
  	trace_btrfs_sync_file(file, datasync);
  
- 	/*
-@@ -2092,6 +2075,24 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+ 	btrfs_init_log_ctx(&ctx, inode);
+@@ -2100,6 +2083,24 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
  	atomic_inc(&root->log_batch);
  	full_sync = test_bit(BTRFS_INODE_NEEDS_FULL_SYNC,
  			     &BTRFS_I(inode)->runtime_flags);
@@ -65,10 +65,10 @@ index 320b01580f2e..901aeb7ee81b 100644
 +	 * If the inode needs a full sync, make sure we use a full range to
 +	 * avoid log tree corruption, due to hole detection racing with ordered
 +	 * extent completion for adjacent ranges, and assertion failures during
-+	 * hole detection. Do this while holding the inode lock, to avoid races
-+	 * with other tasks.
++	 * hole detection.
 +	 */
-+	if (full_sync) {
++	if (test_bit(BTRFS_INODE_NEEDS_FULL_SYNC,
++		     &BTRFS_I(inode)->runtime_flags)) {
 +		start = 0;
 +		end = LLONG_MAX;
 +	}
