@@ -1,0 +1,82 @@
+From: Johannes Berg <johannes.berg@intel.com>
+Date: Wed, 26 Sep 2018 11:15:33 +0200
+Subject: [PATCH] netlink: allow NLA_NESTED to specify nested policy to
+ validate
+Patch-mainline: v4.20-rc1
+Git-commit: 9a659a35ba177cec30676e170fb6ed98157bcb0d
+References: bsc#1152107 CVE-2019-16746
+
+Now that we have a validation_data pointer, and the len field in
+the policy is unused for NLA_NESTED, we can allow using them both
+to have nested validation. This can be nice in code, although we
+still have to use nla_parse_nested() or similar which would also
+take a policy; however, it also serves as documentation in the
+policy without requiring a look at the code.
+
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Cho, Yu-Chen <acho@suse.com>
+---
+ include/net/netlink.h |   13 +++++++++++--
+ lib/nlattr.c          |   14 ++++++++++++++
+ 2 files changed, 25 insertions(+), 2 deletions(-)
+
+--- a/include/net/netlink.h
++++ b/include/net/netlink.h
+@@ -198,8 +198,10 @@ enum {
+  *    NLA_NUL_STRING       Maximum length of string (excluding NUL)
+  *    NLA_FLAG             Unused
+  *    NLA_BINARY           Maximum length of attribute payload
+- *    NLA_NESTED           Don't use `len' field -- length verification is
+- *                         done by checking len of nested header (or empty)
++ *    NLA_NESTED           Length verification is done by checking len of
++ *                         nested header (or empty); len field is used if
++ *                         validation_data is also used, for the max attr
++ *                         number in the nested policy.
+  *    NLA_NESTED_COMPAT    Minimum length of structure payload
+  *    NLA_U8, NLA_U16,
+  *    NLA_U32, NLA_U64,
+@@ -219,6 +221,10 @@ enum {
+  *    NLA_REJECT           This attribute is always rejected and validation data
+  *                         may point to a string to report as the error instead
+  *                         of the generic one in extended ACK.
++ *    NLA_NESTED           Points to a nested policy to validate, must also set
++ *                         `len' to the max attribute number.
++ *                         Note that nla_parse() will validate, but of course not
++ *                         parse, the nested sub-policies.
+  *    All other            Unused
+  *
+  * Example:
+@@ -235,6 +241,9 @@ struct nla_policy {
+ 	const void     *validation_data;
+ };
+ 
++#define NLA_POLICY_NESTED(maxattr, policy) \
++	{ .type = NLA_NESTED, .validation_data = policy, .len = maxattr }
++
+ /**
+  * struct nl_info - netlink source information
+  * @nlh: Netlink message header of original request
+--- a/lib/nlattr.c
++++ b/lib/nlattr.c
+@@ -138,6 +138,20 @@ static int validate_nla(const struct nla
+ 		 */
+ 		if (attrlen == 0)
+ 			break;
++		if (attrlen < NLA_HDRLEN)
++			goto out_err;
++		if (pt->validation_data) {
++			err = nla_validate(nla_data(nla), nla_len(nla), pt->len,
++					   pt->validation_data, extack);
++			if (err < 0) {
++				/*
++				 * return directly to preserve the inner
++				 * error message/attribute pointer
++				 */
++				return err;
++			}
++		}
++		break;
+ 	default:
+ 		if (pt->len)
+ 			minlen = pt->len;
