@@ -1,0 +1,29 @@
+From: David Ahern <dsahern@gmail.com>
+Date: Tue, 26 Jun 2018 12:39:18 -0700
+Subject: [PATCH] netlink: Return extack message if attribute validation fails
+Patch-mainline: v4.19-rc1
+Git-commit: 7861552cedd81a164c0d5d1c89fe2cb45a3ed41b
+References: bsc#1152107 CVE-2019-16746
+
+Have one extack message for parsing and validating.
+
+Signed-off-by: David Ahern <dsahern@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Cho, Yu-Chen <acho@suse.com>
+---
+ lib/nlattr.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/lib/nlattr.c
++++ b/lib/nlattr.c
+@@ -199,8 +199,8 @@ int nla_parse(struct nlattr **tb, int ma
+ 			if (policy) {
+ 				err = validate_nla(nla, maxtype, policy);
+ 				if (err < 0) {
+-					if (extack)
+-						extack->bad_attr = nla;
++					NL_SET_ERR_MSG_ATTR(extack, nla,
++							    "Attribute failed policy validation");
+ 					goto errout;
+ 				}
+ 			}
