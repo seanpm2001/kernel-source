@@ -1,0 +1,38 @@
+From: David Ahern <dsahern@gmail.com>
+Date: Sat, 27 May 2017 16:19:28 -0600
+Subject: [PATCH] net: add extack arg to lwtunnel build state
+Patch-mainline: v4.13-rc1
+Git-commit: 9ae287274817c032a4428fde84d1ab26d6b96761 (partial)
+References: bsc#1152107 CVE-2019-16746
+
+Pass extack arg down to lwtunnel_build_state and the build_state callbacks.
+Add messages for failures in lwtunnel_build_state, and add the extarg to
+nla_parse where possible in the build_state callbacks.
+
+Signed-off-by: David Ahern <dsahern@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Cho, Yu-Chen <acho@suse.com>
+---
+ include/linux/netlink.h |   11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+--- a/include/linux/netlink.h
++++ b/include/linux/netlink.h
+@@ -102,6 +102,17 @@ struct netlink_ext_ack {
+ 		(extack)->bad_attr = (attr);		\
+ } while (0)
+ 
++#define NL_SET_ERR_MSG_ATTR(extack, attr, msg) do {	\
++	static const char __msg[] = (msg);		\
++	struct netlink_ext_ack *__extack = (extack);	\
++							\
++	if (__extack) {					\
++		__extack->_msg = __msg;			\
++		__extack->bad_attr = (attr);		\
++	}						\
++} while (0)
++
++
+ extern void netlink_kernel_release(struct sock *sk);
+ extern int __netlink_change_ngroups(struct sock *sk, unsigned int groups);
+ extern int netlink_change_ngroups(struct sock *sk, unsigned int groups);
