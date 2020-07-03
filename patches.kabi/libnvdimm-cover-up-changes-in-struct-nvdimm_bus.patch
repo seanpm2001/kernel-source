@@ -1,0 +1,44 @@
+From 43f3b19e73558b26296c4be495624f3d4e61af99 Mon Sep 17 00:00:00 2001
+From: Michal Suchanek <msuchanek@suse.de>
+Date: Fri, 15 May 2020 18:05:55 +0200
+Subject: [PATCH] libnvdimm: cover up changes in struct nvdimm_bus
+
+References: bsc#1171753
+Patch-mainline: never, kabi
+
+struct nvdimm_bus is defined in private header drivers/nvdimm/nd-core.h.
+Functions using this structure are exported and the structure should be
+opaque to out-of-tree users. However, the exported functions may use
+arguments of other datatypes which should still be checked for kABI
+changes.
+
+Signed-off-by: Michal Suchanek <msuchanek@suse.de>
+---
+ drivers/nvdimm/nd-core.h | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/nvdimm/nd-core.h b/drivers/nvdimm/nd-core.h
+index 60faac561007..8642ca6f2e7f 100644
+--- a/drivers/nvdimm/nd-core.h
++++ b/drivers/nvdimm/nd-core.h
+@@ -26,11 +26,17 @@ extern struct workqueue_struct *nvdimm_wq;
+ 
+ struct nvdimm_bus {
+ 	struct nvdimm_bus_descriptor *nd_desc;
++#ifdef __GENKSYMS__
++	wait_queue_head_t probe_wait;
++#else
+ 	wait_queue_head_t wait;
++#endif
+ 	struct list_head list;
+ 	struct device dev;
+ 	int id, probe_active;
++#ifndef __GENKSYMS__
+ 	atomic_t ioctl_active;
++#endif
+ 	struct list_head mapping_list;
+ 	struct mutex reconfig_mutex;
+ 	struct badrange badrange;
+-- 
+2.26.2
+
