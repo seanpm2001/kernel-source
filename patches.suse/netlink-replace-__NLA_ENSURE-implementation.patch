@@ -1,0 +1,29 @@
+From: Johannes Berg <johannes.berg@intel.com>
+Date: Fri, 12 Oct 2018 12:53:00 +0200
+Subject: [PATCH] netlink: replace __NLA_ENSURE implementation
+Patch-mainline: v4.20-rc1
+Git-commit: 5886d932e52acfbe12ea5aac8e7c3ad6f16364d1
+References: bsc#1152107 CVE-2019-16746
+
+We already have BUILD_BUG_ON_ZERO() which I just hadn't found
+before, so we should use it here instead of open-coding another
+implementation thereof.
+
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Cho, Yu-Chen <acho@suse.com>
+---
+ include/net/netlink.h |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/include/net/netlink.h
++++ b/include/net/netlink.h
+@@ -289,7 +289,7 @@ struct nla_policy {
+ #define NLA_POLICY_NESTED_ARRAY(maxattr, policy) \
+ 	{ .type = NLA_NESTED_ARRAY, .validation_data = policy, .len = maxattr }
+ 
+-#define __NLA_ENSURE(condition) (sizeof(char[1 - 2*!(condition)]) - 1)
++#define __NLA_ENSURE(condition) BUILD_BUG_ON_ZERO(!(condition))
+ #define NLA_ENSURE_INT_TYPE(tp)				\
+ 	(__NLA_ENSURE(tp == NLA_S8 || tp == NLA_U8 ||	\
+ 		      tp == NLA_S16 || tp == NLA_U16 ||	\
