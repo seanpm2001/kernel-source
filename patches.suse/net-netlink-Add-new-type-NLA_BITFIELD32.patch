@@ -1,9 +1,9 @@
 From: Jamal Hadi Salim <jhs@mojatatu.com>
 Date: Sun, 30 Jul 2017 13:24:49 -0400
-Subject: net netlink: Add new type NLA_BITFIELD32
+Subject: [PATCH] net netlink: Add new type NLA_BITFIELD32
 Patch-mainline: v4.14-rc1
 Git-commit: 64c83d837329531252a1a0f0dfdd4fd607e1d8e9
-References: bsc#1109837
+References: bsc#1109837 bsc#1152107 CVE-2019-16746
 
 Generic bitflags attribute content sent to the kernel by user.
 With this netlink attr type the user can either set or unset a
@@ -36,13 +36,15 @@ implies we are selecting bit 2 and we want to set its value to 1.
 Suggested-by: Jiri Pirko <jiri@mellanox.com>
 Signed-off-by: Jamal Hadi Salim <jhs@mojatatu.com>
 Signed-off-by: David S. Miller <davem@davemloft.net>
-Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+Acked-by: Cho, Yu-Chen <acho@suse.com>
 ---
- include/net/netlink.h        |   16 ++++++++++++++++
- include/uapi/linux/netlink.h |   17 +++++++++++++++++
- lib/nlattr.c                 |   30 ++++++++++++++++++++++++++++++
+ include/net/netlink.h        | 16 ++++++++++++++++
+ include/uapi/linux/netlink.h | 17 +++++++++++++++++
+ lib/nlattr.c                 | 30 ++++++++++++++++++++++++++++++
  3 files changed, 63 insertions(+)
 
+diff --git a/include/net/netlink.h b/include/net/netlink.h
+index ef8e6c3a80a6..82dd298b40c7 100644
 --- a/include/net/netlink.h
 +++ b/include/net/netlink.h
 @@ -178,6 +178,7 @@ enum {
@@ -75,12 +77,10 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  };
  
  /**
-@@ -1200,6 +1204,18 @@ static inline struct in6_addr nla_get_in
- 
- 	nla_memcpy(&tmp, nla, sizeof(tmp));
+@@ -1202,6 +1206,18 @@ static inline struct in6_addr nla_get_in6_addr(const struct nlattr *nla)
  	return tmp;
-+}
-+
+ }
+ 
 +/**
 + * nla_get_bitfield32 - return payload of 32 bitfield attribute
 + * @nla: nla_bitfield32 attribute
@@ -91,9 +91,13 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
 +
 +	nla_memcpy(&tmp, nla, sizeof(tmp));
 +	return tmp;
- }
- 
++}
++
  /**
+  * nla_memdup - duplicate attribute memory (kmemdup)
+  * @src: netlink attribute to duplicate from
+diff --git a/include/uapi/linux/netlink.h b/include/uapi/linux/netlink.h
+index f86127a46cfc..f4fc9c9e123d 100644
 --- a/include/uapi/linux/netlink.h
 +++ b/include/uapi/linux/netlink.h
 @@ -226,5 +226,22 @@ struct nlattr {
@@ -119,9 +123,11 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
 +};
  
  #endif /* _UAPI__LINUX_NETLINK_H */
+diff --git a/lib/nlattr.c b/lib/nlattr.c
+index fb52435be42d..ee79b7a3c6b0 100644
 --- a/lib/nlattr.c
 +++ b/lib/nlattr.c
-@@ -27,6 +27,30 @@ static const u8 nla_attr_minlen[NLA_TYPE
+@@ -27,6 +27,30 @@ static const u8 nla_attr_minlen[NLA_TYPE_MAX+1] = {
  	[NLA_S64]	= sizeof(s64),
  };
  
@@ -152,7 +158,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  static int validate_nla(const struct nlattr *nla, int maxtype,
  			const struct nla_policy *policy)
  {
-@@ -46,6 +70,12 @@ static int validate_nla(const struct nla
+@@ -46,6 +70,12 @@ static int validate_nla(const struct nlattr *nla, int maxtype,
  			return -ERANGE;
  		break;
  
@@ -165,3 +171,6 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  	case NLA_NUL_STRING:
  		if (pt->len)
  			minlen = min_t(int, attrlen, pt->len + 1);
+-- 
+2.26.2
+
