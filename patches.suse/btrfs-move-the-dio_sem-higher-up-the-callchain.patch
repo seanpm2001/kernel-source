@@ -163,16 +163,18 @@ Signed-off-by: Josef Bacik <josef@toxicpanda.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 
 Signed-off-by: Filipe Manana <fdmanana@suse.com>
+
+Signed-off-by: Filipe Manana <fdmanana@suse.com>
 ---
  fs/btrfs/file.c     | 12 ++++++++++++
  fs/btrfs/tree-log.c |  2 --
  2 files changed, 12 insertions(+), 2 deletions(-)
 
 diff --git a/fs/btrfs/file.c b/fs/btrfs/file.c
-index e6b87d753df1..1988edb68dfe 100644
+index 6ecb8f4..db8eab9 100644
 --- a/fs/btrfs/file.c
 +++ b/fs/btrfs/file.c
-@@ -2071,6 +2071,14 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+@@ -2067,6 +2067,14 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
  		goto out;
  
  	inode_lock(inode);
@@ -185,17 +187,17 @@ index e6b87d753df1..1988edb68dfe 100644
 +	down_write(&BTRFS_I(inode)->dio_sem);
 +
  	atomic_inc(&root->log_batch);
- 	full_sync = test_bit(BTRFS_INODE_NEEDS_FULL_SYNC,
- 			     &BTRFS_I(inode)->runtime_flags);
-@@ -2140,6 +2148,7 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
- 		ret = start_ordered_ops(inode, start, end);
- 	}
+ 
+ 	/*
+@@ -2075,6 +2083,7 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+ 	 */
+ 	ret = btrfs_wait_ordered_range(inode, start, len);
  	if (ret) {
 +		up_write(&BTRFS_I(inode)->dio_sem);
  		inode_unlock(inode);
  		goto out;
  	}
-@@ -2195,6 +2204,7 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+@@ -2098,6 +2107,7 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
  		 * checked called fsync.
  		 */
  		ret = filemap_check_wb_err(inode->i_mapping, file->f_wb_err);
@@ -203,7 +205,7 @@ index e6b87d753df1..1988edb68dfe 100644
  		inode_unlock(inode);
  		goto out;
  	}
-@@ -2219,6 +2229,7 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+@@ -2122,6 +2132,7 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
  	trans = btrfs_start_transaction(root, 0);
  	if (IS_ERR(trans)) {
  		ret = PTR_ERR(trans);
@@ -211,7 +213,7 @@ index e6b87d753df1..1988edb68dfe 100644
  		inode_unlock(inode);
  		goto out;
  	}
-@@ -2242,6 +2253,7 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+@@ -2143,6 +2154,7 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
  	 * file again, but that will end up using the synchronization
  	 * inside btrfs_sync_log to keep things safe.
  	 */
@@ -220,10 +222,10 @@ index e6b87d753df1..1988edb68dfe 100644
  
  	/*
 diff --git a/fs/btrfs/tree-log.c b/fs/btrfs/tree-log.c
-index f33b3d20008b..403a95c9ffa7 100644
+index f7f3caa..150fd99 100644
 --- a/fs/btrfs/tree-log.c
 +++ b/fs/btrfs/tree-log.c
-@@ -4673,7 +4673,6 @@ static int btrfs_log_changed_extents(struct btrfs_trans_handle *trans,
+@@ -4426,7 +4426,6 @@ static int btrfs_log_changed_extents(struct btrfs_trans_handle *trans,
  
  	INIT_LIST_HEAD(&extents);
  
@@ -231,7 +233,7 @@ index f33b3d20008b..403a95c9ffa7 100644
  	write_lock(&tree->lock);
  	test_gen = root->fs_info->last_trans_committed;
  	logged_start = start;
-@@ -4754,7 +4753,6 @@ static int btrfs_log_changed_extents(struct btrfs_trans_handle *trans,
+@@ -4492,7 +4491,6 @@ static int btrfs_log_changed_extents(struct btrfs_trans_handle *trans,
  	}
  	WARN_ON(!list_empty(&extents));
  	write_unlock(&tree->lock);
