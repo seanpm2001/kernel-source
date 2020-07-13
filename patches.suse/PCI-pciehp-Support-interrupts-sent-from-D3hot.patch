@@ -1,0 +1,203 @@
+From 6b08c3854cfdc5d13165880e2b54642c47edc405 Mon Sep 17 00:00:00 2001
+From: Lukas Wunner <lukas@wunner.de>
+Date: Sat, 28 Jul 2018 07:18:00 +0200
+Subject: [PATCH] PCI: pciehp: Support interrupts sent from D3hot
+Git-commit: 6b08c3854cfdc5d13165880e2b54642c47edc405
+References: git-fixes
+Patch-mainline: v4.19-rc1
+
+If a hotplug port is able to send an interrupt, one would naively assume
+that it is accessible at that moment.  After all, if it wouldn't be
+accessible, i.e. if its parent is in D3hot and the link to the hotplug
+port is thus down, how should an interrupt come through?
+
+It turns out that assumption is wrong at least for Thunderbolt:  Even
+though its parents are in D3hot, a Thunderbolt hotplug port is able to
+signal interrupts.  Because the port's config space is inaccessible and
+resuming the parents may sleep, the hard IRQ handler has to defer
+runtime resuming the parents and reading the Slot Status register to the
+IRQ thread.
+
+If the hotplug port uses a level-triggered INTx interrupt, it needs to
+be masked until the IRQ thread has cleared the signaled events.  For
+simplicity, this commit also masks edge-triggered MSI/MSI-X interrupts.
+Note that if the interrupt is shared (which can only happen for INTx),
+other devices are starved from receiving interrupts until the IRQ thread
+is scheduled, has runtime resumed the hotplug port's parents and has
+read and cleared the Slot Status register.
+
+That delay is dominated by the 10 ms D3hot->D0 transition time of each
+parent port.  The worst case is a Thunderbolt downstream port at the
+end of a daisy chain:  There may be up to six Thunderbolt controllers
+in-between it and the root port, each comprising an upstream and
+downstream port, plus its own upstream port.  That's 13 x 10 = 130 ms.
+Possible mitigations are polling the interrupt while it's disabled or
+reducing the d3_delay of Thunderbolt ports if possible.
+
+Open code masking of the interrupt instead of requesting it with the
+IRQF_ONESHOT flag to minimize the period during which it is masked.
+(IRQF_ONESHOT unmasks the IRQ only after the IRQ thread has finished.)
+
+PCIe r4.0 sec 6.7.3.4 states that "If wake generation is required by the
+associated form factor specification, a hotplug capable Downstream Port
+must support generation of a wakeup event (using the PME mechanism) on
+hotplug events that occur when the system is in a sleep state or the
+Port is in device state D1, D2, or D3Hot."
+
+This would seem to imply that PME needs to be enabled on the hotplug
+port when it is runtime suspended.  pci_enable_wake() currently doesn't
+enable PME on bridges, it may be necessary to add an exemption for
+hotplug bridges there.  On "Light Ridge" Thunderbolt controllers, the
+PME_Status bit is not set when an interrupt occurs while the hotplug
+port is in D3hot, even if PME is enabled.  (I've tested this on a Mac
+and we hardcode the OSC_PCI_EXPRESS_PME_CONTROL bit to 0 on Macs in
+negotiate_os_control(), modifying it to 1 didn't change the behavior.)
+
+(Side note:  Section 6.7.3.4 also states that "PME and Hot-Plug Event
+interrupts (when both are implemented) always share the same MSI or
+MSI-X vector".  That would only seem to apply to Root Ports, however
+the section never mentions Root Ports, only Downstream Ports.  This is
+explained in the definition of "Downstream Port" in the "Terms and
+Acronyms" section of the PCIe Base Spec:  "The Ports on a Switch that
+are not the Upstream Port are Downstream Ports.  All Ports on a Root
+Complex are Downstream Ports.")
+
+Signed-off-by: Lukas Wunner <lukas@wunner.de>
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Cc: Mika Westerberg <mika.westerberg@linux.intel.com>
+Cc: Ashok Raj <ashok.raj@intel.com>
+Cc: Keith Busch <keith.busch@intel.com>
+Cc: Yinghai Lu <yinghai@kernel.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/pci/hotplug/pciehp.h     |  5 +++++
+ drivers/pci/hotplug/pciehp_hpc.c | 45 ++++++++++++++++++++++++++++++++++++++--
+ 2 files changed, 48 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/pci/hotplug/pciehp.h b/drivers/pci/hotplug/pciehp.h
+index 247681963063..811cf83f956d 100644
+--- a/drivers/pci/hotplug/pciehp.h
++++ b/drivers/pci/hotplug/pciehp.h
+@@ -156,8 +156,13 @@ struct controller {
+  *
+  * %DISABLE_SLOT: Disable the slot in response to a user request via sysfs or
+  *	an Attention Button press after the 5 second delay
++ * %RERUN_ISR: Used by the IRQ handler to inform the IRQ thread that the
++ *	hotplug port was inaccessible when the interrupt occurred, requiring
++ *	that the IRQ handler is rerun by the IRQ thread after it has made the
++ *	hotplug port accessible by runtime resuming its parents to D0
+  */
+ #define DISABLE_SLOT		(1 << 16)
++#define RERUN_ISR		(1 << 17)
+ 
+ #define ATTN_BUTTN(ctrl)	((ctrl)->slot_cap & PCI_EXP_SLTCAP_ABP)
+ #define POWER_CTRL(ctrl)	((ctrl)->slot_cap & PCI_EXP_SLTCAP_PCP)
+diff --git a/drivers/pci/hotplug/pciehp_hpc.c b/drivers/pci/hotplug/pciehp_hpc.c
+index 6313ddf38a51..6e9b4330ad82 100644
+--- a/drivers/pci/hotplug/pciehp_hpc.c
++++ b/drivers/pci/hotplug/pciehp_hpc.c
+@@ -19,6 +19,7 @@
+ #include <linux/jiffies.h>
+ #include <linux/kthread.h>
+ #include <linux/pci.h>
++#include <linux/pm_runtime.h>
+ #include <linux/interrupt.h>
+ #include <linux/time.h>
+ #include <linux/slab.h>
+@@ -521,6 +522,7 @@ static irqreturn_t pciehp_isr(int irq, void *dev_id)
+ {
+ 	struct controller *ctrl = (struct controller *)dev_id;
+ 	struct pci_dev *pdev = ctrl_dev(ctrl);
++	struct device *parent = pdev->dev.parent;
+ 	u16 status, events;
+ 
+ 	/*
+@@ -529,9 +531,26 @@ static irqreturn_t pciehp_isr(int irq, void *dev_id)
+ 	if (pdev->current_state == PCI_D3cold)
+ 		return IRQ_NONE;
+ 
++	/*
++	 * Keep the port accessible by holding a runtime PM ref on its parent.
++	 * Defer resume of the parent to the IRQ thread if it's suspended.
++	 * Mask the interrupt until then.
++	 */
++	if (parent) {
++		pm_runtime_get_noresume(parent);
++		if (!pm_runtime_active(parent)) {
++			pm_runtime_put(parent);
++			disable_irq_nosync(irq);
++			atomic_or(RERUN_ISR, &ctrl->pending_events);
++			return IRQ_WAKE_THREAD;
++		}
++	}
++
+ 	pcie_capability_read_word(pdev, PCI_EXP_SLTSTA, &status);
+ 	if (status == (u16) ~0) {
+ 		ctrl_info(ctrl, "%s: no response from device\n", __func__);
++		if (parent)
++			pm_runtime_put(parent);
+ 		return IRQ_NONE;
+ 	}
+ 
+@@ -550,11 +569,16 @@ static irqreturn_t pciehp_isr(int irq, void *dev_id)
+ 	if (ctrl->power_fault_detected)
+ 		events &= ~PCI_EXP_SLTSTA_PFD;
+ 
+-	if (!events)
++	if (!events) {
++		if (parent)
++			pm_runtime_put(parent);
+ 		return IRQ_NONE;
++	}
+ 
+ 	pcie_capability_write_word(pdev, PCI_EXP_SLTSTA, events);
+ 	ctrl_dbg(ctrl, "pending interrupts %#06x from Slot Status\n", events);
++	if (parent)
++		pm_runtime_put(parent);
+ 
+ 	/*
+ 	 * Command Completed notifications are not deferred to the
+@@ -584,13 +608,29 @@ static irqreturn_t pciehp_isr(int irq, void *dev_id)
+ static irqreturn_t pciehp_ist(int irq, void *dev_id)
+ {
+ 	struct controller *ctrl = (struct controller *)dev_id;
++	struct pci_dev *pdev = ctrl_dev(ctrl);
+ 	struct slot *slot = ctrl->slot;
++	irqreturn_t ret;
+ 	u32 events;
+ 
++	pci_config_pm_runtime_get(pdev);
++
++	/* rerun pciehp_isr() if the port was inaccessible on interrupt */
++	if (atomic_fetch_and(~RERUN_ISR, &ctrl->pending_events) & RERUN_ISR) {
++		ret = pciehp_isr(irq, dev_id);
++		enable_irq(irq);
++		if (ret != IRQ_WAKE_THREAD) {
++			pci_config_pm_runtime_put(pdev);
++			return ret;
++		}
++	}
++
+ 	synchronize_hardirq(irq);
+ 	events = atomic_xchg(&ctrl->pending_events, 0);
+-	if (!events)
++	if (!events) {
++		pci_config_pm_runtime_put(pdev);
+ 		return IRQ_NONE;
++	}
+ 
+ 	/* Check Attention Button Pressed */
+ 	if (events & PCI_EXP_SLTSTA_ABP) {
+@@ -618,6 +658,7 @@ static irqreturn_t pciehp_ist(int irq, void *dev_id)
+ 		pciehp_green_led_off(slot);
+ 	}
+ 
++	pci_config_pm_runtime_put(pdev);
+ 	wake_up(&ctrl->requester);
+ 	return IRQ_HANDLED;
+ }
+-- 
+2.16.4
+
