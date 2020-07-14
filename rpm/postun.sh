@@ -16,14 +16,14 @@ fi
 
 if [ @BASE_PACKAGE@ = 0 ]; then
     if [ -x $wm2 ]; then
-        /bin/bash -${-/e/} $wm2 --remove-kernel-modules @KERNELRELEASE@-@FLAVOR@ < /var/run/rpm-$nvr-modules
+        /bin/sh -${-/e/} $wm2 --remove-kernel-modules @KERNELRELEASE@-@FLAVOR@ < /var/run/rpm-$nvr-modules
     fi
     rm -f /var/run/rpm-$nvr-modules
     exit 0
 fi
 # Remove symlinks from /lib/modules/$krel/weak-updates/.
 if [ -x $wm2 ]; then
-    /bin/bash -${-/e/} $wm2 --remove-kernel @KERNELRELEASE@-@FLAVOR@
+    /bin/sh -${-/e/} $wm2 --remove-kernel @KERNELRELEASE@-@FLAVOR@
 fi
 
 # remove fstab check once perl-Bootloader can cope with it
