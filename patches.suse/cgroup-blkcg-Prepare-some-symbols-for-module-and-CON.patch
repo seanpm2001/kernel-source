@@ -1,0 +1,80 @@
+From 9b0eb69b75bccada2d341d7e7ca342f0cb1c9a6a Mon Sep 17 00:00:00 2001
+From: Tejun Heo <tj@kernel.org>
+Date: Thu, 27 Jun 2019 13:39:48 -0700
+Subject: [PATCH] cgroup, blkcg: Prepare some symbols for module and
+ !CONFIG_CGROUP usages
+Git-commit: 9b0eb69b75bccada2d341d7e7ca342f0cb1c9a6a
+Patch-mainline: v5.3-rc1
+References: bsc#1173857
+
+btrfs is going to use css_put() and wbc helpers to improve cgroup
+writeback support.  Add dummy css_get() definition and export wbc
+helpers to prepare for module and !CONFIG_CGROUP builds.
+
+Reported-by: kbuild test robot <lkp@intel.com>
+Reviewed-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Tejun Heo <tj@kernel.org>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Acked-by: Jan Kara <jack@suse.cz>
+
+---
+ block/blk-cgroup.c     | 1 +
+ fs/fs-writeback.c      | 3 +++
+ include/linux/cgroup.h | 1 +
+ 3 files changed, 5 insertions(+)
+
+diff --git a/block/blk-cgroup.c b/block/blk-cgroup.c
+index 8afa52b0d148..ad7a91dec934 100644
+--- a/block/blk-cgroup.c
++++ b/block/blk-cgroup.c
+@@ -48,6 +48,7 @@ struct blkcg blkcg_root;
+ EXPORT_SYMBOL_GPL(blkcg_root);
+ 
+ struct cgroup_subsys_state * const blkcg_root_css = &blkcg_root.css;
++EXPORT_SYMBOL_GPL(blkcg_root_css);
+ 
+ static struct blkcg_policy *blkcg_policy[BLKCG_MAX_POLS];
+ 
+diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
+index 9ebfb1b28430..a8a40bc26c2f 100644
+--- a/fs/fs-writeback.c
++++ b/fs/fs-writeback.c
+@@ -270,6 +270,7 @@ void __inode_attach_wb(struct inode *inode, struct page *page)
+ 	if (unlikely(cmpxchg(&inode->i_wb, NULL, wb)))
+ 		wb_put(wb);
+ }
++EXPORT_SYMBOL_GPL(__inode_attach_wb);
+ 
+ /**
+  * locked_inode_to_wb_and_lock_list - determine a locked inode's wb and lock it
+@@ -582,6 +583,7 @@ void wbc_attach_and_unlock_inode(struct writeback_control *wbc,
+ 	if (unlikely(wb_dying(wbc->wb)))
+ 		inode_switch_wbs(inode, wbc->wb_id);
+ }
++EXPORT_SYMBOL_GPL(wbc_attach_and_unlock_inode);
+ 
+ /**
+  * wbc_detach_inode - disassociate wbc from inode and perform foreign detection
+@@ -701,6 +703,7 @@ void wbc_detach_inode(struct writeback_control *wbc)
+ 	wb_put(wbc->wb);
+ 	wbc->wb = NULL;
+ }
++EXPORT_SYMBOL_GPL(wbc_detach_inode);
+ 
+ /**
+  * wbc_account_io - account IO issued during writeback
+diff --git a/include/linux/cgroup.h b/include/linux/cgroup.h
+index 3745ecdad925..852d885df10a 100644
+--- a/include/linux/cgroup.h
++++ b/include/linux/cgroup.h
+@@ -699,6 +699,7 @@ void cgroup_path_from_kernfs_id(const union kernfs_node_id *id,
+ struct cgroup_subsys_state;
+ struct cgroup;
+ 
++static inline void css_get(struct cgroup_subsys_state *css) {}
+ static inline void css_put(struct cgroup_subsys_state *css) {}
+ static inline int cgroup_attach_task_all(struct task_struct *from,
+ 					 struct task_struct *t) { return 0; }
+-- 
+2.16.4
+
