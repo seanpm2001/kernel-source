@@ -70,11 +70,8 @@ END		{ exit(! good) }
 ' $spec
 )
 %post -n %{-n*}-kmp-%1
-nvr=%{-n*}-kmp-%1-%_this_kmp_version-%{-r*}
-wm2=/usr/lib/module-init-tools/weak-modules2
-if [ -x $wm2 ]; then
-    %{-b:KMP_NEEDS_MKINITRD=1} INITRD_IN_POSTTRANS=1 /bin/bash -${-/e/} $wm2 --add-kmp $nvr
-fi
+# carwos specific - there is only one kernel
+/usr/sbin/depmod -a %2-%1
 %posttrans -n %{-n*}-kmp-%1
 %{?regenerate_initrd_posttrans}
 %preun -n %{-n*}-kmp-%1
@@ -88,10 +85,8 @@ if [ ${#modules[*]} = 0 ]; then
     echo "WARNING: $nvr does not contain any kernel modules" >&2
     exit 0
 fi
-wm2=/usr/lib/module-init-tools/weak-modules2
-if [ -x $wm2 ]; then
-    printf '%s\n' "${modules[@]}" | /bin/bash -${-/e/} $wm2 --remove-kmp $nvr
-fi
+# carwos specific - there is only one kernel
+/usr/sbin/depmod -a %2-%1
 %files -n %{-n*}-kmp-%1
 %{-f:%{expand:%(cd %_sourcedir; cat %{-f*})}}
 %{!-f:%defattr (-,root,root)}

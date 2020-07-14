@@ -10,19 +10,8 @@ for x in /boot/@IMAGE@ /boot/initrd; do
     ln -s ${x##*/}-@KERNELRELEASE@-@FLAVOR@ $x$suffix
 done
 
-# Add symlinks of compatible modules to /lib/modules/$krel/weak-updates/,
-# run depmod and mkinitrd
-wm2=/usr/lib/module-init-tools/weak-modules2
-if [ -x $wm2 ]; then
-    if [ @BASE_PACKAGE@ = 1 ]; then
-        /bin/bash -${-/e/} $wm2 --add-kernel @KERNELRELEASE@-@FLAVOR@
-    else
-        nvr=@SUBPACKAGE@-@RPM_VERSION_RELEASE@
-        rpm -ql $nvr | /bin/bash -${-/e/} $wm2 --add-kernel-modules @KERNELRELEASE@-@FLAVOR@
-    fi
-else
-    echo "$wm2 does not exist, please run depmod and mkinitrd manually" >&2
-fi
+# carwos specific - there is only one kernel
+/usr/sbin/depmod -a %kernelrelease-%build_flavor
 
 message_install_bl () {
 	echo "You may need to setup and install the boot loader using the"

@@ -116,11 +116,8 @@ Recommends: kernel-firmware
 # The following is copied to the -base subpackage as well
 # BEGIN COMMON DEPS
 Requires(pre):  coreutils awk
-# For /usr/lib/module-init-tools/weak-modules2
-Requires(post): suse-module-tools
-# For depmod (modutils is a dependency provided by both module-init-tools and
-# kmod-compat)
-Requires(post): modutils
+# For depmod 
+Requires(post): kmod
 # This Requires is wrong, because the post/postun scripts have a
 # test -x update-bootloader, having perl-Bootloader is not a hard requirement.
 # But, there is no way to tell rpm or yast to schedule the installation
@@ -1145,12 +1142,7 @@ Requires(post): suse-module-tools >= 12.4
 @KMP_DESCRIPTION@
 
 %post -n @KMP_NAME@-%build_flavor
-wm2=/usr/lib/module-init-tools/weak-modules2
-nvr=@KMP_NAME@-%build_flavor-%version-%release
-if test -x "$wm2"; then
-	rpm -ql "$nvr" | INITRD_IN_POSTTRANS=1 /bin/bash -${-/e/} "$wm2" \
-	--add-kernel-modules %kernelrelease-%build_flavor
-fi
+/usr/sbin/depmod -a %kernelrelease-%build_flavor
 
 %posttrans -n @KMP_NAME@-%build_flavor
 %{?regenerate_initrd_posttrans}
@@ -1160,12 +1152,8 @@ nvr=@KMP_NAME@-%build_flavor-%version-%release
 rpm -ql "$nvr" | grep '\.ko$' > "/var/run/rpm-$nvr-modules"
 
 %postun -n @KMP_NAME@-%build_flavor
-wm2=/usr/lib/module-init-tools/weak-modules2
+/usr/sbin/depmod -a %kernelrelease-%build_flavor
 nvr=@KMP_NAME@-%build_flavor-%version-%release
-if test -x "$wm2"; then
-	/bin/bash -${-/e/} "$wm2" < "/var/run/rpm-$nvr-modules" \
-	--remove-kernel-modules %kernelrelease-%build_flavor
-fi
 rm -f "/var/run/rpm-$nvr-modules"
 
 %files -n @KMP_NAME@-%build_flavor -f @KMP_NAME@.files
