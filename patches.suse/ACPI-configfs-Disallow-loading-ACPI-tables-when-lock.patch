@@ -1,0 +1,40 @@
+From 75b0cea7bf307f362057cc778efe89af4c615354 Mon Sep 17 00:00:00 2001
+From: "Jason A. Donenfeld" <Jason@zx2c4.com>
+Date: Mon, 15 Jun 2020 04:43:32 -0600
+Subject: [PATCH] ACPI: configfs: Disallow loading ACPI tables when locked down
+Git-commit: 75b0cea7bf307f362057cc778efe89af4c615354
+Patch-mainline: v5.8-rc3
+References: CVE-2020-15780 bsc#1173573
+
+[ backport note: Use the downstream kernel_is_locked_down() check instead ]
+
+Like other vectors already patched, this one here allows the root
+user to load ACPI tables, which enables arbitrary physical address
+writes, which in turn makes it possible to disable lockdown.
+
+Prevents this by checking the lockdown status before allowing a new
+ACPI table to be installed. The link in the trailer shows a PoC of
+how this might be used.
+
+Link: https://git.zx2c4.com/american-unsigned-language/tree/american-unsigned-language-2.sh
+Cc: 5.4+ <stable@vger.kernel.org> # 5.4+
+Signed-off-by: Jason A. Donenfeld <Jason@zx2c4.com>
+Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/acpi/acpi_configfs.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/drivers/acpi/acpi_configfs.c
++++ b/drivers/acpi/acpi_configfs.c
+@@ -29,6 +29,9 @@ static ssize_t acpi_table_aml_write(stru
+ 	struct acpi_table *table;
+ 	int ret;
+ 
++	if (kernel_is_locked_down())
++		return -EPERM;
++
+ 	table = container_of(cfg, struct acpi_table, cfg);
+ 
+ 	if (table->header) {
