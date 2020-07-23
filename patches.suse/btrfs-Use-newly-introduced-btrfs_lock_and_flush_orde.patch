@@ -1,0 +1,139 @@
+From: Nikolay Borisov <nborisov@suse.com>
+Date: Tue, 7 May 2019 10:19:23 +0300
+Git-commit: 23d31bd476d1d096d0f073483547872ec155ab34
+Patch-mainline: 5.3
+References: bsc#1174438
+Subject: [PATCH] btrfs: Use newly introduced
+ btrfs_lock_and_flush_ordered_range
+
+There several functions which open code
+btrfs_lock_and_flush_ordered_range, just replace them with a call to the
+function. No functional changes.
+
+Reviewed-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: Nikolay Borisov <nborisov@suse.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Signed-off-by: Filipe Manana <fdmanana@suse.com>
+---
+ fs/btrfs/extent_io.c | 29 ++++-------------------------
+ fs/btrfs/file.c      | 14 ++------------
+ fs/btrfs/inode.c     | 17 ++---------------
+ 3 files changed, 8 insertions(+), 52 deletions(-)
+
+diff --git a/fs/btrfs/extent_io.c b/fs/btrfs/extent_io.c
+index 5843bec614a4..7fc8d3e5e892 100644
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -3172,21 +3172,10 @@ static inline void __do_contiguous_readpages(struct extent_io_tree *tree,
+ 					     unsigned long *bio_flags,
+ 					     u64 *prev_em_start)
+ {
+-	struct inode *inode;
+-	struct btrfs_ordered_extent *ordered;
++	struct btrfs_inode *inode = BTRFS_I(pages[0]->mapping->host);
+ 	int index;
+ 
+-	inode = pages[0]->mapping->host;
+-	while (1) {
+-		lock_extent(tree, start, end);
+-		ordered = btrfs_lookup_ordered_range(BTRFS_I(inode), start,
+-						     end - start + 1);
+-		if (!ordered)
+-			break;
+-		unlock_extent(tree, start, end);
+-		btrfs_start_ordered_extent(inode, ordered, 1);
+-		btrfs_put_ordered_extent(ordered);
+-	}
++	btrfs_lock_and_flush_ordered_range(tree, inode, start, end, NULL);
+ 
+ 	for (index = 0; index < nr_pages; index++) {
+ 		__do_readpage(tree, pages[index], get_extent, em_cached, bio,
+@@ -3241,22 +3230,12 @@ static int __extent_read_full_page(struct extent_io_tree *tree,
+ 				   struct bio **bio, int mirror_num,
+ 				   unsigned long *bio_flags, int read_flags)
+ {
+-	struct inode *inode = page->mapping->host;
+-	struct btrfs_ordered_extent *ordered;
++	struct btrfs_inode *inode = BTRFS_I(page->mapping->host);
+ 	u64 start = page_offset(page);
+ 	u64 end = start + PAGE_SIZE - 1;
+ 	int ret;
+ 
+-	while (1) {
+-		lock_extent(tree, start, end);
+-		ordered = btrfs_lookup_ordered_range(BTRFS_I(inode), start,
+-						PAGE_SIZE);
+-		if (!ordered)
+-			break;
+-		unlock_extent(tree, start, end);
+-		btrfs_start_ordered_extent(inode, ordered, 1);
+-		btrfs_put_ordered_extent(ordered);
+-	}
++	btrfs_lock_and_flush_ordered_range(tree, inode, start, end, NULL);
+ 
+ 	ret = __do_readpage(tree, page, get_extent, NULL, bio, mirror_num,
+ 			    bio_flags, read_flags, NULL);
+diff --git a/fs/btrfs/file.c b/fs/btrfs/file.c
+index e6b87d753df1..cdc998eb5ac1 100644
+--- a/fs/btrfs/file.c
++++ b/fs/btrfs/file.c
+@@ -1551,7 +1551,6 @@ static noinline int check_can_nocow(struct btrfs_inode *inode, loff_t pos,
+ {
+ 	struct btrfs_fs_info *fs_info = btrfs_sb(inode->vfs_inode.i_sb);
+ 	struct btrfs_root *root = inode->root;
+-	struct btrfs_ordered_extent *ordered;
+ 	u64 lockstart, lockend;
+ 	u64 num_bytes;
+ 	int ret;
+@@ -1564,17 +1563,8 @@ static noinline int check_can_nocow(struct btrfs_inode *inode, loff_t pos,
+ 	lockend = round_up(pos + *write_bytes,
+ 			   fs_info->sectorsize) - 1;
+ 
+-	while (1) {
+-		lock_extent(&inode->io_tree, lockstart, lockend);
+-		ordered = btrfs_lookup_ordered_range(inode, lockstart,
+-						     lockend - lockstart + 1);
+-		if (!ordered) {
+-			break;
+-		}
+-		unlock_extent(&inode->io_tree, lockstart, lockend);
+-		btrfs_start_ordered_extent(&inode->vfs_inode, ordered, 1);
+-		btrfs_put_ordered_extent(ordered);
+-	}
++	btrfs_lock_and_flush_ordered_range(&inode->io_tree, inode, lockstart,
++					   lockend, NULL);
+ 
+ 	num_bytes = lockend - lockstart + 1;
+ 	ret = can_nocow_extent(&inode->vfs_inode, lockstart, &num_bytes,
+diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
+index bb1fbd995cda..7280c8696819 100644
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -4788,21 +4788,8 @@ int btrfs_cont_expand(struct inode *inode, loff_t oldsize, loff_t size)
+ 	if (size <= hole_start)
+ 		return 0;
+ 
+-	while (1) {
+-		struct btrfs_ordered_extent *ordered;
+-
+-		lock_extent_bits(io_tree, hole_start, block_end - 1,
+-				 &cached_state);
+-		ordered = btrfs_lookup_ordered_range(BTRFS_I(inode), hole_start,
+-						     block_end - hole_start);
+-		if (!ordered)
+-			break;
+-		unlock_extent_cached(io_tree, hole_start, block_end - 1,
+-				     &cached_state, GFP_NOFS);
+-		btrfs_start_ordered_extent(inode, ordered, 1);
+-		btrfs_put_ordered_extent(ordered);
+-	}
+-
++	btrfs_lock_and_flush_ordered_range(io_tree, BTRFS_I(inode), hole_start,
++					   block_end - 1, &cached_state);
+ 	cur_offset = hole_start;
+ 	while (1) {
+ 		em = btrfs_get_extent(BTRFS_I(inode), NULL, 0, cur_offset,
+-- 
+2.26.2
+
