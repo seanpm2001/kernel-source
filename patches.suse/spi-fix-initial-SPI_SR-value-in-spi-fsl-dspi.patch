@@ -1,0 +1,42 @@
+From aa54c1c9d90e6db75190813907190fadcce1bf45 Mon Sep 17 00:00:00 2001
+From: Angelo Dureghello <angelo@sysam.it>
+Date: Wed, 26 Dec 2018 22:45:06 +0100
+Subject: [PATCH] spi: fix initial SPI_SR value in spi-fsl-dspi
+Git-commit: aa54c1c9d90e6db75190813907190fadcce1bf45
+Patch-mainline: v5.1-rc1
+References: bsc#1111666
+
+On ColdFire mcf54418, using DSPI_DMA_MODE mode, spi transfers
+at first boot stage are not succeding:
+
+m25p80 spi0.1: unrecognized JEDEC id bytes: 00, 00, 00
+
+The reason is the SPI_SR initial value set by the driver, that
+is not clearing (not setting to 1) the RF_DF flag. After a tour
+on the dspi hw modules that use this driver(Vybrid, ColdFire and
+ls1021a) a better init value for SR register has been set.
+
+Signed-off-by: Angelo Dureghello <angelo@sysam.it>
+Signed-off-by: Mark Brown <broonie@kernel.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/spi/spi-fsl-dspi.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/spi/spi-fsl-dspi.c b/drivers/spi/spi-fsl-dspi.c
+index 5e10dc5c93a5..7b605f95dbef 100644
+--- a/drivers/spi/spi-fsl-dspi.c
++++ b/drivers/spi/spi-fsl-dspi.c
+@@ -67,7 +67,7 @@
+ #define SPI_SR			0x2c
+ #define SPI_SR_EOQF		0x10000000
+ #define SPI_SR_TCFQF		0x80000000
+-#define SPI_SR_CLEAR		0xdaad0000
++#define SPI_SR_CLEAR		0x9aaf0000
+ 
+ #define SPI_RSER_TFFFE		BIT(25)
+ #define SPI_RSER_TFFFD		BIT(24)
+-- 
+2.16.4
+
