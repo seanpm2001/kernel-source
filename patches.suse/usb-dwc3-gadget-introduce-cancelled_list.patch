@@ -1,0 +1,71 @@
+From d5443bbf5fc8f8389cce146b1fc2987cdd229d12 Mon Sep 17 00:00:00 2001
+From: Felipe Balbi <felipe.balbi@linux.intel.com>
+Date: Wed, 1 Aug 2018 13:53:29 +0300
+Subject: [PATCH] usb: dwc3: gadget: introduce cancelled_list
+Git-commit: d5443bbf5fc8f8389cce146b1fc2987cdd229d12
+References: git-fixes
+Patch-mainline: v5.0-rc1
+
+This list will host cancelled requests who still have TRBs being
+processed.
+
+Signed-off-by: Felipe Balbi <felipe.balbi@linux.intel.com>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/usb/dwc3/core.h   |    2 ++
+ drivers/usb/dwc3/gadget.c |    1 +
+ drivers/usb/dwc3/gadget.h |   15 +++++++++++++++
+ 3 files changed, 18 insertions(+)
+
+--- a/drivers/usb/dwc3/core.h
++++ b/drivers/usb/dwc3/core.h
+@@ -517,6 +517,7 @@ struct dwc3_event_buffer {
+ /**
+  * struct dwc3_ep - device side endpoint representation
+  * @endpoint: usb endpoint
++ * @cancelled_list: list of cancelled requests for this endpoint
+  * @pending_list: list of pending requests for this endpoint
+  * @started_list: list of started requests on this endpoint
+  * @wait_end_transfer: wait_queue_head_t for waiting on End Transfer complete
+@@ -542,6 +543,7 @@ struct dwc3_event_buffer {
+  */
+ struct dwc3_ep {
+ 	struct usb_ep		endpoint;
++	struct list_head	cancelled_list;
+ 	struct list_head	pending_list;
+ 	struct list_head	started_list;
+ 
+--- a/drivers/usb/dwc3/gadget.c
++++ b/drivers/usb/dwc3/gadget.c
+@@ -2104,6 +2104,7 @@ static int dwc3_gadget_init_endpoints(st
+ 
+ 		INIT_LIST_HEAD(&dep->pending_list);
+ 		INIT_LIST_HEAD(&dep->started_list);
++		INIT_LIST_HEAD(&dep->cancelled_list);
+ 	}
+ 
+ 	return 0;
+--- a/drivers/usb/dwc3/gadget.h
++++ b/drivers/usb/dwc3/gadget.h
+@@ -73,6 +73,21 @@ static inline void dwc3_gadget_move_star
+ 	list_move_tail(&req->list, &dep->started_list);
+ }
+ 
++/**
++ * dwc3_gadget_move_cancelled_request - move @req to the cancelled_list
++ * @req: the request to be moved
++ *
++ * Caller should take care of locking. This function will move @req from its
++ * current list to the endpoint's cancelled_list.
++ */
++static inline void dwc3_gadget_move_cancelled_request(struct dwc3_request *req)
++{
++	struct dwc3_ep		*dep = req->dep;
++
++	req->started = false;
++	list_move_tail(&req->list, &dep->cancelled_list);
++}
++
+ void dwc3_gadget_giveback(struct dwc3_ep *dep, struct dwc3_request *req,
+ 		int status);
+ 

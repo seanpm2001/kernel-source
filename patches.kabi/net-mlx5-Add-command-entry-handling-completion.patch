@@ -1,0 +1,30 @@
+From: Jiri Slaby <jslaby@suse.cz>
+Subject: kABI: protect struct mlx5_cmd_work_ent
+Patch-mainline: never, kabi
+References: kabi
+
+In networking-stable-20_05_27, upstream commit
+17d00e839d3b592da9659c1977d45f85b77f986a (net/mlx5: Add command entry
+handling completion) added handling to struct mlx5_cmd_work_ent. It
+made the kABI checker to complain.
+
+Given the structure is private to mlx5, hide the change from the kABI
+checker.
+
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ include/linux/mlx5/driver.h |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/include/linux/mlx5/driver.h
++++ b/include/linux/mlx5/driver.h
+@@ -907,7 +907,9 @@ struct mlx5_cmd_work_ent {
+ 	struct delayed_work	cb_timeout_work;
+ 	void		       *context;
+ 	int			idx;
++#ifndef __GENKSYMS__
+ 	struct completion	handling;
++#endif
+ 	struct completion	done;
+ 	struct mlx5_cmd        *cmd;
+ 	struct work_struct	work;
