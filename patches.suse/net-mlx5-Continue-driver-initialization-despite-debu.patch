@@ -1,0 +1,37 @@
+From: Leon Romanovsky <leonro@mellanox.com>
+Date: Thu, 13 Dec 2018 13:15:11 +0200
+Subject: net/mlx5: Continue driver initialization despite debugfs failure
+Patch-mainline: v5.0-rc1
+Git-commit: 199fa087dc6b503baad06712716fac645a983e8a
+References: git-fixes
+
+The failure to create debugfs entry is unpleasant event, but not enough
+to abort drier initialization. Align the mlx5_core code to debugfs design
+and continue execution whenever debugfs_create_dir() successes or not.
+
+Fixes: e126ba97dba9 ("mlx5: Add driver for Mellanox Connect-IB adapters")
+Reviewed-by: Saeed Mahameed <saeedm@mellanox.com>
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: Saeed Mahameed <saeedm@mellanox.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/mellanox/mlx5/core/main.c |    8 +++-----
+ 1 file changed, 3 insertions(+), 5 deletions(-)
+
+--- a/drivers/net/ethernet/mellanox/mlx5/core/main.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/main.c
+@@ -877,11 +877,9 @@ static int mlx5_pci_init(struct mlx5_cor
+ 
+ 	priv->numa_node = dev_to_node(&dev->pdev->dev);
+ 
+-	priv->dbg_root = debugfs_create_dir(dev_name(&pdev->dev), mlx5_debugfs_root);
+-	if (!priv->dbg_root) {
+-		dev_err(&pdev->dev, "Cannot create debugfs dir, aborting\n");
+-		return -ENOMEM;
+-	}
++	if (mlx5_debugfs_root)
++		priv->dbg_root =
++			debugfs_create_dir(pci_name(pdev), mlx5_debugfs_root);
+ 
+ 	err = mlx5_pci_enable_device(dev);
+ 	if (err) {

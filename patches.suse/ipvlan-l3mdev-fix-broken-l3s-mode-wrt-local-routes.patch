@@ -69,14 +69,14 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
 
 --- a/drivers/net/ipvlan/ipvlan_main.c
 +++ b/drivers/net/ipvlan/ipvlan_main.c
-@@ -82,12 +82,12 @@ static int ipvlan_set_port_mode(struct i
+@@ -95,12 +95,12 @@ static int ipvlan_set_port_mode(struct i
  			err = ipvlan_register_nf_hook(read_pnet(&port->pnet));
  			if (!err) {
  				mdev->l3mdev_ops = &ipvl_l3mdev_ops;
 -				mdev->priv_flags |= IFF_L3MDEV_MASTER;
 +				mdev->priv_flags |= IFF_L3MDEV_RX_HANDLER;
  			} else
- 				return err;
+ 				goto fail;
  		} else if (port->mode == IPVLAN_MODE_L3S) {
  			/* Old mode was L3S */
 -			mdev->priv_flags &= ~IFF_L3MDEV_MASTER;
@@ -84,7 +84,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  			ipvlan_unregister_nf_hook(read_pnet(&port->pnet));
  			mdev->l3mdev_ops = NULL;
  		}
-@@ -140,7 +140,7 @@ static void ipvlan_port_destroy(struct n
+@@ -160,7 +160,7 @@ static void ipvlan_port_destroy(struct n
  	struct sk_buff *skb;
  
  	if (port->mode == IPVLAN_MODE_L3S) {

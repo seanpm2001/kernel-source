@@ -1,0 +1,47 @@
+From 7f4d05cbc68a5003367af16c507d243efc8a3025 Mon Sep 17 00:00:00 2001
+From: Qu Wenruo <wqu@suse.com>
+Date: Tue, 7 Jul 2020 19:17:16 +0800
+Patch-mainline: Never, upstream fixed would interrupt the out-of-tree qgroup resume workaround
+References: bsc#1172247
+Subject: [PATCH] btrfs: qgroup: Fix a bug that prevents qgroup to be
+ re-enabled after disable
+
+If qgroup get disabled, then re-enabled, rescan can't be kicked it, as
+btrfs_run_qgroups() after btrfs_quota_disable() didn't get executed
+proper.
+
+Fix it by setting qgroup flags before checking quota root in
+btrfs_run_qgroups().
+
+Signed-off-by: Qu Wenruo <wqu@suse.com>
+---
+ fs/btrfs/qgroup.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/fs/btrfs/qgroup.c b/fs/btrfs/qgroup.c
+index deffbeb74a0b..25d438724114 100644
+--- a/fs/btrfs/qgroup.c
++++ b/fs/btrfs/qgroup.c
+@@ -2054,9 +2054,6 @@ int btrfs_run_qgroups(struct btrfs_trans_handle *trans,
+ 	int ret = 0;
+ 	int start_rescan_worker = 0;
+ 
+-	if (!quota_root)
+-		goto out;
+-
+ 	if (!test_bit(BTRFS_FS_QUOTA_ENABLED, &fs_info->flags) &&
+ 	    test_bit(BTRFS_FS_QUOTA_ENABLING, &fs_info->flags))
+ 		start_rescan_worker = 1;
+@@ -2066,6 +2063,9 @@ int btrfs_run_qgroups(struct btrfs_trans_handle *trans,
+ 	if (test_and_clear_bit(BTRFS_FS_QUOTA_DISABLING, &fs_info->flags))
+ 		clear_bit(BTRFS_FS_QUOTA_ENABLED, &fs_info->flags);
+ 
++	if (!quota_root)
++		goto out;
++
+ 	spin_lock(&fs_info->qgroup_lock);
+ 	while (!list_empty(&fs_info->dirty_qgroups)) {
+ 		struct btrfs_qgroup *qgroup;
+-- 
+2.27.0
+
