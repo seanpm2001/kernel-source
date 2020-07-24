@@ -185,14 +185,14 @@ diff --git a/drivers/pci/host/pci-hyperv.c b/drivers/pci/host/pci-hyperv.c
  	int ret;
  
 @@ -3082,8 +3121,9 @@ static int hv_pci_bus_exit(struct hv_device *hdev, bool hibernating)
- 		return;
  
- 	/* Delete any children which might still exist. */
--	memset(&relations, 0, sizeof(relations));
--	hv_pci_devices_present(hbus, &relations);
-+	dr = kzalloc(sizeof(*dr), GFP_KERNEL);
-+	if (dr && hv_pci_start_relations_work(hbus, dr))
-+		kfree(dr);
+ 	if (!hibernating) {
+ 		/* Delete any children which might still exist. */
+-		memset(&relations, 0, sizeof(relations));
+-		hv_pci_devices_present(hbus, &relations);
++		dr = kzalloc(sizeof(*dr), GFP_KERNEL);
++		if (dr && hv_pci_start_relations_work(hbus, dr))
++			kfree(dr);
+ 	}
  
  	ret = hv_send_resources_released(hdev);
- 	if (ret)
