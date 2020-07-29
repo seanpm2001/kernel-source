@@ -1,0 +1,85 @@
+From: Nikolay Borisov <nborisov@suse.com>
+Date: Tue, 7 May 2019 10:19:22 +0300
+Git-commit: ffa87214c1100c7ea38e85a3cf981d0d47b1c744
+Patch-mainline: 5.3
+References: bsc#1174438
+Subject: [PATCH] btrfs: add new helper
+ btrfs_lock_and_flush_ordered_range
+
+There is a certain idiom used in multiple places in btrfs' codebase,
+dealing with flushing an ordered range. Factor this in a separate
+function that can be reused. Future patches will replace the existing
+code with that function.
+
+Reviewed-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: Nikolay Borisov <nborisov@suse.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Signed-off-by: Filipe Manana <fdmanana@suse.com>
+---
+ fs/btrfs/ordered-data.c | 33 +++++++++++++++++++++++++++++++++
+ fs/btrfs/ordered-data.h |  4 ++++
+ 2 files changed, 37 insertions(+)
+
+diff --git a/fs/btrfs/ordered-data.c b/fs/btrfs/ordered-data.c
+index 4f51e634f22d..f8324f63571d 100644
+--- a/fs/btrfs/ordered-data.c
++++ b/fs/btrfs/ordered-data.c
+@@ -1146,6 +1146,39 @@ int btrfs_find_ordered_sum(struct inode *inode, u64 offset, u64 disk_bytenr,
+ 	return index;
+ }
+ 
++/*
++ * btrfs_flush_ordered_range - Lock the passed range and ensures all pending
++ * ordered extents in it are run to completion.
++ *
++ * @tree:         IO tree used for locking out other users of the range
++ * @inode:        Inode whose ordered tree is to be searched
++ * @start:        Beginning of range to flush
++ * @end:          Last byte of range to lock
++ * @cached_state: If passed, will return the extent state responsible for the
++ * locked range. It's the caller's responsibility to free the cached state.
++ *
++ * This function always returns with the given range locked, ensuring after it's
++ * called no order extent can be pending.
++ */
++void btrfs_lock_and_flush_ordered_range(struct extent_io_tree *tree,
++					struct btrfs_inode *inode, u64 start,
++					u64 end,
++					struct extent_state **cached_state)
++{
++	struct btrfs_ordered_extent *ordered;
++
++	while (1) {
++		lock_extent_bits(tree, start, end, cached_state);
++		ordered = btrfs_lookup_ordered_range(inode, start,
++						     end - start + 1);
++		if (!ordered)
++			break;
++		unlock_extent_cached(tree, start, end, cached_state, GFP_NOFS);
++		btrfs_start_ordered_extent(&inode->vfs_inode, ordered, 1);
++		btrfs_put_ordered_extent(ordered);
++	}
++}
++
+ int __init ordered_data_init(void)
+ {
+ 	btrfs_ordered_extent_cache = kmem_cache_create("btrfs_ordered_extent",
+diff --git a/fs/btrfs/ordered-data.h b/fs/btrfs/ordered-data.h
+index bc08fb1250de..12bd38ce68b0 100644
+--- a/fs/btrfs/ordered-data.h
++++ b/fs/btrfs/ordered-data.h
+@@ -197,6 +197,10 @@ u64 btrfs_wait_ordered_extents(struct bt
+ 			       const u64 range_start, const u64 range_len);
+ u64 btrfs_wait_ordered_roots(struct btrfs_fs_info *fs_info, u64 nr,
+ 			      const u64 range_start, const u64 range_len);
++void btrfs_lock_and_flush_ordered_range(struct extent_io_tree *tree,
++				       struct btrfs_inode *inode, u64 start,
++				       u64 end,
++				       struct extent_state **cached_state);
+ int __init ordered_data_init(void);
+ void ordered_data_exit(void);
+ #endif
+-- 
+2.26.2
+

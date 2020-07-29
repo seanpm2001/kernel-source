@@ -23,17 +23,18 @@ Signed-off-by: James Morris <jmorris@namei.org>
 Acked-by: Lee, Chun-Yi <jlee@suse.com>
 Acked-by: Jean Delvare <jdelvare@suse.de>
 ---
- drivers/char/mem.c |    2 ++
- 1 file changed, 2 insertions(+)
+ drivers/char/mem.c |    3 +++
+ 1 file changed, 3 insertions(+)
 
 --- a/drivers/char/mem.c
 +++ b/drivers/char/mem.c
-@@ -779,6 +779,8 @@ static loff_t memory_lseek(struct file *
+@@ -842,6 +842,9 @@ static int open_port(struct inode *inode
+ 	if (!capable(CAP_SYS_RAWIO))
+ 		return -EPERM;
  
- static int open_port(struct inode *inode, struct file *filp)
- {
 +	if (kernel_is_locked_down())
 +		return -EPERM;
- 	return capable(CAP_SYS_RAWIO) ? 0 : -EPERM;
- }
++
+ 	if (iminor(inode) != DEVMEM_MINOR)
+ 		return 0;
  
