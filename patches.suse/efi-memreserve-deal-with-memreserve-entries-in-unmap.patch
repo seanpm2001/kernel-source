@@ -1,0 +1,69 @@
+From: Ard Biesheuvel <ard.biesheuvel@linaro.org>
+Date: Sun, 9 Jun 2019 20:17:44 +0200
+Subject: efi/memreserve: deal with memreserve entries in unmapped memory
+Git-commit: 18df7577adae6c6c778bf774b3aebcacbc1fb439
+Patch-mainline: v5.2-rc7
+References: bsc#1174685
+
+Ensure that the EFI memreserve entries can be accessed, even if they
+are located in memory that the kernel (e.g., a crashkernel) omits from
+the linear map.
+
+Fixes: 80424b02d42b ("efi: Reduce the amount of memblock reservations ...")
+Cc: <stable@vger.kernel.org> # 5.0+
+Reported-by: Jonathan Richardson <jonathan.richardson@broadcom.com>
+Reviewed-by: Jonathan Richardson <jonathan.richardson@broadcom.com>
+Tested-by: Jonathan Richardson <jonathan.richardson@broadcom.com>
+Signed-off-by: Ard Biesheuvel <ard.biesheuvel@linaro.org>
+[mb: add include of sizes.h to fix compilation error]
+Signed-off-by: Matthias Brugger <mbrugger@suse.com>
+---
+ drivers/firmware/efi/efi.c |   14 ++++++++++++--
+ 1 file changed, 12 insertions(+), 2 deletions(-)
+
+--- a/drivers/firmware/efi/efi.c
++++ b/drivers/firmware/efi/efi.c
+@@ -32,6 +32,8 @@
+ #include <linux/ucs2_string.h>
+ #include <linux/memblock.h>
+ 
++#include <linux/sizes.h>
++
+ #include <asm/early_ioremap.h>
+ 
+ struct efi __read_mostly efi = {
+@@ -958,7 +960,7 @@ int __ref efi_mem_reserve_persistent(phy
+ 
+ 	/* first try to find a slot in an existing linked list entry */
+ 	for (prsv = efi_memreserve_root->next; prsv; prsv = rsv->next) {
+-		rsv = __va(prsv);
++		rsv = memremap(prsv, sizeof(*rsv), MEMREMAP_WB);
+ 		/* implement atomic_fetch_add_unless for
+ 		 * index = atomic_fetch_add_unless(&rsv->count, 1, rsv->size);
+ 		 */
+@@ -973,8 +975,10 @@ int __ref efi_mem_reserve_persistent(phy
+ 			rsv->entry[index].base = addr;
+ 			rsv->entry[index].size = size;
+ 
++			memunmap(rsv);
+ 			return 0;
+ 		}
++		memunmap(rsv);
+ 	}
+ 
+ 	/* no slot found - allocate a new linked list entry */
+@@ -982,7 +986,13 @@ int __ref efi_mem_reserve_persistent(phy
+ 	if (!rsv)
+ 		return -ENOMEM;
+ 
+-	rsv->size = EFI_MEMRESERVE_COUNT(PAGE_SIZE);
++	/*
++	 * The memremap() call above assumes that a linux_efi_memreserve entry
++	 * never crosses a page boundary, so let's ensure that this remains true
++	 * even when kexec'ing a 4k pages kernel from a >4k pages kernel, by
++	 * using SZ_4K explicitly in the size calculation below.
++	 */
++	rsv->size = EFI_MEMRESERVE_COUNT(SZ_4K);
+ 	atomic_set(&rsv->count, 1);
+ 	rsv->entry[0].base = addr;
+ 	rsv->entry[0].size = size;
