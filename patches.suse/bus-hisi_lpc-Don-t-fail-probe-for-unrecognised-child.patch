@@ -1,0 +1,46 @@
+From: John Garry <john.garry@huawei.com>
+Date: Thu, 3 Jan 2019 19:57:02 +0800
+Subject: bus: hisi_lpc: Don't fail probe for unrecognised child devices
+Git-commit: 705c0ee8d4a64b072e324f8daa8767e92560a892
+Patch-mainline: v5.1-rc1
+References: bsc#1174658
+
+Currently for ACPI-based FW we fail the probe for an unrecognised child
+HID.
+
+However, there is FW in the field with LPC child devices having fake HIDs,
+namely "IPI0002", which was an IPMI device invented to support the
+initial out-of-tree LPC host driver, different from the final mainline
+version.
+
+To provide compatibility support for these dodgy FWs, just discard the
+unrecognised HIDs instead of failing the probe altogether.
+
+Tested-by: Zengruan Ye <yezengruan@huawei.com>
+Signed-off-by: John Garry <john.garry@huawei.com>
+Signed-off-by: Wei Xu <xuwei5@hisilicon.com>
+Signed-off-by: Matthias Brugger <mbrugger@suse.com>
+---
+ drivers/bus/hisi_lpc.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/bus/hisi_lpc.c b/drivers/bus/hisi_lpc.c
+index d5f85455fa62..19d7b6ff2f17 100644
+--- a/drivers/bus/hisi_lpc.c
++++ b/drivers/bus/hisi_lpc.c
+@@ -522,10 +522,9 @@ static int hisi_lpc_acpi_probe(struct device *hostdev)
+ 
+ 		if (!found) {
+ 			dev_warn(hostdev,
+-				 "could not find cell for child device (%s)\n",
++				 "could not find cell for child device (%s), discarding\n",
+ 				 hid);
+-			ret = -ENODEV;
+-			goto fail;
++			continue;
+ 		}
+ 
+ 		pdev = platform_device_alloc(cell->name, PLATFORM_DEVID_AUTO);
+-- 
+2.27.0
+
