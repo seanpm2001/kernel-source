@@ -31,24 +31,32 @@ Link: https://lore.kernel.org/r/20200602070501.2023-2-longpeng2@huawei.com
 Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
 Signed-off-by: Oliver Neukum <oneukum@suse.com>
 ---
- drivers/crypto/virtio/virtio_crypto_algs.c |   11 +++++++----
- 1 file changed, 7 insertions(+), 4 deletions(-)
+ drivers/crypto/virtio/virtio_crypto_algs.c |   15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
 
 --- a/drivers/crypto/virtio/virtio_crypto_algs.c
 +++ b/drivers/crypto/virtio/virtio_crypto_algs.c
-@@ -316,8 +316,11 @@ __virtio_crypto_ablkcipher_do_req(struct
+@@ -311,13 +311,18 @@ __virtio_crypto_ablkcipher_do_req(struct
+ 	int err;
+ 	unsigned long flags;
+ 	struct scatterlist outhdr, iv_sg, status_sg, **sgs;
+-	int i;
+ 	u64 dst_len;
  	unsigned int num_out = 0, num_in = 0;
  	int sg_total;
  	uint8_t *iv;
 +	struct scatterlist *sg;
  
  	src_nents = sg_nents_for_len(req->src, req->nbytes);
-+	if (src_nents < 0)
++	if (src_nents < 0) {
++		pr_err("Invalid number of src SG.\n");
 +		return src_nents;
++	}
++
  	dst_nents = sg_nents(req->dst);
  
  	pr_debug("virtio_crypto: Number of sgs (src_nents: %d, dst_nents: %d)\n",
-@@ -398,12 +401,12 @@ __virtio_crypto_ablkcipher_do_req(struct
+@@ -398,12 +403,12 @@ __virtio_crypto_ablkcipher_do_req(struct
  	vc_req->iv = iv;
  
  	/* Source data */
