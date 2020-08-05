@@ -43,7 +43,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
 
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -1087,6 +1087,8 @@ struct btrfs_fs_info {
+@@ -892,6 +892,8 @@ struct btrfs_fs_info {
  	struct btrfs_workqueue *qgroup_rescan_workers;
  	struct completion qgroup_rescan_completion;
  	struct btrfs_work qgroup_rescan_work;
@@ -54,7 +54,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  	/* filesystem state */
 --- a/fs/btrfs/ioctl.c
 +++ b/fs/btrfs/ioctl.c
-@@ -5147,7 +5147,7 @@ static long btrfs_ioctl_quota_rescan_sta
+@@ -5196,7 +5196,7 @@ static long btrfs_ioctl_quota_rescan_sta
  	if (!qsa)
  		return -ENOMEM;
  
@@ -73,7 +73,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  
  /* must be called with qgroup_ioctl_lock held */
  static struct btrfs_qgroup *find_qgroup_rb(struct btrfs_fs_info *fs_info,
-@@ -2009,7 +2010,7 @@ btrfs_qgroup_account_extent(struct btrfs
+@@ -2367,7 +2368,7 @@ btrfs_qgroup_account_extent(struct btrfs
  	}
  
  	mutex_lock(&fs_info->qgroup_rescan_lock);
@@ -82,7 +82,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  		if (fs_info->qgroup_rescan_progress.objectid <= bytenr) {
  			mutex_unlock(&fs_info->qgroup_rescan_lock);
  			ret = 0;
-@@ -2113,6 +2114,46 @@ cleanup:
+@@ -2480,6 +2481,46 @@ cleanup:
  	return ret;
  }
  
@@ -129,7 +129,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  /*
   * called from commit_transaction. Writes all changed qgroups to disk.
   */
-@@ -2166,8 +2207,7 @@ int btrfs_run_qgroups(struct btrfs_trans
+@@ -2533,8 +2574,7 @@ int btrfs_run_qgroups(struct btrfs_trans
  		ret = qgroup_rescan_init(fs_info, 0, 1);
  		if (!ret) {
  			qgroup_rescan_zero_tracking(fs_info);
@@ -139,7 +139,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  		}
  		ret = 0;
  	}
-@@ -2682,6 +2722,10 @@ static void btrfs_qgroup_rescan_worker(s
+@@ -3102,6 +3142,10 @@ static void btrfs_qgroup_rescan_worker(s
  	path->search_commit_root = 1;
  	path->skip_locking = 1;
  
@@ -150,7 +150,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  	err = 0;
  	while (!err && !btrfs_fs_closing(fs_info)) {
  		trans = btrfs_start_transaction(fs_info->fs_root, 0);
-@@ -2760,47 +2804,27 @@ qgroup_rescan_init(struct btrfs_fs_info
+@@ -3180,47 +3224,27 @@ qgroup_rescan_init(struct btrfs_fs_info
  {
  	int ret = 0;
  
@@ -205,7 +205,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  		btrfs_info(fs_info, "qgroup_rescan_init failed with %d", ret);
  		return ret;
  	}
-@@ -2861,9 +2885,7 @@ btrfs_qgroup_rescan(struct btrfs_fs_info
+@@ -3281,9 +3305,7 @@ btrfs_qgroup_rescan(struct btrfs_fs_info
  
  	qgroup_rescan_zero_tracking(fs_info);
  
@@ -216,7 +216,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  	return 0;
  }
  
-@@ -2874,9 +2896,7 @@ int btrfs_qgroup_wait_for_completion(str
+@@ -3294,9 +3316,7 @@ int btrfs_qgroup_wait_for_completion(str
  	int ret = 0;
  
  	mutex_lock(&fs_info->qgroup_rescan_lock);
@@ -226,7 +226,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  	mutex_unlock(&fs_info->qgroup_rescan_lock);
  
  	if (!running)
-@@ -2895,12 +2915,10 @@ int btrfs_qgroup_wait_for_completion(str
+@@ -3315,12 +3335,10 @@ int btrfs_qgroup_wait_for_completion(str
   * this is only called from open_ctree where we're still single threaded, thus
   * locking is omitted here.
   */
@@ -241,4 +241,4 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
 +		queue_rescan_worker(fs_info);
  }
  
- /*
+ #define rbtree_iterate_from_safe(node, next, start)				\
