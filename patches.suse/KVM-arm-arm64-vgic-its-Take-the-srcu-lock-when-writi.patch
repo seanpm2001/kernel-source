@@ -81,7 +81,7 @@ Acked-by: Liang Yan <lyan@suse.com>
 +
  static inline void *kvm_get_hyp_vector(void)
  {
- 	return kvm_ksym_ref(__kvm_hyp_vector);
+ 	switch(read_cpuid_part()) {
 --- a/arch/arm64/include/asm/kvm_mmu.h
 +++ b/arch/arm64/include/asm/kvm_mmu.h
 @@ -340,6 +340,17 @@ static inline int kvm_read_guest_lock(st
@@ -104,7 +104,7 @@ Acked-by: Liang Yan <lyan@suse.com>
  
 --- a/virt/kvm/arm/vgic/vgic-its.c
 +++ b/virt/kvm/arm/vgic/vgic-its.c
-@@ -1934,7 +1934,7 @@ static int vgic_its_save_ite(struct vgic
+@@ -1930,7 +1930,7 @@ static int vgic_its_save_ite(struct vgic
  	       ((u64)ite->irq->intid << KVM_ITS_ITE_PINTID_SHIFT) |
  		ite->collection->collection_id;
  	val = cpu_to_le64(val);
@@ -113,7 +113,7 @@ Acked-by: Liang Yan <lyan@suse.com>
  }
  
  /**
-@@ -2081,7 +2081,7 @@ static int vgic_its_save_dte(struct vgic
+@@ -2077,7 +2077,7 @@ static int vgic_its_save_dte(struct vgic
  	       (itt_addr_field << KVM_ITS_DTE_ITTADDR_SHIFT) |
  		(dev->num_eventid_bits - 1));
  	val = cpu_to_le64(val);
@@ -122,7 +122,7 @@ Acked-by: Liang Yan <lyan@suse.com>
  }
  
  /**
-@@ -2261,7 +2261,7 @@ static int vgic_its_save_cte(struct vgic
+@@ -2257,7 +2257,7 @@ static int vgic_its_save_cte(struct vgic
  	       ((u64)collection->target_addr << KVM_ITS_CTE_RDBASE_SHIFT) |
  	       collection->collection_id);
  	val = cpu_to_le64(val);
@@ -131,7 +131,7 @@ Acked-by: Liang Yan <lyan@suse.com>
  }
  
  static int vgic_its_restore_cte(struct vgic_its *its, gpa_t gpa, int esz)
-@@ -2332,7 +2332,7 @@ static int vgic_its_save_collection_tabl
+@@ -2328,7 +2328,7 @@ static int vgic_its_save_collection_tabl
  	 */
  	val = 0;
  	BUG_ON(cte_esz > sizeof(val));
@@ -142,7 +142,7 @@ Acked-by: Liang Yan <lyan@suse.com>
  
 --- a/virt/kvm/arm/vgic/vgic-v3.c
 +++ b/virt/kvm/arm/vgic/vgic-v3.c
-@@ -310,7 +310,7 @@ retry:
+@@ -317,7 +317,7 @@ retry:
  	if (status) {
  		/* clear consumed data */
  		val &= ~(1 << bit_nr);
@@ -151,7 +151,7 @@ Acked-by: Liang Yan <lyan@suse.com>
  		if (ret)
  			return ret;
  	}
-@@ -361,7 +361,7 @@ int vgic_v3_save_pending_tables(struct k
+@@ -368,7 +368,7 @@ int vgic_v3_save_pending_tables(struct k
  		else
  			val &= ~(1 << bit_nr);
  
