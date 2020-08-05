@@ -1,0 +1,35 @@
+From: zhengbin <zhengbin13@huawei.com>
+Date: Wed, 14 Aug 2019 15:59:09 +0800
+Subject: fuse: fix memleak in cuse_channel_open
+Git-commit: 9ad09b1976c562061636ff1e01bfc3a57aebe56b
+Patch-mainline: v5.4-rc1
+References: bsc#1174926
+
+If cuse_send_init fails, need to fuse_conn_put cc->fc.
+
+cuse_channel_open->fuse_conn_init->refcount_set(&fc->count, 1)
+                 ->fuse_dev_alloc->fuse_conn_get
+                 ->fuse_dev_free->fuse_conn_put
+
+Fixes: cc080e9e9be1 ("fuse: introduce per-instance fuse_dev structure")
+Reported-by: Hulk Robot <hulkci@huawei.com>
+Signed-off-by: zhengbin <zhengbin13@huawei.com>
+Signed-off-by: Miklos Szeredi <mszeredi@redhat.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+---
+ fs/fuse/cuse.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fs/fuse/cuse.c b/fs/fuse/cuse.c
+index 45762bb7a934..00015d851382 100644
+--- a/fs/fuse/cuse.c
++++ b/fs/fuse/cuse.c
+@@ -521,6 +521,7 @@ static int cuse_channel_open(struct inode *inode, struct file *file)
+ 	rc = cuse_send_init(cc);
+ 	if (rc) {
+ 		fuse_dev_free(fud);
++		fuse_conn_put(&cc->fc);
+ 		return rc;
+ 	}
+ 	file->private_data = fud;
+
