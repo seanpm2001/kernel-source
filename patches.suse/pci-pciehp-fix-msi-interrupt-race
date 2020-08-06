@@ -41,36 +41,36 @@ Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
 Reviewed-by: Joerg Roedel <jroedel@suse.de>
 Acked-by: Joerg Roedel <jroedel@suse.de>
 ---
- drivers/pci/hotplug/pciehp_hpc.c |   26 ++++++++++++++++++++------
+ drivers/pci/hotplug/pciehp_hpc.c | 26 ++++++++++++++++++++------
  1 file changed, 20 insertions(+), 6 deletions(-)
 
 --- a/drivers/pci/hotplug/pciehp_hpc.c
 +++ b/drivers/pci/hotplug/pciehp_hpc.c
-@@ -550,7 +550,7 @@ static irqreturn_t pciehp_isr(int irq, v
+@@ -565,7 +565,7 @@ static irqreturn_t pciehp_isr(int irq, v
+ {
  	struct controller *ctrl = (struct controller *)dev_id;
  	struct pci_dev *pdev = ctrl_dev(ctrl);
- 	struct device *parent = pdev->dev.parent;
 -	u16 status, events;
 +	u16 status, events = 0;
  
  	/*
  	 * Interrupts only occur in D3hot or shallower and only if enabled
-@@ -575,6 +575,7 @@ static irqreturn_t pciehp_isr(int irq, v
- 		}
- 	}
+@@ -573,6 +573,7 @@ static irqreturn_t pciehp_isr(int irq, v
+ 	    (!(ctrl->slot_ctrl & PCI_EXP_SLTCTL_HPIE) && !pciehp_poll_mode))
+ 		return IRQ_NONE;
  
 +read_status:
  	pcie_capability_read_word(pdev, PCI_EXP_SLTSTA, &status);
  	if (status == (u16) ~0) {
  		ctrl_info(ctrl, "%s: no response from device\n", __func__);
-@@ -587,24 +588,37 @@ static irqreturn_t pciehp_isr(int irq, v
+@@ -583,21 +584,34 @@ static irqreturn_t pciehp_isr(int irq, v
  	 * Slot Status contains plain status bits as well as event
  	 * notification bits; right now we only want the event bits.
  	 */
 -	events = status & (PCI_EXP_SLTSTA_ABP | PCI_EXP_SLTSTA_PFD |
 -			   PCI_EXP_SLTSTA_PDC | PCI_EXP_SLTSTA_CC |
 -			   PCI_EXP_SLTSTA_DLLSC);
-+	events &= PCI_EXP_SLTSTA_ABP | PCI_EXP_SLTSTA_PFD |
++	status &= PCI_EXP_SLTSTA_ABP | PCI_EXP_SLTSTA_PFD |
 +		  PCI_EXP_SLTSTA_PDC | PCI_EXP_SLTSTA_CC |
 +		  PCI_EXP_SLTSTA_DLLSC;
  
@@ -83,11 +83,8 @@ Acked-by: Joerg Roedel <jroedel@suse.de>
 +		status &= ~PCI_EXP_SLTSTA_PFD;
  
 +	events |= status;
- 	if (!events) {
- 		if (parent)
- 			pm_runtime_put(parent);
+ 	if (!events)
  		return IRQ_NONE;
- 	}
  
 -	pcie_capability_write_word(pdev, PCI_EXP_SLTSTA, events);
 +	if (status) {
@@ -104,5 +101,5 @@ Acked-by: Joerg Roedel <jroedel@suse.de>
 +	}
 +
  	ctrl_dbg(ctrl, "pending interrupts %#06x from Slot Status\n", events);
- 	if (parent)
- 		pm_runtime_put(parent);
+ 
+ 	/*
