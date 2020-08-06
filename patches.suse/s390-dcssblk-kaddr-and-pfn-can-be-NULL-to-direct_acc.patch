@@ -1,0 +1,48 @@
+From 036a82ca90328960d66b7a5c0e1908475d534d62 Mon Sep 17 00:00:00 2001
+From: Huaisheng Ye <yehs1@lenovo.com>
+Date: Mon, 30 Jul 2018 15:15:44 +0800
+Subject: [PATCH] s390, dcssblk: kaddr and pfn can be NULL to ->direct_access()
+References: bsc#1174873
+Git-commit: 036a82ca90328960d66b7a5c0e1908475d534d62
+Patch-mainline: v4.19-rc1
+
+dcssblk_direct_access() needs to check the validity of pointers kaddr
+and pfn for NULL assignment. If anyone equals to NULL, it doesn't need
+to calculate the value.
+
+If either of them is equal to NULL, that is to say callers may
+have no need for kaddr or pfn, so this patch is prepared for allowing
+them to pass in NULL instead of having to pass in a pointer or local
+variable that they then just throw away.
+
+Signed-off-by: Huaisheng Ye <yehs1@lenovo.com>
+Reviewed-by: Ross Zwisler <ross.zwisler@linux.intel.com>
+Acked-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Signed-off-by: Dave Jiang <dave.jianig@intel.com>
+Signed-off-by: Thomas Abraham <tabraham@suse.com>
+---
+ drivers/s390/block/dcssblk.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/s390/block/dcssblk.c b/drivers/s390/block/dcssblk.c
+index ed607288e696..23e526cda5c1 100644
+--- a/drivers/s390/block/dcssblk.c
++++ b/drivers/s390/block/dcssblk.c
+@@ -922,9 +922,11 @@ __dcssblk_direct_access(struct dcssblk_dev_info *dev_info, pgoff_t pgoff,
+ 	unsigned long dev_sz;
+ 
+ 	dev_sz = dev_info->end - dev_info->start + 1;
+-	*kaddr = (void *) dev_info->start + offset;
+-	*pfn = __pfn_to_pfn_t(PFN_DOWN(dev_info->start + offset),
+-			PFN_DEV|PFN_SPECIAL);
++	if (kaddr)
++		*kaddr = (void *) dev_info->start + offset;
++	if (pfn)
++		*pfn = __pfn_to_pfn_t(PFN_DOWN(dev_info->start + offset),
++				PFN_DEV|PFN_SPECIAL);
+ 
+ 	return (dev_sz - offset) / PAGE_SIZE;
+ }
+-- 
+2.26.2
+
