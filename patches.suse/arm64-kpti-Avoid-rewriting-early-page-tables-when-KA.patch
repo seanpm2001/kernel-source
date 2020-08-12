@@ -1,0 +1,147 @@
+From: Will Deacon <will.deacon@arm.com>
+Date: Tue, 8 Jan 2019 16:19:01 +0000
+Subject: arm64: kpti: Avoid rewriting early page tables when KASLR is enabled
+
+Git-commit: b89d82ef01b33bc50cbaa8ff05607879b40d0704
+Patch-mainline: v5.0-rc2
+References: bsc#1174547
+
+A side effect of commit c55191e96caa ("arm64: mm: apply r/o permissions
+of VM areas to its linear alias as well") is that the linear map is
+created with page granularity, which means that transitioning the early
+page table from global to non-global mappings when enabling kpti can
+take a significant amount of time during boot.
+
+Given that most CPU implementations do not require kpti, this mainly
+impacts KASLR builds where kpti is forcefully enabled. However, in these
+situations we know early on that non-global mappings are required and
+can avoid the use of global mappings from the beginning. The only gotcha
+is Cavium erratum #27456, which we must detect based on the MIDR value
+of the boot CPU.
+
+Reviewed-by: Ard Biesheuvel <ard.biesheuvel@linaro.org>
+Reported-by: John Garry <john.garry@huawei.com>
+Signed-off-by: Will Deacon <will.deacon@arm.com>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ arch/arm64/include/asm/mmu.h          |   41 ++++++++++++++++++++++++++++++++++
+ arch/arm64/include/asm/pgtable-prot.h |    4 +--
+ arch/arm64/kernel/arm64ksyms.c        |    2 +
+ arch/arm64/kernel/cpu_errata.c        |    2 -
+ arch/arm64/kernel/cpufeature.c        |    9 +++++--
+ 5 files changed, 53 insertions(+), 5 deletions(-)
+
+--- a/arch/arm64/include/asm/mmu.h
++++ b/arch/arm64/include/asm/mmu.h
+@@ -16,6 +16,8 @@
+ #ifndef __ASM_MMU_H
+ #define __ASM_MMU_H
+ 
++#include <asm/cputype.h>
++
+ #define USER_ASID_BIT	48
+ #define USER_ASID_FLAG	(UL(1) << USER_ASID_BIT)
+ #define TTBR_ASID_MASK	(UL(0xffff) << 48)
+@@ -41,6 +43,45 @@ static inline bool arm64_kernel_unmapped
+ 	       cpus_have_const_cap(ARM64_UNMAP_KERNEL_AT_EL0);
+ }
+ 
++static inline bool arm64_kernel_use_ng_mappings(void)
++{
++	bool tx1_bug;
++
++	/* What's a kpti? Use global mappings if we don't know. */
++	if (!IS_ENABLED(CONFIG_UNMAP_KERNEL_AT_EL0))
++		return false;
++
++	/*
++	 * Note: this function is called before the CPU capabilities have
++	 * been configured, so our early mappings will be global. If we
++	 * later determine that kpti is required, then
++	 * kpti_install_ng_mappings() will make them non-global.
++	 */
++	if (!IS_ENABLED(CONFIG_RANDOMIZE_BASE))
++		return arm64_kernel_unmapped_at_el0();
++
++	/*
++	 * KASLR is enabled so we're going to be enabling kpti on non-broken
++	 * CPUs regardless of their susceptibility to Meltdown. Rather
++	 * than force everybody to go through the G -> nG dance later on,
++	 * just put down non-global mappings from the beginning.
++	 */
++	if (!IS_ENABLED(CONFIG_CAVIUM_ERRATUM_27456)) {
++		tx1_bug = false;
++#ifndef MODULE
++	} else if (!static_branch_likely(&arm64_const_caps_ready)) {
++		extern const struct midr_range cavium_erratum_27456_cpus[];
++
++		tx1_bug = is_midr_in_range_list(read_cpuid_id(),
++						cavium_erratum_27456_cpus);
++#endif
++	} else {
++		tx1_bug = __cpus_have_const_cap(ARM64_WORKAROUND_CAVIUM_27456);
++	}
++
++	return !tx1_bug && kaslr_offset() > 0;
++}
++
+ typedef void (*bp_hardening_cb_t)(void);
+ 
+ struct bp_hardening_data {
+--- a/arch/arm64/include/asm/pgtable-prot.h
++++ b/arch/arm64/include/asm/pgtable-prot.h
+@@ -37,8 +37,8 @@
+ #define _PROT_DEFAULT		(PTE_TYPE_PAGE | PTE_AF | PTE_SHARED)
+ #define _PROT_SECT_DEFAULT	(PMD_TYPE_SECT | PMD_SECT_AF | PMD_SECT_S)
+ 
+-#define PTE_MAYBE_NG		(arm64_kernel_unmapped_at_el0() ? PTE_NG : 0)
+-#define PMD_MAYBE_NG		(arm64_kernel_unmapped_at_el0() ? PMD_SECT_NG : 0)
++#define PTE_MAYBE_NG		(arm64_kernel_use_ng_mappings() ? PTE_NG : 0)
++#define PMD_MAYBE_NG		(arm64_kernel_use_ng_mappings() ? PMD_SECT_NG : 0)
+ 
+ #define PROT_DEFAULT		(_PROT_DEFAULT | PTE_MAYBE_NG)
+ #define PROT_SECT_DEFAULT	(_PROT_SECT_DEFAULT | PMD_MAYBE_NG)
+--- a/arch/arm64/kernel/arm64ksyms.c
++++ b/arch/arm64/kernel/arm64ksyms.c
+@@ -75,3 +75,5 @@ NOKPROBE_SYMBOL(_mcount);
+ 	/* arm-smccc */
+ EXPORT_SYMBOL(__arm_smccc_smc);
+ EXPORT_SYMBOL(__arm_smccc_hvc);
++
++EXPORT_SYMBOL(kimage_vaddr);
+--- a/arch/arm64/kernel/cpu_errata.c
++++ b/arch/arm64/kernel/cpu_errata.c
+@@ -539,7 +539,7 @@ static const struct midr_range arm64_bp_
+ #endif
+ 
+ #ifdef CONFIG_CAVIUM_ERRATUM_27456
+-static const struct midr_range cavium_erratum_27456_cpus[] = {
++const struct midr_range cavium_erratum_27456_cpus[] = {
+ 	/* Cavium ThunderX, T88 pass 1.x - 2.1 */
+ 	MIDR_RANGE(MIDR_THUNDERX, 0, 0, 1, 1),
+ 	/* Cavium ThunderX, T81 pass 1.0 */
+--- a/arch/arm64/kernel/cpufeature.c
++++ b/arch/arm64/kernel/cpufeature.c
+@@ -956,7 +956,7 @@ static bool unmap_kernel_at_el0(const st
+ 
+ 	/* Useful for KASLR robustness */
+ 	if (IS_ENABLED(CONFIG_RANDOMIZE_BASE))
+-		return true;
++		return kaslr_offset() > 0;
+ 
+ 	/* Don't force KPTI for CPUs that are not vulnerable */
+ 	if (is_midr_in_range_list(read_cpuid_id(), kpti_safe_list))
+@@ -976,7 +976,12 @@ kpti_install_ng_mappings(const struct ar
+ 	static bool kpti_applied = false;
+ 	int cpu = smp_processor_id();
+ 
+-	if (kpti_applied)
++	/*
++	 * We don't need to rewrite the page-tables if either we've done
++	 * it already or we have KASLR enabled and therefore have not
++	 * created any global mappings at all.
++	 */
++	if (kpti_applied || kaslr_offset() > 0)
+ 		return;
+ 
+ 	remap_fn = (void *)__pa_symbol(idmap_kpti_install_ng_mappings);
