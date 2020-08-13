@@ -36,15 +36,15 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev);
  static bool hclge_get_hw_reset_stat(struct hnae3_handle *handle);
  static int hclge_set_umv_space(struct hclge_dev *hdev, u16 space_size,
-@@ -3212,6 +3213,7 @@ static void hclge_service_task(struct wo
- 	hclge_update_speed_duplex(hdev);
+@@ -3351,6 +3352,7 @@ static void hclge_service_task(struct wo
+ 	hclge_update_port_info(hdev);
  	hclge_update_link_status(hdev);
  	hclge_update_vport_alive(hdev);
 +	hclge_sync_vlan_filter(hdev);
  	if (hdev->fd_arfs_expire_timer >= HCLGE_FD_ARFS_EXPIRE_TIMER_INTERVAL) {
  		hclge_rfs_filter_expire(hdev);
  		hdev->fd_arfs_expire_timer = 0;
-@@ -7415,11 +7417,20 @@ int hclge_set_vlan_filter(struct hnae3_h
+@@ -7554,11 +7556,20 @@ int hclge_set_vlan_filter(struct hnae3_h
  	bool writen_to_tbl = false;
  	int ret = 0;
  
@@ -70,7 +70,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  	 */
  	if (handle->port_base_vlan_state == HNAE3_PORT_BASE_VLAN_DISABLE) {
  		ret = hclge_set_vlan_filter_hw(hdev, proto, vport->vport_id,
-@@ -7427,16 +7438,53 @@ int hclge_set_vlan_filter(struct hnae3_h
+@@ -7566,16 +7577,53 @@ int hclge_set_vlan_filter(struct hnae3_h
  		writen_to_tbl = true;
  	}
  
@@ -134,7 +134,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  static int hclge_set_mac_mtu(struct hclge_dev *hdev, int new_mps)
 --- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.h
 +++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.h
-@@ -917,6 +917,7 @@ struct hclge_vport {
+@@ -926,6 +926,7 @@ struct hclge_vport {
  	u32 bw_limit;		/* VSI BW Limit (0 = disabled) */
  	u8  dwrr;
  
@@ -144,7 +144,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  	struct hclge_rx_vtag_cfg  rxvlan_cfg;
 --- a/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c
 +++ b/drivers/net/ethernet/hisilicon/hns3/hns3vf/hclgevf_main.c
-@@ -1243,6 +1243,7 @@ static int hclgevf_set_vlan_filter(struc
+@@ -1244,6 +1244,7 @@ static int hclgevf_set_vlan_filter(struc
  #define HCLGEVF_VLAN_MBX_MSG_LEN 5
  	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
  	u8 msg_data[HCLGEVF_VLAN_MBX_MSG_LEN];
@@ -152,7 +152,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  
  	if (vlan_id > HCLGEVF_MAX_VLAN_ID)
  		return -EINVAL;
-@@ -1250,12 +1251,53 @@ static int hclgevf_set_vlan_filter(struc
+@@ -1251,12 +1252,53 @@ static int hclgevf_set_vlan_filter(struc
  	if (proto != htons(ETH_P_8021Q))
  		return -EPROTONOSUPPORT;
  
@@ -209,7 +209,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  }
  
  static int hclgevf_en_hw_strip_rxvtag(struct hnae3_handle *handle, bool enable)
-@@ -1796,6 +1838,8 @@ static void hclgevf_service_task(struct
+@@ -1797,6 +1839,8 @@ static void hclgevf_service_task(struct
  
  	hclgevf_update_link_mode(hdev);
  
@@ -228,7 +228,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  #include <linux/types.h>
  #include "hclge_mbx.h"
  #include "hclgevf_cmd.h"
-@@ -269,6 +270,8 @@ struct hclgevf_dev {
+@@ -270,6 +271,8 @@ struct hclgevf_dev {
  	u16 *vector_status;
  	int *vector_irq;
  

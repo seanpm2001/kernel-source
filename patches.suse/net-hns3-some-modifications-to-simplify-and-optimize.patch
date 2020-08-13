@@ -63,7 +63,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  		h->ae_algo->ops->get_pauseparam(h, &param->autoneg,
  			&param->rx_pause, &param->tx_pause);
  }
-@@ -610,9 +615,6 @@ static int hns3_get_link_ksettings(struc
+@@ -611,9 +616,6 @@ static int hns3_get_link_ksettings(struc
  	u8 media_type;
  	u8 link_stat;
  
@@ -72,8 +72,8 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
 -
  	ops = h->ae_algo->ops;
  	if (ops->get_media_type)
- 		ops->get_media_type(h, &media_type);
-@@ -671,8 +673,7 @@ static u32 hns3_get_rss_key_size(struct
+ 		ops->get_media_type(h, &media_type, &module_type);
+@@ -680,8 +682,7 @@ static u32 hns3_get_rss_key_size(struct
  {
  	struct hnae3_handle *h = hns3_get_handle(netdev);
  
@@ -83,7 +83,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  		return 0;
  
  	return h->ae_algo->ops->get_rss_key_size(h);
-@@ -682,8 +683,7 @@ static u32 hns3_get_rss_indir_size(struc
+@@ -691,8 +692,7 @@ static u32 hns3_get_rss_indir_size(struc
  {
  	struct hnae3_handle *h = hns3_get_handle(netdev);
  
@@ -93,7 +93,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  		return 0;
  
  	return h->ae_algo->ops->get_rss_indir_size(h);
-@@ -694,7 +694,7 @@ static int hns3_get_rss(struct net_devic
+@@ -703,7 +703,7 @@ static int hns3_get_rss(struct net_devic
  {
  	struct hnae3_handle *h = hns3_get_handle(netdev);
  
@@ -102,7 +102,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  		return -EOPNOTSUPP;
  
  	return h->ae_algo->ops->get_rss(h, indir, key, hfunc);
-@@ -705,7 +705,7 @@ static int hns3_set_rss(struct net_devic
+@@ -714,7 +714,7 @@ static int hns3_set_rss(struct net_devic
  {
  	struct hnae3_handle *h = hns3_get_handle(netdev);
  
@@ -111,7 +111,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  		return -EOPNOTSUPP;
  
  	if ((h->pdev->revision == 0x20 &&
-@@ -730,9 +730,6 @@ static int hns3_get_rxnfc(struct net_dev
+@@ -739,9 +739,6 @@ static int hns3_get_rxnfc(struct net_dev
  {
  	struct hnae3_handle *h = hns3_get_handle(netdev);
  
@@ -121,7 +121,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  	switch (cmd->cmd) {
  	case ETHTOOL_GRXRINGS:
  		cmd->data = h->kinfo.num_tqps;
-@@ -846,9 +843,6 @@ static int hns3_set_rxnfc(struct net_dev
+@@ -855,9 +852,6 @@ static int hns3_set_rxnfc(struct net_dev
  {
  	struct hnae3_handle *h = hns3_get_handle(netdev);
  
@@ -131,7 +131,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  	switch (cmd->cmd) {
  	case ETHTOOL_SRXFH:
  		if (h->ae_algo->ops->set_rss_tuple)
-@@ -1107,7 +1101,7 @@ static int hns3_set_phys_id(struct net_d
+@@ -1116,7 +1110,7 @@ static int hns3_set_phys_id(struct net_d
  {
  	struct hnae3_handle *h = hns3_get_handle(netdev);
  
@@ -151,7 +151,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  static int hclge_set_mac_mtu(struct hclge_dev *hdev, int new_mps);
  static int hclge_init_vlan_config(struct hclge_dev *hdev);
  static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev);
-@@ -2012,7 +2014,8 @@ static int hclge_cfg_mac_speed_dup_hw(st
+@@ -2090,7 +2092,8 @@ static int hclge_cfg_mac_speed_dup_hw(st
  
  	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_CONFIG_SPEED_DUP, false);
  
@@ -161,16 +161,16 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  
  	switch (speed) {
  	case HCLGE_MAC_SPEED_10M:
-@@ -2259,7 +2262,7 @@ static void hclge_update_link_status(str
+@@ -2358,7 +2361,7 @@ static void hclge_update_port_capability
  
  static int hclge_get_sfp_speed(struct hclge_dev *hdev, u32 *speed)
  {
--	struct hclge_sfp_speed_cmd *resp = NULL;
-+	struct hclge_sfp_speed_cmd *resp;
+-	struct hclge_sfp_info_cmd *resp = NULL;
++	struct hclge_sfp_info_cmd *resp;
  	struct hclge_desc desc;
  	int ret;
  
-@@ -2955,6 +2958,25 @@ static int hclge_reset_prepare_up(struct
+@@ -3094,6 +3097,25 @@ static int hclge_reset_prepare_up(struct
  	return ret;
  }
  
@@ -196,18 +196,18 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  static void hclge_reset(struct hclge_dev *hdev)
  {
  	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
-@@ -2998,19 +3020,8 @@ static void hclge_reset(struct hclge_dev
+@@ -3137,19 +3159,8 @@ static void hclge_reset(struct hclge_dev
  		goto err_reset;
  
  	rtnl_lock();
 -	ret = hclge_notify_client(hdev, HNAE3_UNINIT_CLIENT);
 -	if (ret)
 -		goto err_reset_lock;
- 
+-
 -	ret = hclge_reset_ae_dev(hdev->ae_dev);
 -	if (ret)
 -		goto err_reset_lock;
--
+ 
 -	ret = hclge_notify_client(hdev, HNAE3_INIT_CLIENT);
 -	if (ret)
 -		goto err_reset_lock;
@@ -217,7 +217,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  	if (ret)
  		goto err_reset_lock;
  
-@@ -3020,16 +3031,23 @@ static void hclge_reset(struct hclge_dev
+@@ -3159,16 +3170,23 @@ static void hclge_reset(struct hclge_dev
  	if (ret)
  		goto err_reset_lock;
  
@@ -245,7 +245,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  	ret = hclge_notify_roce_client(hdev, HNAE3_UP_CLIENT);
  	if (ret)
  		goto err_reset;
-@@ -6124,7 +6142,9 @@ static int hclge_set_umv_space(struct hc
+@@ -6263,7 +6281,9 @@ static int hclge_set_umv_space(struct hc
  
  	req = (struct hclge_umv_spc_alc_cmd *)desc.data;
  	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_MAC_VLAN_ALLOCATE, false);
@@ -256,7 +256,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  	req->space_size = cpu_to_le32(space_size);
  
  	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
-@@ -6324,18 +6344,16 @@ int hclge_add_mc_addr_common(struct hclg
+@@ -6463,18 +6483,16 @@ int hclge_add_mc_addr_common(struct hclg
  	hnae3_set_bit(req.entry_type, HCLGE_MAC_VLAN_BIT0_EN_B, 0);
  	hclge_prepare_mac_addr(&req, addr, true);
  	status = hclge_lookup_mac_vlan_tbl(vport, &req, desc, true);
@@ -280,7 +280,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  
  	if (status == -ENOSPC)
  		dev_err(&hdev->pdev->dev, "mc mac vlan table is full\n");
-@@ -6373,7 +6391,9 @@ int hclge_rm_mc_addr_common(struct hclge
+@@ -6512,7 +6530,9 @@ int hclge_rm_mc_addr_common(struct hclge
  	status = hclge_lookup_mac_vlan_tbl(vport, &req, desc, true);
  	if (!status) {
  		/* This mac addr exist, remove this handle's VFID for it */
@@ -291,7 +291,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  
  		if (hclge_is_all_function_id_zero(desc))
  			/* All the vfid is zero, so need to delete this entry */
-@@ -7446,7 +7466,7 @@ static int hclge_set_mtu(struct hnae3_ha
+@@ -7585,7 +7605,7 @@ static int hclge_set_mtu(struct hnae3_ha
  int hclge_set_vport_mtu(struct hclge_vport *vport, int new_mtu)
  {
  	struct hclge_dev *hdev = vport->back;
@@ -300,7 +300,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  
  	max_frm_size = new_mtu + ETH_HLEN + ETH_FCS_LEN + 2 * VLAN_HLEN;
  	if (max_frm_size < HCLGE_MAC_MIN_FRAME ||
-@@ -7557,7 +7577,7 @@ int hclge_reset_tqp(struct hnae3_handle
+@@ -7696,7 +7716,7 @@ int hclge_reset_tqp(struct hnae3_handle
  	int reset_try_times = 0;
  	int reset_status;
  	u16 queue_gid;
@@ -309,7 +309,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  
  	queue_gid = hclge_covert_handle_qid_global(handle, queue_id);
  
-@@ -7574,7 +7594,6 @@ int hclge_reset_tqp(struct hnae3_handle
+@@ -7713,7 +7733,6 @@ int hclge_reset_tqp(struct hnae3_handle
  		return ret;
  	}
  
@@ -317,7 +317,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  	while (reset_try_times++ < HCLGE_TQP_RESET_TRY_TIMES) {
  		/* Wait for tqp hw reset */
  		msleep(20);
-@@ -7613,7 +7632,6 @@ void hclge_reset_vf_queue(struct hclge_v
+@@ -7752,7 +7771,6 @@ void hclge_reset_vf_queue(struct hclge_v
  		return;
  	}
  
@@ -325,7 +325,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  	while (reset_try_times++ < HCLGE_TQP_RESET_TRY_TIMES) {
  		/* Wait for tqp hw reset */
  		msleep(20);
-@@ -7689,7 +7707,7 @@ int hclge_cfg_flowctrl(struct hclge_dev
+@@ -7828,7 +7846,7 @@ int hclge_cfg_flowctrl(struct hclge_dev
  {
  	struct phy_device *phydev = hdev->hw.mac.phydev;
  	u16 remote_advertising = 0;
@@ -579,7 +579,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  	if (!ret)
  		qid_in_pf = *(u16 *)resp_data;
  
-@@ -417,7 +418,7 @@ static void hclgevf_request_link_info(st
+@@ -418,7 +419,7 @@ static void hclgevf_request_link_info(st
  	u8 resp_msg;
  
  	status = hclgevf_send_mbx_msg(hdev, HCLGE_MBX_GET_LINK_STATUS, 0, NULL,
@@ -588,7 +588,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  	if (status)
  		dev_err(&hdev->pdev->dev,
  			"VF failed to fetch link status(%d) from PF", status);
-@@ -452,11 +453,13 @@ static void hclgevf_update_link_mode(str
+@@ -453,11 +454,13 @@ static void hclgevf_update_link_mode(str
  	u8 resp_msg;
  
  	send_msg = HCLGEVF_ADVERTISING;
@@ -606,7 +606,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  }
  
  static int hclgevf_set_handle_info(struct hclgevf_dev *hdev)
-@@ -1185,7 +1188,7 @@ static int hclgevf_set_mac_addr(struct h
+@@ -1186,7 +1189,7 @@ static int hclgevf_set_mac_addr(struct h
  			HCLGE_MBX_MAC_VLAN_UC_MODIFY;
  
  	status = hclgevf_send_mbx_msg(hdev, HCLGE_MBX_SET_UNICAST,
@@ -615,7 +615,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  				      true, NULL, 0);
  	if (!status)
  		ether_addr_copy(hdev->hw.mac.mac_addr, new_mac_addr);
-@@ -1272,7 +1275,7 @@ static int hclgevf_reset_tqp(struct hnae
+@@ -1273,7 +1276,7 @@ static int hclgevf_reset_tqp(struct hnae
  	u8 msg_data[2];
  	int ret;
  
@@ -624,7 +624,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  
  	/* disable vf queue before send queue reset msg to PF */
  	ret = hclgevf_tqp_enable(hdev, queue_id, 0, false);
-@@ -1280,7 +1283,7 @@ static int hclgevf_reset_tqp(struct hnae
+@@ -1281,7 +1284,7 @@ static int hclgevf_reset_tqp(struct hnae
  		return ret;
  
  	return hclgevf_send_mbx_msg(hdev, HCLGE_MBX_QUEUE_RESET, 0, msg_data,
@@ -633,7 +633,7 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  }
  
  static int hclgevf_set_mtu(struct hnae3_handle *handle, int new_mtu)
-@@ -1767,7 +1770,7 @@ static void hclgevf_keep_alive_task(stru
+@@ -1768,7 +1771,7 @@ static void hclgevf_keep_alive_task(stru
  		return;
  
  	ret = hclgevf_send_mbx_msg(hdev, HCLGE_MBX_KEEP_ALIVE, 0, NULL,
