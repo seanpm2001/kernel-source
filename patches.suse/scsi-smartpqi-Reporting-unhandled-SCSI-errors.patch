@@ -1,0 +1,65 @@
+From: Erwan Velu <e.velu@criteo.com>
+Date: Thu, 21 Mar 2019 10:49:27 +0100
+Subject: scsi: smartpqi: Reporting unhandled SCSI errors
+Patch-mainline: v5.2-rc2
+Git-commit: 8ef860ae55e96c9e8999a12c800d9fd1a91f66d7
+References: bsc#1172418
+
+When a HARDWARE_ERROR is triggered for ASC=0x3e, the existing code is only
+considering the case where ASCQ=0x1.
+
+According to the http://www.t10.org/lists/asc-num.htm#ASC_3E specification,
+other values may occur like a timeout (ASCQ=0x2).
+
+This patch prints an error message when a non-handled message is received.
+This can help diagnose a possible misbehavior of the controller or a
+missing implementation in the Linux kernel.
+
+This patch keeps the exact same error handling but prints a message if an
+ASCQ != 1 is reported.
+
+[mkp: clarified commit message]
+
+Signed-off-by: Erwan Velu <e.velu@criteo.com>
+Acked-by: Don Brace <don.brace@microsemi.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Martin Wilck <mwilck@suse.com>
+---
+ drivers/scsi/smartpqi/smartpqi_init.c |   23 ++++++++++++++++-------
+ 1 file changed, 16 insertions(+), 7 deletions(-)
+
+--- a/drivers/scsi/smartpqi/smartpqi_init.c
++++ b/drivers/scsi/smartpqi/smartpqi_init.c
+@@ -2754,16 +2754,25 @@ static void pqi_process_raid_io_error(st
+ 			scsi_normalize_sense(error_info->data,
+ 				sense_data_length, &sshdr) &&
+ 				sshdr.sense_key == HARDWARE_ERROR &&
+-				sshdr.asc == 0x3e &&
+-				sshdr.ascq == 0x1) {
++				sshdr.asc == 0x3e) {
+ 			struct pqi_ctrl_info *ctrl_info = shost_to_hba(scmd->device->host);
+ 			struct pqi_scsi_dev *device = scmd->device->hostdata;
+ 
+-			if (printk_ratelimit())
+-				scmd_printk(KERN_ERR, scmd, "received 'logical unit failure' from controller for scsi %d:%d:%d:%d\n",
+-					ctrl_info->scsi_host->host_no, device->bus, device->target, device->lun);
+-			pqi_take_device_offline(scmd->device, "RAID");
+-			host_byte = DID_NO_CONNECT;
++			switch (sshdr.ascq) {
++			case 0x1: /* LOGICAL UNIT FAILURE */
++				if (printk_ratelimit())
++					scmd_printk(KERN_ERR, scmd, "received 'logical unit failure' from controller for scsi %d:%d:%d:%d\n",
++						ctrl_info->scsi_host->host_no, device->bus, device->target, device->lun);
++				pqi_take_device_offline(scmd->device, "RAID");
++				host_byte = DID_NO_CONNECT;
++				break;
++
++			default: /* See http://www.t10.org/lists/asc-num.htm#ASC_3E */
++				if (printk_ratelimit())
++					scmd_printk(KERN_ERR, scmd, "received unhandled error %d from controller for scsi %d:%d:%d:%d\n",
++						sshdr.ascq, ctrl_info->scsi_host->host_no, device->bus, device->target, device->lun);
++				break;
++			}
+ 		}
+ 
+ 		if (sense_data_length > SCSI_SENSE_BUFFERSIZE)
