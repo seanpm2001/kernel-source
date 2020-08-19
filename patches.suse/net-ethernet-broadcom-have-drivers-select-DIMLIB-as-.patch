@@ -1,0 +1,61 @@
+From: Randy Dunlap <rdunlap@infradead.org>
+Date: Fri, 11 Oct 2019 21:03:33 -0700
+Subject: net: ethernet: broadcom: have drivers select DIMLIB as needed
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Patch-mainline: v5.4-rc4
+Git-commit: ddc790e92b3afa4e366ffb41818cfcd19015031e
+References: bsc#1174852
+
+NET_VENDOR_BROADCOM is intended to control a kconfig menu only.
+It should not have anything to do with code generation.
+As such, it should not select DIMLIB for all drivers under
+NET_VENDOR_BROADCOM.  Instead each driver that needs DIMLIB should
+select it (being the symbols SYSTEMPORT, BNXT, and BCMGENET).
+
+SUSE: We only have DIM support for BNXT
+
+Link: https://lkml.kernel.org/r/alpine.DEB.2.21.1907021810220.13058@ramsan.of.borg/
+
+Fixes: 4f75da3666c0 ("linux/dim: Move implementation to .c files")
+Reported-by: Geert Uytterhoeven <geert@linux-m68k.org>
+Signed-off-by: Randy Dunlap <rdunlap@infradead.org>
+Cc: Uwe Kleine-König <uwe@kleine-koenig.org>
+Cc: Tal Gilboa <talgi@mellanox.com>
+Cc: Saeed Mahameed <saeedm@mellanox.com>
+Cc: netdev@vger.kernel.org
+Cc: linux-rdma@vger.kernel.org
+Cc: "David S. Miller" <davem@davemloft.net>
+Cc: Jakub Kicinski <jakub.kicinski@netronome.com>
+Cc: Doug Ledford <dledford@redhat.com>
+Cc: Jason Gunthorpe <jgg@mellanox.com>
+Cc: Leon Romanovsky <leonro@mellanox.com>
+Cc: Or Gerlitz <ogerlitz@mellanox.com>
+Cc: Sagi Grimberg <sagi@grimberg.me>
+Acked-by: Florian Fainelli <f.fainelli@gmail.com>
+Reviewed-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/broadcom/Kconfig |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/net/ethernet/broadcom/Kconfig
++++ b/drivers/net/ethernet/broadcom/Kconfig
+@@ -7,7 +7,6 @@ config NET_VENDOR_BROADCOM
+ 	default y
+ 	depends on (SSB_POSSIBLE && HAS_DMA) || PCI || BCM63XX || \
+ 		   SIBYTE_SB1xxx_SOC
+-	select DIMLIB
+ 	---help---
+ 	  If you have a network (Ethernet) chipset belonging to this class,
+ 	  say Y.
+@@ -197,6 +196,7 @@ config BNXT
+ 	depends on MAY_USE_DEVLINK
+ 	select FW_LOADER
+ 	select LIBCRC32C
++	select DIMLIB
+ 	---help---
+ 	  This driver supports Broadcom NetXtreme-C/E 10/25/40/50 gigabit
+ 	  Ethernet cards.  To compile this driver as a module, choose M here:
