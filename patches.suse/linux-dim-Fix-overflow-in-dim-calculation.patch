@@ -1,0 +1,73 @@
+From: Yamin Friedman <yaminf@mellanox.com>
+Date: Tue, 23 Jul 2019 10:22:47 +0300
+Subject: linux/dim: Fix overflow in dim calculation
+Patch-mainline: v5.3-rc4
+Git-commit: f06d0ca45827a5790d7508de4759aed976933d4d
+References: bsc#1174852
+
+While using net_dim, a dim_sample was used without ever initializing the
+comps value. Added use of DIV_ROUND_DOWN_ULL() to prevent potential
+overflow, it should not be a problem to save the final result in an int
+because after the division by epms the value should not be larger than a
+few thousand.
+
+[ 1040.127124] UBSAN: Undefined behaviour in lib/dim/dim.c:78:23
+[ 1040.130118] signed integer overflow:
+[ 1040.131643] 134718714 * 100 cannot be represented in type 'int'
+
+Fixes: 398c2b05bbee ("linux/dim: Add completions count to dim_sample")
+Signed-off-by: Yamin Friedman <yaminf@mellanox.com>
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Acked-by: Saeed Mahameed <saeedm@mellanox.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/broadcom/bnxt/bnxt.c         |    2 +-
+ drivers/net/ethernet/mellanox/mlx5/core/en_txrx.c |    4 ++--
+ lib/dim/dim.c                                     |    4 ++--
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+@@ -2131,7 +2131,7 @@ static int bnxt_poll(struct napi_struct
+ 		}
+ 	}
+ 	if (bp->flags & BNXT_FLAG_DIM) {
+-		struct dim_sample dim_sample;
++		struct dim_sample dim_sample = {};
+ 
+ 		dim_update_sample(cpr->event_ctr,
+ 				  cpr->rx_packets,
+--- a/drivers/net/ethernet/mellanox/mlx5/core/en_txrx.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/en_txrx.c
+@@ -48,7 +48,7 @@ static inline bool mlx5e_channel_no_affi
+ static void mlx5e_handle_tx_dim(struct mlx5e_txqsq *sq)
+ {
+ 	struct mlx5e_sq_stats *stats = sq->stats;
+-	struct dim_sample dim_sample;
++	struct dim_sample dim_sample = {};
+ 
+ 	if (unlikely(!test_bit(MLX5E_SQ_STATE_AM, &sq->state)))
+ 		return;
+@@ -60,7 +60,7 @@ static void mlx5e_handle_tx_dim(struct m
+ static void mlx5e_handle_rx_dim(struct mlx5e_rq *rq)
+ {
+ 	struct mlx5e_rq_stats *stats = rq->stats;
+-	struct dim_sample dim_sample;
++	struct dim_sample dim_sample = {};
+ 
+ 	if (unlikely(!test_bit(MLX5E_RQ_STATE_AM, &rq->state)))
+ 		return;
+--- a/lib/dim/dim.c
++++ b/lib/dim/dim.c
+@@ -74,8 +74,8 @@ void dim_calc_stats(struct dim_sample *s
+ 					delta_us);
+ 	curr_stats->cpms = DIV_ROUND_UP(ncomps * USEC_PER_MSEC, delta_us);
+ 	if (curr_stats->epms != 0)
+-		curr_stats->cpe_ratio =
+-				(curr_stats->cpms * 100) / curr_stats->epms;
++		curr_stats->cpe_ratio = DIV_ROUND_DOWN_ULL(
++			curr_stats->cpms * 100, curr_stats->epms);
+ 	else
+ 		curr_stats->cpe_ratio = 0;
+ 

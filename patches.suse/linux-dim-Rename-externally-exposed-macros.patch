@@ -1,0 +1,179 @@
+From: Tal Gilboa <talgi@mellanox.com>
+Date: Mon, 5 Nov 2018 12:07:52 +0200
+Subject: linux/dim: Rename externally exposed macros
+Patch-mainline: v5.3-rc1
+Git-commit: c002bd529d719858d4cc233431c88c9efa844053
+References: bsc#1174852
+
+Renamed macros in use by external drivers.
+
+Signed-off-by: Tal Gilboa <talgi@mellanox.com>
+Signed-off-by: Saeed Mahameed <saeedm@mellanox.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/broadcom/bnxt/bnxt.c         |    2 +-
+ drivers/net/ethernet/broadcom/bnxt/bnxt_dim.c     |    2 +-
+ drivers/net/ethernet/mellanox/mlx5/core/en_dim.c  |    2 +-
+ drivers/net/ethernet/mellanox/mlx5/core/en_main.c |   10 +++++-----
+ include/linux/dim.h                               |   12 ++++++------
+ include/linux/net_dim.h                           |   18 +++++++++---------
+ 6 files changed, 23 insertions(+), 23 deletions(-)
+
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+@@ -7710,7 +7710,7 @@ static void bnxt_enable_napi(struct bnxt
+ 
+ 		if (bp->bnapi[i]->rx_ring) {
+ 			INIT_WORK(&cpr->dim.work, bnxt_dim_work);
+-			cpr->dim.mode = NET_DIM_CQ_PERIOD_MODE_START_FROM_EQE;
++			cpr->dim.mode = DIM_CQ_PERIOD_MODE_START_FROM_EQE;
+ 		}
+ 		napi_enable(&bp->bnapi[i]->napi);
+ 	}
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt_dim.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt_dim.c
+@@ -28,5 +28,5 @@ void bnxt_dim_work(struct work_struct *w
+ 	cpr->rx_ring_coal.coal_bufs = cur_moder.pkts;
+ 
+ 	bnxt_hwrm_set_ring_coal(bnapi->bp, bnapi);
+-	dim->state = NET_DIM_START_MEASURE;
++	dim->state = DIM_START_MEASURE;
+ }
+--- a/drivers/net/ethernet/mellanox/mlx5/core/en_dim.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/en_dim.c
+@@ -38,7 +38,7 @@ mlx5e_complete_dim_work(struct net_dim *
+ 			struct mlx5_core_dev *mdev, struct mlx5_core_cq *mcq)
+ {
+ 	mlx5_core_modify_cq_moderation(mdev, mcq, moder.usec, moder.pkts);
+-	dim->state = NET_DIM_START_MEASURE;
++	dim->state = DIM_START_MEASURE;
+ }
+ 
+ void mlx5e_rx_dim_work(struct work_struct *work)
+--- a/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
+@@ -675,11 +675,11 @@ static int mlx5e_alloc_rq(struct mlx5e_c
+ 
+ 	switch (params->rx_cq_moderation.cq_period_mode) {
+ 	case MLX5_CQ_PERIOD_MODE_START_FROM_CQE:
+-		rq->dim.mode = NET_DIM_CQ_PERIOD_MODE_START_FROM_CQE;
++		rq->dim.mode = DIM_CQ_PERIOD_MODE_START_FROM_CQE;
+ 		break;
+ 	case MLX5_CQ_PERIOD_MODE_START_FROM_EQE:
+ 	default:
+-		rq->dim.mode = NET_DIM_CQ_PERIOD_MODE_START_FROM_EQE;
++		rq->dim.mode = DIM_CQ_PERIOD_MODE_START_FROM_EQE;
+ 	}
+ 
+ 	rq->page_cache.head = 0;
+@@ -2283,7 +2283,7 @@ static void mlx5e_build_ico_cq_param(str
+ 
+ 	mlx5e_build_common_cq_param(priv, param);
+ 
+-	param->cq_period_mode = NET_DIM_CQ_PERIOD_MODE_START_FROM_EQE;
++	param->cq_period_mode = DIM_CQ_PERIOD_MODE_START_FROM_EQE;
+ }
+ 
+ static void mlx5e_build_icosq_param(struct mlx5e_priv *priv,
+@@ -4480,8 +4480,8 @@ static struct net_dim_cq_moder mlx5e_get
+ static u8 mlx5_to_net_dim_cq_period_mode(u8 cq_period_mode)
+ {
+ 	return cq_period_mode == MLX5_CQ_PERIOD_MODE_START_FROM_CQE ?
+-		NET_DIM_CQ_PERIOD_MODE_START_FROM_CQE :
+-		NET_DIM_CQ_PERIOD_MODE_START_FROM_EQE;
++		DIM_CQ_PERIOD_MODE_START_FROM_CQE :
++		DIM_CQ_PERIOD_MODE_START_FROM_EQE;
+ }
+ 
+ void mlx5e_set_tx_cq_mode_params(struct mlx5e_params *params, u8 cq_period_mode)
+--- a/include/linux/dim.h
++++ b/include/linux/dim.h
+@@ -47,15 +47,15 @@ struct net_dim { /* Dynamic Interrupt Mo
+ };
+ 
+ enum {
+-	NET_DIM_CQ_PERIOD_MODE_START_FROM_EQE = 0x0,
+-	NET_DIM_CQ_PERIOD_MODE_START_FROM_CQE = 0x1,
+-	NET_DIM_CQ_PERIOD_NUM_MODES
++	DIM_CQ_PERIOD_MODE_START_FROM_EQE = 0x0,
++	DIM_CQ_PERIOD_MODE_START_FROM_CQE = 0x1,
++	DIM_CQ_PERIOD_NUM_MODES
+ };
+ 
+ enum {
+-	NET_DIM_START_MEASURE,
+-	NET_DIM_MEASURE_IN_PROGRESS,
+-	NET_DIM_APPLY_NEW_PROFILE,
++	DIM_START_MEASURE,
++	DIM_MEASURE_IN_PROGRESS,
++	DIM_APPLY_NEW_PROFILE,
+ };
+ 
+ enum {
+--- a/include/linux/net_dim.h
++++ b/include/linux/net_dim.h
+@@ -78,13 +78,13 @@
+ }
+ 
+ static const struct net_dim_cq_moder
+-rx_profile[NET_DIM_CQ_PERIOD_NUM_MODES][NET_DIM_PARAMS_NUM_PROFILES] = {
++rx_profile[DIM_CQ_PERIOD_NUM_MODES][NET_DIM_PARAMS_NUM_PROFILES] = {
+ 	NET_DIM_RX_EQE_PROFILES,
+ 	NET_DIM_RX_CQE_PROFILES,
+ };
+ 
+ static const struct net_dim_cq_moder
+-tx_profile[NET_DIM_CQ_PERIOD_NUM_MODES][NET_DIM_PARAMS_NUM_PROFILES] = {
++tx_profile[DIM_CQ_PERIOD_NUM_MODES][NET_DIM_PARAMS_NUM_PROFILES] = {
+ 	NET_DIM_TX_EQE_PROFILES,
+ 	NET_DIM_TX_CQE_PROFILES,
+ };
+@@ -101,7 +101,7 @@ net_dim_get_rx_moderation(u8 cq_period_m
+ static inline struct net_dim_cq_moder
+ net_dim_get_def_rx_moderation(u8 cq_period_mode)
+ {
+-	u8 profile_ix = cq_period_mode == NET_DIM_CQ_PERIOD_MODE_START_FROM_CQE ?
++	u8 profile_ix = cq_period_mode == DIM_CQ_PERIOD_MODE_START_FROM_CQE ?
+ 			NET_DIM_DEF_PROFILE_CQE : NET_DIM_DEF_PROFILE_EQE;
+ 
+ 	return net_dim_get_rx_moderation(cq_period_mode, profile_ix);
+@@ -119,7 +119,7 @@ net_dim_get_tx_moderation(u8 cq_period_m
+ static inline struct net_dim_cq_moder
+ net_dim_get_def_tx_moderation(u8 cq_period_mode)
+ {
+-	u8 profile_ix = cq_period_mode == NET_DIM_CQ_PERIOD_MODE_START_FROM_CQE ?
++	u8 profile_ix = cq_period_mode == DIM_CQ_PERIOD_MODE_START_FROM_CQE ?
+ 			NET_DIM_DEF_PROFILE_CQE : NET_DIM_DEF_PROFILE_EQE;
+ 
+ 	return net_dim_get_tx_moderation(cq_period_mode, profile_ix);
+@@ -247,7 +247,7 @@ static inline void net_dim(struct net_di
+ 	u16 nevents;
+ 
+ 	switch (dim->state) {
+-	case NET_DIM_MEASURE_IN_PROGRESS:
++	case DIM_MEASURE_IN_PROGRESS:
+ 		nevents = BIT_GAP(BITS_PER_TYPE(u16),
+ 				  end_sample.event_ctr,
+ 				  dim->start_sample.event_ctr);
+@@ -255,17 +255,17 @@ static inline void net_dim(struct net_di
+ 			break;
+ 		dim_calc_stats(&dim->start_sample, &end_sample, &curr_stats);
+ 		if (net_dim_decision(&curr_stats, dim)) {
+-			dim->state = NET_DIM_APPLY_NEW_PROFILE;
++			dim->state = DIM_APPLY_NEW_PROFILE;
+ 			schedule_work(&dim->work);
+ 			break;
+ 		}
+ 		/* fall through */
+-	case NET_DIM_START_MEASURE:
++	case DIM_START_MEASURE:
+ 		net_dim_sample(end_sample.event_ctr, end_sample.pkt_ctr, end_sample.byte_ctr,
+ 			       &dim->start_sample);
+-		dim->state = NET_DIM_MEASURE_IN_PROGRESS;
++		dim->state = DIM_MEASURE_IN_PROGRESS;
+ 		break;
+-	case NET_DIM_APPLY_NEW_PROFILE:
++	case DIM_APPLY_NEW_PROFILE:
+ 		break;
+ 	}
+ }
