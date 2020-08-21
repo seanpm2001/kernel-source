@@ -1,0 +1,102 @@
+From d6a328b00aeff188172d3951786e2cef8bb69c29 Mon Sep 17 00:00:00 2001
+From: Florian Westphal <fw@strlen.de>
+Date: Tue, 27 Feb 2018 19:42:33 +0100
+Subject: [PATCH 07/19] netfilter: x_tables: add counters allocation wrapper
+Git-commit: c84ca954ac9fa67a6ce27f91f01e4451c74fd8f6 
+Patch-mainline: v4.17-rc1 
+References: git-fixes
+
+allows to have size checks in a single spot.
+This is supposed to reduce oom situations when fuzz-testing xtables.
+
+Signed-off-by: Florian Westphal <fw@strlen.de>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Acked-by: Denis Kirjanov <dkirjanov@suse.com>
+---
+ include/linux/netfilter/x_tables.h |  1 +
+ net/ipv4/netfilter/arp_tables.c    |  2 +-
+ net/ipv4/netfilter/ip_tables.c     |  2 +-
+ net/ipv6/netfilter/ip6_tables.c    |  2 +-
+ net/netfilter/x_tables.c           | 15 +++++++++++++++
+ 5 files changed, 19 insertions(+), 3 deletions(-)
+
+diff --git a/include/linux/netfilter/x_tables.h b/include/linux/netfilter/x_tables.h
+index b3044c2c62cb..2120cd63db3c 100644
+--- a/include/linux/netfilter/x_tables.h
++++ b/include/linux/netfilter/x_tables.h
+@@ -298,6 +298,7 @@ int xt_data_to_user(void __user *dst, const void *src,
+ 
+ void *xt_copy_counters_from_user(const void __user *user, unsigned int len,
+ 				 struct xt_counters_info *info, bool compat);
++struct xt_counters *xt_counters_alloc(unsigned int counters);
+ 
+ struct xt_table *xt_register_table(struct net *net,
+ 				   const struct xt_table *table,
+diff --git a/net/ipv4/netfilter/arp_tables.c b/net/ipv4/netfilter/arp_tables.c
+index 11726a2e2c9f..769220f4ec98 100644
+--- a/net/ipv4/netfilter/arp_tables.c
++++ b/net/ipv4/netfilter/arp_tables.c
+@@ -882,7 +882,7 @@ static int __do_replace(struct net *net, const char *name,
+ 	struct arpt_entry *iter;
+ 
+ 	ret = 0;
+-	counters = vzalloc(num_counters * sizeof(struct xt_counters));
++	counters = xt_counters_alloc(num_counters);
+ 	if (!counters) {
+ 		ret = -ENOMEM;
+ 		goto out;
+diff --git a/net/ipv4/netfilter/ip_tables.c b/net/ipv4/netfilter/ip_tables.c
+index 7bf9d034112f..0966c3b60e59 100644
+--- a/net/ipv4/netfilter/ip_tables.c
++++ b/net/ipv4/netfilter/ip_tables.c
+@@ -1049,7 +1049,7 @@ __do_replace(struct net *net, const char *name, unsigned int valid_hooks,
+ 	struct ipt_entry *iter;
+ 
+ 	ret = 0;
+-	counters = vzalloc(num_counters * sizeof(struct xt_counters));
++	counters = xt_counters_alloc(num_counters);
+ 	if (!counters) {
+ 		ret = -ENOMEM;
+ 		goto out;
+diff --git a/net/ipv6/netfilter/ip6_tables.c b/net/ipv6/netfilter/ip6_tables.c
+index f2b3b5879536..2ec20a59d6cb 100644
+--- a/net/ipv6/netfilter/ip6_tables.c
++++ b/net/ipv6/netfilter/ip6_tables.c
+@@ -1069,7 +1069,7 @@ __do_replace(struct net *net, const char *name, unsigned int valid_hooks,
+ 	struct ip6t_entry *iter;
+ 
+ 	ret = 0;
+-	counters = vzalloc(num_counters * sizeof(struct xt_counters));
++	counters = xt_counters_alloc(num_counters);
+ 	if (!counters) {
+ 		ret = -ENOMEM;
+ 		goto out;
+diff --git a/net/netfilter/x_tables.c b/net/netfilter/x_tables.c
+index 5cb719a877cd..8586eef34303 100644
+--- a/net/netfilter/x_tables.c
++++ b/net/netfilter/x_tables.c
+@@ -1159,6 +1159,21 @@ static int xt_jumpstack_alloc(struct xt_table_info *i)
+ 	return 0;
+ }
+ 
++struct xt_counters *xt_counters_alloc(unsigned int counters)
++{
++	struct xt_counters *mem;
++
++	if (counters == 0 || counters > INT_MAX / sizeof(*mem))
++		return NULL;
++
++	counters *= sizeof(*mem);
++	if (counters > XT_MAX_TABLE_SIZE)
++		return NULL;
++
++	return vzalloc(counters);
++}
++EXPORT_SYMBOL(xt_counters_alloc);
++
+ struct xt_table_info *
+ xt_replace_table(struct xt_table *table,
+ 	      unsigned int num_counters,
+-- 
+2.16.4
+

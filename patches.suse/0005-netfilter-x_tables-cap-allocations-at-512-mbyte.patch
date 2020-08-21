@@ -1,0 +1,43 @@
+From a95a2a6f0ad7eee35a9b32f3726ba3192409bda5 Mon Sep 17 00:00:00 2001
+From: Florian Westphal <fw@strlen.de>
+Date: Tue, 27 Feb 2018 19:42:31 +0100
+Subject: [PATCH 05/19] netfilter: x_tables: cap allocations at 512 mbyte
+Git-commit: 19926968ea86a286aa6fbea16ee3f2e7442f10f0 
+Patch-mainline: v4.17-rc1 
+References: git-fixes
+
+Arbitrary limit, however, this still allows huge rulesets
+(> 1 million rules).  This helps with automated fuzzer as it prevents
+oom-killer invocation.
+
+Signed-off-by: Florian Westphal <fw@strlen.de>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Acked-by: Denis Kirjanov <dkirjanov@suse.com>
+---
+ net/netfilter/x_tables.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/net/netfilter/x_tables.c b/net/netfilter/x_tables.c
+index 32fe10a98fae..6804253c94e3 100644
+--- a/net/netfilter/x_tables.c
++++ b/net/netfilter/x_tables.c
+@@ -40,6 +40,7 @@ MODULE_AUTHOR("Harald Welte <laforge@netfilter.org>");
+ MODULE_DESCRIPTION("{ip,ip6,arp,eb}_tables backend module");
+ 
+ #define XT_PCPU_BLOCK_SIZE 4096
++#define XT_MAX_TABLE_SIZE	(512 * 1024 * 1024)
+ 
+ struct compat_delta {
+ 	unsigned int offset; /* offset in kernel */
+@@ -1001,7 +1002,7 @@ struct xt_table_info *xt_alloc_table_info(unsigned int size)
+ 	struct xt_table_info *info = NULL;
+ 	size_t sz = sizeof(*info) + size;
+ 
+-	if (sz < sizeof(*info))
++	if (sz < sizeof(*info) || sz >= XT_MAX_TABLE_SIZE)
+ 		return NULL;
+ 
+ 	/* Pedantry: prevent them from hitting BUG() in vmalloc.c --RR */
+-- 
+2.16.4
+

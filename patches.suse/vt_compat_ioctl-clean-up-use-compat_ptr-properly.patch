@@ -1,0 +1,91 @@
+From 9d1807daefc00c7b3a4ecca02e3a783263c1e00d Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@zeniv.linux.org.uk>
+Date: Wed, 12 Sep 2018 19:02:10 -0400
+Subject: [PATCH] vt_compat_ioctl(): clean up, use compat_ptr() properly
+Git-commit: 9d1807daefc00c7b3a4ecca02e3a783263c1e00d
+Patch-mainline: v4.20-rc1
+References: git-fixes
+
+we need it for "convert the structure" cases too
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/tty/vt/vt_ioctl.c | 31 +++++++++----------------------
+ 1 file changed, 9 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/tty/vt/vt_ioctl.c b/drivers/tty/vt/vt_ioctl.c
+index a78ad10a119b..82d38d7ba014 100644
+--- a/drivers/tty/vt/vt_ioctl.c
++++ b/drivers/tty/vt/vt_ioctl.c
+@@ -1171,17 +1171,13 @@ long vt_compat_ioctl(struct tty_struct *tty,
+ {
+ 	struct vc_data *vc = tty->driver_data;
+ 	struct console_font_op op;	/* used in multiple places here */
+-	unsigned int console;
+-	void __user *up = (void __user *)arg;
++	unsigned int console = vc->vc_num;
++	void __user *up = compat_ptr(arg);
+ 	int perm;
+-	int ret = 0;
+ 
+-	console = vc->vc_num;
+ 
+-	if (!vc_cons_allocated(console)) { 	/* impossible? */
+-		ret = -ENOIOCTLCMD;
+-		goto out;
+-	}
++	if (!vc_cons_allocated(console)) 	/* impossible? */
++		return -ENOIOCTLCMD;
+ 
+ 	/*
+ 	 * To have permissions to do most of the vt ioctls, we either have
+@@ -1197,17 +1193,14 @@ long vt_compat_ioctl(struct tty_struct *tty,
+ 	 */
+ 	case PIO_FONTX:
+ 	case GIO_FONTX:
+-		ret = compat_fontx_ioctl(cmd, up, perm, &op);
+-		break;
++		return compat_fontx_ioctl(cmd, up, perm, &op);
+ 
+ 	case KDFONTOP:
+-		ret = compat_kdfontop_ioctl(up, perm, &op, vc);
+-		break;
++		return compat_kdfontop_ioctl(up, perm, &op, vc);
+ 
+ 	case PIO_UNIMAP:
+ 	case GIO_UNIMAP:
+-		ret = compat_unimap_ioctl(cmd, up, perm, vc);
+-		break;
++		return compat_unimap_ioctl(cmd, up, perm, vc);
+ 
+ 	/*
+ 	 * all these treat 'arg' as an integer
+@@ -1232,21 +1225,15 @@ long vt_compat_ioctl(struct tty_struct *tty,
+ 	case VT_DISALLOCATE:
+ 	case VT_RESIZE:
+ 	case VT_RESIZEX:
+-		goto fallback;
++		return vt_ioctl(tty, cmd, arg);
+ 
+ 	/*
+ 	 * the rest has a compatible data structure behind arg,
+ 	 * but we have to convert it to a proper 64 bit pointer.
+ 	 */
+ 	default:
+-		arg = (unsigned long)compat_ptr(arg);
+-		goto fallback;
++		return vt_ioctl(tty, cmd, (unsigned long)up);
+ 	}
+-out:
+-	return ret;
+-
+-fallback:
+-	return vt_ioctl(tty, cmd, arg);
+ }
+ 
+ 
+-- 
+2.16.4
+

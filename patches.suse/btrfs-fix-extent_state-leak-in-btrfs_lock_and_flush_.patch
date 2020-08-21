@@ -1,0 +1,63 @@
+From: Naohiro Aota <naohiro.aota@wdc.com>
+Date: Fri, 26 Jul 2019 16:47:05 +0900
+Git-commit: a3b46b86ca76d7f9d487e6a0b594fd1984e0796e
+Patch-mainline: 5.3
+References: bsc#1174438
+Subject: [PATCH] btrfs: fix extent_state leak in
+ btrfs_lock_and_flush_ordered_range
+
+btrfs_lock_and_flush_ordered_range() loads given "*cached_state" into
+cachedp, which, in general, is NULL. Then, lock_extent_bits() updates
+"cachedp", but it never goes backs to the caller. Thus the caller still
+see its "cached_state" to be NULL and never free the state allocated
+under btrfs_lock_and_flush_ordered_range(). As a result, we will
+see massive state leak with e.g. fstests btrfs/005. Fix this bug by
+properly handling the pointers.
+
+Fixes: bd80d94efb83 ("btrfs: Always use a cached extent_state in btrfs_lock_and_flush_ordered_range")
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Naohiro Aota <naohiro.aota@wdc.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Signed-off-by: Filipe Manana <fdmanana@suse.com>
+---
+ fs/btrfs/ordered-data.c | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/fs/btrfs/ordered-data.c b/fs/btrfs/ordered-data.c
+index 1b50811b37d0..ffa34a0b04ad 100644
+--- a/fs/btrfs/ordered-data.c
++++ b/fs/btrfs/ordered-data.c
+@@ -1166,13 +1166,14 @@ void btrfs_lock_and_flush_ordered_range(struct extent_io_tree *tree,
+ 					struct extent_state **cached_state)
+ {
+ 	struct btrfs_ordered_extent *ordered;
+-	struct extent_state *cachedp = NULL;
++	struct extent_state *cache = NULL;
++	struct extent_state **cachedp = &cache;
+ 
+ 	if (cached_state)
+-		cachedp = *cached_state;
++		cachedp = cached_state;
+ 
+ 	while (1) {
+-		lock_extent_bits(tree, start, end, &cachedp);
++		lock_extent_bits(tree, start, end, cachedp);
+ 		ordered = btrfs_lookup_ordered_range(inode, start,
+ 						     end - start + 1);
+ 		if (!ordered) {
+@@ -1182,10 +1183,10 @@ void btrfs_lock_and_flush_ordered_range(struct extent_io_tree *tree,
+ 			 * aren't exposing it outside of this function
+ 			 */
+ 			if (!cached_state)
+-				refcount_dec(&cachedp->refs);
++				refcount_dec(&cache->refs);
+ 			break;
+ 		}
+-		unlock_extent_cached(tree, start, end, &cachedp, GFP_NOFS);
++		unlock_extent_cached(tree, start, end, cachedp, GFP_NOFS);
+ 		btrfs_start_ordered_extent(&inode->vfs_inode, ordered, 1);
+ 		btrfs_put_ordered_extent(ordered);
+ 	}
+-- 
+2.26.2
+

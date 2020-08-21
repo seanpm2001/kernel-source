@@ -1,0 +1,153 @@
+From: Nikolay Borisov <nborisov@suse.com>
+Date: Mon, 25 Mar 2019 14:31:24 +0200
+Git-commit: 41e7acd38c1ae82f24f51d302bbdecdb4675b6b2
+Patch-mainline: 5.2
+References: bsc#1175149
+Subject: [PATCH] btrfs: Rename and export clear_btree_io_tree
+
+This function is going to be used to clear out the device extent
+allocation information. Give it a more generic name and export it. This
+is in preparation to replacing the pending/pinned chunk lists with an
+extent tree. No functional changes.
+
+Signed-off-by: Nikolay Borisov <nborisov@suse.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Signed-off-by: Filipe Manana <fdmanana@suse.com>
+---
+ fs/btrfs/extent_io.c   | 29 +++++++++++++++++++++++++++++
+ fs/btrfs/extent_io.h   |  1 +
+ fs/btrfs/transaction.c | 37 ++++---------------------------------
+ 3 files changed, 34 insertions(+), 33 deletions(-)
+
+diff --git a/fs/btrfs/extent_io.c b/fs/btrfs/extent_io.c
+index 77fbe3a9e982..3d36272aedea 100644
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -276,6 +276,35 @@ void extent_io_tree_init(struct extent_io_tree *tree,
+ 	tree->mapping = mapping;
+ }
+ 
++void extent_io_tree_release(struct extent_io_tree *tree)
++{
++	spin_lock(&tree->lock);
++	/*
++	 * Do a single barrier for the waitqueue_active check here, the state
++	 * of the waitqueue should not change once extent_io_tree_release is
++	 * called.
++	 */
++	smp_mb();
++	while (!RB_EMPTY_ROOT(&tree->state)) {
++		struct rb_node *node;
++		struct extent_state *state;
++
++		node = rb_first(&tree->state);
++		state = rb_entry(node, struct extent_state, rb_node);
++		rb_erase(&state->rb_node, &tree->state);
++		RB_CLEAR_NODE(&state->rb_node);
++		/*
++		 * btree io trees aren't supposed to have tasks waiting for
++		 * changes in the flags of extent states ever.
++		 */
++		ASSERT(!waitqueue_active(&state->wq));
++		free_extent_state(state);
++
++		cond_resched_lock(&tree->lock);
++	}
++	spin_unlock(&tree->lock);
++}
++
+ static struct extent_state *alloc_extent_state(gfp_t mask)
+ {
+ 	struct extent_state *state;
+diff --git a/fs/btrfs/extent_io.h b/fs/btrfs/extent_io.h
+index 9a2befc07efa..7c976bce62da 100644
+--- a/fs/btrfs/extent_io.h
++++ b/fs/btrfs/extent_io.h
+@@ -265,6 +265,7 @@ typedef struct extent_map *(get_extent_t)(struct btrfs_inode *inode,
+ 
+ void extent_io_tree_init(struct extent_io_tree *tree,
+ 			 struct address_space *mapping);
++void extent_io_tree_release(struct extent_io_tree *tree);
+ int try_release_extent_mapping(struct extent_map_tree *map,
+ 			       struct extent_io_tree *tree, struct page *page,
+ 			       gfp_t mask);
+diff --git a/fs/btrfs/transaction.c b/fs/btrfs/transaction.c
+index 11af9ece9ad3..04e36a507502 100644
+--- a/fs/btrfs/transaction.c
++++ b/fs/btrfs/transaction.c
+@@ -99,35 +99,6 @@ void btrfs_put_transaction(struct btrfs_transaction *transaction)
+ 	}
+ }
+ 
+-static void clear_btree_io_tree(struct extent_io_tree *tree)
+-{
+-	spin_lock(&tree->lock);
+-	/*
+-	 * Do a single barrier for the waitqueue_active check here, the state
+-	 * of the waitqueue should not change once clear_btree_io_tree is
+-	 * called.
+-	 */
+-	smp_mb();
+-	while (!RB_EMPTY_ROOT(&tree->state)) {
+-		struct rb_node *node;
+-		struct extent_state *state;
+-
+-		node = rb_first(&tree->state);
+-		state = rb_entry(node, struct extent_state, rb_node);
+-		rb_erase(&state->rb_node, &tree->state);
+-		RB_CLEAR_NODE(&state->rb_node);
+-		/*
+-		 * btree io trees aren't supposed to have tasks waiting for
+-		 * changes in the flags of extent states ever.
+-		 */
+-		ASSERT(!waitqueue_active(&state->wq));
+-		free_extent_state(state);
+-
+-		cond_resched_lock(&tree->lock);
+-	}
+-	spin_unlock(&tree->lock);
+-}
+-
+ static noinline void switch_commit_roots(struct btrfs_transaction *trans,
+ 					 struct btrfs_fs_info *fs_info)
+ {
+@@ -141,7 +112,7 @@ static noinline void switch_commit_roots(struct btrfs_transaction *trans,
+ 		root->commit_root = btrfs_root_node(root);
+ 		if (is_fstree(root->objectid))
+ 			btrfs_unpin_free_ino(root);
+-		clear_btree_io_tree(&root->dirty_log_pages);
++		extent_io_tree_release(&root->dirty_log_pages);
+ 		btrfs_qgroup_clean_swapped_blocks(root);
+ 	}
+ 
+@@ -957,7 +928,7 @@ int btrfs_write_marked_extents(struct btrfs_fs_info *fs_info,
+ 		 * superblock that points to btree nodes/leafs for which
+ 		 * writeback hasn't finished yet (and without errors).
+ 		 * We cleanup any entries left in the io tree when committing
+-		 * the transaction (through clear_btree_io_tree()).
++		 * the transaction (through extent_io_tree_release()).
+ 		 */
+ 		if (err == -ENOMEM) {
+ 			err = 0;
+@@ -1002,7 +973,7 @@ static int __btrfs_wait_marked_extents(struct btrfs_fs_info *fs_info,
+ 		 * left in the io tree. For a log commit, we don't remove them
+ 		 * after committing the log because the tree can be accessed
+ 		 * concurrently - we do it only at transaction commit time when
+-		 * it's safe to do it (through clear_btree_io_tree()).
++		 * it's safe to do it (through extent_io_tree_release()).
+ 		 */
+ 		err = clear_extent_bit(dirty_pages, start, end,
+ 				       EXTENT_NEED_WAIT,
+@@ -1081,7 +1052,7 @@ static int btrfs_write_and_wait_transaction(struct btrfs_trans_handle *trans,
+ 	blk_finish_plug(&plug);
+ 	ret2 = btrfs_wait_extents(fs_info, dirty_pages);
+ 
+-	clear_btree_io_tree(&trans->transaction->dirty_pages);
++	extent_io_tree_release(&trans->transaction->dirty_pages);
+ 
+ 	if (ret)
+ 		return ret;
+-- 
+2.26.2
+

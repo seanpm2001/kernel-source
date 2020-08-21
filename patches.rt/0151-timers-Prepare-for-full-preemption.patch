@@ -21,7 +21,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 
 --- a/include/linux/timer.h
 +++ b/include/linux/timer.h
-@@ -198,7 +198,7 @@ extern void add_timer(struct timer_list
+@@ -227,7 +227,7 @@ extern void add_timer(struct timer_list
  
  extern int try_to_del_timer_sync(struct timer_list *timer);
  
@@ -32,7 +32,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  # define del_timer_sync(t)		del_timer(t)
 --- a/kernel/sched/core.c
 +++ b/kernel/sched/core.c
-@@ -522,11 +522,14 @@ void resched_cpu(int cpu)
+@@ -563,11 +563,14 @@ void resched_cpu(int cpu)
   */
  int get_nohz_timer_target(void)
  {
@@ -49,7 +49,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	rcu_read_lock();
  	for_each_domain(cpu, sd) {
-@@ -545,6 +548,8 @@ int get_nohz_timer_target(void)
+@@ -586,6 +589,8 @@ int get_nohz_timer_target(void)
  		cpu = housekeeping_any_cpu();
  unlock:
  	rcu_read_unlock();
@@ -60,15 +60,15 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
 --- a/kernel/time/timer.c
 +++ b/kernel/time/timer.c
-@@ -44,6 +44,7 @@
- #include <linux/sched/debug.h>
+@@ -45,6 +45,7 @@
  #include <linux/slab.h>
  #include <linux/compat.h>
+ #include <linux/random.h>
 +#include <linux/swait.h>
  
  #include <linux/uaccess.h>
  #include <asm/unistd.h>
-@@ -197,6 +198,9 @@ EXPORT_SYMBOL(jiffies_64);
+@@ -198,6 +199,9 @@ EXPORT_SYMBOL(jiffies_64);
  struct timer_base {
  	raw_spinlock_t		lock;
  	struct timer_list	*running_timer;
@@ -78,7 +78,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	unsigned long		clk;
  	unsigned long		next_expiry;
  	unsigned int		cpu;
-@@ -1132,6 +1136,33 @@ void add_timer_on(struct timer_list *tim
+@@ -1162,6 +1166,33 @@ void add_timer_on(struct timer_list *tim
  }
  EXPORT_SYMBOL_GPL(add_timer_on);
  
@@ -112,7 +112,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  /**
   * del_timer - deactivate a timer.
   * @timer: the timer to be deactivated
-@@ -1187,7 +1218,7 @@ int try_to_del_timer_sync(struct timer_l
+@@ -1217,7 +1248,7 @@ int try_to_del_timer_sync(struct timer_l
  }
  EXPORT_SYMBOL(try_to_del_timer_sync);
  
@@ -121,7 +121,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  /**
   * del_timer_sync - deactivate a timer and wait for the handler to finish.
   * @timer: the timer to be deactivated
-@@ -1247,7 +1278,7 @@ int del_timer_sync(struct timer_list *ti
+@@ -1277,7 +1308,7 @@ int del_timer_sync(struct timer_list *ti
  		int ret = try_to_del_timer_sync(timer);
  		if (ret >= 0)
  			return ret;
@@ -130,7 +130,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	}
  }
  EXPORT_SYMBOL(del_timer_sync);
-@@ -1311,13 +1342,16 @@ static void expire_timers(struct timer_b
+@@ -1341,13 +1372,16 @@ static void expire_timers(struct timer_b
  		fn = timer->function;
  		data = timer->data;
  
@@ -148,7 +148,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			raw_spin_lock_irq(&base->lock);
  		}
  	}
-@@ -1619,8 +1653,8 @@ static inline void __run_timers(struct t
+@@ -1656,8 +1690,8 @@ static inline void __run_timers(struct t
  		while (levels--)
  			expire_timers(base, heads + levels);
  	}
@@ -158,7 +158,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  /*
-@@ -1845,6 +1879,9 @@ static void __init init_timer_cpu(int cp
+@@ -1903,6 +1937,9 @@ static void __init init_timer_cpu(int cp
  		base->cpu = cpu;
  		raw_spin_lock_init(&base->lock);
  		base->clk = jiffies;

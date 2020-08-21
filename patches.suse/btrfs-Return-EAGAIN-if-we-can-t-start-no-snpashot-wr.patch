@@ -1,0 +1,39 @@
+From: Nikolay Borisov <nborisov@suse.com>
+Date: Tue, 7 May 2019 10:23:46 +0300
+Git-commit: 5f791ec31f535f62a2dc06b37c3a69e5e268b5db
+Patch-mainline: 5.3
+References: bsc#1174438
+Subject: [PATCH] btrfs: Return EAGAIN if we can't start no snpashot
+ write in check_can_nocow
+
+The first thing code does in check_can_nocow is trying to block
+concurrent snapshots. If this fails (due to snpashot already being in
+progress) the function returns ENOSPC which makes no sense. Instead
+return EAGAIN. Despite this return value not being propagated to callers
+it's good practice to return the closest in terms of semantics error
+code. No functional changes.
+
+Signed-off-by: Nikolay Borisov <nborisov@suse.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Signed-off-by: Filipe Manana <fdmanana@suse.com>
+---
+ fs/btrfs/file.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/btrfs/file.c b/fs/btrfs/file.c
+index cdc998eb5ac1..5711d6851b63 100644
+--- a/fs/btrfs/file.c
++++ b/fs/btrfs/file.c
+@@ -1557,7 +1557,7 @@ static noinline int check_can_nocow(struct btrfs_inode *inode, loff_t pos,
+ 
+ 	ret = btrfs_start_write_no_snapshoting(root);
+ 	if (!ret)
+-		return -ENOSPC;
++		return -EAGAIN;
+ 
+ 	lockstart = round_down(pos, fs_info->sectorsize);
+ 	lockend = round_up(pos + *write_bytes,
+-- 
+2.26.2
+

@@ -1,0 +1,54 @@
+From: James Morse <james.morse@arm.com>
+Date: Fri, 21 Sep 2018 21:49:19 +0100
+Subject: arm64: KVM: Guests can skip __install_bp_hardening_cb()s HYP work
+
+Git-commit: 4debef5510071032c6d5dace31ca1cc42a120073
+Patch-mainline: v4.20-rc1
+References: bsc#1174547
+
+enable_smccc_arch_workaround_1() passes NULL as the hyp_vecs start and
+end if the HVC conduit is in use, and ARM_SMCCC_ARCH_WORKAROUND_1 is
+detected.
+
+If the guest kernel happened to be built with KVM_INDIRECT_VECTORS,
+we go on to allocate a slot, memcpy() the empty workaround in and
+do the appropriate cache maintenance.
+
+This works as we always tell memcpy() the range is 0, so it never
+accesses the NULL src pointer, but we still do the cache maintenance.
+
+If hyp_vecs_start is NULL we know we're a guest, just update the fn
+like the !KVM_INDIRECT_VECTORS version.
+
+Reviewed-by: Julien Thierry <julien.thierry@arm.com>
+Acked-by: Marc Zyngier <marc.zyngier@arm.com>
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Catalin Marinas <catalin.marinas@arm.com>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ arch/arm64/kernel/cpu_errata.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/arch/arm64/kernel/cpu_errata.c b/arch/arm64/kernel/cpu_errata.c
+index 9af8df96ec49..a509e35132d2 100644
+--- a/arch/arm64/kernel/cpu_errata.c
++++ b/arch/arm64/kernel/cpu_errata.c
+@@ -138,6 +138,15 @@ static void __install_bp_hardening_cb(bp_hardening_cb_t fn,
+ 	static DEFINE_SPINLOCK(bp_lock);
+ 	int cpu, slot = -1;
+ 
++	/*
++	 * enable_smccc_arch_workaround_1() passes NULL for the hyp_vecs
++	 * start/end if we're a guest. Skip the hyp-vectors work.
++	 */
++	if (!hyp_vecs_start) {
++		__this_cpu_write(bp_hardening_data.fn, fn);
++		return;
++	}
++
+ 	spin_lock(&bp_lock);
+ 	for_each_possible_cpu(cpu) {
+ 		if (per_cpu(bp_hardening_data.fn, cpu) == fn) {
+-- 
+2.26.2
+
