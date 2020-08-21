@@ -6,6 +6,10 @@ Git-commit: a050d345cef0dc6249263540da1e902bba617e43
 Patch-mainline: v4.17-rc7
 References: git-fixes
 
+[ backport note: corrected the call of ip_vs_conn_expire() to pass the
+  context data instead of the timer object, as the SLE code is still
+  based on the old timer API callback pattern -- tiwai ]
+
 Connections in One-packet scheduling mode (-o, --ops) are
 removed with refcnt=0 because they are not hashed in conn table.
 To avoid refcount_dec reporting this as error, change them to be
@@ -97,14 +101,12 @@ Acked-by: Simon Horman <horms@verge.net.au>
 Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
 Acked-by: Denis Kirjanov <dkirjanov@suse.com>
 ---
- net/netfilter/ipvs/ip_vs_conn.c | 17 ++++++-----------
+ net/netfilter/ipvs/ip_vs_conn.c |   17 ++++++-----------
  1 file changed, 6 insertions(+), 11 deletions(-)
 
-diff --git a/net/netfilter/ipvs/ip_vs_conn.c b/net/netfilter/ipvs/ip_vs_conn.c
-index 3d2ac71a83ec..81736040ea99 100644
 --- a/net/netfilter/ipvs/ip_vs_conn.c
 +++ b/net/netfilter/ipvs/ip_vs_conn.c
-@@ -232,7 +232,10 @@ static inline int ip_vs_conn_unhash(struct ip_vs_conn *cp)
+@@ -232,7 +232,10 @@ static inline int ip_vs_conn_unhash(stru
  static inline bool ip_vs_conn_unlink(struct ip_vs_conn *cp)
  {
  	unsigned int hash;
@@ -116,7 +118,7 @@ index 3d2ac71a83ec..81736040ea99 100644
  
  	hash = ip_vs_conn_hashkey_conn(cp);
  
-@@ -240,15 +243,13 @@ static inline bool ip_vs_conn_unlink(struct ip_vs_conn *cp)
+@@ -240,15 +243,13 @@ static inline bool ip_vs_conn_unlink(str
  	spin_lock(&cp->lock);
  
  	if (cp->flags & IP_VS_CONN_F_HASHED) {
@@ -133,7 +135,7 @@ index 3d2ac71a83ec..81736040ea99 100644
  
  	spin_unlock(&cp->lock);
  	ct_write_unlock_bh(hash);
-@@ -454,12 +455,6 @@ ip_vs_conn_out_get_proto(struct netns_ipvs *ipvs, int af,
+@@ -454,12 +455,6 @@ ip_vs_conn_out_get_proto(struct netns_ip
  }
  EXPORT_SYMBOL_GPL(ip_vs_conn_out_get_proto);
  
@@ -146,15 +148,12 @@ index 3d2ac71a83ec..81736040ea99 100644
  /*
   *      Put back the conn and restart its timer with its timeout
   */
-@@ -478,7 +473,7 @@ void ip_vs_conn_put(struct ip_vs_conn *cp)
+@@ -478,7 +473,7 @@ void ip_vs_conn_put(struct ip_vs_conn *c
  	    (refcount_read(&cp->refcnt) == 1) &&
  	    !timer_pending(&cp->timer))
  		/* expire connection immediately */
 -		__ip_vs_conn_put_notimer(cp);
-+		ip_vs_conn_expire(&cp->timer);
++		ip_vs_conn_expire((unsigned long)cp);
  	else
  		__ip_vs_conn_put_timer(cp);
  }
--- 
-2.16.4
-
