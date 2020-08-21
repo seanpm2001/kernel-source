@@ -38,10 +38,10 @@ Signed-off-by: Gang He <ghe@suse.com>
  2 files changed, 17 insertions(+), 1 deletion(-)
 
 diff --git a/fs/ocfs2/dlmglue.c b/fs/ocfs2/dlmglue.c
-index 152a0fc4e905..751bc4dc7466 100644
+index 6505611f2fbb..586b083e723e 100644
 --- a/fs/ocfs2/dlmglue.c
 +++ b/fs/ocfs2/dlmglue.c
-@@ -689,6 +689,12 @@ static void ocfs2_nfs_sync_lock_res_init(struct ocfs2_lock_res *res,
+@@ -701,6 +701,12 @@ static void ocfs2_nfs_sync_lock_res_init(struct ocfs2_lock_res *res,
  				   &ocfs2_nfs_sync_lops, osb);
  }
  
@@ -51,10 +51,10 @@ index 152a0fc4e905..751bc4dc7466 100644
 +	init_rwsem(&osb->nfs_sync_rwlock);
 +}
 +
- static void ocfs2_orphan_scan_lock_res_init(struct ocfs2_lock_res *res,
- 					    struct ocfs2_super *osb)
+ void ocfs2_trim_fs_lock_res_init(struct ocfs2_super *osb)
  {
-@@ -2855,6 +2861,11 @@ int ocfs2_nfs_sync_lock(struct ocfs2_super *osb, int ex)
+ 	struct ocfs2_lock_res *lockres = &osb->osb_trim_fs_lockres;
+@@ -2785,6 +2791,11 @@ int ocfs2_nfs_sync_lock(struct ocfs2_super *osb, int ex)
  	if (ocfs2_is_hard_readonly(osb))
  		return -EROFS;
  
@@ -66,7 +66,7 @@ index 152a0fc4e905..751bc4dc7466 100644
  	if (ocfs2_mount_local(osb))
  		return 0;
  
-@@ -2873,6 +2884,10 @@ void ocfs2_nfs_sync_unlock(struct ocfs2_super *osb, int ex)
+@@ -2803,6 +2814,10 @@ void ocfs2_nfs_sync_unlock(struct ocfs2_super *osb, int ex)
  	if (!ocfs2_mount_local(osb))
  		ocfs2_cluster_unlock(osb, lockres,
  				     ex ? LKM_EXMODE : LKM_PRMODE);
@@ -75,9 +75,9 @@ index 152a0fc4e905..751bc4dc7466 100644
 +	else
 +		up_read(&osb->nfs_sync_rwlock);
  }
-
- int ocfs2_dentry_lock(struct dentry *dentry, int ex)
-@@ -3340,7 +3355,7 @@ int ocfs2_dlm_init(struct ocfs2_super *osb)
+ 
+ int ocfs2_trim_fs_lock(struct ocfs2_super *osb,
+@@ -3300,7 +3315,7 @@ int ocfs2_dlm_init(struct ocfs2_super *osb)
  local:
  	ocfs2_super_lock_res_init(&osb->osb_super_lockres, osb);
  	ocfs2_rename_lock_res_init(&osb->osb_rename_lockres, osb);
@@ -87,17 +87,17 @@ index 152a0fc4e905..751bc4dc7466 100644
  
  	osb->cconn = conn;
 diff --git a/fs/ocfs2/ocfs2.h b/fs/ocfs2/ocfs2.h
-index ee5d98516212..2dd71d626196 100644
+index 1e9e24e83a6c..de5e8e8998fe 100644
 --- a/fs/ocfs2/ocfs2.h
 +++ b/fs/ocfs2/ocfs2.h
-@@ -395,6 +395,7 @@ struct ocfs2_super
+@@ -410,6 +410,7 @@ struct ocfs2_super
  	struct ocfs2_lock_res osb_super_lockres;
  	struct ocfs2_lock_res osb_rename_lockres;
  	struct ocfs2_lock_res osb_nfs_sync_lockres;
 +	struct rw_semaphore nfs_sync_rwlock;
+ 	struct ocfs2_lock_res osb_trim_fs_lockres;
+ 	struct mutex obs_trim_fs_mutex;
  	struct ocfs2_dlm_debug *osb_dlm_debug;
- 
- 	struct dentry *osb_debug_root;
 -- 
 2.21.0
 

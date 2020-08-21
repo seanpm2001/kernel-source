@@ -1,0 +1,115 @@
+From: Yamin Friedman <yaminf@mellanox.com>
+Date: Thu, 22 Nov 2018 09:51:17 +0200
+Subject: linux/dim: Add completions count to dim_sample
+Patch-mainline: v5.3-rc1
+Git-commit: 398c2b05bbee21cc172dfff017c0351d4d14e04c
+References: bsc#1174852
+
+Added a measurement of completions per/msec to allow for completion based
+dim algorithms.
+
+In order to use dynamic interrupt moderation with RDMA we need to have a
+different measurment than packets per second. This change is meant to
+prepare for adding a new DIM method.
+
+All drivers that use net_dim and thus do not need a completion count will
+have the completions set to 0.
+
+Signed-off-by: Yamin Friedman <yaminf@mellanox.com>
+Reviewed-by: Max Gurtovoy <maxg@mellanox.com>
+Signed-off-by: Saeed Mahameed <saeedm@mellanox.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ include/linux/dim.h |   28 +++++++++++++++++++++++++---
+ lib/dim/dim.c       |    9 +++++++++
+ 2 files changed, 34 insertions(+), 3 deletions(-)
+
+--- a/include/linux/dim.h
++++ b/include/linux/dim.h
+@@ -37,6 +37,7 @@
+ struct dim_cq_moder {
+ 	u16 usec;
+ 	u16 pkts;
++	u16 comps;
+ 	u8 cq_period_mode;
+ };
+ 
+@@ -54,6 +55,7 @@ struct dim_sample {
+ 	u32 pkt_ctr;
+ 	u32 byte_ctr;
+ 	u16 event_ctr;
++	u32 comp_ctr;
+ };
+ 
+ /**
+@@ -65,9 +67,11 @@ struct dim_sample {
+  * @epms: Events per msec
+  */
+ struct dim_stats {
+-	int ppms;
+-	int bpms;
+-	int epms;
++	int ppms; /* packets per msec */
++	int bpms; /* bytes per msec */
++	int epms; /* events per msec */
++	int cpms; /* completions per msec */
++	int cpe_ratio; /* ratio of completions to events */
+ };
+ 
+ /**
+@@ -89,6 +93,7 @@ struct dim {
+ 	u8 state;
+ 	struct dim_stats prev_stats;
+ 	struct dim_sample start_sample;
++	struct dim_sample measuring_sample;
+ 	struct work_struct work;
+ 	u8 profile_ix;
+ 	u8 mode;
+@@ -246,6 +251,23 @@ dim_update_sample(u16 event_ctr, u64 pac
+ 	s->event_ctr = event_ctr;
+ }
+ 
++/**
++ *	dim_update_sample_with_comps - set a sample's fields with given
++ *	values including the completion parameter
++ *	@event_ctr: number of events to set
++ *	@packets: number of packets to set
++ *	@bytes: number of bytes to set
++ *	@comps: number of completions to set
++ *	@s: DIM sample
++ */
++static inline void
++dim_update_sample_with_comps(u16 event_ctr, u64 packets, u64 bytes, u64 comps,
++			     struct dim_sample *s)
++{
++	dim_update_sample(event_ctr, packets, bytes, s);
++	s->comp_ctr = comps;
++}
++
+ /* Net DIM */
+ 
+ /*
+--- a/lib/dim/dim.c
++++ b/lib/dim/dim.c
+@@ -62,6 +62,8 @@ void dim_calc_stats(struct dim_sample *s
+ 	u32 npkts = BIT_GAP(BITS_PER_TYPE(u32), end->pkt_ctr, start->pkt_ctr);
+ 	u32 nbytes = BIT_GAP(BITS_PER_TYPE(u32), end->byte_ctr,
+ 			     start->byte_ctr);
++	u32 ncomps = BIT_GAP(BITS_PER_TYPE(u32), end->comp_ctr,
++			     start->comp_ctr);
+ 
+ 	if (!delta_us)
+ 		return;
+@@ -70,5 +72,12 @@ void dim_calc_stats(struct dim_sample *s
+ 	curr_stats->bpms = DIV_ROUND_UP(nbytes * USEC_PER_MSEC, delta_us);
+ 	curr_stats->epms = DIV_ROUND_UP(DIM_NEVENTS * USEC_PER_MSEC,
+ 					delta_us);
++	curr_stats->cpms = DIV_ROUND_UP(ncomps * USEC_PER_MSEC, delta_us);
++	if (curr_stats->epms != 0)
++		curr_stats->cpe_ratio =
++				(curr_stats->cpms * 100) / curr_stats->epms;
++	else
++		curr_stats->cpe_ratio = 0;
++
+ }
+ EXPORT_SYMBOL(dim_calc_stats);
