@@ -1,0 +1,39 @@
+From: Dan Carpenter <dan.carpenter@oracle.com>
+Date: Thu, 15 Aug 2019 11:32:52 +0300
+Subject: mtd: spi-nor: Fix an error code in spi_nor_read_raw()
+References: bsc#1175413
+
+Git-commit: 3e9e38d918bd01068b5ccba17d69a8ae9bf56142
+Patch-mainline: v5.4-rc1
+
+The problem is that if "ret" is negative then when we check if
+"ret > len", that condition is going to be true because of type
+promotion.  So this patch re-orders the code to check for negatives
+first and preserve those error codes.
+
+Fixes: f384b352cbf0 ("mtd: spi-nor: parse Serial Flash Discoverable Parameters (SFDP) tables")
+Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: Tudor Ambarus <tudor.ambarus@microchip.com>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ drivers/mtd/spi-nor/spi-nor.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/drivers/mtd/spi-nor/spi-nor.c
++++ b/drivers/mtd/spi-nor/spi-nor.c
+@@ -1806,12 +1806,12 @@ static int spi_nor_read_sfdp(struct spi_
+ 
+ 	while (len) {
+ 		ret = nor->read(nor, addr, len, (u8 *)buf);
++		if (ret < 0)
++			goto read_err;
+ 		if (!ret || ret > len) {
+ 			ret = -EIO;
+ 			goto read_err;
+ 		}
+-		if (ret < 0)
+-			goto read_err;
+ 
+ 		buf += ret;
+ 		addr += ret;
+

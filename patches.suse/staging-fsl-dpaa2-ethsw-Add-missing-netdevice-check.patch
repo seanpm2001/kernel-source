@@ -1,0 +1,37 @@
+From: Florian Fainelli <f.fainelli@gmail.com>
+Date: Fri, 22 Feb 2019 14:02:14 -0800
+Subject: staging: fsl-dpaa2: ethsw: Add missing netdevice check
+References: bsc#1175423
+
+Git-commit: 11f27765f61175ac9602a05e305b9034dc6c80bf
+Patch-mainline: v5.1-rc1
+
+port_switchdev_event() does not check that the target network device is
+actually backed by the ethsw driver, this could be problematic in a
+stacked environment case.
+
+Fixes: 44baaa43d7cc ("staging: fsl-dpaa2/ethsw: Add Freescale DPAA2 Ethernet Switch driver")
+Signed-off-by: Florian Fainelli <f.fainelli@gmail.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ drivers/staging/fsl-dpaa2/ethsw/ethsw.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/staging/fsl-dpaa2/ethsw/ethsw.c b/drivers/staging/fsl-dpaa2/ethsw/ethsw.c
+index daabaceeea52..2edd82f5229a 100644
+--- a/drivers/staging/fsl-dpaa2/ethsw/ethsw.c
++++ b/drivers/staging/fsl-dpaa2/ethsw/ethsw.c
+@@ -1047,6 +1047,9 @@ static int port_switchdev_event(struct notifier_block *unused,
+ 	struct ethsw_switchdev_event_work *switchdev_work;
+ 	struct switchdev_notifier_fdb_info *fdb_info = ptr;
+ 
++	if (!ethsw_port_dev_check(dev))
++		return NOTIFY_DONE;
++
+ 	switchdev_work = kzalloc(sizeof(*switchdev_work), GFP_ATOMIC);
+ 	if (!switchdev_work)
+ 		return NOTIFY_BAD;
+-- 
+2.26.2
+

@@ -1,0 +1,85 @@
+From: Tal Gilboa <talgi@mellanox.com>
+Date: Mon, 14 Jan 2019 15:32:49 +0200
+Subject: linux/dim: Rename net_dim_sample() to net_dim_update_sample()
+Patch-mainline: v5.3-rc1
+Git-commit: e5b6ab02d7aa4118c9a36491633812dcc442acbe
+References: bsc#1174852
+
+In order to avoid confusion between the function and the similarly
+named struct.
+In preparation for removing the 'net' prefix from dim members.
+
+Signed-off-by: Tal Gilboa <talgi@mellanox.com>
+Signed-off-by: Saeed Mahameed <saeedm@mellanox.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/broadcom/bnxt/bnxt.c         |    8 ++++----
+ drivers/net/ethernet/mellanox/mlx5/core/en_txrx.c |    6 ++----
+ include/linux/dim.h                               |    3 ++-
+ include/linux/net_dim.h                           |    4 ++--
+ 4 files changed, 10 insertions(+), 11 deletions(-)
+
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+@@ -2133,10 +2133,10 @@ static int bnxt_poll(struct napi_struct
+ 	if (bp->flags & BNXT_FLAG_DIM) {
+ 		struct net_dim_sample dim_sample;
+ 
+-		net_dim_sample(cpr->event_ctr,
+-			       cpr->rx_packets,
+-			       cpr->rx_bytes,
+-			       &dim_sample);
++		net_dim_update_sample(cpr->event_ctr,
++				      cpr->rx_packets,
++				      cpr->rx_bytes,
++				      &dim_sample);
+ 		net_dim(&cpr->dim, dim_sample);
+ 	}
+ 	mmiowb();
+--- a/drivers/net/ethernet/mellanox/mlx5/core/en_txrx.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/en_txrx.c
+@@ -53,8 +53,7 @@ static void mlx5e_handle_tx_dim(struct m
+ 	if (unlikely(!test_bit(MLX5E_SQ_STATE_AM, &sq->state)))
+ 		return;
+ 
+-	net_dim_sample(sq->cq.event_ctr, stats->packets, stats->bytes,
+-		       &dim_sample);
++	net_dim_update_sample(sq->cq.event_ctr, stats->packets, stats->bytes, &dim_sample);
+ 	net_dim(&sq->dim, dim_sample);
+ }
+ 
+@@ -66,8 +65,7 @@ static void mlx5e_handle_rx_dim(struct m
+ 	if (unlikely(!test_bit(MLX5E_RQ_STATE_AM, &rq->state)))
+ 		return;
+ 
+-	net_dim_sample(rq->cq.event_ctr, stats->packets, stats->bytes,
+-		       &dim_sample);
++	net_dim_update_sample(rq->cq.event_ctr, stats->packets, stats->bytes, &dim_sample);
+ 	net_dim(&rq->dim, dim_sample);
+ }
+ 
+--- a/include/linux/dim.h
++++ b/include/linux/dim.h
+@@ -123,7 +123,8 @@ static inline void dim_park_tired(struct
+ }
+ 
+ static inline void
+-net_dim_sample(u16 event_ctr, u64 packets, u64 bytes, struct net_dim_sample *s)
++net_dim_update_sample(u16 event_ctr, u64 packets, u64 bytes,
++		      struct net_dim_sample *s)
+ {
+ 	s->time	     = ktime_get();
+ 	s->pkt_ctr   = packets;
+--- a/include/linux/net_dim.h
++++ b/include/linux/net_dim.h
+@@ -261,8 +261,8 @@ static inline void net_dim(struct net_di
+ 		}
+ 		/* fall through */
+ 	case DIM_START_MEASURE:
+-		net_dim_sample(end_sample.event_ctr, end_sample.pkt_ctr, end_sample.byte_ctr,
+-			       &dim->start_sample);
++		net_dim_update_sample(end_sample.event_ctr, end_sample.pkt_ctr,
++				      end_sample.byte_ctr, &dim->start_sample);
+ 		dim->state = DIM_MEASURE_IN_PROGRESS;
+ 		break;
+ 	case DIM_APPLY_NEW_PROFILE:
