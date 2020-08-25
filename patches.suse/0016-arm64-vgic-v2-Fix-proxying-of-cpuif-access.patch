@@ -1,4 +1,4 @@
-From 7ee0c05108b5a7ea3288f1102f4ca8a2730f8a66 Mon Sep 17 00:00:00 2001
+From b220244d41798c6592e7d17843256eb0bae456a0 Mon Sep 17 00:00:00 2001
 From: James Morse <james.morse@arm.com>
 Date: Fri, 4 May 2018 16:19:24 +0100
 Subject: [PATCH] arm64: vgic-v2: Fix proxying of cpuif access
@@ -44,14 +44,12 @@ Signed-off-by: James Morse <james.morse@arm.com>
 Signed-off-by: Marc Zyngier <marc.zyngier@arm.com>
 Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
 ---
- virt/kvm/arm/hyp/vgic-v2-sr.c | 24 +++++++++++++++++++-----
+ arch/arm64/kvm/hyp/vgic-v2-cpuif-proxy.c |   24 +++++++++++++++++++-----
  1 file changed, 19 insertions(+), 5 deletions(-)
 
-diff --git a/virt/kvm/arm/hyp/vgic-v2-sr.c b/virt/kvm/arm/hyp/vgic-v2-sr.c
-index d7fd46fe9efb..c83abc39f335 100644
---- a/virt/kvm/arm/hyp/vgic-v2-sr.c
-+++ b/virt/kvm/arm/hyp/vgic-v2-sr.c
-@@ -18,6 +18,7 @@
+--- a/arch/arm64/kvm/hyp/vgic-v2-cpuif-proxy.c
++++ b/arch/arm64/kvm/hyp/vgic-v2-cpuif-proxy.c
+@@ -18,11 +18,20 @@
  #include <linux/compiler.h>
  #include <linux/irqchip/arm-gic.h>
  #include <linux/kvm_host.h>
@@ -59,10 +57,8 @@ index d7fd46fe9efb..c83abc39f335 100644
  
  #include <asm/kvm_emulate.h>
  #include <asm/kvm_hyp.h>
-@@ -102,6 +103,14 @@ void __hyp_text __vgic_v2_restore_state(struct kvm_vcpu *vcpu)
- }
+ #include <asm/kvm_mmu.h>
  
- #ifdef CONFIG_ARM64
 +static bool __hyp_text __is_be(struct kvm_vcpu *vcpu)
 +{
 +	if (vcpu_mode_is_32bit(vcpu))
@@ -71,10 +67,10 @@ index d7fd46fe9efb..c83abc39f335 100644
 +	return !!(read_sysreg(SCTLR_EL1) & SCTLR_ELx_EE);
 +}
 +
- /*
-  * __vgic_v2_perform_cpuif_access -- perform a GICV access on behalf of the
-  *				     guest.
-@@ -143,14 +152,19 @@ int __hyp_text __vgic_v2_perform_cpuif_access(struct kvm_vcpu *vcpu)
+ static void __hyp_text save_elrsr(struct kvm_vcpu *vcpu, void __iomem *base)
+ {
+ 	struct vgic_v2_cpu_if *cpu_if = &vcpu->arch.vgic_cpu.vgic_v2;
+@@ -143,14 +152,19 @@ int __hyp_text __vgic_v2_perform_cpuif_a
  	addr += fault_ipa - vgic->vgic_cpu_base;
  
  	if (kvm_vcpu_dabt_iswrite(vcpu)) {
@@ -99,6 +95,3 @@ index d7fd46fe9efb..c83abc39f335 100644
  	}
  
  	return 1;
--- 
-2.11.0
-
