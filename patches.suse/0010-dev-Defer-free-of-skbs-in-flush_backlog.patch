@@ -1,0 +1,35 @@
+From 9f00e4b200e0eb32410b3b0cf8dc6e3fa0704bbf Mon Sep 17 00:00:00 2001
+From: Subash Abhinov Kasiviswanathan <subashab@codeaurora.org>
+Date: Thu, 23 Jul 2020 11:31:48 -0600
+Subject: [PATCH 10/12] dev: Defer free of skbs in flush_backlog
+Git-commit: 7df5cb75cfb8acf96c7f2342530eb41e0c11f4c3
+Patch-mainline: v5.8-rc7
+References: git-fixes
+
+IRQs are disabled when freeing skbs in input queue.
+Use the IRQ safe variant to free skbs here.
+
+Fixes: 145dd5f9c88f ("net: flush the softnet backlog in process context")
+Signed-off-by: Subash Abhinov Kasiviswanathan <subashab@codeaurora.org>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <dkirjanov@suse.com>
+---
+ net/core/dev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/net/core/dev.c b/net/core/dev.c
+index 763512255725..378d34bd26ad 100644
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -5202,7 +5202,7 @@ static void flush_backlog(struct work_struct *work)
+ 	skb_queue_walk_safe(&sd->input_pkt_queue, skb, tmp) {
+ 		if (skb->dev->reg_state == NETREG_UNREGISTERING) {
+ 			__skb_unlink(skb, &sd->input_pkt_queue);
+-			kfree_skb(skb);
++			dev_kfree_skb_irq(skb);
+ 			input_queue_head_incr(sd);
+ 		}
+ 	}
+-- 
+2.16.4
+

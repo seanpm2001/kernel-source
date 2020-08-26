@@ -20,7 +20,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -2973,6 +2973,7 @@ struct softnet_data {
+@@ -2978,6 +2978,7 @@ struct softnet_data {
  	unsigned int		dropped;
  	struct sk_buff_head	input_pkt_queue;
  	struct napi_struct	backlog;
@@ -38,7 +38,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  };
  
  struct sk_buff;
-@@ -1571,6 +1572,12 @@ static inline void skb_queue_head_init(s
+@@ -1584,6 +1585,12 @@ static inline void skb_queue_head_init(s
  	__skb_queue_head_init(list);
  }
  
@@ -70,16 +70,16 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  #endif
  }
  
-@@ -5195,7 +5195,7 @@ static void flush_backlog(struct work_st
+@@ -5203,7 +5203,7 @@ static void flush_backlog(struct work_st
  	skb_queue_walk_safe(&sd->input_pkt_queue, skb, tmp) {
  		if (skb->dev->reg_state == NETREG_UNREGISTERING) {
  			__skb_unlink(skb, &sd->input_pkt_queue);
--			kfree_skb(skb);
+-			dev_kfree_skb_irq(skb);
 +			__skb_queue_tail(&sd->tofree_queue, skb);
  			input_queue_head_incr(sd);
  		}
  	}
-@@ -5205,11 +5205,14 @@ static void flush_backlog(struct work_st
+@@ -5213,11 +5213,14 @@ static void flush_backlog(struct work_st
  	skb_queue_walk_safe(&sd->process_queue, skb, tmp) {
  		if (skb->dev->reg_state == NETREG_UNREGISTERING) {
  			__skb_unlink(skb, &sd->process_queue);
@@ -95,7 +95,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  static void flush_all_backlogs(void)
-@@ -5795,7 +5798,9 @@ static int process_backlog(struct napi_s
+@@ -5803,7 +5806,9 @@ static int process_backlog(struct napi_s
  	while (again) {
  		struct sk_buff *skb;
  
@@ -105,7 +105,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			rcu_read_lock();
  			__netif_receive_skb(skb);
  			rcu_read_unlock();
-@@ -5803,9 +5808,9 @@ static int process_backlog(struct napi_s
+@@ -5811,9 +5816,9 @@ static int process_backlog(struct napi_s
  			if (++work >= quota)
  				return work;
  
@@ -116,7 +116,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		rps_lock(sd);
  		if (skb_queue_empty(&sd->input_pkt_queue)) {
  			/*
-@@ -6269,13 +6274,21 @@ static __latent_entropy void net_rx_acti
+@@ -6277,13 +6282,21 @@ static __latent_entropy void net_rx_acti
  	unsigned long time_limit = jiffies +
  		usecs_to_jiffies(netdev_budget_usecs);
  	int budget = netdev_budget;
@@ -138,7 +138,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	for (;;) {
  		struct napi_struct *n;
  
-@@ -9211,6 +9224,9 @@ static int dev_cpu_dead(unsigned int old
+@@ -9234,6 +9247,9 @@ static int dev_cpu_dead(unsigned int old
  		netif_rx_ni(skb);
  		input_queue_head_incr(oldsd);
  	}
@@ -148,7 +148,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	return 0;
  }
-@@ -9517,8 +9533,9 @@ static int __init net_dev_init(void)
+@@ -9542,8 +9558,9 @@ static int __init net_dev_init(void)
  
  		INIT_WORK(flush, flush_backlog);
  
