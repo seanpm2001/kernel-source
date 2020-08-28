@@ -28,12 +28,12 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -2612,14 +2612,53 @@ void netdev_freemem(struct net_device *d
+@@ -2617,14 +2617,53 @@ void netdev_freemem(struct net_device *d
  void synchronize_net(void);
  int init_dummy_netdev(struct net_device *dev);
  
 -DECLARE_PER_CPU(int, xmit_recursion);
- #define XMIT_RECURSION_LIMIT	10
+ #define XMIT_RECURSION_LIMIT	8
 +#ifdef CONFIG_PREEMPT_RT_FULL
 +static inline int dev_recursion_level(void)
 +{
@@ -85,7 +85,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  struct net_device *dev_get_by_index_rcu(struct net *net, int ifindex);
 --- a/include/linux/sched.h
 +++ b/include/linux/sched.h
-@@ -1085,6 +1085,9 @@ struct task_struct {
+@@ -1093,6 +1093,9 @@ struct task_struct {
  #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
  	unsigned long			task_state_change;
  #endif
@@ -97,7 +97,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	struct task_struct		*oom_reaper_list;
 --- a/net/core/dev.c
 +++ b/net/core/dev.c
-@@ -3492,8 +3492,10 @@ static void skb_update_prio(struct sk_bu
+@@ -3494,8 +3494,10 @@ static void skb_update_prio(struct sk_bu
  #define skb_update_prio(skb)
  #endif
  
@@ -108,7 +108,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  /**
   *	dev_loopback_xmit - loop back @skb
-@@ -3785,8 +3787,7 @@ static int __dev_queue_xmit(struct sk_bu
+@@ -3787,8 +3789,7 @@ static int __dev_queue_xmit(struct sk_bu
  		int cpu = smp_processor_id(); /* ok because BHs are off */
  
  		if (txq->xmit_lock_owner != cpu) {
@@ -118,7 +118,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  				goto recursion_alert;
  
  			skb = validate_xmit_skb(skb, dev, &again);
-@@ -3796,9 +3797,9 @@ static int __dev_queue_xmit(struct sk_bu
+@@ -3798,9 +3799,9 @@ static int __dev_queue_xmit(struct sk_bu
  			HARD_TX_LOCK(dev, txq, cpu);
  
  			if (!netif_xmit_stopped(txq)) {
@@ -130,6 +130,21 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  				if (dev_xmit_complete(rc)) {
  					HARD_TX_UNLOCK(dev, txq);
  					goto out;
+@@ -3883,12 +3883,12 @@ int dev_direct_xmit(struct sk_buff *skb, u16 queue_id)
+ 
+ 	local_bh_disable();
+ 
+-	__this_cpu_inc(xmit_recursion);
++	xmit_rec_inc();
+ 	HARD_TX_LOCK(dev, txq, smp_processor_id());
+ 	if (!netif_xmit_frozen_or_drv_stopped(txq))
+ 		ret = netdev_start_xmit(skb, dev, txq, false);
+ 	HARD_TX_UNLOCK(dev, txq);
+-	__this_cpu_dec(xmit_recursion);
++	xmit_rec_dec();
+ 
+ 	local_bh_enable();
+ 
 --- a/net/core/filter.c
 +++ b/net/core/filter.c
 @@ -1978,7 +1978,7 @@ static inline int __bpf_tx_skb(struct ne
