@@ -1,0 +1,39 @@
+From: Stephen Hemminger <stephen@networkplumber.org>
+Date: Tue, 28 May 2019 11:47:30 -0700
+Patch-mainline: v5.2-rc3
+Subject: netvsc: unshare skb in VF rx handler
+Git-commit: 996ed04741467f6d1552440c92988b132a9487ec
+References: git-fixes
+
+The netvsc VF skb handler should make sure that skb is not
+shared. Similar logic already exists in bonding and team device
+drivers.
+
+This is not an issue in practice because the VF devicex
+does not send up shared skb's. But the netvsc driver
+should do the right thing if it did.
+
+Fixes: 0c195567a8f6 ("netvsc: transparent VF management")
+Signed-off-by: Stephen Hemminger <sthemmin@microsoft.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Olaf Hering <ohering@suse.de>
+---
+ drivers/net/hyperv/netvsc_drv.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/net/hyperv/netvsc_drv.c b/drivers/net/hyperv/netvsc_drv.c
+--- a/drivers/net/hyperv/netvsc_drv.c
++++ b/drivers/net/hyperv/netvsc_drv.c
+@@ -2000,6 +2000,12 @@ static rx_handler_result_t netvsc_vf_handle_frame(struct sk_buff **pskb)
+ 	struct netvsc_vf_pcpu_stats *pcpu_stats
+ 		 = this_cpu_ptr(ndev_ctx->vf_stats);
+ 
++	skb = skb_share_check(skb, GFP_ATOMIC);
++	if (unlikely(!skb))
++		return RX_HANDLER_CONSUMED;
++
++	*pskb = skb;
++
+ 	skb->dev = ndev;
+ 
+ 	u64_stats_update_begin(&pcpu_stats->syncp);
