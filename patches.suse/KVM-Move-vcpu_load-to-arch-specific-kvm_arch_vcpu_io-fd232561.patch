@@ -1,0 +1,91 @@
+From: Christoffer Dall <christoffer.dall@linaro.org>
+Date: Mon, 4 Dec 2017 21:35:30 +0100
+Subject: KVM: Move vcpu_load to arch-specific kvm_arch_vcpu_ioctl_get_mpstate
+Patch-mainline: v4.16-rc1
+Git-commit: fd2325612c1493c85cce89ea16b2396baca83311
+References: jsc#SLE-4084
+
+Move vcpu_load() and vcpu_put() into the architecture specific
+implementations of kvm_arch_vcpu_ioctl_get_mpstate().
+
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Signed-off-by: Christoffer Dall <christoffer.dall@linaro.org>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ arch/s390/kvm/kvm-s390.c |   11 +++++++++--
+ arch/x86/kvm/x86.c       |    3 +++
+ virt/kvm/arm/arm.c       |    3 +++
+ virt/kvm/kvm_main.c      |    2 --
+ 4 files changed, 15 insertions(+), 4 deletions(-)
+
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -2844,9 +2844,16 @@ int kvm_arch_vcpu_ioctl_set_guest_debug(
+ int kvm_arch_vcpu_ioctl_get_mpstate(struct kvm_vcpu *vcpu,
+ 				    struct kvm_mp_state *mp_state)
+ {
++	int ret;
++
++	vcpu_load(vcpu);
++
+ 	/* CHECK_STOP and LOAD are not supported yet */
+-	return is_vcpu_stopped(vcpu) ? KVM_MP_STATE_STOPPED :
+-				       KVM_MP_STATE_OPERATING;
++	ret = is_vcpu_stopped(vcpu) ? KVM_MP_STATE_STOPPED :
++				      KVM_MP_STATE_OPERATING;
++
++	vcpu_put(vcpu);
++	return ret;
+ }
+ 
+ int kvm_arch_vcpu_ioctl_set_mpstate(struct kvm_vcpu *vcpu,
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -7468,6 +7468,8 @@ int kvm_arch_vcpu_ioctl_get_sregs(struct
+ int kvm_arch_vcpu_ioctl_get_mpstate(struct kvm_vcpu *vcpu,
+ 				    struct kvm_mp_state *mp_state)
+ {
++	vcpu_load(vcpu);
++
+ 	kvm_apic_accept_events(vcpu);
+ 	if (vcpu->arch.mp_state == KVM_MP_STATE_HALTED &&
+ 					vcpu->arch.pv.pv_unhalted)
+@@ -7475,6 +7477,7 @@ int kvm_arch_vcpu_ioctl_get_mpstate(stru
+ 	else
+ 		mp_state->mp_state = vcpu->arch.mp_state;
+ 
++	vcpu_put(vcpu);
+ 	return 0;
+ }
+ 
+--- a/virt/kvm/arm/arm.c
++++ b/virt/kvm/arm/arm.c
+@@ -381,11 +381,14 @@ static void vcpu_power_off(struct kvm_vc
+ int kvm_arch_vcpu_ioctl_get_mpstate(struct kvm_vcpu *vcpu,
+ 				    struct kvm_mp_state *mp_state)
+ {
++	vcpu_load(vcpu);
++
+ 	if (vcpu->arch.power_off)
+ 		mp_state->mp_state = KVM_MP_STATE_STOPPED;
+ 	else
+ 		mp_state->mp_state = KVM_MP_STATE_RUNNABLE;
+ 
++	vcpu_put(vcpu);
+ 	return 0;
+ }
+ 
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -2676,9 +2676,7 @@ out_free1:
+ 	case KVM_GET_MP_STATE: {
+ 		struct kvm_mp_state mp_state;
+ 
+-		vcpu_load(vcpu);
+ 		r = kvm_arch_vcpu_ioctl_get_mpstate(vcpu, &mp_state);
+-		vcpu_put(vcpu);
+ 		if (r)
+ 			goto out;
+ 		r = -EFAULT;
