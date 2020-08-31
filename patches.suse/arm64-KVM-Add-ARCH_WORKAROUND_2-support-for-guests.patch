@@ -108,8 +108,8 @@ Acked-by: Liang Yan <lyan@suse.com>
  #include <linux/types.h>
  #include <linux/jump_label.h>
  #include <uapi/linux/psci.h>
-@@ -287,6 +288,39 @@ static bool __hyp_text __skip_instr(stru
- 	}
+@@ -358,6 +359,39 @@ static bool __hyp_text fixup_guest_exit(
+ 	return false;
  }
  
 +static inline bool __hyp_text __needs_ssbd_off(struct kvm_vcpu *vcpu)
@@ -148,18 +148,18 @@ Acked-by: Liang Yan <lyan@suse.com>
  int __hyp_text __kvm_vcpu_run(struct kvm_vcpu *vcpu)
  {
  	struct kvm_cpu_context *host_ctxt;
-@@ -316,6 +350,8 @@ int __hyp_text __kvm_vcpu_run(struct kvm
+@@ -387,6 +421,8 @@ int __hyp_text __kvm_vcpu_run(struct kvm
  	__sysreg_restore_guest_state(guest_ctxt);
  	__debug_switch_to_guest(vcpu);
  
 +	__set_guest_arch_workaround_state(vcpu);
 +
- 	/* Jump in the fire! */
- again:
- 	exit_code = __guest_enter(vcpu, host_ctxt);
-@@ -384,6 +420,8 @@ again:
- 		/* 0 falls through to be handled out of EL2 */
- 	}
+ 	do {
+ 		/* Jump in the fire! */
+ 		exit_code = __guest_enter(vcpu, host_ctxt);
+@@ -394,6 +430,8 @@ int __hyp_text __kvm_vcpu_run(struct kvm
+ 		/* And we're baaack! */
+ 	} while (fixup_guest_exit(vcpu, &exit_code));
  
 +	__set_host_arch_workaround_state(vcpu);
 +
