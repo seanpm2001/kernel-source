@@ -59,7 +59,7 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  
 --- a/arch/arm64/include/asm/kvm_emulate.h
 +++ b/arch/arm64/include/asm/kvm_emulate.h
-@@ -127,7 +127,7 @@ static inline void kvm_skip_instr(struct
+@@ -122,7 +122,7 @@ static inline void kvm_skip_instr(struct
  
  static inline void vcpu_set_thumb(struct kvm_vcpu *vcpu)
  {
@@ -68,7 +68,7 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  }
  
  /*
-@@ -162,8 +162,8 @@ static inline bool vcpu_mode_priv(const
+@@ -157,8 +157,8 @@ static inline bool vcpu_mode_priv(const
  	u32 mode;
  
  	if (vcpu_mode_is_32bit(vcpu)) {
@@ -79,23 +79,23 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  	}
  
  	mode = *vcpu_cpsr(vcpu) & PSR_MODE_MASK;
-@@ -301,7 +301,7 @@ static inline unsigned long kvm_vcpu_get
+@@ -296,7 +296,7 @@ static inline unsigned long kvm_vcpu_get
  static inline void kvm_vcpu_set_be(struct kvm_vcpu *vcpu)
  {
- 	if (vcpu_mode_is_32bit(vcpu))
+ 	if (vcpu_mode_is_32bit(vcpu)) {
 -		*vcpu_cpsr(vcpu) |= COMPAT_PSR_E_BIT;
 +		*vcpu_cpsr(vcpu) |= PSR_AA32_E_BIT;
- 	else
- 		vcpu_sys_reg(vcpu, SCTLR_EL1) |= (1 << 25);
- }
-@@ -309,7 +309,7 @@ static inline void kvm_vcpu_set_be(struc
+ 	} else {
+ 		u64 sctlr = vcpu_read_sys_reg(vcpu, SCTLR_EL1);
+ 		sctlr |= (1 << 25);
+@@ -307,7 +307,7 @@ static inline void kvm_vcpu_set_be(struc
  static inline bool kvm_vcpu_is_be(struct kvm_vcpu *vcpu)
  {
  	if (vcpu_mode_is_32bit(vcpu))
 -		return !!(*vcpu_cpsr(vcpu) & COMPAT_PSR_E_BIT);
 +		return !!(*vcpu_cpsr(vcpu) & PSR_AA32_E_BIT);
  
- 	return !!(vcpu_sys_reg(vcpu, SCTLR_EL1) & (1 << 25));
+ 	return !!(vcpu_read_sys_reg(vcpu, SCTLR_EL1) & (1 << 25));
  }
 --- a/arch/arm64/kvm/guest.c
 +++ b/arch/arm64/kvm/guest.c
