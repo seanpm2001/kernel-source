@@ -108,7 +108,7 @@ Acked-by: Liang Yan <lyan@suse.com>
  #include <linux/types.h>
  #include <linux/jump_label.h>
  #include <uapi/linux/psci.h>
-@@ -357,6 +358,39 @@ static bool __hyp_text fixup_guest_exit(
+@@ -372,6 +373,39 @@ static bool __hyp_text fixup_guest_exit(
  	return false;
  }
  
@@ -148,7 +148,7 @@ Acked-by: Liang Yan <lyan@suse.com>
  /* Switch to the guest for VHE systems running in EL2 */
  int kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
  {
-@@ -384,6 +418,8 @@ int kvm_vcpu_run_vhe(struct kvm_vcpu *vc
+@@ -394,6 +428,8 @@ int kvm_vcpu_run_vhe(struct kvm_vcpu *vc
  	sysreg_restore_guest_state_vhe(guest_ctxt);
  	__debug_switch_to_guest(vcpu);
  
@@ -157,16 +157,16 @@ Acked-by: Liang Yan <lyan@suse.com>
  	do {
  		/* Jump in the fire! */
  		exit_code = __guest_enter(vcpu, host_ctxt);
-@@ -391,6 +427,8 @@ int kvm_vcpu_run_vhe(struct kvm_vcpu *vc
+@@ -401,6 +437,8 @@ int kvm_vcpu_run_vhe(struct kvm_vcpu *vc
  		/* And we're baaack! */
  	} while (fixup_guest_exit(vcpu, &exit_code));
  
 +	__set_host_arch_workaround_state(vcpu);
 +
- 	fp_enabled = __fpsimd_enabled();
+ 	fp_enabled = fpsimd_enabled_vhe();
  
  	sysreg_save_guest_state_vhe(guest_ctxt);
-@@ -441,6 +479,8 @@ int __hyp_text __kvm_vcpu_run_nvhe(struc
+@@ -451,6 +489,8 @@ int __hyp_text __kvm_vcpu_run_nvhe(struc
  	__sysreg_restore_state_nvhe(guest_ctxt);
  	__debug_switch_to_guest(vcpu);
  
@@ -175,13 +175,13 @@ Acked-by: Liang Yan <lyan@suse.com>
  	do {
  		/* Jump in the fire! */
  		exit_code = __guest_enter(vcpu, host_ctxt);
-@@ -448,6 +488,8 @@ int __hyp_text __kvm_vcpu_run_nvhe(struc
+@@ -458,6 +498,8 @@ int __hyp_text __kvm_vcpu_run_nvhe(struc
  		/* And we're baaack! */
  	} while (fixup_guest_exit(vcpu, &exit_code));
  
 +	__set_host_arch_workaround_state(vcpu);
 +
- 	fp_enabled = __fpsimd_enabled();
+ 	fp_enabled = __fpsimd_enabled_nvhe();
  
  	__sysreg_save_state_nvhe(guest_ctxt);
 --- a/virt/kvm/arm/arm.c
