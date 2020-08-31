@@ -54,6 +54,9 @@
 %define config_vars CONFIG_MODULES CONFIG_MODULE_SIG CONFIG_KMSG_IDS CONFIG_SUSE_KERNEL_SUPPORTED CONFIG_EFI_STUB
 %{expand:%(eval "$(test -n "%cpu_arch_flavor" && tar -xjf %_sourcedir/config.tar.bz2 --to-stdout config/%cpu_arch_flavor)"; for config in %config_vars; do echo "%%global $config ${!config:-n}"; done)}
 %define split_extra (%CONFIG_MODULES == "y" && %CONFIG_SUSE_KERNEL_SUPPORTED == "y")
+%if %CONFIG_MODULES != "y"
+	%define klp_symbols 0
+%endif
 
 %ifarch %ix86 x86_64
 %define install_vdso 1
@@ -207,8 +210,8 @@ BuildArch:      i686
 # Note that KMPs embed the version of the kernel built against, that's why
 # the _3 suffix for 2.6.x-based KMPs
 %define obsolete_kmp() Obsoletes: %1-kmp-%build_flavor <= %2 \
-Provides: %1-kmp = %2 \
-Provides: %1-kmp-%build_flavor = %2
+Provides: %1-kmp = %2.1 \
+Provides: %1-kmp-%build_flavor = %2.1
 # sles10 / 10.3
 %obsolete_kmp iwlwifi 1.3.27_3
 %obsolete_kmp ipw3945 1.2.2_3
@@ -580,6 +583,9 @@ add_vmlinux()
 # sign the modules, firmware and possibly the kernel in the buildservice
 BRP_PESIGN_FILES=""
 %if %CONFIG_EFI_STUB == "y"
+BRP_PESIGN_FILES="/boot/$image-%kernelrelease-%build_flavor"
+%endif
+%ifarch s390x
 BRP_PESIGN_FILES="/boot/$image-%kernelrelease-%build_flavor"
 %endif
 %if %CONFIG_MODULE_SIG == "y"
@@ -1084,7 +1090,7 @@ kernel module packages) against the %build_flavor flavor of the kernel.
 /usr/src/linux-obj/%kmp_target_cpu
 %endif
 
-%if "%livepatch" != "" && %CONFIG_SUSE_KERNEL_SUPPORTED == "y" && "%variant" == ""
+%if "%livepatch" != "" && %CONFIG_SUSE_KERNEL_SUPPORTED == "y" && "%variant" == "" && %build_default
 %if %livepatch == kgraft
 %define patch_package %{livepatch}-patch
 %else

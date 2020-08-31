@@ -1,0 +1,46 @@
+From 5684abf7020dfc5f0b6ba1d68eda3663871fce52 Mon Sep 17 00:00:00 2001
+From: Xin Long <lucien.xin@gmail.com>
+Date: Mon, 17 Jun 2019 21:34:13 +0800
+Subject: [PATCH] ip_tunnel: allow not to count pkts on tstats by setting skb's dev to NULL
+Git-commit: 5684abf7020dfc5f0b6ba1d68eda3663871fce52
+Patch-mainline: v5.2-rc6
+References: bsc#1175515
+
+iptunnel_xmit() works as a common function, also used by a udp tunnel
+which doesn't have to have a tunnel device, like how TIPC works with
+udp media.
+
+In these cases, we should allow not to count pkts on dev's tstats, so
+that udp tunnel can work with no tunnel device safely.
+
+Signed-off-by: Xin Long <lucien.xin@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ net/ipv4/ip_tunnel_core.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/net/ipv4/ip_tunnel_core.c b/net/ipv4/ip_tunnel_core.c
+index 9e3846388fb3..1452a97914a0 100644
+--- a/net/ipv4/ip_tunnel_core.c
++++ b/net/ipv4/ip_tunnel_core.c
+@@ -76,9 +76,12 @@ void iptunnel_xmit(struct sock *sk, struct rtable *rt, struct sk_buff *skb,
+ 	__ip_select_ident(net, iph, skb_shinfo(skb)->gso_segs ?: 1);
+ 
+ 	err = ip_local_out(net, sk, skb);
+-	if (unlikely(net_xmit_eval(err)))
+-		pkt_len = 0;
+-	iptunnel_xmit_stats(dev, pkt_len);
++
++	if (dev) {
++		if (unlikely(net_xmit_eval(err)))
++			pkt_len = 0;
++		iptunnel_xmit_stats(dev, pkt_len);
++	}
+ }
+ EXPORT_SYMBOL_GPL(iptunnel_xmit);
+ 
+-- 
+2.16.4
+
