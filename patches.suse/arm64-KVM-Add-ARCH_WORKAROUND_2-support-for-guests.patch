@@ -108,7 +108,7 @@ Acked-by: Liang Yan <lyan@suse.com>
  #include <linux/types.h>
  #include <linux/jump_label.h>
  #include <uapi/linux/psci.h>
-@@ -300,6 +301,39 @@ static bool __hyp_text __skip_instr(stru
+@@ -287,6 +288,39 @@ static bool __hyp_text __skip_instr(stru
  	}
  }
  
@@ -148,16 +148,16 @@ Acked-by: Liang Yan <lyan@suse.com>
  int __hyp_text __kvm_vcpu_run(struct kvm_vcpu *vcpu)
  {
  	struct kvm_cpu_context *host_ctxt;
-@@ -330,6 +364,8 @@ int __hyp_text __kvm_vcpu_run(struct kvm
+@@ -316,6 +350,8 @@ int __hyp_text __kvm_vcpu_run(struct kvm
  	__sysreg_restore_guest_state(guest_ctxt);
- 	__debug_restore_state(vcpu, kern_hyp_va(vcpu->arch.debug_ptr), guest_ctxt);
+ 	__debug_switch_to_guest(vcpu);
  
 +	__set_guest_arch_workaround_state(vcpu);
 +
  	/* Jump in the fire! */
  again:
  	exit_code = __guest_enter(vcpu, host_ctxt);
-@@ -398,6 +434,8 @@ again:
+@@ -384,6 +420,8 @@ again:
  		/* 0 falls through to be handled out of EL2 */
  	}
  
@@ -168,7 +168,7 @@ Acked-by: Liang Yan <lyan@suse.com>
  	__sysreg_save_guest_state(guest_ctxt);
 --- a/virt/kvm/arm/arm.c
 +++ b/virt/kvm/arm/arm.c
-@@ -1439,6 +1439,10 @@ static int init_hyp_mode(void)
+@@ -1463,6 +1463,10 @@ static int init_hyp_mode(void)
  		}
  	}
  
