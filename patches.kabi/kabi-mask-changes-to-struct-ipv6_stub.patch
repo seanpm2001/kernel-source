@@ -1,0 +1,91 @@
+From: Michal Kubecek <mkubecek@suse.cz>
+Date: Mon, 31 Aug 2020 22:05:44 +0200
+Subject: kabi: mask changes to struct ipv6_stub
+Patch-mainline: Never, kabi workaround
+References: bsc#1165629
+
+Backport of mainline commit 6c8991f41546 ("net: ipv6_stub: use
+ip6_dst_lookup_flow instead of ip6_dst_lookup") replaces callback
+->ipv6_dst_lookup() in struct ipv6_stub with a ->ipv6_dst_lookup_flow().
+
+As there are only two instances of the structure and both are static
+function in kernel code (and only one is actually used as we don't build
+IPv6 support as a module any more), we can safely add new members at the
+end of the structure.
+
+Move ->ipv6_dst_lookup_flow() callbac to the end of the function, hide it
+from kabi checker and restore ->ipv6_dst_lookup() for potential callers in
+out of tree modules built against previous kernels.
+
+Signed-off-by: Michal Kubecek <mkubecek@suse.cz>
+---
+ include/net/addrconf.h   | 12 ++++++++----
+ net/ipv6/addrconf_core.c |  8 ++++++++
+ net/ipv6/af_inet6.c      |  3 ++-
+ 3 files changed, 18 insertions(+), 5 deletions(-)
+
+--- a/include/net/addrconf.h
++++ b/include/net/addrconf.h
+@@ -218,15 +218,19 @@ struct ipv6_stub {
+ 				 const struct in6_addr *addr);
+ 	int (*ipv6_sock_mc_drop)(struct sock *sk, int ifindex,
+ 				 const struct in6_addr *addr);
+-	struct dst_entry *(*ipv6_dst_lookup_flow)(struct net *net,
+-						  const struct sock *sk,
+-						  struct flowi6 *fl6,
+-						  const struct in6_addr *final_dst);
++	int (*ipv6_dst_lookup)(struct net *net, struct sock *sk,
++			       struct dst_entry **dst, struct flowi6 *fl6);
+ 	void (*udpv6_encap_enable)(void);
+ 	void (*ndisc_send_na)(struct net_device *dev, const struct in6_addr *daddr,
+ 			      const struct in6_addr *solicited_addr,
+ 			      bool router, bool solicited, bool override, bool inc_opt);
+ 	struct neigh_table *nd_tbl;
++#ifndef __GENKSYMS__
++	struct dst_entry *(*ipv6_dst_lookup_flow)(struct net *net,
++						  const struct sock *sk,
++						  struct flowi6 *fl6,
++						  const struct in6_addr *final_dst);
++#endif /* __GENKSYMS__ */
+ };
+ extern const struct ipv6_stub *ipv6_stub __read_mostly;
+ 
+--- a/net/ipv6/addrconf_core.c
++++ b/net/ipv6/addrconf_core.c
+@@ -107,6 +107,13 @@ int inet6addr_notifier_call_chain(unsigned long val, void *v)
+ }
+ EXPORT_SYMBOL(inet6addr_notifier_call_chain);
+ 
++static int eafnosupport_ipv6_dst_lookup(struct net *net, struct sock *u1,
++					struct dst_entry **u2,
++					struct flowi6 *u3)
++{
++	return -EAFNOSUPPORT;
++}
++
+ static struct dst_entry *eafnosupport_ipv6_dst_lookup_flow(struct net *net,
+ 							   const struct sock *sk,
+ 							   struct flowi6 *fl6,
+@@ -116,6 +123,7 @@ static struct dst_entry *eafnosupport_ipv6_dst_lookup_flow(struct net *net,
+ }
+ 
+ const struct ipv6_stub *ipv6_stub __read_mostly = &(struct ipv6_stub) {
++	.ipv6_dst_lookup = eafnosupport_ipv6_dst_lookup,
+ 	.ipv6_dst_lookup_flow = eafnosupport_ipv6_dst_lookup_flow,
+ };
+ EXPORT_SYMBOL_GPL(ipv6_stub);
+--- a/net/ipv6/af_inet6.c
++++ b/net/ipv6/af_inet6.c
+@@ -872,10 +872,11 @@ static struct pernet_operations inet6_net_ops = {
+ static const struct ipv6_stub ipv6_stub_impl = {
+ 	.ipv6_sock_mc_join = ipv6_sock_mc_join,
+ 	.ipv6_sock_mc_drop = ipv6_sock_mc_drop,
+-	.ipv6_dst_lookup_flow = ip6_dst_lookup_flow__net,
++	.ipv6_dst_lookup = ip6_dst_lookup,
+ 	.udpv6_encap_enable = udpv6_encap_enable,
+ 	.ndisc_send_na = ndisc_send_na,
+ 	.nd_tbl	= &nd_tbl,
++	.ipv6_dst_lookup_flow = ip6_dst_lookup_flow__net,
+ };
+ 
+ static int __init inet6_init(void)
