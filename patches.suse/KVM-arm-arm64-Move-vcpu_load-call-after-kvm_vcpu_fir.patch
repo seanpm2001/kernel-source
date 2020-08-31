@@ -1,0 +1,103 @@
+From: Christoffer Dall <christoffer.dall@linaro.org>
+Date: Wed, 29 Nov 2017 16:37:53 +0100
+Subject: KVM: arm/arm64: Move vcpu_load call after kvm_vcpu_first_run_init
+Patch-mainline: v4.17-rc1
+Git-commit: 829a58635497d7cc668133ac17daca9b78652661
+References: jsc#SLE-4084
+
+Moving the call to vcpu_load() in kvm_arch_vcpu_ioctl_run() to after
+we've called kvm_vcpu_first_run_init() simplifies some of the vgic and
+there is also no need to do vcpu_load() for things such as handling the
+immediate_exit flag.
+
+Reviewed-by: Julien Grall <julien.grall@arm.com>
+Reviewed-by: Marc Zyngier <marc.zyngier@arm.com>
+Signed-off-by: Christoffer Dall <christoffer.dall@linaro.org>
+Signed-off-by: Marc Zyngier <marc.zyngier@arm.com>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ virt/kvm/arm/arch_timer.c     |    4 ----
+ virt/kvm/arm/arm.c            |   22 ++++++++--------------
+ virt/kvm/arm/vgic/vgic-init.c |   11 -----------
+ 3 files changed, 8 insertions(+), 29 deletions(-)
+
+--- a/virt/kvm/arm/arch_timer.c
++++ b/virt/kvm/arm/arch_timer.c
+@@ -844,11 +844,7 @@ int kvm_timer_enable(struct kvm_vcpu *vc
+ 		return ret;
+ 
+ no_vgic:
+-	preempt_disable();
+ 	timer->enabled = 1;
+-	kvm_timer_vcpu_load(vcpu);
+-	preempt_enable();
+-
+ 	return 0;
+ }
+ 
+--- a/virt/kvm/arm/arm.c
++++ b/virt/kvm/arm/arm.c
+@@ -621,27 +621,22 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_v
+ 	if (unlikely(!kvm_vcpu_initialized(vcpu)))
+ 		return -ENOEXEC;
+ 
+-	vcpu_load(vcpu);
+-
+ 	ret = kvm_vcpu_first_run_init(vcpu);
+ 	if (ret)
+-		goto out;
++		return ret;
+ 
+ 	if (run->exit_reason == KVM_EXIT_MMIO) {
+ 		ret = kvm_handle_mmio_return(vcpu, vcpu->run);
+ 		if (ret)
+-			goto out;
+-		if (kvm_arm_handle_step_debug(vcpu, vcpu->run)) {
+-			ret = 0;
+-			goto out;
+-		}
+-
++			return ret;
++		if (kvm_arm_handle_step_debug(vcpu, vcpu->run))
++			return 0;
+ 	}
+ 
+-	if (run->immediate_exit) {
+-		ret = -EINTR;
+-		goto out;
+-	}
++	if (run->immediate_exit)
++		return -EINTR;
++
++	vcpu_load(vcpu);
+ 
+ 	kvm_sigset_activate(vcpu);
+ 
+@@ -787,7 +782,6 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_v
+ 
+ 	kvm_sigset_deactivate(vcpu);
+ 
+-out:
+ 	vcpu_put(vcpu);
+ 	return ret;
+ }
+--- a/virt/kvm/arm/vgic/vgic-init.c
++++ b/virt/kvm/arm/vgic/vgic-init.c
+@@ -302,17 +302,6 @@ int vgic_init(struct kvm *kvm)
+ 
+ 	dist->initialized = true;
+ 
+-	/*
+-	 * If we're initializing GICv2 on-demand when first running the VCPU
+-	 * then we need to load the VGIC state onto the CPU.  We can detect
+-	 * this easily by checking if we are in between vcpu_load and vcpu_put
+-	 * when we just initialized the VGIC.
+-	 */
+-	preempt_disable();
+-	vcpu = kvm_arm_get_running_vcpu();
+-	if (vcpu)
+-		kvm_vgic_load(vcpu);
+-	preempt_enable();
+ out:
+ 	return ret;
+ }
