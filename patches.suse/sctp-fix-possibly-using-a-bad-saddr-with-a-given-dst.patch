@@ -29,13 +29,13 @@ Tested-by: Xin Long <lucien.xin@gmail.com>
 Signed-off-by: David S. Miller <davem@davemloft.net>
 Signed-off-by: Jiri Slaby <jslaby@suse.cz>
 ---
- net/sctp/ipv6.c     |   20 ++++++++++++++------
- net/sctp/protocol.c |   28 +++++++++++++++++++---------
+ net/sctp/ipv6.c     | 20 ++++++++++++++------
+ net/sctp/protocol.c | 28 +++++++++++++++++++---------
  2 files changed, 33 insertions(+), 15 deletions(-)
 
 --- a/net/sctp/ipv6.c
 +++ b/net/sctp/ipv6.c
-@@ -237,7 +237,8 @@ static void sctp_v6_get_dst(struct sctp_
+@@ -237,7 +237,8 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
  {
  	struct sctp_association *asoc = t->asoc;
  	struct dst_entry *dst = NULL;
@@ -45,7 +45,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  	struct sctp_bind_addr *bp;
  	struct ipv6_pinfo *np = inet6_sk(sk);
  	struct sctp_sockaddr_entry *laddr;
-@@ -247,7 +248,7 @@ static void sctp_v6_get_dst(struct sctp_
+@@ -247,7 +248,7 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
  	__u8 matchlen = 0;
  	sctp_scope_t scope;
  
@@ -54,10 +54,10 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  	fl6->daddr = daddr->v6.sin6_addr;
  	fl6->fl6_dport = daddr->v6.sin6_port;
  	fl6->flowi6_proto = IPPROTO_SCTP;
-@@ -271,8 +272,11 @@ static void sctp_v6_get_dst(struct sctp_
+@@ -271,8 +272,11 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
  	rcu_read_unlock();
  
- 	dst = ip6_dst_lookup_flow(sk, fl6, final_p);
+ 	dst = ip6_dst_lookup_flow(sock_net(sk), sk, fl6, final_p);
 -	if (!asoc || saddr)
 +	if (!asoc || saddr) {
 +		t->dst = dst;
@@ -67,7 +67,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  
  	bp = &asoc->base.bind_addr;
  	scope = sctp_scope(daddr);
-@@ -295,6 +299,8 @@ static void sctp_v6_get_dst(struct sctp_
+@@ -295,6 +299,8 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
  			if ((laddr->a.sa.sa_family == AF_INET6) &&
  			    (sctp_v6_cmp_addr(&dst_saddr, &laddr->a))) {
  				rcu_read_unlock();
@@ -76,7 +76,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  				goto out;
  			}
  		}
-@@ -333,6 +339,8 @@ static void sctp_v6_get_dst(struct sctp_
+@@ -333,6 +339,8 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
  			if (!IS_ERR_OR_NULL(dst))
  				dst_release(dst);
  			dst = bdst;
@@ -85,7 +85,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  			break;
  		}
  
-@@ -346,6 +354,8 @@ static void sctp_v6_get_dst(struct sctp_
+@@ -346,6 +354,8 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
  			dst_release(dst);
  		dst = bdst;
  		matchlen = bmatchlen;
@@ -94,7 +94,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  	}
  	rcu_read_unlock();
  
-@@ -354,14 +364,12 @@ out:
+@@ -354,14 +364,12 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
  		struct rt6_info *rt;
  
  		rt = (struct rt6_info *)dst;
@@ -112,7 +112,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  }
 --- a/net/sctp/protocol.c
 +++ b/net/sctp/protocol.c
-@@ -436,14 +436,15 @@ static void sctp_v4_get_dst(struct sctp_
+@@ -436,14 +436,15 @@ static void sctp_v4_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
  {
  	struct sctp_association *asoc = t->asoc;
  	struct rtable *rt;
@@ -130,7 +130,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  	fl4->daddr  = daddr->v4.sin_addr.s_addr;
  	fl4->fl4_dport = daddr->v4.sin_port;
  	fl4->flowi4_proto = IPPROTO_SCTP;
-@@ -461,8 +462,11 @@ static void sctp_v4_get_dst(struct sctp_
+@@ -461,8 +462,11 @@ static void sctp_v4_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
  		 &fl4->saddr);
  
  	rt = ip_route_output_key(sock_net(sk), fl4);
@@ -143,7 +143,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  
  	/* If there is no association or if a source address is passed, no
  	 * more validation is required.
-@@ -525,27 +529,33 @@ static void sctp_v4_get_dst(struct sctp_
+@@ -525,27 +529,33 @@ static void sctp_v4_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
  		odev = __ip_dev_find(sock_net(sk), laddr->a.v4.sin_addr.s_addr,
  				     false);
  		if (!odev || odev->ifindex != fl4->flowi4_oif) {

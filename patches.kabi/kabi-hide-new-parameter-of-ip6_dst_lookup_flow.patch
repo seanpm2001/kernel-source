@@ -1,0 +1,248 @@
+From: Michal Kubecek <mkubecek@suse.cz>
+Date: Mon, 31 Aug 2020 22:55:23 +0200
+Subject: kabi: hide new parameter of ip6_dst_lookup_flow()
+Patch-mainline: Never, kabi workaround
+References: bsc#1165629
+
+Backport of mainline commit c4e85f73afb6 ("net: ipv6: add net argument to
+ip6_dst_lookup_flow") added a new parameter net to exported function
+ip6_dst_lookup_flow().
+
+Rename modified function to ip6_dst_lookup_flow__net() and create
+ip6_dst_lookup_flow() with original signature and behaviour (which is just
+a wrapper around ip6_dst_lookup_flow__net()) in case some out of tree
+module calls it. All in tree callers call ip6_dst_lookup_flow__net().
+
+Signed-off-by: Michal Kubecek <mkubecek@suse.cz>
+---
+ include/net/ipv6.h               |  4 +++-
+ net/dccp/ipv6.c                  |  6 +++---
+ net/ipv6/af_inet6.c              |  5 +++--
+ net/ipv6/datagram.c              |  2 +-
+ net/ipv6/inet6_connection_sock.c |  4 ++--
+ net/ipv6/ip6_output.c            | 18 ++++++++++++++----
+ net/ipv6/raw.c                   |  2 +-
+ net/ipv6/syncookies.c            |  3 ++-
+ net/ipv6/tcp_ipv6.c              |  4 ++--
+ net/l2tp/l2tp_ip6.c              |  2 +-
+ net/sctp/ipv6.c                  |  5 +++--
+ 11 files changed, 35 insertions(+), 20 deletions(-)
+
+--- a/include/net/ipv6.h
++++ b/include/net/ipv6.h
+@@ -868,8 +868,10 @@ static inline struct sk_buff *ip6_finish_skb(struct sock *sk)
+ 
+ int ip6_dst_lookup(struct net *net, struct sock *sk, struct dst_entry **dst,
+ 		   struct flowi6 *fl6);
+-struct dst_entry *ip6_dst_lookup_flow(struct net *net, const struct sock *sk, struct flowi6 *fl6,
++struct dst_entry *ip6_dst_lookup_flow(const struct sock *sk, struct flowi6 *fl6,
+ 				      const struct in6_addr *final_dst);
++struct dst_entry *ip6_dst_lookup_flow__net(struct net *net, const struct sock *sk, struct flowi6 *fl6,
++					   const struct in6_addr *final_dst);
+ struct dst_entry *ip6_sk_dst_lookup_flow(struct sock *sk, struct flowi6 *fl6,
+ 					 const struct in6_addr *final_dst);
+ struct dst_entry *ip6_blackhole_route(struct net *net,
+--- a/net/dccp/ipv6.c
++++ b/net/dccp/ipv6.c
+@@ -209,7 +209,7 @@ static int dccp_v6_send_response(const struct sock *sk, struct request_sock *req
+ 	final_p = fl6_update_dst(&fl6, rcu_dereference(np->opt), &final);
+ 	rcu_read_unlock();
+ 
+-	dst = ip6_dst_lookup_flow(sock_net(sk), sk, &fl6, final_p);
++	dst = ip6_dst_lookup_flow__net(sock_net(sk), sk, &fl6, final_p);
+ 	if (IS_ERR(dst)) {
+ 		err = PTR_ERR(dst);
+ 		dst = NULL;
+@@ -280,7 +280,7 @@ static void dccp_v6_ctl_send_reset(const struct sock *sk, struct sk_buff *rxskb)
+ 	security_skb_classify_flow(rxskb, flowi6_to_flowi(&fl6));
+ 
+ 	/* sk = NULL, but it is safe for now. RST socket required. */
+-	dst = ip6_dst_lookup_flow(sock_net(ctl_sk), ctl_sk, &fl6, NULL);
++	dst = ip6_dst_lookup_flow__net(sock_net(ctl_sk), ctl_sk, &fl6, NULL);
+ 	if (!IS_ERR(dst)) {
+ 		skb_dst_set(skb, dst);
+ 		ip6_xmit(ctl_sk, skb, &fl6, 0, NULL, 0);
+@@ -888,7 +888,7 @@ static int dccp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
+ 	opt = rcu_dereference_protected(np->opt, lockdep_sock_is_held(sk));
+ 	final_p = fl6_update_dst(&fl6, opt, &final);
+ 
+-	dst = ip6_dst_lookup_flow(sock_net(sk), sk, &fl6, final_p);
++	dst = ip6_dst_lookup_flow__net(sock_net(sk), sk, &fl6, final_p);
+ 	if (IS_ERR(dst)) {
+ 		err = PTR_ERR(dst);
+ 		goto failure;
+--- a/net/ipv6/af_inet6.c
++++ b/net/ipv6/af_inet6.c
+@@ -740,7 +740,8 @@ int inet6_sk_rebuild_header(struct sock *sk)
+ 					 &final);
+ 		rcu_read_unlock();
+ 
+-		dst = ip6_dst_lookup_flow(sock_net(sk), sk, &fl6, final_p);
++		dst = ip6_dst_lookup_flow__net(sock_net(sk), sk, &fl6,
++					       final_p);
+ 		if (IS_ERR(dst)) {
+ 			sk->sk_route_caps = 0;
+ 			sk->sk_err_soft = -PTR_ERR(dst);
+@@ -898,7 +899,7 @@ static struct pernet_operations inet6_net_ops = {
+ static const struct ipv6_stub ipv6_stub_impl = {
+ 	.ipv6_sock_mc_join = ipv6_sock_mc_join,
+ 	.ipv6_sock_mc_drop = ipv6_sock_mc_drop,
+-	.ipv6_dst_lookup_flow = ip6_dst_lookup_flow,
++	.ipv6_dst_lookup_flow = ip6_dst_lookup_flow__net,
+ 	.udpv6_encap_enable = udpv6_encap_enable,
+ 	.ndisc_send_na = ndisc_send_na,
+ 	.nd_tbl	= &nd_tbl,
+--- a/net/ipv6/datagram.c
++++ b/net/ipv6/datagram.c
+@@ -88,7 +88,7 @@ int ip6_datagram_dst_update(struct sock *sk, bool fix_sk_saddr)
+ 	final_p = fl6_update_dst(&fl6, opt, &final);
+ 	rcu_read_unlock();
+ 
+-	dst = ip6_dst_lookup_flow(sock_net(sk), sk, &fl6, final_p);
++	dst = ip6_dst_lookup_flow__net(sock_net(sk), sk, &fl6, final_p);
+ 	if (IS_ERR(dst)) {
+ 		err = PTR_ERR(dst);
+ 		goto out;
+--- a/net/ipv6/inet6_connection_sock.c
++++ b/net/ipv6/inet6_connection_sock.c
+@@ -52,7 +52,7 @@ struct dst_entry *inet6_csk_route_req(const struct sock *sk,
+ 	fl6->flowi6_uid = sk->sk_uid;
+ 	security_req_classify_flow(req, flowi6_to_flowi(fl6));
+ 
+-	dst = ip6_dst_lookup_flow(sock_net(sk), sk, fl6, final_p);
++	dst = ip6_dst_lookup_flow__net(sock_net(sk), sk, fl6, final_p);
+ 	if (IS_ERR(dst))
+ 		return NULL;
+ 
+@@ -107,7 +107,7 @@ static struct dst_entry *inet6_csk_route_socket(struct sock *sk,
+ 
+ 	dst = __inet6_csk_dst_check(sk, np->dst_cookie);
+ 	if (!dst) {
+-		dst = ip6_dst_lookup_flow(sock_net(sk), sk, fl6, final_p);
++		dst = ip6_dst_lookup_flow__net(sock_net(sk), sk, fl6, final_p);
+ 
+ 		if (!IS_ERR(dst))
+ 			ip6_dst_store(sk, dst, NULL, NULL);
+--- a/net/ipv6/ip6_output.c
++++ b/net/ipv6/ip6_output.c
+@@ -1068,7 +1068,7 @@ int ip6_dst_lookup(struct net *net, struct sock *sk, struct dst_entry **dst,
+ EXPORT_SYMBOL_GPL(ip6_dst_lookup);
+ 
+ /**
+- *	ip6_dst_lookup_flow - perform route lookup on flow with ipsec
++ *	ip6_dst_lookup_flow__net - perform route lookup on flow with ipsec
+  *	@sk: socket which provides route info
+  *	@fl6: flow to lookup
+  *	@final_dst: final destination address for ipsec lookup
+@@ -1078,8 +1078,8 @@ EXPORT_SYMBOL_GPL(ip6_dst_lookup);
+  *	It returns a valid dst pointer on success, or a pointer encoded
+  *	error code.
+  */
+-struct dst_entry *ip6_dst_lookup_flow(struct net *net, const struct sock *sk, struct flowi6 *fl6,
+-				      const struct in6_addr *final_dst)
++struct dst_entry *ip6_dst_lookup_flow__net(struct net *net, const struct sock *sk, struct flowi6 *fl6,
++					   const struct in6_addr *final_dst)
+ {
+ 	struct dst_entry *dst = NULL;
+ 	int err;
+@@ -1092,6 +1092,15 @@ struct dst_entry *ip6_dst_lookup_flow(struct net *net, const struct sock *sk, st
+ 
+ 	return xfrm_lookup_route(net, dst, flowi6_to_flowi(fl6), sk, 0);
+ }
++EXPORT_SYMBOL_GPL(ip6_dst_lookup_flow__net);
++
++
++/* We need to preserve this one for kABI. */
++struct dst_entry *ip6_dst_lookup_flow(const struct sock *sk, struct flowi6 *fl6,
++				      const struct in6_addr *final_dst)
++{
++	return ip6_dst_lookup_flow__net(sock_net(sk), sk, fl6, final_dst);
++}
+ EXPORT_SYMBOL_GPL(ip6_dst_lookup_flow);
+ 
+ /**
+@@ -1115,7 +1124,8 @@ struct dst_entry *ip6_sk_dst_lookup_flow(struct sock *sk, struct flowi6 *fl6,
+ 
+ 	dst = ip6_sk_dst_check(sk, dst, fl6);
+ 	if (!dst)
+-		dst = ip6_dst_lookup_flow(sock_net(sk), sk, fl6, final_dst);
++		dst = ip6_dst_lookup_flow__net(sock_net(sk), sk, fl6,
++					       final_dst);
+ 
+ 	return dst;
+ }
+--- a/net/ipv6/raw.c
++++ b/net/ipv6/raw.c
+@@ -926,7 +926,7 @@ static int rawv6_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
+ 
+ 	fl6.flowlabel = ip6_make_flowinfo(ipc6.tclass, fl6.flowlabel);
+ 
+-	dst = ip6_dst_lookup_flow(sock_net(sk), sk, &fl6, final_p);
++	dst = ip6_dst_lookup_flow__net(sock_net(sk), sk, &fl6, final_p);
+ 	if (IS_ERR(dst)) {
+ 		err = PTR_ERR(dst);
+ 		goto out;
+--- a/net/ipv6/syncookies.c
++++ b/net/ipv6/syncookies.c
+@@ -239,7 +239,8 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
+ 		fl6.flowi6_uid = sk->sk_uid;
+ 		security_req_classify_flow(req, flowi6_to_flowi(&fl6));
+ 
+-		dst = ip6_dst_lookup_flow(sock_net(sk), sk, &fl6, final_p);
++		dst = ip6_dst_lookup_flow__net(sock_net(sk), sk, &fl6,
++					       final_p);
+ 		if (IS_ERR(dst))
+ 			goto out_free;
+ 	}
+--- a/net/ipv6/tcp_ipv6.c
++++ b/net/ipv6/tcp_ipv6.c
+@@ -267,7 +267,7 @@ static int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
+ 
+ 	security_sk_classify_flow(sk, flowi6_to_flowi(&fl6));
+ 
+-	dst = ip6_dst_lookup_flow(sock_net(sk), sk, &fl6, final_p);
++	dst = ip6_dst_lookup_flow__net(sock_net(sk), sk, &fl6, final_p);
+ 	if (IS_ERR(dst)) {
+ 		err = PTR_ERR(dst);
+ 		goto failure;
+@@ -866,7 +866,7 @@ static void tcp_v6_send_response(const struct sock *sk, struct sk_buff *skb, u32
+ 	 * Underlying function will use this to retrieve the network
+ 	 * namespace
+ 	 */
+-	dst = ip6_dst_lookup_flow(sock_net(ctl_sk), ctl_sk, &fl6, NULL);
++	dst = ip6_dst_lookup_flow__net(sock_net(ctl_sk), ctl_sk, &fl6, NULL);
+ 	if (!IS_ERR(dst)) {
+ 		skb_dst_set(buff, dst);
+ 		ip6_xmit(ctl_sk, buff, &fl6, fl6.flowi6_mark, NULL, tclass);
+--- a/net/l2tp/l2tp_ip6.c
++++ b/net/l2tp/l2tp_ip6.c
+@@ -639,7 +639,7 @@ static int l2tp_ip6_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
+ 
+ 	fl6.flowlabel = ip6_make_flowinfo(ipc6.tclass, fl6.flowlabel);
+ 
+-	dst = ip6_dst_lookup_flow(sock_net(sk), sk, &fl6, final_p);
++	dst = ip6_dst_lookup_flow__net(sock_net(sk), sk, &fl6, final_p);
+ 	if (IS_ERR(dst)) {
+ 		err = PTR_ERR(dst);
+ 		goto out;
+--- a/net/sctp/ipv6.c
++++ b/net/sctp/ipv6.c
+@@ -271,7 +271,7 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
+ 	final_p = fl6_update_dst(fl6, rcu_dereference(np->opt), &final);
+ 	rcu_read_unlock();
+ 
+-	dst = ip6_dst_lookup_flow(sock_net(sk), sk, fl6, final_p);
++	dst = ip6_dst_lookup_flow__net(sock_net(sk), sk, fl6, final_p);
+ 	if (!asoc || saddr) {
+ 		t->dst = dst;
+ 		memcpy(fl, &_fl, sizeof(_fl));
+@@ -329,7 +329,8 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
+ 		fl6->saddr = laddr->a.v6.sin6_addr;
+ 		fl6->fl6_sport = laddr->a.v6.sin6_port;
+ 		final_p = fl6_update_dst(fl6, rcu_dereference(np->opt), &final);
+-		bdst = ip6_dst_lookup_flow(sock_net(sk), sk, fl6, final_p);
++		bdst = ip6_dst_lookup_flow__net(sock_net(sk), sk, fl6,
++						final_p);
+ 
+ 		if (IS_ERR(bdst))
+ 			continue;
