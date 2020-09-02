@@ -3022,6 +3022,7 @@ s##cgroup_taskset
 s#blkcg_policy_data struct blkcg_policy_data { s#blkcg * blkcg ; int plid ; } 
 s#blkcg struct blkcg { s#cgroup_subsys_state css ; t#spinlock_t lock ; s#radix_tree_root blkg_tree ; s#blkcg_gq * blkg_hint ; s#hlist_head blkg_list ; s#blkcg_policy_data * cpd [ 5 ] ; s#list_head all_blkcgs_node ; s#list_head cgwb_list ; } 
 blkcg_root extern s#blkcg blkcg_root 
+blkcg_root_css extern s#cgroup_subsys_state * const blkcg_root_css 
 blkg_lookup_slowpath s#blkcg_gq * blkg_lookup_slowpath ( s#blkcg * , s#request_queue * , t#bool ) 
 __blkg_release_rcu void __blkg_release_rcu ( s#callback_head * ) 
 blkg_dev_name const char * blkg_dev_name ( s#blkcg_gq * ) 
@@ -9786,6 +9787,10 @@ __des3_ede_setkey extern int __des3_ede_setkey ( t#u32 * , t#u32 * , const t#u8 
 /* crypto/dh_helper.o */
 s#dh struct dh { void * key ; void * p ; void * g ; unsigned int key_size ; unsigned int p_size ; unsigned int g_size ; } 
 crypto_dh_key_len int crypto_dh_key_len ( const s#dh * ) 
+s#dh_q struct dh_q { void * key ; void * p ; void * q ; void * g ; unsigned int key_size ; unsigned int p_size ; unsigned int q_size ; unsigned int g_size ; } 
+crypto_dh_key_len_q int crypto_dh_key_len_q ( const s#dh_q * ) 
+crypto_dh_encode_key_q int crypto_dh_encode_key_q ( char * , unsigned int , const s#dh_q * ) 
+crypto_dh_decode_key_q int crypto_dh_decode_key_q ( const char * , unsigned int , s#dh_q * ) 
 crypto_dh_encode_key int crypto_dh_encode_key ( char * , unsigned int , const s#dh * ) 
 crypto_dh_decode_key int crypto_dh_decode_key ( const char * , unsigned int , s#dh * ) 
 
@@ -13839,7 +13844,7 @@ e#ceph_msg_data_type enum ceph_msg_data_type { CEPH_MSG_DATA_NONE , CEPH_MSG_DAT
 s#ceph_bio_iter struct ceph_bio_iter { s#bio * bio ; s#bvec_iter iter ; } 
 s#ceph_bvec_iter struct ceph_bvec_iter { s#bio_vec * bvecs ; s#bvec_iter iter ; } 
 s#ceph_pagelist struct ceph_pagelist { s#list_head head ; void * mapped_tail ; t#size_t length ; t#size_t room ; s#list_head free_list ; t#size_t num_pages_free ; t#refcount_t refcnt ; } 
-s#ceph_msg_data struct ceph_msg_data { e#ceph_msg_data_type type ; union { struct { s#ceph_bio_iter bio_pos ; t#u32 bio_length ; } ; s#ceph_bvec_iter bvec_pos ; struct { s#page * * pages ; t#size_t length ; unsigned int alignment ; } ; s#ceph_pagelist * pagelist ; struct { s#scatterlist * sgl ; unsigned int sgl_init_offset ; t#u64 sgl_length ; } ; } ; } 
+s#ceph_msg_data struct ceph_msg_data { e#ceph_msg_data_type type ; union { struct { s#ceph_bio_iter bio_pos ; t#u32 bio_length ; } ; s#ceph_bvec_iter bvec_pos ; struct { s#page * * pages ; t#size_t length ; unsigned int alignment ; t#bool own_pages ; } ; s#ceph_pagelist * pagelist ; struct { s#scatterlist * sgl ; unsigned int sgl_init_offset ; t#u64 sgl_length ; } ; } ; } 
 s#ceph_msg_data_cursor struct ceph_msg_data_cursor { t#size_t total_resid ; s#ceph_msg_data * data ; t#size_t resid ; t#bool last_piece ; t#bool need_crc ; union { s#ceph_bio_iter bio_iter ; s#bvec_iter bvec_iter ; struct { unsigned int page_offset ; unsigned short page_index ; unsigned short page_count ; } ; struct { s#page * page ; t#size_t offset ; } ; struct { s#scatterlist * sg ; unsigned int sg_consumed ; } ; } ; } 
 s#ceph_authorizer struct ceph_authorizer { void ( * destroy ) ( s#ceph_authorizer * ) ; } 
 s#ceph_auth_handshake struct ceph_auth_handshake { s#ceph_authorizer * authorizer ; void * authorizer_buf ; t#size_t authorizer_buf_len ; void * authorizer_reply_buf ; t#size_t authorizer_reply_buf_len ; int ( * sign_message ) ( s#ceph_auth_handshake * , s#ceph_msg * ) ; int ( * check_message_signature ) ( s#ceph_auth_handshake * , s#ceph_msg * ) ; } 
@@ -14309,6 +14314,7 @@ get_random_bytes_arch extern void get_random_bytes_arch ( void * , int )
 get_random_u64 t#u64 get_random_u64 ( void ) 
 get_random_u32 t#u32 get_random_u32 ( void ) 
 add_hwgenerator_randomness void add_hwgenerator_randomness ( const char * , t#size_t , t#size_t ) 
+add_bootloader_randomness extern void add_bootloader_randomness ( const void * , unsigned int ) 
 
 /* drivers/char/tpm/tpm-chip.o */
 s##device_private
@@ -29022,45 +29028,6 @@ nvm_alloc_dev extern s#nvm_dev * nvm_alloc_dev ( int )
 nvm_register extern int nvm_register ( s#nvm_dev * ) 
 nvm_unregister extern void nvm_unregister ( s#nvm_dev * ) 
 
-/* drivers/md/bcache/bset.o */
-s#bkey struct bkey { t#__u64 high ; t#__u64 low ; t#__u64 ptr [ ] ; } 
-s#btree_iter_set struct btree_iter_set { s#bkey * k , * end ; } 
-s#btree_iter struct btree_iter { t#size_t size , used ; s#btree_iter_set data [ 4U ] ; } 
-s#btree_keys_ops struct btree_keys_ops { t#bool ( * sort_cmp ) ( s#btree_iter_set , s#btree_iter_set ) ; s#bkey * ( * sort_fixup ) ( s#btree_iter * , s#bkey * ) ; t#bool ( * insert_fixup ) ( s#btree_keys * , s#bkey * , s#btree_iter * , s#bkey * ) ; t#bool ( * key_invalid ) ( s#btree_keys * , const s#bkey * ) ; t#bool ( * key_bad ) ( s#btree_keys * , const s#bkey * ) ; t#bool ( * key_merge ) ( s#btree_keys * , s#bkey * , s#bkey * ) ; void ( * key_to_text ) ( char * , t#size_t , const s#bkey * ) ; void ( * key_dump ) ( s#btree_keys * , const s#bkey * ) ; t#bool is_extents ; } 
-s##bkey_float
-s#bset struct bset { t#__u64 csum ; t#__u64 magic ; t#__u64 seq ; t#__u32 version ; t#__u32 keys ; union { s#bkey start [ 0 ] ; t#__u64 d [ 0 ] ; } ; } 
-s#bset_tree struct bset_tree { unsigned int size ; unsigned int extra ; s#bkey end ; s#bkey_float * tree ; t#uint8_t * prev ; s#bset * data ; } 
-s#btree_keys struct btree_keys { const s#btree_keys_ops * ops ; t#uint8_t page_order ; t#uint8_t nsets ; unsigned int last_set_unwritten : 1 ; t#bool * expensive_debug_checks ; s#bset_tree set [ 4U ] ; } 
-bch_btree_keys_free void bch_btree_keys_free ( s#btree_keys * ) 
-bch_btree_keys_alloc int bch_btree_keys_alloc ( s#btree_keys * , unsigned int , t#gfp_t ) 
-bch_btree_keys_init void bch_btree_keys_init ( s#btree_keys * , const s#btree_keys_ops * , t#bool * ) 
-bch_bset_init_next void bch_bset_init_next ( s#btree_keys * , s#bset * , t#uint64_t ) 
-bch_bset_build_written_tree void bch_bset_build_written_tree ( s#btree_keys * ) 
-bch_bset_fix_invalidated_key void bch_bset_fix_invalidated_key ( s#btree_keys * , s#bkey * ) 
-bch_bkey_try_merge t#bool bch_bkey_try_merge ( s#btree_keys * , s#bkey * , s#bkey * ) 
-bch_bset_insert void bch_bset_insert ( s#btree_keys * , s#bkey * , s#bkey * ) 
-bch_btree_insert_key unsigned int bch_btree_insert_key ( s#btree_keys * , s#bkey * , s#bkey * ) 
-__bch_bset_search s#bkey * __bch_bset_search ( s#btree_keys * , s#bset_tree * , const s#bkey * ) 
-bch_btree_iter_init s#bkey * bch_btree_iter_init ( s#btree_keys * , s#btree_iter * , s#bkey * ) 
-bch_btree_iter_next s#bkey * bch_btree_iter_next ( s#btree_iter * ) 
-s#time_stats struct time_stats { t#spinlock_t lock ; t#uint64_t max_duration ; t#uint64_t average_duration ; t#uint64_t average_frequency ; t#uint64_t last ; } 
-s#bset_sort_state struct bset_sort_state { t#mempool_t * pool ; unsigned int page_order ; unsigned int crit_factor ; s#time_stats time ; } 
-bch_bset_sort_state_init int bch_bset_sort_state_init ( s#bset_sort_state * , unsigned int ) 
-bch_btree_sort_partial void bch_btree_sort_partial ( s#btree_keys * , unsigned int , s#bset_sort_state * ) 
-bch_btree_sort_lazy void bch_btree_sort_lazy ( s#btree_keys * , s#bset_sort_state * ) 
-
-/* drivers/md/bcache/closure.o */
-s##workqueue_struct
-s##closure_syncer
-t#closure_fn typedef void ( closure_fn ) ( s#closure * ) 
-s#closure struct closure { union { struct { s#workqueue_struct * wq ; s#closure_syncer * s ; s#llist_node list ; t#closure_fn * fn ; } ; s#work_struct work ; } ; s#closure * parent ; t#atomic_t remaining ; } 
-closure_sub void closure_sub ( s#closure * , int ) 
-closure_put void closure_put ( s#closure * ) 
-s#closure_waitlist struct closure_waitlist { s#llist_head list ; } 
-__closure_wake_up void __closure_wake_up ( s#closure_waitlist * ) 
-closure_wait t#bool closure_wait ( s#closure_waitlist * , s#closure * ) 
-__closure_sync void __closure_sync ( s#closure * ) 
-
 /* drivers/md/bcache/trace.o */
 s##static_key_mod
 __tracepoint_bcache_request_start extern s#tracepoint __tracepoint_bcache_request_start 
@@ -31091,12 +31058,15 @@ s#mddev struct mddev { void * private ; s#md_personality * pers ; t#dev_t unit ;
 s#md_cluster_operations struct md_cluster_operations { int ( * join ) ( s#mddev * , int ) ; int ( * leave ) ( s#mddev * ) ; int ( * slot_number ) ( s#mddev * ) ; int ( * resync_info_update ) ( s#mddev * , t#sector_t , t#sector_t ) ; int ( * metadata_update_start ) ( s#mddev * ) ; int ( * metadata_update_finish ) ( s#mddev * ) ; void ( * metadata_update_cancel ) ( s#mddev * ) ; int ( * resync_start ) ( s#mddev * ) ; int ( * resync_finish ) ( s#mddev * ) ; int ( * area_resyncing ) ( s#mddev * , int , t#sector_t , t#sector_t ) ; int ( * add_new_disk ) ( s#mddev * , s#md_rdev * ) ; void ( * add_new_disk_cancel ) ( s#mddev * ) ; int ( * new_disk_ack ) ( s#mddev * , t#bool ) ; int ( * remove_disk ) ( s#mddev * , s#md_rdev * ) ; void ( * load_bitmaps ) ( s#mddev * , int ) ; int ( * gather_bitmaps ) ( s#md_rdev * ) ; int ( * lock_all_bitmaps ) ( s#mddev * ) ; void ( * unlock_all_bitmaps ) ( s#mddev * ) ; void ( * update_size ) ( s#mddev * , t#sector_t ) ; } 
 md_cluster_ops extern s#md_cluster_operations * md_cluster_ops 
 md_cluster_mod s#module * md_cluster_mod 
+mddev_create_serial_pool extern void mddev_create_serial_pool ( s#mddev * , s#md_rdev * , t#bool ) 
 bio_alloc_mddev extern s#bio * bio_alloc_mddev ( t#gfp_t , int , s#mddev * ) 
 md_new_event extern void md_new_event ( s#mddev * ) 
 md_handle_request extern void md_handle_request ( s#mddev * , s#bio * ) 
+md_io_acct extern void md_io_acct ( s#mddev * , int , unsigned int ) 
 mddev_suspend extern void mddev_suspend ( s#mddev * ) 
 mddev_resume extern void mddev_resume ( s#mddev * ) 
 mddev_congested extern int mddev_congested ( s#mddev * , int ) 
+md_flush_request2 extern t#bool md_flush_request2 ( s#mddev * , s#bio * ) 
 md_flush_request extern void md_flush_request ( s#mddev * , s#bio * ) 
 mddev_init extern void mddev_init ( s#mddev * ) 
 mddev_unlock extern void mddev_unlock ( s#mddev * ) 
@@ -48462,7 +48432,7 @@ s#qeth_discipline struct qeth_discipline { const s#device_type * devtype ; int (
 s#gro_list struct gro_list { s#list_head list ; int count ; } 
 s#napi_struct struct napi_struct { s#list_head poll_list ; unsigned long state ; int weight ; unsigned long gro_bitmask ; int ( * poll ) ( s#napi_struct * , int ) ; s#net_device * dev ; s#gro_list gro_hash [ 8 ] ; s#sk_buff * skb ; s#hrtimer timer ; s#list_head dev_list ; s#hlist_node napi_hash_node ; unsigned int napi_id ; } 
 s#qeth_rx struct qeth_rx { int b_count ; int b_index ; s#qdio_buffer_element * b_element ; int e_offset ; int qdio_err ; } 
-s#qeth_card struct qeth_card { s#list_head list ; e#qeth_card_states state ; t#spinlock_t lock ; s#ccwgroup_device * gdev ; s#qeth_channel read ; s#qeth_channel write ; s#qeth_channel data ; s#net_device * dev ; s#net_device_stats stats ; s#qeth_card_info info ; s#qeth_token token ; s#qeth_seqno seqno ; s#qeth_card_options options ; s#workqueue_struct * event_wq ; t#wait_queue_head_t wait_q ; t#spinlock_t mclock ; unsigned long active_vlans [ ( ( ( 4096 ) + ( 8 * sizeof ( long ) ) - 1 ) / ( 8 * sizeof ( long ) ) ) ] ; s#mutex vid_list_mutex ; s#list_head vid_list ; s#hlist_head mac_htable [ 1 << ( 4 ) ] ; s#hlist_head ip_htable [ 1 << ( 4 ) ] ; s#hlist_head ip_mc_htable [ 1 << ( 4 ) ] ; s#work_struct kernel_thread_starter ; t#spinlock_t thread_mask_lock ; unsigned long thread_start_mask ; unsigned long thread_allowed_mask ; unsigned long thread_running_mask ; s#task_struct * recovery_task ; t#spinlock_t ip_lock ; s#qeth_ipato ipato ; s#list_head cmd_waiter_list ; s#qeth_qdio_info qdio ; s#qeth_perf_stats perf_stats ; int read_or_write_problem ; s#qeth_osn_info osn_info ; s#qeth_discipline * discipline ; t#atomic_t force_alloc_skb ; s#service_level qeth_service_level ; s#qdio_ssqd_desc ssqd ; t#debug_info_t * debug ; s#mutex conf_mutex ; s#mutex discipline_mutex ; s#napi_struct napi ; s#qeth_rx rx ; s#delayed_work buffer_reclaim_work ; int reclaim_index ; s#work_struct close_dev_work ; } 
+s#qeth_card struct qeth_card { s#list_head list ; e#qeth_card_states state ; t#spinlock_t lock ; s#ccwgroup_device * gdev ; s#qeth_channel read ; s#qeth_channel write ; s#qeth_channel data ; s#net_device * dev ; s#net_device_stats stats ; s#qeth_card_info info ; s#qeth_token token ; s#qeth_seqno seqno ; s#qeth_card_options options ; s#workqueue_struct * event_wq ; t#wait_queue_head_t wait_q ; t#spinlock_t mclock ; unsigned long active_vlans [ ( ( ( 4096 ) + ( 8 * sizeof ( long ) ) - 1 ) / ( 8 * sizeof ( long ) ) ) ] ; s#mutex vid_list_mutex ; s#list_head vid_list ; s#hlist_head mac_htable [ 1 << ( 4 ) ] ; s#hlist_head ip_htable [ 1 << ( 4 ) ] ; s#hlist_head ip_mc_htable [ 1 << ( 4 ) ] ; s#work_struct kernel_thread_starter ; t#spinlock_t thread_mask_lock ; unsigned long thread_start_mask ; unsigned long thread_allowed_mask ; unsigned long thread_running_mask ; s#task_struct * recovery_task ; t#spinlock_t ip_lock ; s#qeth_ipato ipato ; s#list_head cmd_waiter_list ; s#qeth_qdio_info qdio ; s#qeth_perf_stats perf_stats ; int read_or_write_problem ; s#qeth_osn_info osn_info ; s#qeth_discipline * discipline ; t#atomic_t force_alloc_skb ; s#service_level qeth_service_level ; s#qdio_ssqd_desc ssqd ; t#debug_info_t * debug ; s#mutex sbp_lock ; s#mutex conf_mutex ; s#mutex discipline_mutex ; s#napi_struct napi ; s#qeth_rx rx ; s#delayed_work buffer_reclaim_work ; int reclaim_index ; s#work_struct close_dev_work ; } 
 qeth_card_hw_is_reachable int qeth_card_hw_is_reachable ( s#qeth_card * ) 
 qeth_close_dev void qeth_close_dev ( s#qeth_card * ) 
 qeth_set_recovery_task void qeth_set_recovery_task ( s#qeth_card * ) 
@@ -57616,6 +57586,7 @@ s##fwnode_handle
 s##iommu_group
 s##iommu_fwspec
 s##proc_dir_entry
+tty_port_default_client_ops extern const s#tty_port_client_operations tty_port_default_client_ops 
 tty_port_init extern void tty_port_init ( s#tty_port * ) 
 tty_port_link_device extern void tty_port_link_device ( s#tty_port * , s#tty_driver * , unsigned ) 
 tty_port_register_device extern s#device * tty_port_register_device ( s#tty_port * , s#tty_driver * , unsigned , s#device * ) 
@@ -61151,6 +61122,7 @@ __bforget void __bforget ( s#buffer_head * )
 __find_get_block s#buffer_head * __find_get_block ( s#block_device * , t#sector_t , unsigned ) 
 __getblk_gfp s#buffer_head * __getblk_gfp ( s#block_device * , t#sector_t , unsigned , t#gfp_t ) 
 __breadahead void __breadahead ( s#block_device * , t#sector_t , unsigned int ) 
+__breadahead_gfp void __breadahead_gfp ( s#block_device * , t#sector_t , unsigned int , t#gfp_t ) 
 __bread_gfp s#buffer_head * __bread_gfp ( s#block_device * , t#sector_t , unsigned , t#gfp_t ) 
 invalidate_bh_lrus void invalidate_bh_lrus ( void ) 
 set_bh_page void set_bh_page ( s#buffer_head * , s#page * , unsigned long ) 
@@ -63801,33 +63773,23 @@ get_fs_type extern s#file_system_type * get_fs_type ( const char * )
 /* fs/fs-writeback.o */
 s##static_key_mod
 __tracepoint_wbc_writepage extern s#tracepoint __tracepoint_wbc_writepage 
+s##posix_acl
+s##vfsmount
+s##module
 s##device_private
 s##sock
-s##vfsmount
-s##posix_acl
-s##module
-s##kstatfs
+s##iov_iter
 s##sched_class
 s##cfs_rq
 s##rt_rq
 s##task_group
-s##anon_vma
-s##bpf_prog_array
-s##cgroup_taskset
-s##eventfd_ctx
-s##mempolicy
-s##userfaultfd_ctx
-s##linux_binfmt
-s##kioctx_table
+s##compat_timespec
+s##kmem_cache
+s##fs_pin
 s##proc_ns_operations
 s##key_user
 s##key_type
 s##assoc_array_ptr
-s##mmu_notifier_mm
-s##xol_area
-s##compat_timespec
-s##kmem_cache
-s##fs_pin
 s##nameidata
 s##sem_undo_list
 s##fs_struct
@@ -63836,6 +63798,11 @@ s##uts_namespace
 s##ipc_namespace
 s##mnt_namespace
 s##net
+s##bpf_prog_array
+s##cgroup_taskset
+s##swap_info_struct
+s##eventfd_ctx
+s##mempolicy
 s##tty_struct
 s##tty_audit_buf
 s##audit_context
@@ -63877,17 +63844,14 @@ s##pipe_inode_info
 s##task_delay_info
 s##uprobe
 s##gs_cb
-s##iov_iter
-s##swap_info_struct
-s##export_operations
-s##xattr_handler
-s##fscrypt_operations
-s##mtd_info
+s##linux_binfmt
+s##kioctx_table
+s##mmu_notifier_mm
+s##xol_area
+s##anon_vma
+s##userfaultfd_ctx
 s##nlm_lockowner
 s##nfs4_lock_state
-s##cdev
-s##fsnotify_mark_connector
-s##fscrypt_info
 s##kernfs_open_node
 s##kernfs_iattrs
 s##of_device_id
@@ -63902,6 +63866,17 @@ s##dma_coherent_mem
 s##device_node
 s##iommu_group
 s##iommu_fwspec
+s##kstatfs
+s##export_operations
+s##xattr_handler
+s##fscrypt_operations
+s##mtd_info
+s##cdev
+s##fsnotify_mark_connector
+s##fscrypt_info
+__inode_attach_wb void __inode_attach_wb ( s#inode * , s#page * ) 
+wbc_attach_and_unlock_inode void wbc_attach_and_unlock_inode ( s#writeback_control * , s#inode * ) 
+wbc_detach_inode void wbc_detach_inode ( s#writeback_control * ) 
 wbc_account_io void wbc_account_io ( s#writeback_control * , s#page * , t#size_t ) 
 inode_congested int inode_congested ( s#inode * , int ) 
 __mark_inode_dirty extern void __mark_inode_dirty ( s#inode * , int ) 
@@ -65732,6 +65707,7 @@ dcache_readdir extern int dcache_readdir ( s#file * , s#dir_context * )
 generic_read_dir extern t#ssize_t generic_read_dir ( s#file * , char * , t#size_t , t#loff_t * ) 
 simple_dir_operations extern const s#file_operations simple_dir_operations 
 simple_dir_inode_operations extern const s#inode_operations simple_dir_inode_operations 
+simple_recursive_removal extern void simple_recursive_removal ( s#dentry * , void ( * ) ( s#dentry * ) ) 
 mount_pseudo_xattr extern s#dentry * mount_pseudo_xattr ( s#file_system_type * , char * , const s#super_operations * , const s#xattr_handler * * , const s#dentry_operations * , unsigned long ) 
 simple_open extern int simple_open ( s#inode * , s#file * ) 
 simple_link extern int simple_link ( s#dentry * , s#inode * , s#dentry * ) 
@@ -66785,6 +66761,7 @@ kern_path extern int kern_path ( const char * , unsigned , s#path * )
 vfs_path_lookup extern int vfs_path_lookup ( s#dentry * , s#vfsmount * , const char * , unsigned int , s#path * ) 
 lookup_one_len extern s#dentry * lookup_one_len ( const char * , s#dentry * , int ) 
 lookup_one_len_unlocked extern s#dentry * lookup_one_len_unlocked ( const char * , s#dentry * , int ) 
+lookup_positive_unlocked extern s#dentry * lookup_positive_unlocked ( const char * , s#dentry * , int ) 
 user_path_at_empty extern int user_path_at_empty ( int , const char * , unsigned , s#path * , int * ) 
 kern_path_mountpoint extern int kern_path_mountpoint ( int , const char * , s#path * , unsigned int ) 
 __check_sticky extern int __check_sticky ( s#inode * , s#inode * ) 
@@ -78095,7 +78072,8 @@ s##trace_enum_map
 s#klp_func struct klp_func { const char * old_name ; void * new_func ; unsigned long old_sympos ; void * old_func ; s#kobject kobj ; s#list_head node ; s#list_head stack_node ; unsigned long old_size , new_size ; t#bool nop ; t#bool patched ; t#bool transition ; } 
 s#klp_callbacks struct klp_callbacks { int ( * pre_patch ) ( s#klp_object * ) ; void ( * post_patch ) ( s#klp_object * ) ; void ( * pre_unpatch ) ( s#klp_object * ) ; void ( * post_unpatch ) ( s#klp_object * ) ; t#bool post_unpatch_enabled ; } 
 s#klp_object struct klp_object { const char * name ; s#klp_func * funcs ; s#klp_callbacks callbacks ; s#kobject kobj ; s#list_head func_list ; s#list_head node ; s#module * mod ; t#bool dynamic ; t#bool patched ; } 
-s#klp_patch struct klp_patch { s#module * mod ; s#klp_object * objs ; t#bool replace ; s#list_head list ; s#kobject kobj ; s#list_head obj_list ; t#bool enabled ; t#bool forced ; s#work_struct free_work ; s#completion finish ; } 
+s#klp_state struct klp_state { unsigned long id ; unsigned int version ; void * data ; } 
+s#klp_patch struct klp_patch { s#module * mod ; s#klp_object * objs ; s#klp_state * states ; t#bool replace ; s#list_head list ; s#kobject kobj ; s#list_head obj_list ; t#bool enabled ; t#bool forced ; s#work_struct free_work ; s#completion finish ; } 
 klp_enable_patch int klp_enable_patch ( s#klp_patch * ) 
 
 /* kernel/livepatch/shadow.o */
@@ -78106,6 +78084,92 @@ klp_shadow_get_or_alloc void * klp_shadow_get_or_alloc ( void * , unsigned long 
 t#klp_shadow_dtor_t typedef void ( * klp_shadow_dtor_t ) ( void * , void * ) 
 klp_shadow_free void klp_shadow_free ( void * , unsigned long , t#klp_shadow_dtor_t ) 
 klp_shadow_free_all void klp_shadow_free_all ( unsigned long , t#klp_shadow_dtor_t ) 
+
+/* kernel/livepatch/state.o */
+s##sock
+s##seq_file
+s##vfsmount
+s##posix_acl
+s##writeback_control
+s##kstatfs
+s##sched_class
+s##cfs_rq
+s##rt_rq
+s##task_group
+s##anon_vma
+s##mem_cgroup
+s##mempolicy
+s##userfaultfd_ctx
+s##linux_binfmt
+s##kioctx_table
+s##user_namespace
+s##mmu_notifier_mm
+s##xol_area
+s##pollfd
+s##kmem_cache
+s##fs_pin
+s##ucounts
+s##proc_ns_operations
+s##key_user
+s##key_type
+s##assoc_array_ptr
+s##nameidata
+s##sem_undo_list
+s##fs_struct
+s##files_struct
+s##uts_namespace
+s##ipc_namespace
+s##mnt_namespace
+s##net
+s##cgroup_namespace
+s##tty_struct
+s##taskstats
+s##tty_audit_buf
+s##audit_context
+s##seccomp_filter
+s##rt_mutex_waiter
+s##bio_list
+s##blk_plug
+s##reclaim_state
+s##backing_dev_info
+s##io_context
+s##css_set
+s##robust_list_head
+s##futex_pi_state
+s##perf_event_context
+s##numa_group
+s##pipe_inode_info
+s##task_delay_info
+s##uprobe
+s##gs_cb
+s##bio_vec
+s##swap_info_struct
+s##device
+s##export_operations
+s##xattr_handler
+s##fscrypt_operations
+s##hd_struct
+s##gendisk
+s##request_queue
+s##mtd_info
+s##workqueue_struct
+s##bdi_writeback
+s##poll_table_struct
+s##nlm_lockowner
+s##nfs4_lock_state
+s##cdev
+s##fsnotify_mark_connector
+s##fscrypt_info
+s##kernfs_open_node
+s##kernfs_iattrs
+s##module_param_attrs
+s##module_sect_attrs
+s##module_notes_attrs
+s##static_key_mod
+s##trace_event_call
+s##trace_enum_map
+klp_get_state s#klp_state * klp_get_state ( s#klp_patch * , unsigned long ) 
+klp_get_prev_state s#klp_state * klp_get_prev_state ( unsigned long ) 
 
 /* kernel/locking/mutex.o */
 __mutex_init extern void __mutex_init ( s#mutex * , const char * , s#lock_class_key * ) 
@@ -79272,6 +79336,7 @@ pm_qos_add_notifier int pm_qos_add_notifier ( int , s#notifier_block * )
 pm_qos_remove_notifier int pm_qos_remove_notifier ( int , s#notifier_block * ) 
 
 /* kernel/printk/printk.o */
+console_printk extern int console_printk [ ] 
 oops_in_progress extern int oops_in_progress 
 s##sock
 s##vfsmount
@@ -80866,6 +80931,7 @@ s##uprobe
 s##gs_cb
 s##tty_struct
 s##tty_audit_buf
+__posix_clock_register int __posix_clock_register ( s#posix_clock * , t#dev_t , s#device * ) 
 posix_clock_register int posix_clock_register ( s#posix_clock * , t#dev_t ) 
 posix_clock_unregister void posix_clock_unregister ( s#posix_clock * ) 
 
@@ -81133,6 +81199,7 @@ round_jiffies_up_relative unsigned long round_jiffies_up_relative ( unsigned lon
 init_timer_key void init_timer_key ( s#timer_list * , unsigned int , const char * , s#lock_class_key * ) 
 mod_timer_pending extern int mod_timer_pending ( s#timer_list * , unsigned long ) 
 mod_timer extern int mod_timer ( s#timer_list * , unsigned long ) 
+timer_reduce extern int timer_reduce ( s#timer_list * , unsigned long ) 
 add_timer extern void add_timer ( s#timer_list * ) 
 add_timer_on extern void add_timer_on ( s#timer_list * , int ) 
 del_timer extern int del_timer ( s#timer_list * ) 
@@ -82570,6 +82637,24 @@ s##key_user
 s##key_type
 s##assoc_array_ptr
 digsig_verify int digsig_verify ( s#key * , const char * , int , const char * , int ) 
+
+/* lib/dim/dim.o */
+s#dim_stats struct dim_stats { int ppms ; int bpms ; int epms ; int cpms ; int cpe_ratio ; } 
+s#dim_sample struct dim_sample { t#ktime_t time ; t#u32 pkt_ctr ; t#u32 byte_ctr ; t#u16 event_ctr ; t#u32 comp_ctr ; } 
+s#dim struct dim { t#u8 state ; s#dim_stats prev_stats ; s#dim_sample start_sample ; s#dim_sample measuring_sample ; s#work_struct work ; t#u8 profile_ix ; t#u8 mode ; t#u8 tune_state ; t#u8 steps_right ; t#u8 steps_left ; t#u8 tired ; } 
+dim_on_top t#bool dim_on_top ( s#dim * ) 
+dim_turn void dim_turn ( s#dim * ) 
+dim_park_on_top void dim_park_on_top ( s#dim * ) 
+dim_park_tired void dim_park_tired ( s#dim * ) 
+dim_calc_stats void dim_calc_stats ( s#dim_sample * , s#dim_sample * , s#dim_stats * ) 
+
+/* lib/dim/net_dim.o */
+s#dim_cq_moder struct dim_cq_moder { t#u16 usec ; t#u16 pkts ; t#u16 comps ; t#u8 cq_period_mode ; } 
+net_dim_get_rx_moderation s#dim_cq_moder net_dim_get_rx_moderation ( t#u8 , int ) 
+net_dim_get_def_rx_moderation s#dim_cq_moder net_dim_get_def_rx_moderation ( t#u8 ) 
+net_dim_get_tx_moderation s#dim_cq_moder net_dim_get_tx_moderation ( t#u8 , int ) 
+net_dim_get_def_tx_moderation s#dim_cq_moder net_dim_get_def_tx_moderation ( t#u8 ) 
+net_dim void net_dim ( s#dim * , s#dim_sample ) 
 
 /* lib/div64.o */
 iter_div_u64_rem t#u32 iter_div_u64_rem ( t#u64 , t#u32 , t#u64 * ) 
@@ -85481,6 +85566,7 @@ list_lru_destroy void list_lru_destroy ( s#list_lru * )
 /* mm/maccess.o */
 probe_kernel_read extern long probe_kernel_read ( void * , const void * , t#size_t ) 
 probe_kernel_write extern long __attribute__ ( ( hotpatch ( 0 , 0 ) ) ) probe_kernel_write ( void * , const void * , t#size_t ) 
+probe_user_write extern long __attribute__ ( ( hotpatch ( 0 , 0 ) ) ) probe_user_write ( void * , const void * , t#size_t ) 
 
 /* mm/memcontrol.o */
 s##vfsmount
@@ -91261,7 +91347,7 @@ ceph_messenger_init extern void ceph_messenger_init ( s#ceph_messenger * , s#cep
 ceph_messenger_fini extern void ceph_messenger_fini ( s#ceph_messenger * ) 
 ceph_con_send extern void ceph_con_send ( s#ceph_connection * , s#ceph_msg * ) 
 ceph_con_keepalive extern void ceph_con_keepalive ( s#ceph_connection * ) 
-ceph_msg_data_add_pages extern void ceph_msg_data_add_pages ( s#ceph_msg * , s#page * * , t#size_t , t#size_t ) 
+ceph_msg_data_add_pages void ceph_msg_data_add_pages ( s#ceph_msg * , s#page * * , t#size_t , t#size_t , t#bool ) 
 ceph_msg_data_add_pagelist extern void ceph_msg_data_add_pagelist ( s#ceph_msg * , s#ceph_pagelist * ) 
 ceph_msg_data_add_bio void ceph_msg_data_add_bio ( s#ceph_msg * , s#ceph_bio_iter * , t#u32 ) 
 ceph_msg_data_add_bvecs void ceph_msg_data_add_bvecs ( s#ceph_msg * , s#ceph_bvec_iter * ) 
@@ -91593,6 +91679,7 @@ ceph_osdc_writepages extern int ceph_osdc_writepages ( s#ceph_osd_client * , s#c
 /* net/ceph/osdmap.o */
 ceph_pg_pool_name_by_id extern const char * ceph_pg_pool_name_by_id ( s#ceph_osdmap * , t#u64 ) 
 ceph_pg_poolid_by_name extern int ceph_pg_poolid_by_name ( s#ceph_osdmap * , const char * ) 
+ceph_pg_pool_flags t#u64 ceph_pg_pool_flags ( s#ceph_osdmap * , t#u64 ) 
 ceph_oloc_copy void ceph_oloc_copy ( s#ceph_object_locator * , const s#ceph_object_locator * ) 
 ceph_oloc_destroy void ceph_oloc_destroy ( s#ceph_object_locator * ) 
 ceph_oid_copy void ceph_oid_copy ( s#ceph_object_id * , const s#ceph_object_id * ) 
@@ -93332,6 +93419,7 @@ ethtool_intersect_link_masks void ethtool_intersect_link_masks ( s#ethtool_link_
 ethtool_convert_legacy_u32_to_link_mode void ethtool_convert_legacy_u32_to_link_mode ( unsigned long * , t#u32 ) 
 ethtool_convert_link_mode_to_legacy_u32 t#bool ethtool_convert_link_mode_to_legacy_u32 ( t#u32 * , const unsigned long * ) 
 __ethtool_get_link_ksettings extern int __ethtool_get_link_ksettings ( s#net_device * , s#ethtool_link_ksettings * ) 
+ethtool_virtdev_set_link_ksettings int ethtool_virtdev_set_link_ksettings ( s#net_device * , const s#ethtool_link_ksettings * , t#u32 * , t#u8 * ) 
 netdev_rss_key_fill void netdev_rss_key_fill ( void * , t#size_t ) 
 
 /* net/core/failover.o */
@@ -109534,6 +109622,7 @@ s##raw_hashinfo
 s##sock_reuseport
 ip6_xmit int ip6_xmit ( const s#sock * , s#sk_buff * , s#flowi6 * , t#__u32 , s#ipv6_txoptions * , int ) 
 ip6_dst_lookup int ip6_dst_lookup ( s#net * , s#sock * , s#dst_entry * * , s#flowi6 * ) 
+ip6_dst_lookup_flow__net s#dst_entry * ip6_dst_lookup_flow__net ( s#net * , const s#sock * , s#flowi6 * , const s#in6_addr * ) 
 ip6_dst_lookup_flow s#dst_entry * ip6_dst_lookup_flow ( const s#sock * , s#flowi6 * , const s#in6_addr * ) 
 ip6_sk_dst_lookup_flow s#dst_entry * ip6_sk_dst_lookup_flow ( s#sock * , s#flowi6 * , const s#in6_addr * ) 
 ip6_append_data int ip6_append_data ( s#sock * , int ( void * , char * , int , int , int , s#sk_buff * ) , void * , int , int , s#ipcm6_cookie * , s#flowi6 * , s#rt6_info * , unsigned int , const s#sockcm_cookie * ) 
@@ -123040,6 +123129,7 @@ xt_compat_lock void xt_compat_lock ( t#u_int8_t )
 xt_compat_unlock void xt_compat_unlock ( t#u_int8_t ) 
 xt_recseq extern __attribute__ ( ( section ( ".data..percpu" "" ) ) ) __typeof__ ( t#seqcount_t ) xt_recseq 
 xt_tee_enabled extern s#static_key xt_tee_enabled 
+xt_counters_alloc s#xt_counters * xt_counters_alloc ( unsigned int ) 
 xt_replace_table s#xt_table_info * xt_replace_table ( s#xt_table * , unsigned int , s#xt_table_info * , int * ) 
 xt_register_table s#xt_table * xt_register_table ( s#net * , const s#xt_table * , s#xt_table_info * , s#xt_table_info * ) 
 xt_unregister_table void * xt_unregister_table ( s#xt_table * ) 
@@ -134011,7 +134101,7 @@ kvm_write_guest int kvm_write_guest ( s#kvm * , t#gpa_t , const void * , unsigne
 kvm_vcpu_write_guest int kvm_vcpu_write_guest ( s#kvm_vcpu * , t#gpa_t , const void * , unsigned long ) 
 s#gfn_to_hva_cache struct gfn_to_hva_cache { t#u64 generation ; t#gpa_t gpa ; unsigned long hva ; unsigned long len ; s#kvm_memory_slot * memslot ; } 
 kvm_gfn_to_hva_cache_init int kvm_gfn_to_hva_cache_init ( s#kvm * , s#gfn_to_hva_cache * , t#gpa_t , unsigned long ) 
-kvm_write_guest_offset_cached int kvm_write_guest_offset_cached ( s#kvm * , s#gfn_to_hva_cache * , void * , int , unsigned long ) 
+kvm_write_guest_offset_cached int kvm_write_guest_offset_cached ( s#kvm * , s#gfn_to_hva_cache * , void * , unsigned int , unsigned long ) 
 kvm_write_guest_cached int kvm_write_guest_cached ( s#kvm * , s#gfn_to_hva_cache * , void * , unsigned long ) 
 kvm_read_guest_cached int kvm_read_guest_cached ( s#kvm * , s#gfn_to_hva_cache * , void * , unsigned long ) 
 kvm_clear_guest_page int kvm_clear_guest_page ( s#kvm * , t#gfn_t , int , int ) 
