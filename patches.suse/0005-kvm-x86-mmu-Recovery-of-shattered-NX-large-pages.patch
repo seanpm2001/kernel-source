@@ -17,17 +17,17 @@ Signed-off-by: Junaid Shahid <junaids@google.com>
 Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
 Signed-off-by: Joerg Roedel <jroedel@suse.de>
 ---
- Documentation/admin-guide/kernel-parameters.txt |   6 ++
- arch/x86/include/asm/kvm_host.h                 |   4 +
- arch/x86/kvm/mmu.c                              | 129 ++++++++++++++++++++++++
- arch/x86/kvm/mmu.h                              |   4 +
- arch/x86/kvm/x86.c                              |  11 ++
- virt/kvm/kvm_main.c                             |  30 +++++-
- 6 files changed, 183 insertions(+), 1 deletion(-)
+ Documentation/admin-guide/kernel-parameters.txt |    6 +
+ arch/x86/include/asm/kvm_host.h                 |    5 
+ arch/x86/kvm/mmu.c                              |  129 ++++++++++++++++++++++++
+ arch/x86/kvm/mmu.h                              |    4 
+ arch/x86/kvm/x86.c                              |   11 ++
+ virt/kvm/kvm_main.c                             |   30 +++++
+ 6 files changed, 184 insertions(+), 1 deletion(-)
 
 --- a/Documentation/admin-guide/kernel-parameters.txt
 +++ b/Documentation/admin-guide/kernel-parameters.txt
-@@ -1850,6 +1850,12 @@
+@@ -1877,6 +1877,12 @@
  			If the sw workaround is enabled for the host, guests
  			need not enable it for nested guests.
  
@@ -42,7 +42,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  
 --- a/arch/x86/include/asm/kvm_host.h
 +++ b/arch/x86/include/asm/kvm_host.h
-@@ -276,6 +276,8 @@ struct kvm_rmap_head {
+@@ -277,6 +277,8 @@ struct kvm_rmap_head {
  struct kvm_mmu_page {
  	struct list_head link;
  	struct hlist_node hash_link;
@@ -51,7 +51,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  	bool unsync;
  
  	/*
-@@ -794,6 +796,7 @@ struct kvm_arch {
+@@ -799,6 +801,7 @@ struct kvm_arch {
  	 */
  	struct list_head active_mmu_pages;
  	struct list_head zapped_obsolete_pages;
@@ -59,7 +59,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  	struct kvm_page_track_notifier_node mmu_sp_tracker;
  	struct kvm_page_track_notifier_head track_notifier_head;
  
-@@ -871,6 +874,8 @@ struct kvm_arch {
+@@ -876,6 +879,8 @@ struct kvm_arch {
  	bool x2apic_broadcast_quirk_disabled;
  
  	struct kvm_sev_info sev_info;
@@ -105,7 +105,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  
  /*
   * When setting this variable to true it enables Two-Dimensional-Paging
-@@ -1104,6 +1115,8 @@ static void account_huge_nx_page(struct
+@@ -1112,6 +1123,8 @@ static void account_huge_nx_page(struct
  		return;
  
  	++kvm->stat.nx_lpage_splits;
@@ -114,7 +114,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  	sp->lpage_disallowed = true;
  }
  
-@@ -1128,6 +1141,7 @@ static void unaccount_huge_nx_page(struc
+@@ -1136,6 +1149,7 @@ static void unaccount_huge_nx_page(struc
  {
  	--kvm->stat.nx_lpage_splits;
  	sp->lpage_disallowed = false;
@@ -122,7 +122,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  }
  
  static bool __mmu_gfn_lpage_is_disallowed(gfn_t gfn, int level,
-@@ -5666,6 +5680,8 @@ static int set_nx_huge_pages(const char
+@@ -5674,6 +5688,8 @@ static int set_nx_huge_pages(const char
  			idx = srcu_read_lock(&kvm->srcu);
  			kvm_mmu_invalidate_zap_all_pages(kvm);
  			srcu_read_unlock(&kvm->srcu, idx);
@@ -131,7 +131,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  		}
  		mutex_unlock(&kvm_lock);
  	}
-@@ -5746,3 +5762,116 @@ void kvm_mmu_module_exit(void)
+@@ -5754,3 +5770,116 @@ void kvm_mmu_module_exit(void)
  	unregister_shrinker(&mmu_shrinker);
  	mmu_audit_disable();
  }
@@ -261,7 +261,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  #endif
 --- a/arch/x86/kvm/x86.c
 +++ b/arch/x86/kvm/x86.c
-@@ -8435,6 +8435,7 @@ int kvm_arch_init_vm(struct kvm *kvm, un
+@@ -8458,6 +8458,7 @@ int kvm_arch_init_vm(struct kvm *kvm, un
  	INIT_HLIST_HEAD(&kvm->arch.mask_notifier_list);
  	INIT_LIST_HEAD(&kvm->arch.active_mmu_pages);
  	INIT_LIST_HEAD(&kvm->arch.zapped_obsolete_pages);
@@ -269,7 +269,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  	INIT_LIST_HEAD(&kvm->arch.assigned_dev_head);
  	atomic_set(&kvm->arch.noncoherent_dma_count, 0);
  
-@@ -8464,6 +8465,11 @@ int kvm_arch_init_vm(struct kvm *kvm, un
+@@ -8487,6 +8488,11 @@ int kvm_arch_init_vm(struct kvm *kvm, un
  	return 0;
  }
  
@@ -280,8 +280,8 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
 +
  static void kvm_unload_vcpu_mmu(struct kvm_vcpu *vcpu)
  {
- 	int r;
-@@ -8567,6 +8573,11 @@ int x86_set_memory_region(struct kvm *kv
+ 	vcpu_load(vcpu);
+@@ -8588,6 +8594,11 @@ int x86_set_memory_region(struct kvm *kv
  }
  EXPORT_SYMBOL_GPL(x86_set_memory_region);
  
@@ -295,7 +295,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  	if (current->mm == kvm->mm) {
 --- a/virt/kvm/kvm_main.c
 +++ b/virt/kvm/kvm_main.c
-@@ -654,6 +654,23 @@ static int kvm_create_vm_debugfs(struct
+@@ -664,6 +664,23 @@ static int kvm_create_vm_debugfs(struct
  	return 0;
  }
  
@@ -319,7 +319,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  static struct kvm *kvm_create_vm(unsigned long type)
  {
  	int r, i;
-@@ -708,11 +725,15 @@ static struct kvm *kvm_create_vm(unsigne
+@@ -718,11 +735,15 @@ static struct kvm *kvm_create_vm(unsigne
  		rcu_assign_pointer(kvm->buses[i],
  			kzalloc(sizeof(struct kvm_io_bus), GFP_KERNEL));
  		if (!kvm->buses[i])
@@ -336,7 +336,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  		goto out_err;
  
  	mutex_lock(&kvm_lock);
-@@ -724,6 +745,11 @@ static struct kvm *kvm_create_vm(unsigne
+@@ -734,6 +755,11 @@ static struct kvm *kvm_create_vm(unsigne
  	return kvm;
  
  out_err:
@@ -348,7 +348,7 @@ Signed-off-by: Joerg Roedel <jroedel@suse.de>
  	cleanup_srcu_struct(&kvm->irq_srcu);
  out_err_no_irq_srcu:
  	cleanup_srcu_struct(&kvm->srcu);
-@@ -766,6 +792,8 @@ static void kvm_destroy_vm(struct kvm *k
+@@ -776,6 +802,8 @@ static void kvm_destroy_vm(struct kvm *k
  	mutex_lock(&kvm_lock);
  	list_del(&kvm->vm_list);
  	mutex_unlock(&kvm_lock);

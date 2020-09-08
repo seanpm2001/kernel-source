@@ -30,7 +30,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
 
 --- a/arch/x86/include/asm/kvm_host.h
 +++ b/arch/x86/include/asm/kvm_host.h
-@@ -709,6 +709,8 @@ struct kvm_vcpu_arch {
+@@ -712,6 +712,8 @@ struct kvm_vcpu_arch {
  
  	/* Flush the L1 Data cache for L1TF mitigation on VMENTER */
  	bool l1tf_flush_l1d;
@@ -41,7 +41,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  struct kvm_lpage_info {
 --- a/arch/x86/kvm/vmx.c
 +++ b/arch/x86/kvm/vmx.c
-@@ -3473,12 +3473,6 @@ static int vmx_get_msr(struct kvm_vcpu *
+@@ -3482,12 +3482,6 @@ static int vmx_get_msr(struct kvm_vcpu *
  
  		msr_info->data = to_vmx(vcpu)->spec_ctrl;
  		break;
@@ -54,7 +54,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  	case MSR_IA32_SYSENTER_CS:
  		msr_info->data = vmcs_read32(GUEST_SYSENTER_CS);
  		break;
-@@ -3643,11 +3637,6 @@ static int vmx_set_msr(struct kvm_vcpu *
+@@ -3652,11 +3646,6 @@ static int vmx_set_msr(struct kvm_vcpu *
  		vmx_disable_intercept_for_msr(vmx->vmcs01.msr_bitmap, MSR_IA32_PRED_CMD,
  					      MSR_TYPE_W);
  		break;
@@ -66,7 +66,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  	case MSR_IA32_CR_PAT:
  		if (vmcs_config.vmentry_ctrl & VM_ENTRY_LOAD_IA32_PAT) {
  			if (!kvm_mtrr_valid(vcpu, MSR_IA32_CR_PAT, data))
-@@ -5912,8 +5901,6 @@ static void vmx_vcpu_setup(struct vcpu_v
+@@ -5939,8 +5928,6 @@ static void vmx_vcpu_setup(struct vcpu_v
  		++vmx->nmsrs;
  	}
  
@@ -77,7 +77,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  	/* 22.2.1, 20.8.1 */
 --- a/arch/x86/kvm/x86.c
 +++ b/arch/x86/kvm/x86.c
-@@ -2235,6 +2235,11 @@ int kvm_set_msr_common(struct kvm_vcpu *
+@@ -2243,6 +2243,11 @@ int kvm_set_msr_common(struct kvm_vcpu *
  	case MSR_F15H_EX_CFG:
  		break;
  
@@ -89,7 +89,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  	case MSR_EFER:
  		return set_efer(vcpu, data);
  	case MSR_K7_HWCR:
-@@ -2528,6 +2533,12 @@ int kvm_get_msr_common(struct kvm_vcpu *
+@@ -2539,6 +2544,12 @@ int kvm_get_msr_common(struct kvm_vcpu *
  	case MSR_IA32_UCODE_REV:
  		msr_info->data = 0x100000000ULL;
  		break;
@@ -102,11 +102,11 @@ Acked-by: Borislav Petkov <bp@suse.de>
  	case MSR_MTRRcap:
  	case 0x200 ... 0x2ff:
  		return kvm_mtrr_get_msr(vcpu, msr_info->index, &msr_info->data);
-@@ -7980,6 +7991,7 @@ int kvm_arch_vcpu_setup(struct kvm_vcpu
- {
- 	int r;
+@@ -8006,6 +8017,7 @@ struct kvm_vcpu *kvm_arch_vcpu_create(st
  
+ int kvm_arch_vcpu_setup(struct kvm_vcpu *vcpu)
+ {
 +	vcpu->arch.arch_capabilities = kvm_get_arch_capabilities();
  	kvm_vcpu_mtrr_init(vcpu);
- 	r = vcpu_load(vcpu);
- 	if (r)
+ 	vcpu_load(vcpu);
+ 	kvm_vcpu_reset(vcpu, false);

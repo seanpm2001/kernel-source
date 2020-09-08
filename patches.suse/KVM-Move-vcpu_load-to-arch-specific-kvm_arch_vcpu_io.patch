@@ -1,0 +1,191 @@
+From: Christoffer Dall <christoffer.dall@linaro.org>
+Date: Mon, 4 Dec 2017 21:35:25 +0100
+Subject: KVM: Move vcpu_load to arch-specific kvm_arch_vcpu_ioctl_run
+Patch-mainline: v4.16-rc1
+Git-commit: accb757d798c9b4d85cfe3e5972134c586525168
+References: jsc#SLE-4084
+
+Move vcpu_load() and vcpu_put() into the architecture specific
+implementations of kvm_arch_vcpu_ioctl_run().
+
+Signed-off-by: Christoffer Dall <christoffer.dall@linaro.org>
+Reviewed-by: Christian Borntraeger <borntraeger@de.ibm.com> # s390 parts
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+[Rebased. - Paolo]
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ arch/mips/kvm/mips.c       |    3 +++
+ arch/powerpc/kvm/powerpc.c |    6 +++++-
+ arch/s390/kvm/kvm-s390.c   |   10 ++++++++--
+ arch/x86/kvm/x86.c         |    3 ++-
+ virt/kvm/arm/arm.c         |   20 ++++++++++++++------
+ virt/kvm/kvm_main.c        |    2 --
+ 6 files changed, 32 insertions(+), 12 deletions(-)
+
+--- a/arch/mips/kvm/mips.c
++++ b/arch/mips/kvm/mips.c
+@@ -446,6 +446,8 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_v
+ {
+ 	int r = -EINTR;
+ 
++	vcpu_load(vcpu);
++
+ 	kvm_sigset_activate(vcpu);
+ 
+ 	if (vcpu->mmio_needed) {
+@@ -480,6 +482,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_v
+ out:
+ 	kvm_sigset_deactivate(vcpu);
+ 
++	vcpu_put(vcpu);
+ 	return r;
+ }
+ 
+--- a/arch/powerpc/kvm/powerpc.c
++++ b/arch/powerpc/kvm/powerpc.c
+@@ -1413,6 +1413,8 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_v
+ {
+ 	int r;
+ 
++	vcpu_load(vcpu);
++
+ 	if (vcpu->mmio_needed) {
+ 		vcpu->mmio_needed = 0;
+ 		if (!vcpu->mmio_is_write)
+@@ -1427,7 +1429,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_v
+ 			r = kvmppc_emulate_mmio_vsx_loadstore(vcpu, run);
+ 			if (r == RESUME_HOST) {
+ 				vcpu->mmio_needed = 1;
+-				return r;
++				goto out;
+ 			}
+ 		}
+ #endif
+@@ -1461,6 +1463,8 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_v
+ 
+ 	kvm_sigset_deactivate(vcpu);
+ 
++out:
++	vcpu_put(vcpu);
+ 	return r;
+ }
+ 
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -3390,9 +3390,12 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_v
+ 	if (kvm_run->immediate_exit)
+ 		return -EINTR;
+ 
++	vcpu_load(vcpu);
++
+ 	if (guestdbg_exit_pending(vcpu)) {
+ 		kvm_s390_prepare_debug_exit(vcpu);
+-		return 0;
++		rc = 0;
++		goto out;
+ 	}
+ 
+ 	kvm_sigset_activate(vcpu);
+@@ -3402,7 +3405,8 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_v
+ 	} else if (is_vcpu_stopped(vcpu)) {
+ 		pr_err_ratelimited("can't run stopped vcpu %d\n",
+ 				   vcpu->vcpu_id);
+-		return -EINVAL;
++		rc = -EINVAL;
++		goto out;
+ 	}
+ 
+ 	sync_regs(vcpu, kvm_run);
+@@ -3432,6 +3436,8 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_v
+ 	kvm_sigset_deactivate(vcpu);
+ 
+ 	vcpu->stat.exit_userspace++;
++out:
++	vcpu_put(vcpu);
+ 	return rc;
+ }
+ 
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -7283,8 +7283,8 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_v
+ {
+ 	int r;
+ 
++	vcpu_load(vcpu);
+ 	kvm_sigset_activate(vcpu);
+-
+ 	kvm_load_guest_fpu(vcpu);
+ 
+ 	if (unlikely(vcpu->arch.mp_state == KVM_MP_STATE_UNINITIALIZED)) {
+@@ -7331,6 +7331,7 @@ out:
+ 	post_kvm_run_save(vcpu);
+ 	kvm_sigset_deactivate(vcpu);
+ 
++	vcpu_put(vcpu);
+ 	return r;
+ }
+ 
+--- a/virt/kvm/arm/arm.c
++++ b/virt/kvm/arm/arm.c
+@@ -619,21 +619,27 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_v
+ 	if (unlikely(!kvm_vcpu_initialized(vcpu)))
+ 		return -ENOEXEC;
+ 
++	vcpu_load(vcpu);
++
+ 	ret = kvm_vcpu_first_run_init(vcpu);
+ 	if (ret)
+-		return ret;
++		goto out;
+ 
+ 	if (run->exit_reason == KVM_EXIT_MMIO) {
+ 		ret = kvm_handle_mmio_return(vcpu, vcpu->run);
+ 		if (ret)
+-			return ret;
+-		if (kvm_arm_handle_step_debug(vcpu, vcpu->run))
+-			return 0;
++			goto out;
++		if (kvm_arm_handle_step_debug(vcpu, vcpu->run)) {
++			ret = 0;
++			goto out;
++		}
+ 
+ 	}
+ 
+-	if (run->immediate_exit)
+-		return -EINTR;
++	if (run->immediate_exit) {
++		ret = -EINTR;
++		goto out;
++	}
+ 
+ 	kvm_sigset_activate(vcpu);
+ 
+@@ -779,6 +785,8 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_v
+ 
+ 	kvm_sigset_deactivate(vcpu);
+ 
++out:
++	vcpu_put(vcpu);
+ 	return ret;
+ }
+ 
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -2604,7 +2604,6 @@ static long kvm_vcpu_ioctl(struct file *
+ 		r = -EINVAL;
+ 		if (arg)
+ 			goto out;
+-		vcpu_load(vcpu);
+ 		oldpid = rcu_access_pointer(vcpu->pid);
+ 		if (unlikely(oldpid != current->pids[PIDTYPE_PID].pid)) {
+ 			/* The thread running this VCPU changed. */
+@@ -2616,7 +2615,6 @@ static long kvm_vcpu_ioctl(struct file *
+ 			put_pid(oldpid);
+ 		}
+ 		r = kvm_arch_vcpu_ioctl_run(vcpu, vcpu->run);
+-		vcpu_put(vcpu);
+ 		trace_kvm_userspace_exit(vcpu->run->exit_reason, r);
+ 		break;
+ 	}

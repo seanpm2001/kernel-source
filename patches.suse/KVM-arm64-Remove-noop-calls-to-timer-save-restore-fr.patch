@@ -1,0 +1,100 @@
+From: Christoffer Dall <christoffer.dall@linaro.org>
+Date: Sat, 5 Aug 2017 22:51:35 +0200
+Subject: KVM: arm64: Remove noop calls to timer save/restore from VHE switch
+Patch-mainline: v4.17-rc1
+Git-commit: 04fef057003c207ff4d9f22d2127aee2f9abecd0
+References: jsc#SLE-4084
+
+The VHE switch function calls __timer_enable_traps and
+__timer_disable_traps which don't do anything on VHE systems.
+Therefore, simply remove these calls from the VHE switch function and
+make the functions non-conditional as they are now only called from the
+non-VHE switch path.
+
+Acked-by: Marc Zyngier <marc.zyngier@arm.com>
+Reviewed-by: Andrew Jones <drjones@redhat.com>
+Signed-off-by: Christoffer Dall <christoffer.dall@linaro.org>
+Signed-off-by: Marc Zyngier <marc.zyngier@arm.com>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ arch/arm64/kvm/hyp/switch.c |    2 --
+ virt/kvm/arm/hyp/timer-sr.c |   44 ++++++++++++++++++++++----------------------
+ 2 files changed, 22 insertions(+), 24 deletions(-)
+
+--- a/arch/arm64/kvm/hyp/switch.c
++++ b/arch/arm64/kvm/hyp/switch.c
+@@ -379,7 +379,6 @@ int kvm_vcpu_run_vhe(struct kvm_vcpu *vc
+ 	__activate_vm(vcpu->kvm);
+ 
+ 	__vgic_restore_state(vcpu);
+-	__timer_enable_traps(vcpu);
+ 
+ 	/*
+ 	 * We must restore the 32-bit state before the sysregs, thanks
+@@ -400,7 +399,6 @@ int kvm_vcpu_run_vhe(struct kvm_vcpu *vc
+ 
+ 	__sysreg_save_guest_state(guest_ctxt);
+ 	__sysreg32_save_state(vcpu);
+-	__timer_disable_traps(vcpu);
+ 	__vgic_save_state(vcpu);
+ 
+ 	__deactivate_traps(vcpu);
+--- a/virt/kvm/arm/hyp/timer-sr.c
++++ b/virt/kvm/arm/hyp/timer-sr.c
+@@ -27,34 +27,34 @@ void __hyp_text __kvm_timer_set_cntvoff(
+ 	write_sysreg(cntvoff, cntvoff_el2);
+ }
+ 
++/*
++ * Should only be called on non-VHE systems.
++ * VHE systems use EL2 timers and configure EL1 timers in kvm_timer_init_vhe().
++ */
+ void __hyp_text __timer_disable_traps(struct kvm_vcpu *vcpu)
+ {
+-	/*
+-	 * We don't need to do this for VHE since the host kernel runs in EL2
+-	 * with HCR_EL2.TGE ==1, which makes those bits have no impact.
+-	 */
+-	if (!has_vhe()) {
+-		u64 val;
++	u64 val;
+ 
+-		/* Allow physical timer/counter access for the host */
+-		val = read_sysreg(cnthctl_el2);
+-		val |= CNTHCTL_EL1PCTEN | CNTHCTL_EL1PCEN;
+-		write_sysreg(val, cnthctl_el2);
+-	}
++	/* Allow physical timer/counter access for the host */
++	val = read_sysreg(cnthctl_el2);
++	val |= CNTHCTL_EL1PCTEN | CNTHCTL_EL1PCEN;
++	write_sysreg(val, cnthctl_el2);
+ }
+ 
++/*
++ * Should only be called on non-VHE systems.
++ * VHE systems use EL2 timers and configure EL1 timers in kvm_timer_init_vhe().
++ */
+ void __hyp_text __timer_enable_traps(struct kvm_vcpu *vcpu)
+ {
+-	if (!has_vhe()) {
+-		u64 val;
++	u64 val;
+ 
+-		/*
+-		 * Disallow physical timer access for the guest
+-		 * Physical counter access is allowed
+-		 */
+-		val = read_sysreg(cnthctl_el2);
+-		val &= ~CNTHCTL_EL1PCEN;
+-		val |= CNTHCTL_EL1PCTEN;
+-		write_sysreg(val, cnthctl_el2);
+-	}
++	/*
++	 * Disallow physical timer access for the guest
++	 * Physical counter access is allowed
++	 */
++	val = read_sysreg(cnthctl_el2);
++	val &= ~CNTHCTL_EL1PCEN;
++	val |= CNTHCTL_EL1PCTEN;
++	write_sysreg(val, cnthctl_el2);
+ }
