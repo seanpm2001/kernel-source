@@ -1,0 +1,498 @@
+From 47d99948eee48a84a4b242c17915a4ff59a29b5d Mon Sep 17 00:00:00 2001
+From: Christophe Leroy <christophe.leroy@c-s.fr>
+Date: Fri, 29 Mar 2019 10:00:00 +0000
+Subject: [PATCH] powerpc/mm: Move book3s64 specifics in subdirectory
+ mm/book3s64
+
+References: bsc#1176022 ltc#187208
+Patch-mainline: v5.2-rc1
+Git-commit: 47d99948eee48a84a4b242c17915a4ff59a29b5d (only reformatting)
+
+Many files in arch/powerpc/mm are only for book3S64. This patch
+creates a subdirectory for them.
+
+Signed-off-by: Christophe Leroy <christophe.leroy@c-s.fr>
+[mpe: Update the selftest sym links, shorten new filenames, cleanup some
+      whitespace and formatting in the new files.]
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/mm/Makefile                      | 25 +-------
+ arch/powerpc/mm/book3s64/Makefile             | 24 +++++++
+ .../mm/{hash64_4k.c => book3s64/hash_4k.c}    |  2 +-
+ .../mm/{hash64_64k.c => book3s64/hash_64k.c}  |  2 +-
+ .../hash_hugepage.c}                          |  2 +-
+ .../hash_hugetlbpage.c}                       | 15 +++--
+ .../hash_native.c}                            |  0
+ .../hash_pgtable.c}                           |  0
+ .../mm/{tlb_hash64.c => book3s64/hash_tlb.c}  | 18 ++++--
+ .../hash_utils.c}                             | 50 ++++++++++-----
+ .../iommu_api.c}                              |  0
+ .../mmu_context.c}                            |  0
+ .../pgtable.c}                                |  0
+ arch/powerpc/mm/{ => book3s64}/pkeys.c        |  0
+ .../radix_hugetlbpage.c}                      |  0
+ .../radix_pgtable.c}                          | 62 +++++++++----------
+ .../mm/{tlb-radix.c => book3s64/radix_tlb.c}  |  0
+ arch/powerpc/mm/{ => book3s64}/slb.c          |  3 +-
+ .../subpage_prot.c}                           |  0
+ arch/powerpc/mm/{ => book3s64}/vphn.c         |  6 +-
+ arch/powerpc/mm/{ => book3s64}/vphn.h         |  3 +-
+ arch/powerpc/mm/numa.c                        |  2 +-
+ tools/testing/selftests/powerpc/vphn/vphn.c   |  2 +-
+ tools/testing/selftests/powerpc/vphn/vphn.h   |  2 +-
+ 24 files changed, 126 insertions(+), 92 deletions(-)
+ create mode 100644 arch/powerpc/mm/book3s64/Makefile
+ rename arch/powerpc/mm/{hash64_4k.c => book3s64/hash_4k.c} (98%)
+ rename arch/powerpc/mm/{hash64_64k.c => book3s64/hash_64k.c} (99%)
+ rename arch/powerpc/mm/{hugepage-hash64.c => book3s64/hash_hugepage.c} (98%)
+ rename arch/powerpc/mm/{hugetlbpage-hash64.c => book3s64/hash_hugetlbpage.c} (93%)
+ rename arch/powerpc/mm/{hash_native_64.c => book3s64/hash_native.c} (100%)
+ rename arch/powerpc/mm/{pgtable-hash64.c => book3s64/hash_pgtable.c} (100%)
+ rename arch/powerpc/mm/{tlb_hash64.c => book3s64/hash_tlb.c} (95%)
+ rename arch/powerpc/mm/{hash_utils_64.c => book3s64/hash_utils.c} (98%)
+ rename arch/powerpc/mm/{mmu_context_iommu.c => book3s64/iommu_api.c} (100%)
+ rename arch/powerpc/mm/{mmu_context_book3s64.c => book3s64/mmu_context.c} (100%)
+ rename arch/powerpc/mm/{pgtable-book3s64.c => book3s64/pgtable.c} (100%)
+ rename arch/powerpc/mm/{ => book3s64}/pkeys.c (100%)
+ rename arch/powerpc/mm/{hugetlbpage-radix.c => book3s64/radix_hugetlbpage.c} (100%)
+ rename arch/powerpc/mm/{pgtable-radix.c => book3s64/radix_pgtable.c} (96%)
+ rename arch/powerpc/mm/{tlb-radix.c => book3s64/radix_tlb.c} (100%)
+ rename arch/powerpc/mm/{ => book3s64}/slb.c (99%)
+ rename arch/powerpc/mm/{subpage-prot.c => book3s64/subpage_prot.c} (100%)
+ rename arch/powerpc/mm/{ => book3s64}/vphn.c (94%)
+ rename arch/powerpc/mm/{ => book3s64}/vphn.h (98%)
+
+diff --git a/arch/powerpc/mm/hash64_4k.c b/arch/powerpc/mm/hash64_4k.c
+index 6fa6765a10eb..22e787123cdf 100644
+--- a/arch/powerpc/mm/hash64_4k.c
++++ b/arch/powerpc/mm/hash64_4k.c
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright IBM Corporation, 2015
+- * Author Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
++ * Author Aneesh Kumar K.V <aneesh.kumar@linux.ibm.com>
+  *
+  * This program is free software; you can redistribute it and/or modify it
+  * under the terms of version 2 of the GNU Lesser General Public License
+diff --git a/arch/powerpc/mm/hash64_64k.c b/arch/powerpc/mm/hash64_64k.c
+index 3afa253d7f52..7084ce2951e6 100644
+--- a/arch/powerpc/mm/hash64_64k.c
++++ b/arch/powerpc/mm/hash64_64k.c
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright IBM Corporation, 2015
+- * Author Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
++ * Author Aneesh Kumar K.V <aneesh.kumar@linux.ibm.com>
+  *
+  * This program is free software; you can redistribute it and/or modify it
+  * under the terms of version 2 of the GNU Lesser General Public License
+diff --git a/arch/powerpc/mm/hugepage-hash64.c b/arch/powerpc/mm/hugepage-hash64.c
+index dfbc3b32f09b..440823797de7 100644
+--- a/arch/powerpc/mm/hugepage-hash64.c
++++ b/arch/powerpc/mm/hugepage-hash64.c
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright IBM Corporation, 2013
+- * Author Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
++ * Author Aneesh Kumar K.V <aneesh.kumar@linux.ibm.com>
+  *
+  * This program is free software; you can redistribute it and/or modify it
+  * under the terms of version 2.1 of the GNU Lesser General Public License
+diff --git a/arch/powerpc/mm/hugetlbpage-hash64.c b/arch/powerpc/mm/hugetlbpage-hash64.c
+--- a/arch/powerpc/mm/hugetlbpage-hash64.c
++++ b/arch/powerpc/mm/hugetlbpage-hash64.c
+@@ -34,7 +34,8 @@ int __hash_page_huge(unsigned long ea, unsigned long access, unsigned long vsid,
+ 	/* Search the Linux page table for a match with va */
+ 	vpn = hpt_vpn(ea, vsid, ssize);
+ 
+-	/* At this point, we have a pte (old_pte) which can be used to build
++	/*
++	 * At this point, we have a pte (old_pte) which can be used to build
+ 	 * or update an HPTE. There are 2 cases:
+ 	 *
+ 	 * 1. There is a valid (present) pte with no associated HPTE (this is
+@@ -55,8 +56,10 @@ int __hash_page_huge(unsigned long ea, unsigned long access, unsigned long vsid,
+ 		if (unlikely(!check_pte_access(access, old_pte)))
+ 			return 1;
+ 
+-		/* Try to lock the PTE, add ACCESSED and DIRTY if it was
+-		 * a write access */
++		/*
++		 * Try to lock the PTE, add ACCESSED and DIRTY if it was
++		 * a write access
++		 */
+ 		new_pte = old_pte | H_PAGE_BUSY | _PAGE_ACCESSED;
+ 		if (access & _PAGE_WRITE)
+ 			new_pte |= _PAGE_DIRTY;
+@@ -74,8 +77,10 @@ int __hash_page_huge(unsigned long ea, unsigned long access, unsigned long vsid,
+ 
+ 	sz = ((1UL) << shift);
+ 	if (!cpu_has_feature(CPU_FTR_COHERENT_ICACHE))
+-		/* No CPU has hugepages but lacks no execute, so we
+-		 * don't need to worry about that case */
++		/*
++		 * No CPU has hugepages but lacks no execute, so we
++		 * don't need to worry about that case
++		 */
+ 		rflags = hash_page_do_lazy_icache(rflags, __pte(old_pte), trap);
+ 
+ 	/* Check if pte already has an hpte (case 2) */
+diff --git a/arch/powerpc/mm/tlb_hash64.c b/arch/powerpc/mm/tlb_hash64.c
+index 87d71dd25441..d4f0101447b1 100644
+--- a/arch/powerpc/mm/tlb_hash64.c
++++ b/arch/powerpc/mm/tlb_hash64.c
+@@ -55,7 +55,8 @@ void hpte_need_flush(struct mm_struct *mm, unsigned long addr,
+ 
+ 	i = batch->index;
+ 
+-	/* Get page size (maybe move back to caller).
++	/*
++	 * Get page size (maybe move back to caller).
+ 	 *
+ 	 * NOTE: when using special 64K mappings in 4K environment like
+ 	 * for SPEs, we obtain the page size from the slice, which thus
+@@ -77,10 +78,12 @@ void hpte_need_flush(struct mm_struct *mm, unsigned long addr,
+ #endif
+ 	} else {
+ 		psize = pte_pagesize_index(mm, addr, pte);
+-		/* Mask the address for the standard page size.  If we
++		/*
++		 * Mask the address for the standard page size.  If we
+ 		 * have a 64k page kernel, but the hardware does not
+ 		 * support 64k pages, this might be different from the
+-		 * hardware page size encoded in the slice table. */
++		 * hardware page size encoded in the slice table.
++		 */
+ 		addr &= PAGE_MASK;
+ 		offset = PTRS_PER_PTE;
+ 	}
+@@ -161,7 +164,8 @@ void hash__tlb_flush(struct mmu_gather *tlb)
+ {
+ 	struct ppc64_tlb_batch *tlbbatch = &get_cpu_var(ppc64_tlb_batch);
+ 
+-	/* If there's a TLB batch pending, then we must flush it because the
++	/*
++	 * If there's a TLB batch pending, then we must flush it because the
+ 	 * pages are going to be freed and we really don't want to have a CPU
+ 	 * access a freed page because it has a stale TLB
+ 	 */
+@@ -201,7 +205,8 @@ void __flush_hash_table_range(struct mm_struct *mm, unsigned long start,
+ 
+ 	BUG_ON(!mm->pgd);
+ 
+-	/* Note: Normally, we should only ever use a batch within a
++	/*
++	 * Note: Normally, we should only ever use a batch within a
+ 	 * PTE locked section. This violates the rule, but will work
+ 	 * since we don't actually modify the PTEs, we just flush the
+ 	 * hash while leaving the PTEs intact (including their reference
+@@ -238,7 +243,8 @@ void flush_tlb_pmd_range(struct mm_struct *mm, pmd_t *pmd, unsigned long addr)
+ 	unsigned long flags;
+ 
+ 	addr = _ALIGN_DOWN(addr, PMD_SIZE);
+-	/* Note: Normally, we should only ever use a batch within a
++	/*
++	 * Note: Normally, we should only ever use a batch within a
+ 	 * PTE locked section. This violates the rule, but will work
+ 	 * since we don't actually modify the PTEs, we just flush the
+ 	 * hash while leaving the PTEs intact (including their reference
+diff --git a/arch/powerpc/mm/hash_utils_64.c b/arch/powerpc/mm/hash_utils_64.c
+index 6eb89643ce58..b21a81d42f15 100644
+--- a/arch/powerpc/mm/hash_utils_64.c
++++ b/arch/powerpc/mm/hash_utils_64.c
+@@ -128,7 +128,8 @@ static DEFINE_SPINLOCK(linear_map_hash_lock);
+ struct mmu_hash_ops mmu_hash_ops;
+ EXPORT_SYMBOL(mmu_hash_ops);
+ 
+-/* There are definitions of page sizes arrays to be used when none
++/*
++ * These are definitions of page sizes arrays to be used when none
+  * is provided by the firmware.
+  */
+ 
+@@ -145,7 +146,8 @@ static struct mmu_psize_def mmu_psize_defaults[] = {
+ 	},
+ };
+ 
+-/* POWER4, GPUL, POWER5
++/*
++ * POWER4, GPUL, POWER5
+  *
+  * Support for 16Mb large pages
+  */
+@@ -479,7 +481,8 @@ static int __init htab_dt_scan_page_sizes(unsigned long node,
+ }
+ 
+ #ifdef CONFIG_HUGETLB_PAGE
+-/* Scan for 16G memory blocks that have been set aside for huge pages
++/*
++ * Scan for 16G memory blocks that have been set aside for huge pages
+  * and reserve those blocks for 16G huge pages.
+  */
+ static int __init htab_dt_scan_hugepage_blocks(unsigned long node,
+@@ -496,8 +499,10 @@ static int __init htab_dt_scan_hugepage_blocks(unsigned long node,
+ 	if (type == NULL || strcmp(type, "memory") != 0)
+ 		return 0;
+ 
+-	/* This property is the log base 2 of the number of virtual pages that
+-	 * will represent this memory block. */
++	/*
++	 * This property is the log base 2 of the number of virtual pages that
++	 * will represent this memory block.
++	 */
+ 	page_count_prop = of_get_flat_dt_prop(node, "ibm,expected#pages", NULL);
+ 	if (page_count_prop == NULL)
+ 		return 0;
+@@ -673,7 +678,8 @@ static void __init htab_init_page_sizes(void)
+ #endif /* CONFIG_PPC_64K_PAGES */
+ 
+ #ifdef CONFIG_SPARSEMEM_VMEMMAP
+-	/* We try to use 16M pages for vmemmap if that is supported
++	/*
++	 * We try to use 16M pages for vmemmap if that is supported
+ 	 * and we have at least 1G of RAM at boot
+ 	 */
+ 	if (mmu_psize_defs[MMU_PAGE_16M].shift &&
+@@ -742,7 +748,8 @@ unsigned htab_shift_for_mem_size(unsigned long mem_size)
+ 
+ static unsigned long __init htab_get_table_size(void)
+ {
+-	/* If hash size isn't already provided by the platform, we try to
++	/*
++	 * If hash size isn't already provided by the platform, we try to
+ 	 * retrieve it from the device-tree. If it's not there neither, we
+ 	 * calculate it now based on the total RAM size
+ 	 */
+@@ -1043,7 +1050,8 @@ void __init hash__early_init_mmu(void)
+ 	if (!mmu_hash_ops.hpte_insert)
+ 		panic("hash__early_init_mmu: No MMU hash ops defined!\n");
+ 
+-	/* Initialize the MMU Hash table and create the linear mapping
++	/*
++	 * Initialize the MMU Hash table and create the linear mapping
+ 	 * of memory. Has to be done before SLB initialization as this is
+ 	 * currently where the page size encoding is obtained.
+ 	 */
+@@ -1228,7 +1236,8 @@ static void check_paca_psize(unsigned long ea, struct mm_struct *mm,
+ 	}
+ }
+ 
+-/* Result code is:
++/*
++ * Result code is:
+  *  0 - handled
+  *  1 - normal page fault
+  * -1 - critical hash insertion error
+@@ -1276,8 +1285,9 @@ int hash_page_mm(struct mm_struct *mm, unsigned long ea,
+ 		ssize = mmu_kernel_ssize;
+ 		break;
+ 	default:
+-		/* Not a valid range
+-		 * Send the problem up to do_page_fault 
++		/*
++		 * Not a valid range
++		 * Send the problem up to do_page_fault()
+ 		 */
+ 		rc = 1;
+ 		goto bail;
+@@ -1302,7 +1312,8 @@ int hash_page_mm(struct mm_struct *mm, unsigned long ea,
+ 		flags |= HPTE_LOCAL_UPDATE;
+ 
+ #ifndef CONFIG_PPC_64K_PAGES
+-	/* If we use 4K pages and our psize is not 4K, then we might
++	/*
++	 * If we use 4K pages and our psize is not 4K, then we might
+ 	 * be hitting a special driver mapping, and need to align the
+ 	 * address before we fetch the PTE.
+ 	 *
+@@ -1324,7 +1335,8 @@ int hash_page_mm(struct mm_struct *mm, unsigned long ea,
+ 	/* Add _PAGE_PRESENT to the required access perm */
+ 	access |= _PAGE_PRESENT;
+ 
+-	/* Pre-check access permissions (will be re-checked atomically
++	/*
++	 * Pre-check access permissions (will be re-checked atomically
+ 	 * in __hash_page_XX but this pre-check is a fast path
+ 	 */
+ 	if (!check_pte_access(access, pte_val(*ptep))) {
+@@ -1371,7 +1383,8 @@ int hash_page_mm(struct mm_struct *mm, unsigned long ea,
+ 		psize = MMU_PAGE_4K;
+ 	}
+ 
+-	/* If this PTE is non-cacheable and we have restrictions on
++	/*
++	 * If this PTE is non-cacheable and we have restrictions on
+ 	 * using non cacheable large pages, then we switch to 4k
+ 	 */
+ 	if (mmu_ci_restrictions && psize == MMU_PAGE_64K && pte_ci(*ptep)) {
+@@ -1412,7 +1425,8 @@ int hash_page_mm(struct mm_struct *mm, unsigned long ea,
+ 					    flags, ssize, spp);
+ 	}
+ 
+-	/* Dump some info in case of hash insertion failure, they should
++	/*
++	 * Dump some info in case of hash insertion failure, they should
+ 	 * never happen so it is really useful to know if/when they do
+ 	 */
+ 	if (rc == -1)
+@@ -1653,7 +1667,8 @@ unsigned long pte_get_hash_gslot(unsigned long vpn, unsigned long shift,
+ 	return gslot;
+ }
+ 
+-/* WARNING: This is called from hash_low_64.S, if you change this prototype,
++/*
++ * WARNING: This is called from hash_low_64.S, if you change this prototype,
+  *          do not forget to update the assembly call site !
+  */
+ void flush_hash_page(unsigned long vpn, real_pte_t pte, int psize, int ssize,
+@@ -1874,7 +1889,8 @@ void __kernel_map_pages(struct page *page, int numpages, int enable)
+ void hash__setup_initial_memory_limit(phys_addr_t first_memblock_base,
+ 				phys_addr_t first_memblock_size)
+ {
+-	/* We don't currently support the first MEMBLOCK not mapping 0
++	/*
++	 * We don't currently support the first MEMBLOCK not mapping 0
+ 	 * physical on those processors
+ 	 */
+ 	BUG_ON(first_memblock_base != 0);
+diff --git a/arch/powerpc/mm/pgtable-radix.c b/arch/powerpc/mm/pgtable-radix.c
+index fcb0169e2d32..c9bcf428dd2b 100644
+--- a/arch/powerpc/mm/pgtable-radix.c
++++ b/arch/powerpc/mm/pgtable-radix.c
+@@ -681,7 +681,8 @@ void radix__mmu_cleanup_all(void)
+ void radix__setup_initial_memory_limit(phys_addr_t first_memblock_base,
+ 				phys_addr_t first_memblock_size)
+ {
+-	/* We don't currently support the first MEMBLOCK not mapping 0
++	/*
++	 * We don't currently support the first MEMBLOCK not mapping 0
+ 	 * physical on those processors
+ 	 */
+ 	BUG_ON(first_memblock_base != 0);
+@@ -1003,45 +1004,44 @@ pmd_t radix__pmdp_collapse_flush(struct vm_area_struct *vma, unsigned long addre
+ void radix__pgtable_trans_huge_deposit(struct mm_struct *mm, pmd_t *pmdp,
+ 				 pgtable_t pgtable)
+ {
+-        struct list_head *lh = (struct list_head *) pgtable;
++	struct list_head *lh = (struct list_head *) pgtable;
+ 
+-        assert_spin_locked(pmd_lockptr(mm, pmdp));
++	assert_spin_locked(pmd_lockptr(mm, pmdp));
+ 
+-        /* FIFO */
+-        if (!pmd_huge_pte(mm, pmdp))
+-                INIT_LIST_HEAD(lh);
+-        else
+-                list_add(lh, (struct list_head *) pmd_huge_pte(mm, pmdp));
+-        pmd_huge_pte(mm, pmdp) = pgtable;
++	/* FIFO */
++	if (!pmd_huge_pte(mm, pmdp))
++		INIT_LIST_HEAD(lh);
++	else
++		list_add(lh, (struct list_head *) pmd_huge_pte(mm, pmdp));
++	pmd_huge_pte(mm, pmdp) = pgtable;
+ }
+ 
+ pgtable_t radix__pgtable_trans_huge_withdraw(struct mm_struct *mm, pmd_t *pmdp)
+ {
+-        pte_t *ptep;
+-        pgtable_t pgtable;
+-        struct list_head *lh;
+-
+-        assert_spin_locked(pmd_lockptr(mm, pmdp));
+-
+-        /* FIFO */
+-        pgtable = pmd_huge_pte(mm, pmdp);
+-        lh = (struct list_head *) pgtable;
+-        if (list_empty(lh))
+-                pmd_huge_pte(mm, pmdp) = NULL;
+-        else {
+-                pmd_huge_pte(mm, pmdp) = (pgtable_t) lh->next;
+-                list_del(lh);
+-        }
+-        ptep = (pte_t *) pgtable;
+-        *ptep = __pte(0);
+-        ptep++;
+-        *ptep = __pte(0);
+-        return pgtable;
+-}
++	pte_t *ptep;
++	pgtable_t pgtable;
++	struct list_head *lh;
+ 
++	assert_spin_locked(pmd_lockptr(mm, pmdp));
++
++	/* FIFO */
++	pgtable = pmd_huge_pte(mm, pmdp);
++	lh = (struct list_head *) pgtable;
++	if (list_empty(lh))
++		pmd_huge_pte(mm, pmdp) = NULL;
++	else {
++		pmd_huge_pte(mm, pmdp) = (pgtable_t) lh->next;
++		list_del(lh);
++	}
++	ptep = (pte_t *) pgtable;
++	*ptep = __pte(0);
++	ptep++;
++	*ptep = __pte(0);
++	return pgtable;
++}
+ 
+ pmd_t radix__pmdp_huge_get_and_clear(struct mm_struct *mm,
+-			       unsigned long addr, pmd_t *pmdp)
++				     unsigned long addr, pmd_t *pmdp)
+ {
+ 	pmd_t old_pmd;
+ 	unsigned long old;
+diff --git a/arch/powerpc/mm/slb.c b/arch/powerpc/mm/slb.c
+--- a/arch/powerpc/mm/slb.c
++++ b/arch/powerpc/mm/slb.c
+@@ -554,7 +554,8 @@ void slb_initialize(void)
+ 	create_shadowed_slbe(PAGE_OFFSET, mmu_kernel_ssize, lflags, LINEAR_INDEX);
+ 	create_shadowed_slbe(VMALLOC_START, mmu_kernel_ssize, vflags, VMALLOC_INDEX);
+ 
+-	/* For the boot cpu, we're running on the stack in init_thread_union,
++	/*
++	 * For the boot cpu, we're running on the stack in init_thread_union,
+ 	 * which is in the first segment of the linear mapping, and also
+ 	 * get_paca()->kstack hasn't been initialized yet.
+ 	 * For secondary cpus, we need to bolt the kernel stack entry now.
+diff --git a/arch/powerpc/mm/vphn.c b/arch/powerpc/mm/vphn.c
+index f83044faac23..0ee7734afb50 100644
+--- a/arch/powerpc/mm/vphn.c
++++ b/arch/powerpc/mm/vphn.c
+@@ -42,7 +42,8 @@ int vphn_unpack_associativity(const long *packed, __be32 *unpacked)
+ 		u16 new = be16_to_cpup(field++);
+ 
+ 		if (is_32bit) {
+-			/* Let's concatenate the 16 bits of this field to the
++			/*
++			 * Let's concatenate the 16 bits of this field to the
+ 			 * 15 lower bits of the previous field
+ 			 */
+ 			unpacked[++nr_assoc_doms] =
+@@ -56,7 +57,8 @@ int vphn_unpack_associativity(const long *packed, __be32 *unpacked)
+ 			unpacked[++nr_assoc_doms] =
+ 				cpu_to_be32(new & VPHN_FIELD_MASK);
+ 		} else {
+-			/* Data is in the lower 15 bits of this field
++			/*
++			 * Data is in the lower 15 bits of this field
+ 			 * concatenated with the next 16 bit field
+ 			 */
+ 			last = new;
+diff --git a/arch/powerpc/mm/vphn.h b/arch/powerpc/mm/vphn.h
+index f9ffdb3942fc..f0b93c2dd578 100644
+--- a/arch/powerpc/mm/vphn.h
++++ b/arch/powerpc/mm/vphn.h
+@@ -2,8 +2,7 @@
+ #ifndef _ARCH_POWERPC_MM_VPHN_H_
+ #define _ARCH_POWERPC_MM_VPHN_H_
+ 
+-/* The H_HOME_NODE_ASSOCIATIVITY h_call returns 6 64-bit registers.
+- */
++/* The H_HOME_NODE_ASSOCIATIVITY h_call returns 6 64-bit registers. */
+ #define VPHN_REGISTER_COUNT 6
+ 
+ /*

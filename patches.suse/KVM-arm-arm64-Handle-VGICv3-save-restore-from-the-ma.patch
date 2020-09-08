@@ -1,0 +1,159 @@
+From: Christoffer Dall <christoffer.dall@linaro.org>
+Date: Wed, 4 Oct 2017 23:42:32 +0200
+Subject: KVM: arm/arm64: Handle VGICv3 save/restore from the main VGIC code on
+ VHE
+Patch-mainline: v4.17-rc1
+Git-commit: 771621b0e2f80629948e0dc627d18b6730778c52
+References: jsc#SLE-4084
+
+Just like we can program the GICv2 hypervisor control interface directly
+from the core vgic code, we can do the same for the GICv3 hypervisor
+control interface on VHE systems.
+
+We do this by simply calling the save/restore functions when we have VHE
+and we can then get rid of the save/restore function calls from the VHE
+world switch function.
+
+One caveat is that we now write GICv3 system register state before the
+potential early exit path in the run loop, and because we sync back
+state in the early exit path, we have to ensure that we read a
+consistent GIC state from the sync path, even though we have never
+actually run the guest with the newly written GIC state.  We solve this
+by inserting an ISB in the early exit path.
+
+Signed-off-by: Christoffer Dall <christoffer.dall@linaro.org>
+Signed-off-by: Marc Zyngier <marc.zyngier@arm.com>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ arch/arm64/kvm/hyp/switch.c |   13 ++++++-------
+ virt/kvm/arm/arm.c          |    1 +
+ virt/kvm/arm/vgic/vgic.c    |   21 +++++++++++++++++++--
+ 3 files changed, 26 insertions(+), 9 deletions(-)
+
+--- a/arch/arm64/kvm/hyp/switch.c
++++ b/arch/arm64/kvm/hyp/switch.c
+@@ -192,13 +192,15 @@ static void __hyp_text __deactivate_vm(s
+ 	write_sysreg(0, vttbr_el2);
+ }
+ 
+-static void __hyp_text __vgic_save_state(struct kvm_vcpu *vcpu)
++/* Save VGICv3 state on non-VHE systems */
++static void __hyp_text __hyp_vgic_save_state(struct kvm_vcpu *vcpu)
+ {
+ 	if (static_branch_unlikely(&kvm_vgic_global_state.gicv3_cpuif))
+ 		__vgic_v3_save_state(vcpu);
+ }
+ 
+-static void __hyp_text __vgic_restore_state(struct kvm_vcpu *vcpu)
++/* Restore VGICv3 state on non_VEH systems */
++static void __hyp_text __hyp_vgic_restore_state(struct kvm_vcpu *vcpu)
+ {
+ 	if (static_branch_unlikely(&kvm_vgic_global_state.gicv3_cpuif))
+ 		__vgic_v3_restore_state(vcpu);
+@@ -400,8 +402,6 @@ int kvm_vcpu_run_vhe(struct kvm_vcpu *vc
+ 	__activate_traps(vcpu);
+ 	__activate_vm(vcpu->kvm);
+ 
+-	__vgic_restore_state(vcpu);
+-
+ 	sysreg_restore_guest_state_vhe(guest_ctxt);
+ 	__debug_switch_to_guest(vcpu);
+ 
+@@ -415,7 +415,6 @@ int kvm_vcpu_run_vhe(struct kvm_vcpu *vc
+ 	fp_enabled = fpsimd_enabled_vhe();
+ 
+ 	sysreg_save_guest_state_vhe(guest_ctxt);
+-	__vgic_save_state(vcpu);
+ 
+ 	__deactivate_traps(vcpu);
+ 
+@@ -451,7 +450,7 @@ int __hyp_text __kvm_vcpu_run_nvhe(struc
+ 	__activate_traps(vcpu);
+ 	__activate_vm(kern_hyp_va(vcpu->kvm));
+ 
+-	__vgic_restore_state(vcpu);
++	__hyp_vgic_restore_state(vcpu);
+ 	__timer_enable_traps(vcpu);
+ 
+ 	/*
+@@ -484,7 +483,7 @@ int __hyp_text __kvm_vcpu_run_nvhe(struc
+ 	__sysreg_save_state_nvhe(guest_ctxt);
+ 	__sysreg32_save_state(vcpu);
+ 	__timer_disable_traps(vcpu);
+-	__vgic_save_state(vcpu);
++	__hyp_vgic_save_state(vcpu);
+ 
+ 	__deactivate_traps(vcpu);
+ 	__deactivate_vm(vcpu);
+--- a/virt/kvm/arm/arm.c
++++ b/virt/kvm/arm/arm.c
+@@ -695,6 +695,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_v
+ 		if (ret <= 0 || need_new_vmid_gen(vcpu->kvm) ||
+ 		    kvm_request_pending(vcpu)) {
+ 			vcpu->mode = OUTSIDE_GUEST_MODE;
++			isb(); /* Ensure work in x_flush_hwstate is committed */
+ 			kvm_pmu_sync_hwstate(vcpu);
+ 			kvm_timer_sync_hwstate(vcpu);
+ 			kvm_vgic_sync_hwstate(vcpu);
+--- a/virt/kvm/arm/vgic/vgic.c
++++ b/virt/kvm/arm/vgic/vgic.c
+@@ -19,6 +19,7 @@
+ #include <linux/list_sort.h>
+ #include <linux/interrupt.h>
+ #include <linux/irq.h>
++#include <asm/kvm_hyp.h>
+ 
+ #include "vgic.h"
+ 
+@@ -714,10 +715,22 @@ next:
+ 		vgic_clear_lr(vcpu, count);
+ }
+ 
++static inline bool can_access_vgic_from_kernel(void)
++{
++	/*
++	 * GICv2 can always be accessed from the kernel because it is
++	 * memory-mapped, and VHE systems can access GICv3 EL2 system
++	 * registers.
++	 */
++	return !static_branch_unlikely(&kvm_vgic_global_state.gicv3_cpuif) || has_vhe();
++}
++
+ static inline void vgic_save_state(struct kvm_vcpu *vcpu)
+ {
+ 	if (!static_branch_unlikely(&kvm_vgic_global_state.gicv3_cpuif))
+ 		vgic_v2_save_state(vcpu);
++	else
++		__vgic_v3_save_state(vcpu);
+ }
+ 
+ /* Sync back the hardware VGIC state into our emulation after a guest's run. */
+@@ -725,7 +738,8 @@ void kvm_vgic_sync_hwstate(struct kvm_vc
+ {
+ 	struct vgic_cpu *vgic_cpu = &vcpu->arch.vgic_cpu;
+ 
+-	vgic_save_state(vcpu);
++	if (can_access_vgic_from_kernel())
++		vgic_save_state(vcpu);
+ 
+ 	WARN_ON(vgic_v4_sync_hwstate(vcpu));
+ 
+@@ -742,6 +756,8 @@ static inline void vgic_restore_state(st
+ {
+ 	if (!static_branch_unlikely(&kvm_vgic_global_state.gicv3_cpuif))
+ 		vgic_v2_restore_state(vcpu);
++	else
++		__vgic_v3_restore_state(vcpu);
+ }
+ 
+ /* Flush our emulation state into the GIC hardware before entering the guest. */
+@@ -768,7 +784,8 @@ void kvm_vgic_flush_hwstate(struct kvm_v
+ 	spin_unlock(&vcpu->arch.vgic_cpu.ap_list_lock);
+ 
+ out:
+-	vgic_restore_state(vcpu);
++	if (can_access_vgic_from_kernel())
++		vgic_restore_state(vcpu);
+ }
+ 
+ void kvm_vgic_load(struct kvm_vcpu *vcpu)

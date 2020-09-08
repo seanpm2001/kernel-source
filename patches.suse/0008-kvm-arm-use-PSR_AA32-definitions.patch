@@ -59,7 +59,7 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  
 --- a/arch/arm64/include/asm/kvm_emulate.h
 +++ b/arch/arm64/include/asm/kvm_emulate.h
-@@ -127,7 +127,7 @@ static inline void kvm_skip_instr(struct
+@@ -140,7 +140,7 @@ static inline void kvm_skip_instr(struct
  
  static inline void vcpu_set_thumb(struct kvm_vcpu *vcpu)
  {
@@ -68,7 +68,7 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  }
  
  /*
-@@ -162,8 +162,8 @@ static inline bool vcpu_mode_priv(const
+@@ -190,8 +190,8 @@ static inline bool vcpu_mode_priv(const
  	u32 mode;
  
  	if (vcpu_mode_is_32bit(vcpu)) {
@@ -79,23 +79,23 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  	}
  
  	mode = *vcpu_cpsr(vcpu) & PSR_MODE_MASK;
-@@ -301,7 +301,7 @@ static inline unsigned long kvm_vcpu_get
+@@ -329,7 +329,7 @@ static inline unsigned long kvm_vcpu_get
  static inline void kvm_vcpu_set_be(struct kvm_vcpu *vcpu)
  {
- 	if (vcpu_mode_is_32bit(vcpu))
+ 	if (vcpu_mode_is_32bit(vcpu)) {
 -		*vcpu_cpsr(vcpu) |= COMPAT_PSR_E_BIT;
 +		*vcpu_cpsr(vcpu) |= PSR_AA32_E_BIT;
- 	else
- 		vcpu_sys_reg(vcpu, SCTLR_EL1) |= (1 << 25);
- }
-@@ -309,7 +309,7 @@ static inline void kvm_vcpu_set_be(struc
+ 	} else {
+ 		u64 sctlr = vcpu_read_sys_reg(vcpu, SCTLR_EL1);
+ 		sctlr |= (1 << 25);
+@@ -340,7 +340,7 @@ static inline void kvm_vcpu_set_be(struc
  static inline bool kvm_vcpu_is_be(struct kvm_vcpu *vcpu)
  {
  	if (vcpu_mode_is_32bit(vcpu))
 -		return !!(*vcpu_cpsr(vcpu) & COMPAT_PSR_E_BIT);
 +		return !!(*vcpu_cpsr(vcpu) & PSR_AA32_E_BIT);
  
- 	return !!(vcpu_sys_reg(vcpu, SCTLR_EL1) & (1 << 25));
+ 	return !!(vcpu_read_sys_reg(vcpu, SCTLR_EL1) & (1 << 25));
  }
 --- a/arch/arm64/kvm/guest.c
 +++ b/arch/arm64/kvm/guest.c
@@ -162,34 +162,26 @@ Signed-off-by: Mian Yousaf Kaukab <yousaf.kaukab@suse.com>
  		mode = 0;	/* SYS maps to USR */
  		break;
  
-@@ -143,21 +143,21 @@ unsigned long *vcpu_reg32(const struct k
+@@ -143,13 +143,13 @@ unsigned long *vcpu_reg32(const struct k
   */
- unsigned long *vcpu_spsr32(const struct kvm_vcpu *vcpu)
+ static int vcpu_spsr32_mode(const struct kvm_vcpu *vcpu)
  {
 -	unsigned long mode = *vcpu_cpsr(vcpu) & COMPAT_PSR_MODE_MASK;
 +	unsigned long mode = *vcpu_cpsr(vcpu) & PSR_AA32_MODE_MASK;
  	switch (mode) {
--	case COMPAT_PSR_MODE_SVC:
-+	case PSR_AA32_MODE_SVC:
- 		mode = KVM_SPSR_SVC;
- 		break;
--	case COMPAT_PSR_MODE_ABT:
-+	case PSR_AA32_MODE_ABT:
- 		mode = KVM_SPSR_ABT;
- 		break;
--	case COMPAT_PSR_MODE_UND:
-+	case PSR_AA32_MODE_UND:
- 		mode = KVM_SPSR_UND;
- 		break;
--	case COMPAT_PSR_MODE_IRQ:
-+	case PSR_AA32_MODE_IRQ:
- 		mode = KVM_SPSR_IRQ;
- 		break;
--	case COMPAT_PSR_MODE_FIQ:
-+	case PSR_AA32_MODE_FIQ:
- 		mode = KVM_SPSR_FIQ;
- 		break;
- 	default:
+-	case COMPAT_PSR_MODE_SVC: return KVM_SPSR_SVC;
+-	case COMPAT_PSR_MODE_ABT: return KVM_SPSR_ABT;
+-	case COMPAT_PSR_MODE_UND: return KVM_SPSR_UND;
+-	case COMPAT_PSR_MODE_IRQ: return KVM_SPSR_IRQ;
+-	case COMPAT_PSR_MODE_FIQ: return KVM_SPSR_FIQ;
++	case PSR_AA32_MODE_SVC: return KVM_SPSR_SVC;
++	case PSR_AA32_MODE_ABT: return KVM_SPSR_ABT;
++	case PSR_AA32_MODE_UND: return KVM_SPSR_UND;
++	case PSR_AA32_MODE_IRQ: return KVM_SPSR_IRQ;
++	case PSR_AA32_MODE_FIQ: return KVM_SPSR_FIQ;
+ 	default: BUG();
+ 	}
+ }
 --- a/arch/arm64/kvm/reset.c
 +++ b/arch/arm64/kvm/reset.c
 @@ -42,8 +42,8 @@ static const struct kvm_regs default_reg
