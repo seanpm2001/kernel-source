@@ -1,0 +1,40 @@
+From 8d07584aa7c7c3a23a05ef4e41a7e203d0a3b954 Mon Sep 17 00:00:00 2001
+From: Florian Fainelli <f.fainelli@gmail.com>
+Date: Tue, 8 Aug 2017 14:45:09 -0700
+Subject: [PATCH 05/24] net: systemport: Fix software statistics for SYSTEMPORT
+ Lite
+Git-commit: 50ddfbafcd1e1f95185dfaa4ad794f742b0beaf8
+Patch-mainline: v4.13-rc5
+References: git-fixes
+
+With SYSTEMPORT Lite we have holes in our statistics layout that make us
+skip over the hardware MIB counters, bcm_sysport_get_stats() was not
+taking that into account resulting in reporting 0 for all SW-maintained
+statistics, fix this by skipping accordingly.
+
+Fixes: 44a4524c54af ("net: systemport: Add support for SYSTEMPORT Lite")
+Signed-off-by: Florian Fainelli <f.fainelli@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/broadcom/bcmsysport.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/net/ethernet/broadcom/bcmsysport.c b/drivers/net/ethernet/broadcom/bcmsysport.c
+index e88ccb124777..db45164d859b 100644
+--- a/drivers/net/ethernet/broadcom/bcmsysport.c
++++ b/drivers/net/ethernet/broadcom/bcmsysport.c
+@@ -449,6 +449,10 @@ static void bcm_sysport_get_stats(struct net_device *dev,
+ 			p = (char *)&dev->stats;
+ 		else
+ 			p = (char *)priv;
++
++		if (priv->is_lite && !bcm_sysport_lite_stat_valid(s->type))
++			continue;
++
+ 		p += s->stat_offset;
+ 		data[j] = *(unsigned long *)p;
+ 		j++;
+-- 
+2.16.4
+
