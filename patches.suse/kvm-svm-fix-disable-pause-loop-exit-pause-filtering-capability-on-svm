@@ -1,0 +1,67 @@
+From: Wanpeng Li <wanpengli@tencent.com>
+Date: Fri, 31 Jul 2020 11:12:21 +0800
+Subject: KVM: SVM: Fix disable pause loop exit/pause filtering capability on
+ SVM
+Git-commit: 830f01b089b12bbe93bd55f2d62837253012a30e
+Patch-mainline: v5.8
+References: bsc#1176321
+
+'Commit 8566ac8b8e7c ("KVM: SVM: Implement pause loop exit logic in SVM")'
+drops disable pause loop exit/pause filtering capability completely, I
+guess it is a merge fault by Radim since disable vmexits capabilities and
+pause loop exit for SVM patchsets are merged at the same time. This patch
+reintroduces the disable pause loop exit/pause filtering capability support.
+
+Reported-by: Haiwei Li <lihaiwei@tencent.com>
+Tested-by: Haiwei Li <lihaiwei@tencent.com>
+Fixes: 8566ac8b ("KVM: SVM: Implement pause loop exit logic in SVM")
+Signed-off-by: Wanpeng Li <wanpengli@tencent.com>
+Message-Id: <1596165141-28874-3-git-send-email-wanpengli@tencent.com>
+Cc: stable@vger.kernel.org
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Joerg Roedel <jroedel@suse.de>
+---
+ arch/x86/kvm/svm.c |   11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -410,6 +410,11 @@ struct enc_region {
+ 	unsigned long size;
+ };
+ 
++static inline bool svm_pause_in_guest(void)
++{
++	return (!pause_filter_count || !pause_filter_thresh);
++}
++
+ static inline bool svm_sev_enabled(void)
+ {
+ 	return max_sev_asid;
+@@ -1598,7 +1603,7 @@ static void init_vmcb(struct vcpu_svm *s
+ 	svm->nested.vmcb = 0;
+ 	svm->vcpu.arch.hflags = 0;
+ 
+-	if (pause_filter_count) {
++	if (!svm_pause_in_guest()) {
+ 		control->pause_filter_count = pause_filter_count;
+ 		if (pause_filter_thresh)
+ 			control->pause_filter_thresh = pause_filter_thresh;
+@@ -4440,7 +4445,7 @@ static int pause_interception(struct vcp
+ 	struct kvm_vcpu *vcpu = &svm->vcpu;
+ 	bool in_kernel = (svm_get_cpl(vcpu) == 0);
+ 
+-	if (pause_filter_thresh)
++	if (!svm_pause_in_guest())
+ 		grow_ple_window(vcpu);
+ 
+ 	kvm_vcpu_on_spin(vcpu, in_kernel);
+@@ -6136,7 +6141,7 @@ static void svm_handle_external_intr(str
+ 
+ static void svm_sched_in(struct kvm_vcpu *vcpu, int cpu)
+ {
+-	if (pause_filter_thresh)
++	if (!svm_pause_in_guest())
+ 		shrink_ple_window(vcpu);
+ }
+ 
