@@ -1,0 +1,36 @@
+From 400df7a5f45c398f354bf5f13d869eeeb5b4d6f4 Mon Sep 17 00:00:00 2001
+From: Vivien Didelot <vivien.didelot@savoirfairelinux.com>
+Date: Mon, 5 Jun 2017 18:17:16 -0400
+Subject: [PATCH 01/24] net: dsa: mv88e6xxx: fix 6085 frame mode masking
+Git-commit: 5461bd41fd93829fdd726c01f43799c743aba9a0
+Patch-mainline: v4.13-rc1
+References: git-fixes
+
+The register bits used for the frame mode were masked with DSA (0x1)
+instead of the mask value (0x3) in the 6085 implementation of
+port_set_frame_mode. Fix this.
+
+Fixes: 56995cbc3540 ("net: dsa: mv88e6xxx: Refactor CPU and DSA port setup")
+Signed-off-by: Vivien Didelot <vivien.didelot@savoirfairelinux.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/dsa/mv88e6xxx/port.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/dsa/mv88e6xxx/port.c b/drivers/net/dsa/mv88e6xxx/port.c
+index 5ec9145a4f35..38052e8c0691 100644
+--- a/drivers/net/dsa/mv88e6xxx/port.c
++++ b/drivers/net/dsa/mv88e6xxx/port.c
+@@ -450,7 +450,7 @@ int mv88e6085_port_set_frame_mode(struct mv88e6xxx_chip *chip, int port,
+ 	if (err)
+ 		return err;
+ 
+-	reg &= ~PORT_CONTROL_FRAME_MODE_DSA;
++	reg &= ~PORT_CONTROL_FRAME_MASK;
+ 
+ 	switch (mode) {
+ 	case MV88E6XXX_FRAME_MODE_NORMAL:
+-- 
+2.16.4
+

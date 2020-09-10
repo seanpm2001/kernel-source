@@ -1,0 +1,90 @@
+From a1e1cb72d96491277ede8d257ce6b48a381dd336 Mon Sep 17 00:00:00 2001
+From: Mike Snitzer <snitzer@redhat.com>
+Date: Thu, 17 Jan 2019 10:48:01 -0500
+Subject: [PATCH] dm: fix redundant IO accounting for bios that need splitting
+Git-commit: a1e1cb72d96491277ede8d257ce6b48a381dd336
+Patch-mainline: v5.0-rc4
+References: git fixes (block drivers)
+
+The risk of redundant IO accounting was not taken into consideration
+when commit 18a25da84354 ("dm: ensure bio submission follows a
+depth-first tree walk") introduced IO splitting in terms of recursion
+via generic_make_request().
+
+Fix this by subtracting the split bio's payload from the IO stats that
+were already accounted for by start_io_acct() upon dm_make_request()
+entry.  This repeat oscillation of the IO accounting, up then down,
+isn't ideal but refactoring DM core's IO splitting to pre-split bios
+_before_ they are accounted turned out to be an excessive amount of
+change that will need a full development cycle to refine and verify.
+
+Before this fix:
+
+  /dev/mapper/stripe_dev is a 4-way stripe using a 32k chunksize, so
+  bios are split on 32k boundaries.
+
+  # fio --name=16M --filename=/dev/mapper/stripe_dev --rw=write --bs=64k --size=16M \
+    	--iodepth=1 --ioengine=libaio --direct=1 --refill_buffers
+
+  with debugging added:
+  [103898.310264] device-mapper: core: start_io_acct: dm-2 WRITE bio->bi_iter.bi_sector=0 len=128
+  [103898.318704] device-mapper: core: __split_and_process_bio: recursing for following split bio:
+  [103898.329136] device-mapper: core: start_io_acct: dm-2 WRITE bio->bi_iter.bi_sector=64 len=64
+  ...
+
+  16M written yet 136M (278528 * 512b) accounted:
+  # cat /sys/block/dm-2/stat | awk '{ print $7 }'
+  278528
+
+After this fix:
+
+  16M written and 16M (32768 * 512b) accounted:
+  # cat /sys/block/dm-2/stat | awk '{ print $7 }'
+  32768
+
+Fixes: 18a25da84354 ("dm: ensure bio submission follows a depth-first tree walk")
+Cc: stable@vger.kernel.org # 4.16+
+Reported-by: Bryan Gurney <bgurney@redhat.com>
+Reviewed-by: Ming Lei <ming.lei@redhat.com>
+Signed-off-by: Mike Snitzer <snitzer@redhat.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/dm.c |   18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+--- a/drivers/md/dm.c
++++ b/drivers/md/dm.c
+@@ -1585,6 +1585,9 @@ static void init_clone_info(struct clone
+ 	ci->sector = bio->bi_iter.bi_sector;
+ }
+ 
++#define __dm_part_stat_sub(cpu, part, field, subnd)	\
++	part_stat_sub(cpu, part, field, subnd)
++
+ /*
+  * Entry point to split a bio into clones and submit them to the targets.
+  */
+@@ -1632,7 +1635,22 @@ static blk_qc_t __split_and_process_bio(
+ 				 */
+ 				struct bio *b = bio_split(bio, bio_sectors(bio) - ci.sector_count,
+ 							  GFP_NOIO, &md->queue->bio_split);
++				int cpu;
++
+ 				ci.io->orig_bio = b;
++
++				/*
++				 * Adjust IO stats for each split, otherwise upon queue
++				 * reentry there will be redundant IO accounting.
++				 * NOTE: this is a stop-gap fix, a proper fix involves
++				 * significant refactoring of DM core's bio splitting
++				 * (by eliminating DM's splitting and just using bio_split)
++				 */
++				cpu = part_stat_lock();
++				__dm_part_stat_sub(cpu, &dm_disk(md)->part0,
++						   sectors[op_is_write(bio_op(bio))], ci.sector_count);
++				part_stat_unlock();
++
+ 				bio_chain(b, bio);
+ 				ret = generic_make_request(bio);
+ 				break;
