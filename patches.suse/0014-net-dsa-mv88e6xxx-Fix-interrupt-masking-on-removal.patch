@@ -1,0 +1,52 @@
+From cb7a1615895762b4031f1d169141106c2965960a Mon Sep 17 00:00:00 2001
+From: Andrew Lunn <andrew@lunn.ch>
+Date: Thu, 7 Dec 2017 01:05:56 +0100
+Subject: [PATCH 14/24] net: dsa: mv88e6xxx: Fix interrupt masking on removal
+Git-commit: 3d5fdba1842bdd2eef29364c660558cb4cbb3fe0
+Patch-mainline: v4.15-rc3
+References: git-fixes
+
+When removing the interrupt handling code, we should mask the
+generation of interrupts. The code however unmasked all
+interrupts. This can then cause a new interrupt. We then get into a
+deadlock where the interrupt thread is waiting to run, and the code
+continues, trying to remove the interrupt handler, which means waiting
+for the thread to complete. On a UP machine this deadlocks.
+
+Fix so we really mask interrupts in the hardware. The same error is
+made in the error path when install the interrupt handling code.
+
+Fixes: 3460a5770ce9 ("net: dsa: mv88e6xxx: Mask g1 interrupts and free interrupt")
+Signed-off-by: Andrew Lunn <andrew@lunn.ch>
+Reviewed-by: Vivien Didelot <vivien.didelot@savoirfairelinux.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/dsa/mv88e6xxx/chip.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/dsa/mv88e6xxx/chip.c b/drivers/net/dsa/mv88e6xxx/chip.c
+index bae979c9e3dc..9896063dee64 100644
+--- a/drivers/net/dsa/mv88e6xxx/chip.c
++++ b/drivers/net/dsa/mv88e6xxx/chip.c
+@@ -468,7 +468,7 @@ static void mv88e6xxx_g1_irq_free(struct mv88e6xxx_chip *chip)
+ 	u16 mask;
+ 
+ 	mv88e6xxx_g1_read(chip, GLOBAL_CONTROL, &mask);
+-	mask |= GENMASK(chip->g1_irq.nirqs, 0);
++	mask &= ~GENMASK(chip->g1_irq.nirqs, 0);
+ 	mv88e6xxx_g1_write(chip, GLOBAL_CONTROL, mask);
+ 
+ 	free_irq(chip->irq, chip);
+@@ -524,7 +524,7 @@ static int mv88e6xxx_g1_irq_setup(struct mv88e6xxx_chip *chip)
+ 	return 0;
+ 
+ out_disable:
+-	mask |= GENMASK(chip->g1_irq.nirqs, 0);
++	mask &= ~GENMASK(chip->g1_irq.nirqs, 0);
+ 	mv88e6xxx_g1_write(chip, GLOBAL_CONTROL, mask);
+ 
+ out_mapping:
+-- 
+2.16.4
+
