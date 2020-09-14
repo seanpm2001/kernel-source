@@ -1,0 +1,53 @@
+From 925147a92b6bd024c78c06fe939f16487499b0df Mon Sep 17 00:00:00 2001
+From: Bernd Edlinger <bernd.edlinger@hotmail.de>
+Date: Sat, 21 Oct 2017 06:51:30 +0000
+Subject: [PATCH 07/24] stmmac: Don't access tx_q->dirty_tx before
+ netif_tx_lock
+Git-commit: 8d5f4b07174976c55a5f5d6967777373c6826944
+Patch-mainline: v4.14-rc6
+References: git-fixes
+
+This is the possible reason for different hard to reproduce
+problems on my ARMv7-SMP test system.
+
+The symptoms are in recent kernels imprecise external aborts,
+and in older kernels various kinds of network stalls and
+unexpected page allocation failures.
+
+My testing indicates that the trouble started between v4.5 and v4.6
+and prevails up to v4.14.
+
+Using the dirty_tx before acquiring the spin lock is clearly
+wrong and was first introduced with v4.6.
+
+Fixes: e3ad57c96715 ("stmmac: review RX/TX ring management")
+
+Signed-off-by: Bernd Edlinger <bernd.edlinger@hotmail.de>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/stmmac_main.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+index d5a7f7804999..5053cf2b1b05 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+@@ -1816,12 +1816,13 @@ static void stmmac_tx_clean(struct stmmac_priv *priv, u32 queue)
+ {
+ 	struct stmmac_tx_queue *tx_q = &priv->tx_queue[queue];
+ 	unsigned int bytes_compl = 0, pkts_compl = 0;
+-	unsigned int entry = tx_q->dirty_tx;
++	unsigned int entry;
+ 
+ 	netif_tx_lock(priv->dev);
+ 
+ 	priv->xstats.tx_clean++;
+ 
++	entry = tx_q->dirty_tx;
+ 	while (entry != tx_q->cur_tx) {
+ 		struct sk_buff *skb = tx_q->tx_skbuff[entry];
+ 		struct dma_desc *p;
+-- 
+2.16.4
+
