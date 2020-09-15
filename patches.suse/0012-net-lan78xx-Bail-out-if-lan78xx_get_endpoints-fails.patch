@@ -1,0 +1,39 @@
+From 23bb1983571c04a45701f1975cec14318cf77801 Mon Sep 17 00:00:00 2001
+From: Stefan Wahren <stefan.wahren@i2se.com>
+Date: Tue, 4 Sep 2018 19:29:09 +0200
+Subject: [PATCH 12/12] net: lan78xx: Bail out if lan78xx_get_endpoints fails
+Git-commit: fa8cd98c06407b5798b927cd7fd14d30f360ed02
+Patch-mainline: v4.20-rc1
+References: git-fixes
+
+We need to bail out if lan78xx_get_endpoints() fails, otherwise the
+result is overwritten.
+
+Fixes: 55d7de9de6c3 ("Microchip's LAN7800 family USB 2/3 to 10/100/1000 Ethernet")
+Signed-off-by: Stefan Wahren <stefan.wahren@i2se.com>
+Reviewed-by: Raghuram Chary Jallipalli <raghuramchary.jallipalli@microchip.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/usb/lan78xx.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/net/usb/lan78xx.c b/drivers/net/usb/lan78xx.c
+index 0c3c5941179c..43e34eb76348 100644
+--- a/drivers/net/usb/lan78xx.c
++++ b/drivers/net/usb/lan78xx.c
+@@ -2872,6 +2872,11 @@ static int lan78xx_bind(struct lan78xx_net *dev, struct usb_interface *intf)
+ 	int i;
+ 
+ 	ret = lan78xx_get_endpoints(dev, intf);
++	if (ret) {
++		netdev_warn(dev->net, "lan78xx_get_endpoints failed: %d\n",
++			    ret);
++		return ret;
++	}
+ 
+ 	dev->data[0] = (unsigned long)kzalloc(sizeof(*pdata), GFP_KERNEL);
+ 
+-- 
+2.16.4
+
