@@ -1,0 +1,117 @@
+From: Phil Edworthy <phil.edworthy@renesas.com>
+Date: Mon, 3 Dec 2018 11:13:09 +0000
+Subject: clk: Add (devm_)clk_get_optional() functions
+Git-commit: 60b8f0ddf1a927ef02141a6610fd52575134f821
+Patch-mainline: 5.1-rc1
+References: git-fixes
+
+This adds clk_get_optional() and devm_clk_get_optional() functions to get
+optional clocks.
+
+They behave the same as (devm_)clk_get() except where there is no clock
+producer. In this case, instead of returning -ENOENT, the function
+returns NULL. This makes error checking simpler and allows
+clk_prepare_enable, etc to be called on the returned reference
+without additional checks.
+
+Signed-off-by: Phil Edworthy <phil.edworthy@renesas.com>
+Reviewed-by: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+Cc: Russell King <linux@armlinux.org.uk>
+[sboyd@kernel.org: Document in devres.txt]
+Signed-off-by: Stephen Boyd <sboyd@kernel.org>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ Documentation/driver-model/devres.txt |    1 
+ drivers/clk/clk-devres.c              |   11 ++++++++++
+ include/linux/clk.h                   |   36 ++++++++++++++++++++++++++++++++++
+ 3 files changed, 48 insertions(+)
+
+--- a/Documentation/driver-model/devres.txt
++++ b/Documentation/driver-model/devres.txt
+@@ -235,6 +235,7 @@ certainly invest a bit more effort into
+ 
+ CLOCK
+   devm_clk_get()
++  devm_clk_get_optional()
+   devm_clk_put()
+   devm_clk_hw_register()
+ 
+--- a/drivers/clk/clk-devres.c
++++ b/drivers/clk/clk-devres.c
+@@ -34,6 +34,17 @@ struct clk *devm_clk_get(struct device *
+ }
+ EXPORT_SYMBOL(devm_clk_get);
+ 
++struct clk *devm_clk_get_optional(struct device *dev, const char *id)
++{
++	struct clk *clk = devm_clk_get(dev, id);
++
++	if (clk == ERR_PTR(-ENOENT))
++		return NULL;
++
++	return clk;
++}
++EXPORT_SYMBOL(devm_clk_get_optional);
++
+ struct clk_bulk_devres {
+ 	struct clk_bulk_data *clks;
+ 	int num_clks;
+--- a/include/linux/clk.h
++++ b/include/linux/clk.h
+@@ -316,6 +316,17 @@ int __must_check devm_clk_bulk_get(struc
+ struct clk *devm_clk_get(struct device *dev, const char *id);
+ 
+ /**
++ * devm_clk_get_optional - lookup and obtain a managed reference to an optional
++ *			   clock producer.
++ * @dev: device for clock "consumer"
++ * @id: clock consumer ID
++ *
++ * Behaves the same as devm_clk_get() except where there is no clock producer.
++ * In this case, instead of returning -ENOENT, the function returns NULL.
++ */
++struct clk *devm_clk_get_optional(struct device *dev, const char *id);
++
++/**
+  * devm_get_clk_from_child - lookup and obtain a managed reference to a
+  *			     clock producer from child node.
+  * @dev: device for clock "consumer"
+@@ -565,6 +576,12 @@ static inline struct clk *devm_clk_get(s
+ 	return NULL;
+ }
+ 
++static inline struct clk *devm_clk_get_optional(struct device *dev,
++						const char *id)
++{
++	return NULL;
++}
++
+ static inline int devm_clk_bulk_get(struct device *dev, int num_clks,
+ 				    struct clk_bulk_data *clks)
+ {
+@@ -679,6 +696,25 @@ static inline void clk_bulk_disable_unpr
+ 	clk_bulk_unprepare(num_clks, clks);
+ }
+ 
++/**
++ * clk_get_optional - lookup and obtain a reference to an optional clock
++ *		      producer.
++ * @dev: device for clock "consumer"
++ * @id: clock consumer ID
++ *
++ * Behaves the same as clk_get() except where there is no clock producer. In
++ * this case, instead of returning -ENOENT, the function returns NULL.
++ */
++static inline struct clk *clk_get_optional(struct device *dev, const char *id)
++{
++	struct clk *clk = clk_get(dev, id);
++
++	if (clk == ERR_PTR(-ENOENT))
++		return NULL;
++
++	return clk;
++}
++
+ #if defined(CONFIG_OF) && defined(CONFIG_COMMON_CLK)
+ struct clk *of_clk_get(struct device_node *np, int index);
+ struct clk *of_clk_get_by_name(struct device_node *np, const char *name);
