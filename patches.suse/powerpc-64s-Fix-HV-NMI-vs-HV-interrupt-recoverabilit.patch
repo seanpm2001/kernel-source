@@ -1,0 +1,174 @@
+From ccd477028a202993b9ddca5d2404fdaca3b7a55c Mon Sep 17 00:00:00 2001
+From: Nicholas Piggin <npiggin@gmail.com>
+Date: Tue, 26 Feb 2019 18:51:07 +1000
+Subject: [PATCH] powerpc/64s: Fix HV NMI vs HV interrupt recoverability test
+
+References: bsc#1094244 ltc#168122
+Patch-mainline: v5.1-rc1
+Git-commit: ccd477028a202993b9ddca5d2404fdaca3b7a55c
+
+HV interrupts that use HSRR registers do not enter with MSR[RI] clear,
+but their entry code is not recoverable vs NMI, due to shared use of
+HSPRG1 as a scratch register to save r13.
+
+This means that a system reset or machine check that hits in HSRR
+interrupt entry can cause r13 to be silently corrupted.
+
+Fix this by marking NMIs non-recoverable if they land in HV interrupt
+ranges.
+
+Signed-off-by: Nicholas Piggin <npiggin@gmail.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/include/asm/asm-prototypes.h |  8 +++
+ arch/powerpc/include/asm/nmi.h            |  2 +
+ arch/powerpc/kernel/exceptions-64s.S      |  8 +++
+ arch/powerpc/kernel/mce.c                 |  3 ++
+ arch/powerpc/kernel/traps.c               | 66 +++++++++++++++++++++++
+ 5 files changed, 87 insertions(+)
+
+--- a/arch/powerpc/include/asm/asm-prototypes.h
++++ b/arch/powerpc/include/asm/asm-prototypes.h
+@@ -52,6 +52,14 @@ int exit_vmx_usercopy(void);
+ int enter_vmx_copy(void);
+ void * exit_vmx_copy(void *dest);
+ 
++/* Exceptions */
++#ifdef CONFIG_PPC_POWERNV
++extern unsigned long real_trampolines_start;
++extern unsigned long real_trampolines_end;
++extern unsigned long virt_trampolines_start;
++extern unsigned long virt_trampolines_end;
++#endif
++
+ /* Traps */
+ long machine_check_early(struct pt_regs *regs);
+ long hmi_exception_realmode(struct pt_regs *regs);
+--- a/arch/powerpc/include/asm/nmi.h
++++ b/arch/powerpc/include/asm/nmi.h
+@@ -1,4 +1,6 @@
+ #ifndef _ASM_NMI_H
+ #define _ASM_NMI_H
+ 
++extern void hv_nmi_check_nonrecoverable(struct pt_regs *regs);
++
+ #endif /* _ASM_NMI_H */
+--- a/arch/powerpc/kernel/exceptions-64s.S
++++ b/arch/powerpc/kernel/exceptions-64s.S
+@@ -66,6 +66,14 @@ OPEN_FIXED_SECTION(real_vectors,
+ OPEN_FIXED_SECTION(real_trampolines,    0x1900, 0x4000)
+ OPEN_FIXED_SECTION(virt_vectors,        0x4000, 0x5900)
+ OPEN_FIXED_SECTION(virt_trampolines,    0x5900, 0x7000)
++
++#ifdef CONFIG_PPC_POWERNV
++	.globl real_trampolines_start
++	.globl real_trampolines_end
++	.globl virt_trampolines_start
++	.globl virt_trampolines_end
++#endif
++
+ #if defined(CONFIG_PPC_PSERIES) || defined(CONFIG_PPC_POWERNV)
+ /*
+  * Data area reserved for FWNMI option.
+--- a/arch/powerpc/kernel/mce.c
++++ b/arch/powerpc/kernel/mce.c
+@@ -31,6 +31,7 @@
+ 
+ #include <asm/machdep.h>
+ #include <asm/mce.h>
++#include <asm/nmi.h>
+ 
+ static DEFINE_PER_CPU(int, mce_nest_count);
+ static DEFINE_PER_CPU(struct machine_check_event[MAX_MC_EVT], mce_event);
+@@ -459,6 +460,8 @@ long machine_check_early(struct pt_regs
+ {
+ 	long handled = 0;
+ 
++	hv_nmi_check_nonrecoverable(regs);
++
+ 	/*
+ 	 * See if platform is capable of handling machine check.
+ 	 */
+--- a/arch/powerpc/kernel/traps.c
++++ b/arch/powerpc/kernel/traps.c
+@@ -329,6 +329,70 @@ void _exception(int signr, struct pt_reg
+ 	_exception_pkey(signr, regs, code, addr, 0);
+ }
+ 
++/*
++ * The interrupt architecture has a quirk in that the HV interrupts excluding
++ * the NMIs (0x100 and 0x200) do not clear MSR[RI] at entry. The first thing
++ * that an interrupt handler must do is save off a GPR into a scratch register,
++ * and all interrupts on POWERNV (HV=1) use the HSPRG1 register as scratch.
++ * Therefore an NMI can clobber an HV interrupt's live HSPRG1 without noticing
++ * that it is non-reentrant, which leads to random data corruption.
++ *
++ * The solution is for NMI interrupts in HV mode to check if they originated
++ * from these critical HV interrupt regions. If so, then mark them not
++ * recoverable.
++ *
++ * An alternative would be for HV NMIs to use SPRG for scratch to avoid the
++ * HSPRG1 clobber, however this would cause guest SPRG to be clobbered. Linux
++ * guests should always have MSR[RI]=0 when its scratch SPRG is in use, so
++ * that would work. However any other guest OS that may have the SPRG live
++ * and MSR[RI]=1 could encounter silent corruption.
++ *
++ * Builds that do not support KVM could take this second option to increase
++ * the recoverability of NMIs.
++ */
++void hv_nmi_check_nonrecoverable(struct pt_regs *regs)
++{
++#ifdef CONFIG_PPC_POWERNV
++	unsigned long kbase = (unsigned long)_stext;
++	unsigned long nip = regs->nip;
++
++	if (!(regs->msr & MSR_RI))
++		return;
++	if (!(regs->msr & MSR_HV))
++		return;
++	if (regs->msr & MSR_PR)
++		return;
++
++	/*
++	 * Now test if the interrupt has hit a range that may be using
++	 * HSPRG1 without having RI=0 (i.e., an HSRR interrupt). The
++	 * problem ranges all run un-relocated. Test real and virt modes
++	 * at the same time by droping the high bit of the nip (virt mode
++	 * entry points still have the +0x4000 offset).
++	 */
++	nip &= ~0xc000000000000000ULL;
++	if ((nip >= 0x500 && nip < 0x600) || (nip >= 0x4500 && nip < 0x4600))
++		goto nonrecoverable;
++	if ((nip >= 0x980 && nip < 0xa00) || (nip >= 0x4980 && nip < 0x4a00))
++		goto nonrecoverable;
++	if ((nip >= 0xe00 && nip < 0xec0) || (nip >= 0x4e00 && nip < 0x4ec0))
++		goto nonrecoverable;
++	if ((nip >= 0xf80 && nip < 0xfa0) || (nip >= 0x4f80 && nip < 0x4fa0))
++		goto nonrecoverable;
++	/* Trampoline code runs un-relocated so subtract kbase. */
++	if (nip >= real_trampolines_start - kbase &&
++			nip < real_trampolines_end - kbase)
++		goto nonrecoverable;
++	if (nip >= virt_trampolines_start - kbase &&
++			nip < virt_trampolines_end - kbase)
++		goto nonrecoverable;
++	return;
++
++nonrecoverable:
++	regs->msr &= ~MSR_RI;
++#endif
++}
++
+ void system_reset_exception(struct pt_regs *regs)
+ {
+ 	/*
+@@ -339,6 +403,8 @@ void system_reset_exception(struct pt_re
+ 	if (!nested)
+ 		nmi_enter();
+ 
++	hv_nmi_check_nonrecoverable(regs);
++
+ 	/* See if any machine dependent calls */
+ 	if (ppc_md.system_reset_exception) {
+ 		if (ppc_md.system_reset_exception(regs))
