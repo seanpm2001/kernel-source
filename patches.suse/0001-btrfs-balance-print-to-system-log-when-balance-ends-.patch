@@ -1,0 +1,36 @@
+From 7333bd02dcb7cefa91eb94efb8e7578ec764145c Mon Sep 17 00:00:00 2001
+From: Anand Jain <anand.jain@oracle.com>
+Date: Tue, 20 Nov 2018 16:12:57 +0800
+Patch-mainline: v5.0-rc1
+Git-commit: 7333bd02dcb7cefa91eb94efb8e7578ec764145c
+References: bsc#1174354
+Subject: [PATCH] btrfs: balance: print to system log when balance ends or is
+ paused
+
+Print a kernel log message when the balance ends, either for cancel or
+completed or if it is paused.
+
+Signed-off-by: Anand Jain <anand.jain@oracle.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/volumes.c |    8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+--- a/fs/btrfs/volumes.c
++++ b/fs/btrfs/volumes.c
+@@ -3989,6 +3989,14 @@ int btrfs_balance(struct btrfs_balance_c
+ 	ret = __btrfs_balance(fs_info);
+ 
+ 	mutex_lock(&fs_info->balance_mutex);
++
++	if (ret == -ECANCELED && atomic_read(&fs_info->balance_pause_req))
++		btrfs_info(fs_info, "balance: paused");
++	else if (ret == -ECANCELED && atomic_read(&fs_info->balance_cancel_req))
++		btrfs_info(fs_info, "balance: canceled");
++	else
++		btrfs_info(fs_info, "balance: ended with status: %d", ret);
++
+ 	clear_bit(BTRFS_FS_BALANCE_RUNNING, &fs_info->flags);
+ 
+ 	if (bctl->sys.flags & BTRFS_BALANCE_ARGS_CONVERT) {
