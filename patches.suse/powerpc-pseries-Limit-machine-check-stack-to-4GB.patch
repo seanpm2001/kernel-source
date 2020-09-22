@@ -1,0 +1,60 @@
+From d2cbbd45d433b96e41711a293e59cff259143694 Mon Sep 17 00:00:00 2001
+From: Nicholas Piggin <npiggin@gmail.com>
+Date: Fri, 8 May 2020 14:34:01 +1000
+Subject: [PATCH] powerpc/pseries: Limit machine check stack to 4GB
+
+References: bsc#1094244 ltc#168122
+Patch-mainline: v5.8-rc1
+Git-commit: d2cbbd45d433b96e41711a293e59cff259143694
+
+This allows rtas_args to be put on the machine check stack, which
+avoids a lot of complications with re-entrancy deadlocks.
+
+Signed-off-by: Nicholas Piggin <npiggin@gmail.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Reviewed-by: Christophe Leroy <christophe.leroy@c-s.fr>
+Reviewed-by: Mahesh Salgaonkar <mahesh@linux.ibm.com>
+Link: https://lore.kernel.org/r/20200508043408.886394-10-npiggin@gmail.com
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kernel/setup_64.c | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+--- a/arch/powerpc/kernel/setup_64.c
++++ b/arch/powerpc/kernel/setup_64.c
+@@ -666,7 +666,7 @@ static void emerg_stack_init_thread_info
+  */
+ void __init emergency_stack_init(void)
+ {
+-	u64 limit;
++	u64 limit, mce_limit;
+ 	unsigned int i;
+ 
+ 	/*
+@@ -683,7 +683,16 @@ void __init emergency_stack_init(void)
+ 	 * initialized in kernel/irq.c. These are initialized here in order
+ 	 * to have emergency stacks available as early as possible.
+ 	 */
+-	limit = min(ppc64_bolted_size(), ppc64_rma_size);
++	limit = mce_limit = min(ppc64_bolted_size(), ppc64_rma_size);
++
++	/*
++	 * Machine check on pseries calls rtas, but can't use the static
++	 * rtas_args due to a machine check hitting while the lock is held.
++	 * rtas args have to be under 4GB, so the machine check stack is
++	 * limited to 4GB so args can be put on stack.
++	 */
++	if (firmware_has_feature(FW_FEATURE_LPAR) && mce_limit > SZ_4G)
++		mce_limit = SZ_4G;
+ 
+ 	for_each_possible_cpu(i) {
+ 		struct thread_info *ti;
+@@ -700,7 +709,7 @@ void __init emergency_stack_init(void)
+ 		paca[i].nmi_emergency_sp = (void *)ti + THREAD_SIZE;
+ 
+ 		/* emergency stack for machine check exception handling. */
+-		ti = __va(memblock_alloc_base(THREAD_SIZE, THREAD_SIZE, limit));
++		ti = __va(memblock_alloc_base(THREAD_SIZE, THREAD_SIZE, mce_limit));
+ 		memset(ti, 0, THREAD_SIZE);
+ 		emerg_stack_init_thread_info(ti, i);
+ 		paca[i].mc_emergency_sp = (void *)ti + THREAD_SIZE;
