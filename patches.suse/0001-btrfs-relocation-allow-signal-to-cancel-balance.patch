@@ -1,0 +1,36 @@
+From 5cb502f4ab6469c3d02bd787a3ff58a7b624ba67 Mon Sep 17 00:00:00 2001
+From: Qu Wenruo <wqu@suse.com>
+Date: Mon, 13 Jul 2020 09:03:19 +0800
+Patch-mainline: v5.9-rc1
+Git-commit: 5cb502f4ab6469c3d02bd787a3ff58a7b624ba67
+References: bsc#1174354
+Subject: [PATCH] btrfs: relocation: allow signal to cancel balance
+
+Although btrfs balance can be canceled with "btrfs balance cancel"
+command, it's still almost muscle memory to press Ctrl-C to cancel a
+long running btrfs balance.
+
+So allow btrfs balance to check signal to determine if it should exit.
+The cancellation points are in known location and we're only adding one
+more reason, so this should be safe.
+
+Reviewed-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: Qu Wenruo <wqu@suse.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/relocation.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -3322,7 +3322,8 @@ int setup_extent_mapping(struct inode *i
+  */
+ int btrfs_should_cancel_balance(struct btrfs_fs_info *fs_info)
+ {
+-	return atomic_read(&fs_info->balance_cancel_req);
++	return atomic_read(&fs_info->balance_cancel_req) ||
++		fatal_signal_pending(current);
+ }
+ 
+ static int relocate_file_extent_cluster(struct inode *inode,
