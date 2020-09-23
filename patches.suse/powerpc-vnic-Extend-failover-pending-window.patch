@@ -1,0 +1,108 @@
+From d0d095a7981251b7cb9dcb4727eeb97dd46b3c46 Mon Sep 17 00:00:00 2001
+From: Sukadev Bhattiprolu <sukadev@linux.vnet.ibm.com>
+Date: Thu, 10 Sep 2020 11:18:41 -0700
+Subject: [PATCH 2/2] powerpc/vnic: Extend "failover pending" window
+
+References: bsc#1176855 ltc#187293
+Patch-mainline: submitted https://patchwork.ozlabs.org/project/netdev/patch/20200923045332.GA269687@us.ibm.com/
+
+Commit 5a18e1e0c193b introduced the 'failover_pending' state to track
+the "failover pending window" - where we wait for the partner to become
+ready (after a transport event) before actually attempting to failover.
+i.e window is between following two events and ->failover_pending is TRUE.
+
+        a. we get a transport event due to a FAILOVER
+
+        b. later, we get CRQ_INITIALIZED indicating the partner is
+           ready  at which point we schedule a FAILOVER reset.
+
+If during this window, we attempt to open (or close) a device, we pretend
+that the operation succeded and let the FAILOVER reset complete the
+operation.
+
+This is fine, except if the transport event in "a" above occurs after
+open() checks whether a failover is pending. i.e the transport event
+occurs _during_ open, at which time we fail the open. This can cause
+the boot scripts to leave the interface down requiring administrator
+to manually bring up the device.
+
+This fix "extends" the failover pending window till we are _actually_
+ready to perform the failover reset (i.e until after we get the RTNL
+lock). Since open() holds the RTNL lock, we can be sure that we either
+finish the open or if the open() fails due to the failover window, we
+can again pretend that open is done and let the failover complete it.
+Signed-off-by: Sukadev Bhattiprolu <sukadev@linux.ibm.com>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ drivers/net/ethernet/ibm/ibmvnic.c | 25 ++++++++++++++++++++-----
+ 1 file changed, 20 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/ethernet/ibm/ibmvnic.c b/drivers/net/ethernet/ibm/ibmvnic.c
+index 05e7e436e..fdc59cadd 100644
+--- a/drivers/net/ethernet/ibm/ibmvnic.c
++++ b/drivers/net/ethernet/ibm/ibmvnic.c
+@@ -1195,18 +1195,28 @@ static int ibmvnic_open(struct net_device *netdev)
+ 	if (adapter->state != VNIC_CLOSED) {
+ 		rc = ibmvnic_login(netdev);
+ 		if (rc)
+-			return rc;
++			goto out;
+ 
+ 		rc = init_resources(adapter);
+ 		if (rc) {
+-			netdev_err(netdev, "failed to initialize resources\n");
++			netdev_err(netdev, "failed to initialize resources failover %d\n",
++					adapter->failover_pending);
+ 			release_resources(adapter);
+-			return rc;
++			goto out;
+ 		}
+ 	}
+ 
+ 	rc = __ibmvnic_open(netdev);
+ 
++out:
++	/*
++	 * If open fails due to a pending failover, set device state and
++	 * return. Device operation will be handled by reset routine.
++	 */
++	if (rc && adapter->failover_pending) {
++		adapter->state = VNIC_OPEN;
++		rc = 0;
++	}
+ 	return rc;
+ }
+ 
+@@ -1929,6 +1939,12 @@ static int do_reset(struct ibmvnic_adapter *adapter,
+ 		   rwi->reset_reason);
+ 
+ 	rtnl_lock();
++	/*
++	 * Clear any pending failover.
++	 * CHECK: can we do it unconditionally?
++	 */
++	if (rwi->reset_reason == VNIC_RESET_FAILOVER)
++		adapter->failover_pending = false;
+ 
+ 	netif_carrier_off(netdev);
+ 	adapter->reset_reason = rwi->reset_reason;
+@@ -2268,7 +2284,7 @@ static int ibmvnic_reset(struct ibmvnic_adapter *adapter,
+ 
+ 	if (adapter->state == VNIC_REMOVING ||
+ 	    adapter->state == VNIC_REMOVED ||
+-	    adapter->failover_pending) {
++	    (adapter->failover_pending && reason != VNIC_RESET_FAILOVER)) {
+ 		ret = EBUSY;
+ 		netdev_dbg(netdev, "Adapter removing or pending failover, skipping reset\n");
+ 		goto err;
+@@ -4644,7 +4660,6 @@ static void ibmvnic_handle_crq(union ibmvnic_crq *crq,
+ 		case IBMVNIC_CRQ_INIT:
+ 			dev_info(dev, "Partner initialized\n");
+ 			adapter->from_passive_init = true;
+-			adapter->failover_pending = false;
+ 			if (!completion_done(&adapter->init_done)) {
+ 				complete(&adapter->init_done);
+ 				adapter->init_done_rc = -EIO;
+-- 
+2.26.2
+
