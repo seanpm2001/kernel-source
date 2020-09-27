@@ -27,12 +27,12 @@ Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
 Reviewed-by: Francisco Jerez <currojerez@riseup.net>
 Acked-by: Giovanni Gherdovich <ggherdovich@suse.cz>
 ---
- drivers/cpufreq/intel_pstate.c |   17 ++++++++++++-----
- 1 file changed, 12 insertions(+), 5 deletions(-)
+ drivers/cpufreq/intel_pstate.c |   19 +++++++++++++------
+ 1 file changed, 13 insertions(+), 6 deletions(-)
 
 --- a/drivers/cpufreq/intel_pstate.c
 +++ b/drivers/cpufreq/intel_pstate.c
-@@ -763,11 +763,12 @@ static int intel_pstate_set_energy_pref_
+@@ -758,11 +758,12 @@ static int intel_pstate_set_energy_pref_
  	mutex_lock(&intel_pstate_limits_lock);
  
  	if (static_cpu_has(X86_FEATURE_HWP_EPP)) {
@@ -50,7 +50,7 @@ Acked-by: Giovanni Gherdovich <ggherdovich@suse.cz>
  
  		value &= ~GENMASK_ULL(31, 24);
  
-@@ -775,6 +776,12 @@ static int intel_pstate_set_energy_pref_
+@@ -770,13 +771,19 @@ static int intel_pstate_set_energy_pref_
  			epp = epp_values[pref_index - 1];
  
  		value |= (u64)epp << 24;
@@ -63,3 +63,11 @@ Acked-by: Giovanni Gherdovich <ggherdovich@suse.cz>
  		ret = wrmsrl_on_cpu(cpu_data->cpu, MSR_HWP_REQUEST, value);
  	} else {
  		if (epp == -EINVAL)
+ 			epp = (pref_index - 1) << 2;
+ 		ret = intel_pstate_set_epb(cpu_data->cpu, epp);
+ 	}
+-return_pref:
++
+ 	mutex_unlock(&intel_pstate_limits_lock);
+ 
+ 	return ret;
