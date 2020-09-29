@@ -1,0 +1,48 @@
+From 50e89a4569c19b88f2be3bf21b68a7dac99e5853 Mon Sep 17 00:00:00 2001
+From: Bodong Wang <bodong@mellanox.com>
+Date: Fri, 28 Jun 2019 22:36:11 +0000
+Subject: [PATCH 15/22] net/mlx5: E-Switch, Use correct flags when configuring
+ vlan
+Git-commit: 5f5d2536be8d5b5d3df925228ce7a6f4054d5956
+References: git-fixes
+Patch-mainline: v5.3-rc1
+
+Before the offending commit, vlan will be configured if either vlan
+or qos is set. After the change with new set flags, function callers
+should provide flags accordingly.
+
+Fixes: e33dfe316cf3 ("net/mlx5: E-Switch, Allow fine tuning of eswitch vport push/pop vlan")
+Signed-off-by: Bodong Wang <bodong@mellanox.com>
+Signed-off-by: Saeed Mahameed <saeedm@mellanox.com>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/mellanox/mlx5/core/eswitch.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/eswitch.c b/drivers/net/ethernet/mellanox/mlx5/core/eswitch.c
+index d099a401d13b..e19031cfbd56 100644
+--- a/drivers/net/ethernet/mellanox/mlx5/core/eswitch.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/eswitch.c
+@@ -1457,6 +1457,7 @@ static void esw_apply_vport_conf(struct mlx5_eswitch *esw,
+ 				 struct mlx5_vport *vport)
+ {
+ 	int vport_num = vport->vport;
++	int flags;
+ 
+ 	if (!vport_num)
+ 		return;
+@@ -1467,8 +1468,10 @@ static void esw_apply_vport_conf(struct mlx5_eswitch *esw,
+ 				      vport->info.link_state);
+ 	mlx5_modify_nic_vport_mac_address(esw->dev, vport_num, vport->info.mac);
+ 	mlx5_modify_nic_vport_node_guid(esw->dev, vport_num, vport->info.node_guid);
++	flags = (vport->info.vlan || vport->info.qos) ?
++		SET_VLAN_STRIP | SET_VLAN_INSERT : 0;
+ 	modify_esw_vport_cvlan(esw->dev, vport_num, vport->info.vlan, vport->info.qos,
+-			       (vport->info.vlan || vport->info.qos));
++			       flags);
+ 
+ 	/* Only legacy mode needs ACLs */
+ 	if (esw->mode == SRIOV_LEGACY) {
+-- 
+2.16.4
+
