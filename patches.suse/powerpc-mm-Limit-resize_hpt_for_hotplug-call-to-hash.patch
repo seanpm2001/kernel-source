@@ -50,16 +50,24 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  {
  	unsigned target_hpt_shift;
  
-@@ -809,6 +809,8 @@ void resize_hpt_for_hotplug(unsigned lon
+@@ -809,9 +809,13 @@ void resize_hpt_for_hotplug(unsigned lon
  
  int hash__create_section_mapping(unsigned long start, unsigned long end)
  {
+-	int rc = htab_bolt_mapping(start, end, __pa(start),
+-				   pgprot_val(PAGE_KERNEL), mmu_linear_psize,
+-				   mmu_kernel_ssize);
++	int rc;
++
 +	resize_hpt_for_hotplug(memblock_phys_mem_size());
 +
- 	int rc = htab_bolt_mapping(start, end, __pa(start),
- 				   pgprot_val(PAGE_KERNEL), mmu_linear_psize,
- 				   mmu_kernel_ssize);
-@@ -826,6 +828,9 @@ int hash__remove_section_mapping(unsigne
++	rc = htab_bolt_mapping(start, end, __pa(start),
++			       pgprot_val(PAGE_KERNEL), mmu_linear_psize,
++			       mmu_kernel_ssize);
+ 
+ 	if (rc < 0) {
+ 		int rc2 = htab_remove_mapping(start, end, mmu_linear_psize,
+@@ -826,6 +830,9 @@ int hash__remove_section_mapping(unsigne
  	int rc = htab_remove_mapping(start, end, mmu_linear_psize,
  				     mmu_kernel_ssize);
  	WARN_ON(rc < 0);
