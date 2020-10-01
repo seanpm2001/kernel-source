@@ -1,0 +1,48 @@
+From a2d139c0d9fe7fbcbc35877fdfb707729a231439 Mon Sep 17 00:00:00 2001
+From: Gang He <ghe@suse.com>
+Date: Wed, 23 Sep 2020 18:27:56 +0800
+Subject: [PATCH] ocfs2: give applications more IO opportunities during fstrim
+Patch-mainline: Never, workaround to lock handoff problem
+References: bsc#1175228
+
+When we discard unused blocks on a mounted ocfs2 filesystem, fstrim
+lock/unlock global bitmap meta-file repeatedly. we should let fstrim
+thread take a break between unlock and lock, this will give the upper
+applications more IO opportunities, then these applications are not
+blocked for too long at writing files.
+Mutex lock handoff is not implemented in old kernels, this patch is
+a solution in this situation.
+
+Signed-off-by: Gang He <ghe@suse.com>
+---
+ fs/ocfs2/alloc.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ocfs2/alloc.c b/fs/ocfs2/alloc.c
+index 4c1b90442d6f..113f07c2453d 100644
+--- a/fs/ocfs2/alloc.c
++++ b/fs/ocfs2/alloc.c
+@@ -17,6 +17,7 @@
+ #include <linux/quotaops.h>
+ #include <linux/blkdev.h>
+ #include <linux/sched/signal.h>
++#include <linux/delay.h>
+ 
+ #include <cluster/masklog.h>
+ 
+@@ -7654,8 +7655,11 @@ int ocfs2_trim_mainbm(struct super_block *sb, struct fstrim_range *range)
+ 	 * main_bm related locks for avoiding the current IO starve, then go to
+ 	 * trim the next group
+ 	 */
+-	if (ret >= 0 && group <= last_group)
++	if (ret >= 0 && group <= last_group) {
++		/* Take a break for avoiding write IO starvation */
++		usleep_range(5000, 6000);
+ 		goto next_group;
++	}
+ out:
+ 	range->len = trimmed * sb->s_blocksize;
+ 	return ret;
+-- 
+2.21.0
+
