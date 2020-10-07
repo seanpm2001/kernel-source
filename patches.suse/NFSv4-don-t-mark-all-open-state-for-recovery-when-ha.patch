@@ -1,0 +1,67 @@
+From: Scott Mayhew <smayhew@redhat.com>
+Date: Mon, 6 May 2019 11:59:05 -0400
+Subject: [PATCH] NFSv4: don't mark all open state for recovery when handling
+ recallable state revoked flag
+Git-commit: 8ca017c8cee3aa6a37ddf1db7fd04c54536a0ef0
+Patch-mainline: v5.2
+References: bsc#1176935
+
+Only delegations and layouts can be recalled, so it shouldn't be
+necessary to recover all opens when handling the status bit
+SEQ4_STATUS_RECALLABLE_STATE_REVOKED.  We'll still wind up calling
+nfs41_open_expired() when a TEST_STATEID returns NFS4ERR_DELEG_REVOKED.
+
+Signed-off-by: Scott Mayhew <smayhew@redhat.com>
+Reviewed-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/delegation.c |   12 ++++++++++++
+ fs/nfs/delegation.h |    1 +
+ fs/nfs/nfs4state.c  |    3 +--
+ 3 files changed, 14 insertions(+), 2 deletions(-)
+
+--- a/fs/nfs/delegation.c
++++ b/fs/nfs/delegation.c
+@@ -1018,6 +1018,18 @@ nfs_delegation_test_free_expired(struct
+ }
+ 
+ /**
++ * nfs_test_expired_all_delegations - test all delegations for a client
++ * @clp: nfs_client to process
++ *
++ * Helper for handling "recallable state revoked" status from server.
++ */
++void nfs_test_expired_all_delegations(struct nfs_client *clp)
++{
++	nfs_mark_test_expired_all_delegations(clp);
++	nfs4_schedule_state_manager(clp);
++}
++
++/**
+  * nfs_reap_expired_delegations - reap expired delegations
+  * @clp: nfs_client to process
+  *
+--- a/fs/nfs/delegation.h
++++ b/fs/nfs/delegation.h
+@@ -55,6 +55,7 @@ void nfs_delegation_mark_reclaim(struct
+ void nfs_delegation_reap_unclaimed(struct nfs_client *clp);
+ 
+ void nfs_mark_test_expired_all_delegations(struct nfs_client *clp);
++void nfs_test_expired_all_delegations(struct nfs_client *clp);
+ void nfs_reap_expired_delegations(struct nfs_client *clp);
+ 
+ /* NFSv4 delegation-related procedures */
+--- a/fs/nfs/nfs4state.c
++++ b/fs/nfs/nfs4state.c
+@@ -2301,8 +2301,7 @@ static void nfs41_handle_recallable_stat
+ {
+ 	/* FIXME: For now, we destroy all layouts. */
+ 	pnfs_destroy_all_layouts(clp);
+-	/* FIXME: For now, we test all delegations+open state+locks. */
+-	nfs41_handle_some_state_revoked(clp);
++	nfs_test_expired_all_delegations(clp);
+ 	dprintk("%s: Recallable state revoked on server %s!\n", __func__,
+ 			clp->cl_hostname);
+ }
