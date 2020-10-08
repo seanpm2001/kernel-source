@@ -1,0 +1,49 @@
+From cfd2a25cd85dcc070173748debbc4604c07f4989 Mon Sep 17 00:00:00 2001
+From: "Lendacky, Thomas" <Thomas.Lendacky@amd.com>
+Date: Fri, 18 Aug 2017 09:02:27 -0500
+Subject: [PATCH 28/59] amd-xgbe: Set the MII control width for the MAC
+ interface
+References: git-fixes
+Patch-mainline: v4.14-rc1
+Git-commit: f087b506ff5c38e0f2873651dba4e2b73a1b2d67
+
+When running in SGMII mode at speeds below 1000Mbps, the auto-negotition
+control register must set the MII control width for the MAC interface
+to be 8-bits wide.  By default the width is 4-bits.
+
+Signed-off-by: Tom Lendacky <thomas.lendacky@amd.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <deis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/amd/xgbe/xgbe-common.h | 1 +
+ drivers/net/ethernet/amd/xgbe/xgbe-mdio.c   | 2 ++
+ 2 files changed, 3 insertions(+)
+
+diff --git a/drivers/net/ethernet/amd/xgbe/xgbe-common.h b/drivers/net/ethernet/amd/xgbe/xgbe-common.h
+index c271a49369db..c13069ed0535 100644
+--- a/drivers/net/ethernet/amd/xgbe/xgbe-common.h
++++ b/drivers/net/ethernet/amd/xgbe/xgbe-common.h
+@@ -1339,6 +1339,7 @@
+ #define XGBE_AN_CL37_PCS_MODE_BASEX	0x00
+ #define XGBE_AN_CL37_PCS_MODE_SGMII	0x04
+ #define XGBE_AN_CL37_TX_CONFIG_MASK	0x08
++#define XGBE_AN_CL37_MII_CTRL_8BIT	0x0100
+ 
+ /* Bit setting and getting macros
+  *  The get macro will extract the current bit field value from within
+diff --git a/drivers/net/ethernet/amd/xgbe/xgbe-mdio.c b/drivers/net/ethernet/amd/xgbe/xgbe-mdio.c
+index f1746eea4dca..90eedd65dd3c 100644
+--- a/drivers/net/ethernet/amd/xgbe/xgbe-mdio.c
++++ b/drivers/net/ethernet/amd/xgbe/xgbe-mdio.c
+@@ -959,6 +959,8 @@ static void xgbe_an37_init(struct xgbe_prv_data *pdata)
+ 		break;
+ 	}
+ 
++	reg |= XGBE_AN_CL37_MII_CTRL_8BIT;
++
+ 	XMDIO_WRITE(pdata, MDIO_MMD_VEND2, MDIO_VEND2_AN_CTRL, reg);
+ 
+ 	netif_dbg(pdata, link, pdata->netdev, "CL37 AN (%s) initialized\n",
+-- 
+2.16.4
+
