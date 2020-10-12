@@ -4,9 +4,9 @@ Subject: scsi: hisi_sas: kabi fixes
 Patch-mainline: never, kabi
 References: bsc#1137322 bsc#1137323 bsc#1138099 bsc#1138100
 ---
- drivers/scsi/hisi_sas/hisi_sas.h |   24 ++++++++++++++++--------
+ drivers/scsi/hisi_sas/hisi_sas.h |   29 +++++++++++++++++++++--------
  drivers/scsi/mvsas/mv_sas.h      |    3 +++
- 2 files changed, 19 insertions(+), 8 deletions(-)
+ 2 files changed, 24 insertions(+), 8 deletions(-)
 
 --- a/drivers/scsi/hisi_sas/hisi_sas.h
 +++ b/drivers/scsi/hisi_sas/hisi_sas.h
@@ -83,7 +83,7 @@ References: bsc#1137322 bsc#1137323 bsc#1138099 bsc#1138100
  };
  
  #define HISI_SAS_DEBUGFS_REG(x) {#x, x}
-@@ -383,9 +389,6 @@ struct hisi_hba {
+@@ -383,12 +389,14 @@ struct hisi_hba {
  	u32 intr_coal_ticks;	/* Time of interrupt coalesce in us */
  	u32 intr_coal_count;	/* Interrupt count to coalesce */
  
@@ -91,9 +91,17 @@ References: bsc#1137322 bsc#1137323 bsc#1138099 bsc#1138100
 -	unsigned int *reply_map;
 -
  	/* debugfs memories */
- 	void *debugfs_global_reg;
- 	void *debugfs_port_reg[HISI_SAS_MAX_PHYS];
-@@ -396,7 +399,12 @@ struct hisi_hba {
++#ifndef __GENKSYMS__
+ 	u32 *debugfs_global_reg;
+ 	u32 *debugfs_port_reg[HISI_SAS_MAX_PHYS];
++#else
++	void *debugfs_global_reg;
++	void *debugfs_port_reg[HISI_SAS_MAX_PHYS];
++#endif
+ 	void *debugfs_complete_hdr[HISI_SAS_MAX_QUEUES];
+ 	struct hisi_sas_cmd_hdr	*debugfs_cmd_hdr[HISI_SAS_MAX_QUEUES];
+ 	struct hisi_sas_iost *debugfs_iost;
+@@ -396,7 +404,12 @@ struct hisi_hba {
  
  	struct dentry *debugfs_dir;
  	struct dentry *debugfs_dump_dentry;
