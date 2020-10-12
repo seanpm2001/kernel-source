@@ -1,0 +1,40 @@
+From: Trond Myklebust <trond.myklebust@hammerspace.com>
+Date: Wed, 14 Aug 2019 15:42:43 -0400
+Subject: [PATCH] NFS: On fatal writeback errors, we need to call
+ nfs_inode_remove_request()
+Git-commit: 06c9fdf3b9f1acc6e53753c99c54c39764cc979f
+Patch-mainline: v5.3
+References: bsc#1177340
+
+If the writeback error is fatal, we need to remove the tracking structures
+(i.e. the nfs_page) from the inode.
+
+Fixes: 6fbda89b257f ("NFS: Replace custom error reporting mechanism...")
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/write.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/fs/nfs/write.c
++++ b/fs/nfs/write.c
+@@ -55,6 +55,7 @@ static const struct rpc_call_ops nfs_com
+ static const struct nfs_pgio_completion_ops nfs_async_write_completion_ops;
+ static const struct nfs_commit_completion_ops nfs_commit_completion_ops;
+ static const struct nfs_rw_ops nfs_rw_write_ops;
++static void nfs_inode_remove_request(struct nfs_page *req);
+ static void nfs_clear_request_commit(struct nfs_page *req);
+ static void nfs_init_cinfo_from_inode(struct nfs_commit_info *cinfo,
+ 				      struct inode *inode);
+@@ -612,8 +613,10 @@ try_again:
+ 
+ static void nfs_write_error_remove_page(struct nfs_page *req)
+ {
++	nfs_set_pageerror(page_file_mapping(req->wb_page));
+ 	nfs_unlock_request(req);
+ 	SetPageError(req->wb_page);
++	nfs_inode_remove_request(req);
+ 	nfs_end_page_writeback(req);
+ 	nfs_release_request(req);
+ }
