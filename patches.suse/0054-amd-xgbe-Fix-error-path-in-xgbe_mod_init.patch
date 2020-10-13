@@ -1,0 +1,49 @@
+From 4d474e5b6feddc670a62391efe006878c460c7b7 Mon Sep 17 00:00:00 2001
+From: YueHaibing <yuehaibing@huawei.com>
+Date: Thu, 29 Aug 2019 10:46:00 +0800
+Subject: [PATCH 54/59] amd-xgbe: Fix error path in xgbe_mod_init()
+References: git-fixes
+Patch-mainline: v5.3-rc7
+Git-commit: b6b4dc4c1fa7f1c99398e7dc85758049645e9588
+
+In xgbe_mod_init(), we should do cleanup if some error occurs
+
+Reported-by: Hulk Robot <hulkci@huawei.com>
+Fixes: efbaa828330a ("amd-xgbe: Add support to handle device renaming")
+Fixes: 47f164deab22 ("amd-xgbe: Add PCI device support")
+Signed-off-by: YueHaibing <yuehaibing@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/amd/xgbe/xgbe-main.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/amd/xgbe/xgbe-main.c b/drivers/net/ethernet/amd/xgbe/xgbe-main.c
+index b41f23679a08..7ce9c69e9c44 100644
+--- a/drivers/net/ethernet/amd/xgbe/xgbe-main.c
++++ b/drivers/net/ethernet/amd/xgbe/xgbe-main.c
+@@ -469,13 +469,19 @@ static int __init xgbe_mod_init(void)
+ 
+ 	ret = xgbe_platform_init();
+ 	if (ret)
+-		return ret;
++		goto err_platform_init;
+ 
+ 	ret = xgbe_pci_init();
+ 	if (ret)
+-		return ret;
++		goto err_pci_init;
+ 
+ 	return 0;
++
++err_pci_init:
++	xgbe_platform_exit();
++err_platform_init:
++	unregister_netdevice_notifier(&xgbe_netdev_notifier);
++	return ret;
+ }
+ 
+ static void __exit xgbe_mod_exit(void)
+-- 
+2.16.4
+

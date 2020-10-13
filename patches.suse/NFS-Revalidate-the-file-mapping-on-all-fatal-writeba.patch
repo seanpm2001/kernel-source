@@ -1,0 +1,33 @@
+From: Trond Myklebust <trondmy@gmail.com>
+Date: Mon, 6 Jan 2020 15:25:01 -0500
+Subject: [PATCH] NFS: Revalidate the file mapping on all fatal writeback
+ errors
+Git-commit: b8946d7bfb9417ec171693d4478a831420aead5f
+Patch-mainline: v5.6
+References: bsc#1177340
+
+If a write or commit failed, and the mapping sees a fatal error, we
+need to revalidate the contents of that mapping.
+
+Fixes: 06c9fdf3b9f1 ("NFS: On fatal writeback errors, we need to call nfs_inode_remove_request()")
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/write.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/fs/nfs/write.c
++++ b/fs/nfs/write.c
+@@ -613,9 +613,9 @@ try_again:
+ 
+ static void nfs_write_error_remove_page(struct nfs_page *req)
+ {
+-	nfs_set_pageerror(page_file_mapping(req->wb_page));
+ 	nfs_unlock_request(req);
+ 	SetPageError(req->wb_page);
++	nfs_set_pageerror(page_file_mapping(req->wb_page));
+ 	nfs_inode_remove_request(req);
+ 	nfs_end_page_writeback(req);
+ 	nfs_release_request(req);

@@ -1,0 +1,78 @@
+From b28341c3d069b5a0e5e2a932d5953b124f9539af Mon Sep 17 00:00:00 2001
+From: Jakub Kicinski <kuba@kernel.org>
+Date: Tue, 14 Jul 2020 12:18:21 -0700
+Subject: [PATCH 59/59] xgbe: switch to more generic VxLAN detection
+References: git-fixes
+Patch-mainline: v5.9-rc1
+Git-commit: b5c5f8d06292e2dd9961c4b88fde9ae0ea458d97
+
+Instead of looping though the list of ports just check
+if the geometry of the packet is correct for VxLAN.
+HW most likely doesn't care about the exact port, anyway,
+since only first port is actually offloaded, and this way
+we won't have to maintain the port list at all.
+
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/amd/xgbe/xgbe-drv.c | 27 ++++++++-------------------
+ 1 file changed, 8 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/net/ethernet/amd/xgbe/xgbe-drv.c b/drivers/net/ethernet/amd/xgbe/xgbe-drv.c
+index 0d2438d8a791..4f12e5232650 100644
+--- a/drivers/net/ethernet/amd/xgbe/xgbe-drv.c
++++ b/drivers/net/ethernet/amd/xgbe/xgbe-drv.c
+@@ -1775,13 +1775,8 @@ static int xgbe_prep_tso(struct sk_buff *skb, struct xgbe_packet_data *packet)
+ 	return 0;
+ }
+ 
+-static bool xgbe_is_vxlan(struct xgbe_prv_data *pdata, struct sk_buff *skb)
++static bool xgbe_is_vxlan(struct sk_buff *skb)
+ {
+-	struct xgbe_vxlan_data *vdata;
+-
+-	if (pdata->vxlan_force_disable)
+-		return false;
+-
+ 	if (!skb->encapsulation)
+ 		return false;
+ 
+@@ -1803,19 +1798,13 @@ static bool xgbe_is_vxlan(struct xgbe_prv_data *pdata, struct sk_buff *skb)
+ 		return false;
+ 	}
+ 
+-	/* See if we have the UDP port in our list */
+-	list_for_each_entry(vdata, &pdata->vxlan_ports, list) {
+-		if ((skb->protocol == htons(ETH_P_IP)) &&
+-		    (vdata->sa_family == AF_INET) &&
+-		    (vdata->port == udp_hdr(skb)->dest))
+-			return true;
+-		else if ((skb->protocol == htons(ETH_P_IPV6)) &&
+-			 (vdata->sa_family == AF_INET6) &&
+-			 (vdata->port == udp_hdr(skb)->dest))
+-			return true;
+-	}
++	if (skb->inner_protocol_type != ENCAP_TYPE_ETHER ||
++	    skb->inner_protocol != htons(ETH_P_TEB) ||
++	    (skb_inner_mac_header(skb) - skb_transport_header(skb) !=
++	     sizeof(struct udphdr) + sizeof(struct vxlanhdr)))
++		return false;
+ 
+-	return false;
++	return true;
+ }
+ 
+ static int xgbe_is_tso(struct sk_buff *skb)
+@@ -1866,7 +1855,7 @@ static void xgbe_packet_info(struct xgbe_prv_data *pdata,
+ 		XGMAC_SET_BITS(packet->attributes, TX_PACKET_ATTRIBUTES,
+ 			       CSUM_ENABLE, 1);
+ 
+-	if (xgbe_is_vxlan(pdata, skb))
++	if (xgbe_is_vxlan(skb))
+ 		XGMAC_SET_BITS(packet->attributes, TX_PACKET_ATTRIBUTES,
+ 			       VXLAN, 1);
+ 
+-- 
+2.16.4
+
