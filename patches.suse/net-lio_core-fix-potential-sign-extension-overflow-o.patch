@@ -1,0 +1,39 @@
+From b34027aafc74b19256e9402eec24c954e84cd02e Mon Sep 17 00:00:00 2001
+From: Colin Ian King <colin.king@canonical.com>
+Date: Mon, 17 Jun 2019 17:12:49 +0100
+Subject: [PATCH 12/22] net: lio_core: fix potential sign-extension overflow on
+ large shift
+Git-commit: 9476274093a0e79b905f4cd6cf6d149f65e02c17
+References: git-fixes
+Patch-mainline: v5.2-rc6
+
+Left shifting the signed int value 1 by 31 bits has undefined behaviour
+and the shift amount oq_no can be as much as 63.  Fix this by using
+BIT_ULL(oq_no) instead.
+
+Addresses-Coverity: ("Bad shift operation")
+Fixes: f21fb3ed364b ("Add support of Cavium Liquidio ethernet adapters")
+Signed-off-by: Colin Ian King <colin.king@canonical.com>
+Reviewed-by: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/cavium/liquidio/lio_core.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/cavium/liquidio/lio_core.c b/drivers/net/ethernet/cavium/liquidio/lio_core.c
+index 825a28e5b544..31322c54520e 100644
+--- a/drivers/net/ethernet/cavium/liquidio/lio_core.c
++++ b/drivers/net/ethernet/cavium/liquidio/lio_core.c
+@@ -963,7 +963,7 @@ static void liquidio_schedule_droq_pkt_handlers(struct octeon_device *oct)
+ 
+ 			if (droq->ops.poll_mode) {
+ 				droq->ops.napi_fn(droq);
+-				oct_priv->napi_mask |= (1 << oq_no);
++				oct_priv->napi_mask |= BIT_ULL(oq_no);
+ 			} else {
+ 				tasklet_schedule(&oct_priv->droq_tasklet);
+ 			}
+-- 
+2.16.4
+

@@ -1,0 +1,46 @@
+From: Paul Mackerras <paulus@ozlabs.org>
+Date: Tue, 13 Feb 2018 15:16:01 +1100
+Subject: KVM: PPC: Fix compile error that occurs when CONFIG_ALTIVEC=n
+Patch-mainline: v4.16-rc5
+Git-commit: c662f77331c98018ed256501557b4dd67133fbd7
+References: jsc#SLE-4084
+
+Commit accb757d798c ("KVM: Move vcpu_load to arch-specific
+kvm_arch_vcpu_ioctl_run", 2017-12-04) added a "goto out"
+statement and an "out:" label to kvm_arch_vcpu_ioctl_run().
+Since the only "goto out" is inside a CONFIG_VSX block,
+compiling with CONFIG_VSX=n gives a warning that label "out"
+is defined but not used, and because arch/powerpc is compiled
+with -Werror, that becomes a compile error that makes the kernel
+build fail.
+
+Merge commit 1ab03c072feb ("Merge tag 'kvm-ppc-next-4.16-2' of
+git://git.kernel.org/pub/scm/linux/kernel/git/paulus/powerpc",
+2018-02-09) added a similar block of code inside a #ifdef
+CONFIG_ALTIVEC, with a "goto out" statement.
+
+In order to make the build succeed, this adds a #ifdef around the
+"out:" label.  This is a minimal, ugly fix, to be replaced later
+by a refactoring of the code.  Since CONFIG_VSX depends on
+CONFIG_ALTIVEC, it is sufficient to use #ifdef CONFIG_ALTIVEC here.
+
+Fixes: accb757d798c ("KVM: Move vcpu_load to arch-specific kvm_arch_vcpu_ioctl_run")
+Reported-by: Christian Zigotzky <chzigotzky@xenosoft.de>
+Signed-off-by: Paul Mackerras <paulus@ozlabs.org>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ arch/powerpc/kvm/powerpc.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/arch/powerpc/kvm/powerpc.c
++++ b/arch/powerpc/kvm/powerpc.c
+@@ -1608,7 +1608,9 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_v
+ 
+ 	kvm_sigset_deactivate(vcpu);
+ 
++#ifdef CONFIG_ALTIVEC
+ out:
++#endif
+ 	vcpu_put(vcpu);
+ 	return r;
+ }

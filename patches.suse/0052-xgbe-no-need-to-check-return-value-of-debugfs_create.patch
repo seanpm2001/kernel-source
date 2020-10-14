@@ -1,0 +1,181 @@
+From 5309a1df8f2661cedca492d607bdef68c3d6653c Mon Sep 17 00:00:00 2001
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Date: Sat, 10 Aug 2019 12:17:19 +0200
+Subject: [PATCH 52/59] xgbe: no need to check return value of debugfs_create
+ functions
+References: git-fixes
+Patch-mainline: v5.4-rc1
+Git-commit: 9e3926df8779a69f8541c9983c6d19b097671abd
+
+When calling debugfs functions, there is no need to ever check the
+return value.  The function can work or not, but the code logic should
+never do something different based on this.
+
+This cleans up a lot of unneeded code and logic around the debugfs
+files, making all of this much simpler and easier to understand.
+
+Cc: Tom Lendacky <thomas.lendacky@amd.com>
+Cc: "David S. Miller" <davem@davemloft.net>
+Cc: netdev@vger.kernel.org
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/amd/xgbe/xgbe-debugfs.c | 107 ++++++++-------------------
+ 1 file changed, 31 insertions(+), 76 deletions(-)
+
+diff --git a/drivers/net/ethernet/amd/xgbe/xgbe-debugfs.c b/drivers/net/ethernet/amd/xgbe/xgbe-debugfs.c
+index b91143947ed2..b0a6c96b6ef4 100644
+--- a/drivers/net/ethernet/amd/xgbe/xgbe-debugfs.c
++++ b/drivers/net/ethernet/amd/xgbe/xgbe-debugfs.c
+@@ -438,7 +438,6 @@ static const struct file_operations xi2c_reg_value_fops = {
+ 
+ void xgbe_debugfs_init(struct xgbe_prv_data *pdata)
+ {
+-	struct dentry *pfile;
+ 	char *buf;
+ 
+ 	/* Set defaults */
+@@ -451,88 +450,48 @@ void xgbe_debugfs_init(struct xgbe_prv_data *pdata)
+ 		return;
+ 
+ 	pdata->xgbe_debugfs = debugfs_create_dir(buf, NULL);
+-	if (!pdata->xgbe_debugfs) {
+-		netdev_err(pdata->netdev, "debugfs_create_dir failed\n");
+-		kfree(buf);
+-		return;
+-	}
+ 
+-	pfile = debugfs_create_file("xgmac_register", 0600,
+-				    pdata->xgbe_debugfs, pdata,
+-				    &xgmac_reg_addr_fops);
+-	if (!pfile)
+-		netdev_err(pdata->netdev, "debugfs_create_file failed\n");
++	debugfs_create_file("xgmac_register", 0600, pdata->xgbe_debugfs, pdata,
++			    &xgmac_reg_addr_fops);
+ 
+-	pfile = debugfs_create_file("xgmac_register_value", 0600,
+-				    pdata->xgbe_debugfs, pdata,
+-				    &xgmac_reg_value_fops);
+-	if (!pfile)
+-		netdev_err(pdata->netdev, "debugfs_create_file failed\n");
++	debugfs_create_file("xgmac_register_value", 0600, pdata->xgbe_debugfs,
++			    pdata, &xgmac_reg_value_fops);
+ 
+-	pfile = debugfs_create_file("xpcs_mmd", 0600,
+-				    pdata->xgbe_debugfs, pdata,
+-				    &xpcs_mmd_fops);
+-	if (!pfile)
+-		netdev_err(pdata->netdev, "debugfs_create_file failed\n");
++	debugfs_create_file("xpcs_mmd", 0600, pdata->xgbe_debugfs, pdata,
++			    &xpcs_mmd_fops);
+ 
+-	pfile = debugfs_create_file("xpcs_register", 0600,
+-				    pdata->xgbe_debugfs, pdata,
+-				    &xpcs_reg_addr_fops);
+-	if (!pfile)
+-		netdev_err(pdata->netdev, "debugfs_create_file failed\n");
++	debugfs_create_file("xpcs_register", 0600, pdata->xgbe_debugfs, pdata,
++			    &xpcs_reg_addr_fops);
+ 
+-	pfile = debugfs_create_file("xpcs_register_value", 0600,
+-				    pdata->xgbe_debugfs, pdata,
+-				    &xpcs_reg_value_fops);
+-	if (!pfile)
+-		netdev_err(pdata->netdev, "debugfs_create_file failed\n");
++	debugfs_create_file("xpcs_register_value", 0600, pdata->xgbe_debugfs,
++			    pdata, &xpcs_reg_value_fops);
+ 
+ 	if (pdata->xprop_regs) {
+-		pfile = debugfs_create_file("xprop_register", 0600,
+-					    pdata->xgbe_debugfs, pdata,
+-					    &xprop_reg_addr_fops);
+-		if (!pfile)
+-			netdev_err(pdata->netdev,
+-				   "debugfs_create_file failed\n");
+-
+-		pfile = debugfs_create_file("xprop_register_value", 0600,
+-					    pdata->xgbe_debugfs, pdata,
+-					    &xprop_reg_value_fops);
+-		if (!pfile)
+-			netdev_err(pdata->netdev,
+-				   "debugfs_create_file failed\n");
++		debugfs_create_file("xprop_register", 0600, pdata->xgbe_debugfs,
++				    pdata, &xprop_reg_addr_fops);
++
++		debugfs_create_file("xprop_register_value", 0600,
++				    pdata->xgbe_debugfs, pdata,
++				    &xprop_reg_value_fops);
+ 	}
+ 
+ 	if (pdata->xi2c_regs) {
+-		pfile = debugfs_create_file("xi2c_register", 0600,
+-					    pdata->xgbe_debugfs, pdata,
+-					    &xi2c_reg_addr_fops);
+-		if (!pfile)
+-			netdev_err(pdata->netdev,
+-				   "debugfs_create_file failed\n");
+-
+-		pfile = debugfs_create_file("xi2c_register_value", 0600,
+-					    pdata->xgbe_debugfs, pdata,
+-					    &xi2c_reg_value_fops);
+-		if (!pfile)
+-			netdev_err(pdata->netdev,
+-				   "debugfs_create_file failed\n");
++		debugfs_create_file("xi2c_register", 0600, pdata->xgbe_debugfs,
++				    pdata, &xi2c_reg_addr_fops);
++
++		debugfs_create_file("xi2c_register_value", 0600,
++				    pdata->xgbe_debugfs, pdata,
++				    &xi2c_reg_value_fops);
+ 	}
+ 
+ 	if (pdata->vdata->an_cdr_workaround) {
+-		pfile = debugfs_create_bool("an_cdr_workaround", 0600,
+-					    pdata->xgbe_debugfs,
+-					    &pdata->debugfs_an_cdr_workaround);
+-		if (!pfile)
+-			netdev_err(pdata->netdev,
+-				   "debugfs_create_bool failed\n");
+-
+-		pfile = debugfs_create_bool("an_cdr_track_early", 0600,
+-					    pdata->xgbe_debugfs,
+-					    &pdata->debugfs_an_cdr_track_early);
+-		if (!pfile)
+-			netdev_err(pdata->netdev,
+-				   "debugfs_create_bool failed\n");
++		debugfs_create_bool("an_cdr_workaround", 0600,
++				    pdata->xgbe_debugfs,
++				    &pdata->debugfs_an_cdr_workaround);
++
++		debugfs_create_bool("an_cdr_track_early", 0600,
++				    pdata->xgbe_debugfs,
++				    &pdata->debugfs_an_cdr_track_early);
+ 	}
+ 
+ 	kfree(buf);
+@@ -546,7 +505,6 @@ void xgbe_debugfs_exit(struct xgbe_prv_data *pdata)
+ 
+ void xgbe_debugfs_rename(struct xgbe_prv_data *pdata)
+ {
+-	struct dentry *pfile;
+ 	char *buf;
+ 
+ 	if (!pdata->xgbe_debugfs)
+@@ -559,11 +517,8 @@ void xgbe_debugfs_rename(struct xgbe_prv_data *pdata)
+ 	if (!strcmp(pdata->xgbe_debugfs->d_name.name, buf))
+ 		goto out;
+ 
+-	pfile = debugfs_rename(pdata->xgbe_debugfs->d_parent,
+-			       pdata->xgbe_debugfs,
+-			       pdata->xgbe_debugfs->d_parent, buf);
+-	if (!pfile)
+-		netdev_err(pdata->netdev, "debugfs_rename failed\n");
++	debugfs_rename(pdata->xgbe_debugfs->d_parent, pdata->xgbe_debugfs,
++		       pdata->xgbe_debugfs->d_parent, buf);
+ 
+ out:
+ 	kfree(buf);
+-- 
+2.16.4
+

@@ -1,0 +1,40 @@
+From 9261a5cc51208ab5aff5e8fdfb99ea8f4c7a71d1 Mon Sep 17 00:00:00 2001
+From: Florian Fainelli <f.fainelli@gmail.com>
+Date: Fri, 2 Mar 2018 15:08:36 -0800
+Subject: [PATCH 21/24] net: dsa: b53: Use strlcpy() for ethtool::get_strings
+Git-commit: cd526676de1ece03a8ea7cea726cf879a2dba2b8 
+Patch-mainline: v4.16-rc7
+References: git-fixes
+
+Our statistics strings are allocated at initialization without being
+bound to a specific size, yet, we would copy ETH_GSTRING_LEN bytes using
+memcpy() which would create out of bounds accesses, this was flagged by
+KASAN. Replace this with strlcpy() to make sure we are bound the source
+buffer size and we also always NUL-terminate strings.
+
+Fixes: 967dd82ffc52 ("net: dsa: b53: Add support for Broadcom RoboSwitch")
+Signed-off-by: Florian Fainelli <f.fainelli@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/dsa/b53/b53_common.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/dsa/b53/b53_common.c b/drivers/net/dsa/b53/b53_common.c
+index cd9a7df06878..fe19afadc2f3 100644
+--- a/drivers/net/dsa/b53/b53_common.c
++++ b/drivers/net/dsa/b53/b53_common.c
+@@ -753,8 +753,8 @@ void b53_get_strings(struct dsa_switch *ds, int port, uint8_t *data)
+ 	unsigned int i;
+ 
+ 	for (i = 0; i < mib_size; i++)
+-		memcpy(data + i * ETH_GSTRING_LEN,
+-		       mibs[i].name, ETH_GSTRING_LEN);
++		strlcpy(data + i * ETH_GSTRING_LEN,
++			mibs[i].name, ETH_GSTRING_LEN);
+ }
+ EXPORT_SYMBOL(b53_get_strings);
+ 
+-- 
+2.16.4
+

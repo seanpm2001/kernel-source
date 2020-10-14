@@ -1,0 +1,63 @@
+From: Christoffer Dall <christoffer.dall@linaro.org>
+Date: Fri, 4 Aug 2017 09:39:51 +0200
+Subject: KVM: arm64: Directly call VHE and non-VHE FPSIMD enabled functions
+Patch-mainline: v4.17-rc1
+Git-commit: c16c1131fb1ccc70aac351111388bf23a97024ca
+References: jsc#SLE-4084
+
+There is no longer a need for an alternative to choose the right
+function to tell us whether or not FPSIMD was enabled for the VM,
+because we can simply can the appropriate functions directly from within
+the _vhe and _nvhe run functions.
+
+Reviewed-by: Marc Zyngier <marc.zyngier@arm.com>
+Reviewed-by: Andrew Jones <drjones@redhat.com>
+Signed-off-by: Christoffer Dall <christoffer.dall@linaro.org>
+Signed-off-by: Marc Zyngier <marc.zyngier@arm.com>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ arch/arm64/kvm/hyp/switch.c |   15 +++------------
+ 1 file changed, 3 insertions(+), 12 deletions(-)
+
+--- a/arch/arm64/kvm/hyp/switch.c
++++ b/arch/arm64/kvm/hyp/switch.c
+@@ -33,20 +33,11 @@ static bool __hyp_text __fpsimd_enabled_
+ 	return !(read_sysreg(cptr_el2) & CPTR_EL2_TFP);
+ }
+ 
+-static bool __hyp_text __fpsimd_enabled_vhe(void)
++static bool fpsimd_enabled_vhe(void)
+ {
+ 	return !!(read_sysreg(cpacr_el1) & CPACR_EL1_FPEN);
+ }
+ 
+-static hyp_alternate_select(__fpsimd_is_enabled,
+-			    __fpsimd_enabled_nvhe, __fpsimd_enabled_vhe,
+-			    ARM64_HAS_VIRT_HOST_EXTN);
+-
+-bool __hyp_text __fpsimd_enabled(void)
+-{
+-	return __fpsimd_is_enabled()();
+-}
+-
+ /* Save the 32-bit only FPSIMD system register state */
+ static void __hyp_text __fpsimd_save_fpexc32(struct kvm_vcpu *vcpu)
+ {
+@@ -414,7 +405,7 @@ int kvm_vcpu_run_vhe(struct kvm_vcpu *vc
+ 		/* And we're baaack! */
+ 	} while (fixup_guest_exit(vcpu, &exit_code));
+ 
+-	fp_enabled = __fpsimd_enabled();
++	fp_enabled = fpsimd_enabled_vhe();
+ 
+ 	sysreg_save_guest_state_vhe(guest_ctxt);
+ 	__vgic_save_state(vcpu);
+@@ -481,7 +472,7 @@ int __hyp_text __kvm_vcpu_run_nvhe(struc
+ 		}
+ 	}
+ 
+-	fp_enabled = __fpsimd_enabled();
++	fp_enabled = __fpsimd_enabled_nvhe();
+ 
+ 	__sysreg_save_state_nvhe(guest_ctxt);
+ 	__sysreg32_save_state(vcpu);

@@ -1,0 +1,52 @@
+From: Christoffer Dall <christoffer.dall@linaro.org>
+Date: Tue, 10 Oct 2017 19:31:33 +0200
+Subject: KVM: arm64: Move debug dirty flag calculation out of world switch
+Patch-mainline: v4.17-rc1
+Git-commit: 54ceb1bcf8d83e835be515d7d9e4129a73d80f4e
+References: jsc#SLE-4084
+
+There is no need to figure out inside the world-switch if we should
+save/restore the debug registers or not, we might as well do that in the
+higher level debug setup code, making it easier to optimize down the
+line.
+
+Reviewed-by: Julien Thierry <julien.thierry@arm.com>
+Reviewed-by: Marc Zyngier <marc.zyngier@arm.com>
+Reviewed-by: Andrew Jones <drjones@redhat.com>
+Signed-off-by: Christoffer Dall <christoffer.dall@linaro.org>
+Signed-off-by: Marc Zyngier <marc.zyngier@arm.com>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ arch/arm64/kvm/debug.c        |    5 +++++
+ arch/arm64/kvm/hyp/debug-sr.c |    6 ------
+ 2 files changed, 5 insertions(+), 6 deletions(-)
+
+--- a/arch/arm64/kvm/debug.c
++++ b/arch/arm64/kvm/debug.c
+@@ -193,6 +193,11 @@ void kvm_arm_setup_debug(struct kvm_vcpu
+ 	if (trap_debug)
+ 		vcpu->arch.mdcr_el2 |= MDCR_EL2_TDA;
+ 
++	/* If KDE or MDE are set, perform a full save/restore cycle. */
++	if ((vcpu_sys_reg(vcpu, MDSCR_EL1) & DBG_MDSCR_KDE) ||
++	    (vcpu_sys_reg(vcpu, MDSCR_EL1) & DBG_MDSCR_MDE))
++		vcpu->arch.debug_flags |= KVM_ARM64_DEBUG_DIRTY;
++
+ 	trace_kvm_arm_set_dreg32("MDCR_EL2", vcpu->arch.mdcr_el2);
+ 	trace_kvm_arm_set_dreg32("MDSCR_EL1", vcpu_sys_reg(vcpu, MDSCR_EL1));
+ }
+--- a/arch/arm64/kvm/hyp/debug-sr.c
++++ b/arch/arm64/kvm/hyp/debug-sr.c
+@@ -166,12 +166,6 @@ void __hyp_text __debug_restore_state(st
+ 
+ void __hyp_text __debug_cond_save_host_state(struct kvm_vcpu *vcpu)
+ {
+-	/* If any of KDE, MDE or KVM_ARM64_DEBUG_DIRTY is set, perform
+-	 * a full save/restore cycle. */
+-	if ((vcpu->arch.ctxt.sys_regs[MDSCR_EL1] & DBG_MDSCR_KDE) ||
+-	    (vcpu->arch.ctxt.sys_regs[MDSCR_EL1] & DBG_MDSCR_MDE))
+-		vcpu->arch.debug_flags |= KVM_ARM64_DEBUG_DIRTY;
+-
+ 	__debug_save_state(vcpu, &vcpu->arch.host_debug_state.regs,
+ 			   kern_hyp_va(vcpu->arch.host_cpu_context));
+ 	__debug_save_spe()(&vcpu->arch.host_debug_state.pmscr_el1);

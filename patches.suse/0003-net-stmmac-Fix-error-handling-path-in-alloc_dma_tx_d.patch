@@ -1,0 +1,37 @@
+From bddc7388462fa21a06f58279b04b6f2ee2adf59b Mon Sep 17 00:00:00 2001
+From: Christophe Jaillet <christophe.jaillet@wanadoo.fr>
+Date: Sat, 8 Jul 2017 09:46:43 +0200
+Subject: [PATCH 03/24] net: stmmac: Fix error handling path in
+ 'alloc_dma_tx_desc_resources()'
+Git-commit: 6941f7cc71a719089f7add4afc82bb80fc5a281d
+Patch-mainline: v4.13-rc1
+References: git-fixes
+
+If the first 'kmalloc_array' within the loop fails, we should free what
+as already been allocated, as done in all other error handling path.
+
+Fixes: ce736788e8a9 ("net: stmmac: adding multiple buffers for TX")
+Signed-off-by: Christophe JAILLET <christophe.jaillet@wanadoo.fr>
+Acked-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/stmmac_main.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+index ab77b9c9116a..d5a7f7804999 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+@@ -1577,7 +1577,7 @@ static int alloc_dma_tx_desc_resources(struct stmmac_priv *priv)
+ 						    sizeof(*tx_q->tx_skbuff_dma),
+ 						    GFP_KERNEL);
+ 		if (!tx_q->tx_skbuff_dma)
+-			return -ENOMEM;
++			goto err_dma_buffers;
+ 
+ 		tx_q->tx_skbuff = kmalloc_array(DMA_TX_SIZE,
+ 						sizeof(struct sk_buff *),
+-- 
+2.16.4
+

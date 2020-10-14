@@ -1,0 +1,63 @@
+From 1e5f69cf49bdb330bf36119b6cf73d0598f2a8da Mon Sep 17 00:00:00 2001
+From: Valentine Fatiev <valentinef@mellanox.com>
+Date: Wed, 1 May 2019 11:46:05 +0300
+Subject: [PATCH 07/22] net/mlx5: Add meaningful return codes to status_to_err
+ function
+Git-commit: 661f0312eb3e8325e92c4a9c8d5561ed21527257
+References: git-fixes
+Patch-mainline: v5.2-rc2
+
+Current version of function status_to_err return -1 for any
+status returned by mlx5_cmd_invoke function. In case status is
+MLX5_DRIVER_STATUS_ABORTED we should return 0 to the caller as we
+assume command completed successfully on FW. If error returned we are
+getting confusing messages in dmesg. In addition, currently returned
+value -1 is confusing with -EPERM.
+
+New implementation actually fix original commit and return meaningful
+codes for commands delivery status and print message in case of failure.
+
+Fixes: e126ba97dba9 ("mlx5: Add driver for Mellanox Connect-IB adapters")
+Signed-off-by: Valentine Fatiev <valentinef@mellanox.com>
+Signed-off-by: Saeed Mahameed <saeedm@mellanox.com>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/mellanox/mlx5/core/cmd.c | 22 +++++++++++++++++++++-
+ 1 file changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/cmd.c b/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
+index 212458020474..4a00db6167d6 100644
+--- a/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
+@@ -1563,7 +1563,27 @@ EXPORT_SYMBOL(mlx5_cmd_comp_handler);
+ 
+ static int status_to_err(u8 status)
+ {
+-	return status ? -1 : 0; /* TBD more meaningful codes */
++	switch (status) {
++	case MLX5_CMD_DELIVERY_STAT_OK:
++	case MLX5_DRIVER_STATUS_ABORTED:
++		return 0;
++	case MLX5_CMD_DELIVERY_STAT_SIGNAT_ERR:
++	case MLX5_CMD_DELIVERY_STAT_TOK_ERR:
++		return -EBADR;
++	case MLX5_CMD_DELIVERY_STAT_BAD_BLK_NUM_ERR:
++	case MLX5_CMD_DELIVERY_STAT_OUT_PTR_ALIGN_ERR:
++	case MLX5_CMD_DELIVERY_STAT_IN_PTR_ALIGN_ERR:
++		return -EFAULT; /* Bad address */
++	case MLX5_CMD_DELIVERY_STAT_IN_LENGTH_ERR:
++	case MLX5_CMD_DELIVERY_STAT_OUT_LENGTH_ERR:
++	case MLX5_CMD_DELIVERY_STAT_CMD_DESCR_ERR:
++	case MLX5_CMD_DELIVERY_STAT_RES_FLD_NOT_CLR_ERR:
++		return -ENOMSG;
++	case MLX5_CMD_DELIVERY_STAT_FW_ERR:
++		return -EIO;
++	default:
++		return -EINVAL;
++	}
+ }
+ 
+ static struct mlx5_cmd_msg *alloc_msg(struct mlx5_core_dev *dev, int in_size,
+-- 
+2.16.4
+

@@ -113,9 +113,9 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  	unsigned int sectors;
 -	int cpu;
  
- 	if (unlikely(test_bit(MD_BROKEN, &mddev->flags)) && (rw == WRITE)) {
+ 	if (mddev == NULL || mddev->pers == NULL) {
  		bio_io_error(bio);
-@@ -412,11 +430,6 @@ static blk_qc_t md_make_request(struct r
+@@ -413,11 +431,6 @@ static blk_qc_t md_make_request(struct r
  
  	md_handle_request(mddev, bio);
  
@@ -187,7 +187,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  
 --- a/drivers/md/raid5.c
 +++ b/drivers/md/raid5.c
-@@ -5321,6 +5321,7 @@ static struct bio *chunk_aligned_read(st
+@@ -5322,6 +5322,7 @@ static struct bio *chunk_aligned_read(st
  	if (!raid5_read_one_chunk(mddev, raid_bio))
  		return raid_bio;
  
@@ -195,7 +195,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  	return NULL;
  }
  
-@@ -5639,6 +5640,8 @@ static bool raid5_make_request(struct md
+@@ -5640,6 +5641,8 @@ static bool raid5_make_request(struct md
  	last_sector = bio_end_sector(bi);
  	bi->bi_next = NULL;
  

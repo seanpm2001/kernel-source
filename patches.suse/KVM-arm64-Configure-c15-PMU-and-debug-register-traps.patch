@@ -1,0 +1,129 @@
+From: Christoffer Dall <christoffer.dall@linaro.org>
+Date: Fri, 4 Aug 2017 13:47:18 +0200
+Subject: KVM: arm64: Configure c15, PMU, and debug register traps on cpu
+ load/put for VHE
+Patch-mainline: v4.17-rc1
+Git-commit: a2465629b62a82b3145dc7ef40ec6c32432cf002
+References: jsc#SLE-4084
+
+We do not have to change the c15 trap setting on each switch to/from the
+guest on VHE systems, because this setting only affects guest EL1/EL0
+(and therefore not the VHE host).
+
+The PMU and debug trap configuration can also be done on vcpu load/put
+instead, because they don't affect how the VHE host kernel can access the
+debug registers while executing KVM kernel code.
+
+Reviewed-by: Marc Zyngier <marc.zyngier@arm.com>
+Reviewed-by: Andrew Jones <drjones@redhat.com>
+Signed-off-by: Christoffer Dall <christoffer.dall@linaro.org>
+Signed-off-by: Marc Zyngier <marc.zyngier@arm.com>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ arch/arm64/include/asm/kvm_hyp.h |    3 +++
+ arch/arm64/kvm/hyp/switch.c      |   31 ++++++++++++++++++++++---------
+ arch/arm64/kvm/hyp/sysreg-sr.c   |    4 ++++
+ 3 files changed, 29 insertions(+), 9 deletions(-)
+
+--- a/arch/arm64/include/asm/kvm_hyp.h
++++ b/arch/arm64/include/asm/kvm_hyp.h
+@@ -147,6 +147,9 @@ void __fpsimd_save_state(struct user_fps
+ void __fpsimd_restore_state(struct user_fpsimd_state *fp_regs);
+ bool __fpsimd_enabled(void);
+ 
++void activate_traps_vhe_load(struct kvm_vcpu *vcpu);
++void deactivate_traps_vhe_put(void);
++
+ u64 __guest_enter(struct kvm_vcpu *vcpu, struct kvm_cpu_context *host_ctxt);
+ void __noreturn __hyp_do_panic(unsigned long, ...);
+ 
+--- a/arch/arm64/kvm/hyp/switch.c
++++ b/arch/arm64/kvm/hyp/switch.c
+@@ -102,6 +102,8 @@ static void __hyp_text __activate_traps_
+ {
+ 	u64 val;
+ 
++	__activate_traps_common(vcpu);
++
+ 	val = CPTR_EL2_DEFAULT;
+ 	val |= CPTR_EL2_TTA | CPTR_EL2_TFP | CPTR_EL2_TZ;
+ 	write_sysreg(val, cptr_el2);
+@@ -121,20 +123,12 @@ static void __hyp_text __activate_traps(
+ 		write_sysreg_s(vcpu->arch.vsesr_el2, SYS_VSESR_EL2);
+ 
+ 	__activate_traps_fpsimd32(vcpu);
+-	__activate_traps_common(vcpu);
+ 	__activate_traps_arch()(vcpu);
+ }
+ 
+ static void __hyp_text __deactivate_traps_vhe(void)
+ {
+ 	extern char vectors[];	/* kernel exception vectors */
+-	u64 mdcr_el2 = read_sysreg(mdcr_el2);
+-
+-	mdcr_el2 &= MDCR_EL2_HPMN_MASK |
+-		    MDCR_EL2_E2PB_MASK << MDCR_EL2_E2PB_SHIFT |
+-		    MDCR_EL2_TPMS;
+-
+-	write_sysreg(mdcr_el2, mdcr_el2);
+ 	write_sysreg(HCR_HOST_VHE_FLAGS, hcr_el2);
+ 	write_sysreg(CPACR_EL1_DEFAULT, cpacr_el1);
+ 	write_sysreg(vectors, vbar_el1);
+@@ -144,6 +138,8 @@ static void __hyp_text __deactivate_trap
+ {
+ 	u64 mdcr_el2 = read_sysreg(mdcr_el2);
+ 
++	__deactivate_traps_common();
++
+ 	mdcr_el2 &= MDCR_EL2_HPMN_MASK;
+ 	mdcr_el2 |= MDCR_EL2_E2PB_MASK << MDCR_EL2_E2PB_SHIFT;
+ 
+@@ -167,10 +163,27 @@ static void __hyp_text __deactivate_trap
+ 	if (vcpu->arch.hcr_el2 & HCR_VSE)
+ 		vcpu->arch.hcr_el2 = read_sysreg(hcr_el2);
+ 
+-	__deactivate_traps_common();
+ 	__deactivate_traps_arch()();
+ }
+ 
++void activate_traps_vhe_load(struct kvm_vcpu *vcpu)
++{
++	__activate_traps_common(vcpu);
++}
++
++void deactivate_traps_vhe_put(void)
++{
++	u64 mdcr_el2 = read_sysreg(mdcr_el2);
++
++	mdcr_el2 &= MDCR_EL2_HPMN_MASK |
++		    MDCR_EL2_E2PB_MASK << MDCR_EL2_E2PB_SHIFT |
++		    MDCR_EL2_TPMS;
++
++	write_sysreg(mdcr_el2, mdcr_el2);
++
++	__deactivate_traps_common();
++}
++
+ static void __hyp_text __activate_vm(struct kvm *kvm)
+ {
+ 	write_sysreg(kvm->arch.vttbr, vttbr_el2);
+--- a/arch/arm64/kvm/hyp/sysreg-sr.c
++++ b/arch/arm64/kvm/hyp/sysreg-sr.c
+@@ -254,6 +254,8 @@ void kvm_vcpu_load_sysregs(struct kvm_vc
+ 	__sysreg_restore_el1_state(guest_ctxt);
+ 
+ 	vcpu->arch.sysregs_loaded_on_cpu = true;
++
++	activate_traps_vhe_load(vcpu);
+ }
+ 
+ /**
+@@ -275,6 +277,8 @@ void kvm_vcpu_put_sysregs(struct kvm_vcp
+ 	if (!has_vhe())
+ 		return;
+ 
++	deactivate_traps_vhe_put();
++
+ 	__sysreg_save_el1_state(guest_ctxt);
+ 	__sysreg_save_user_state(guest_ctxt);
+ 	__sysreg32_save_state(vcpu);

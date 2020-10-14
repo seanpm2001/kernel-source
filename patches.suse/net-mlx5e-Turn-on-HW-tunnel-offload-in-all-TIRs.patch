@@ -1,0 +1,94 @@
+From 22c800ebf1059c3d8e37c87fce414bc2ec8e9f41 Mon Sep 17 00:00:00 2001
+From: Tariq Toukan <tariqt@mellanox.com>
+Date: Sun, 20 Jan 2019 11:04:34 +0200
+Subject: [PATCH 05/22] net/mlx5e: Turn on HW tunnel offload in all TIRs
+Git-commit: 69dad68d1bcf26dde3cc4b08b08c2260ae575ab6
+References: git-fixes
+Patch-mainline: v5.2-rc1
+
+Hardware requires that all TIRs that steer traffic to the same RQ
+should share identical tunneled_offload_en value.
+For that, the tunneled_offload_en bit should be set/unset (according to
+the HW capability) for all TIRs', not only the ones dedicated for
+tunneled (inner) traffic.
+
+Fixes: 1b223dd39162 ("net/mlx5e: Fix checksum handling for non-stripped vlan packets")
+Signed-off-by: Tariq Toukan <tariqt@mellanox.com>
+Signed-off-by: Saeed Mahameed <saeedm@mellanox.com>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/mellanox/mlx5/core/en.h          | 1 +
+ drivers/net/ethernet/mellanox/mlx5/core/en_main.c     | 5 ++++-
+ drivers/net/ethernet/mellanox/mlx5/core/en_rep.c      | 1 +
+ drivers/net/ethernet/mellanox/mlx5/core/ipoib/ipoib.c | 1 +
+ 4 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en.h b/drivers/net/ethernet/mellanox/mlx5/core/en.h
+index a4238eb4bd52..7d9f8555fa20 100644
+--- a/drivers/net/ethernet/mellanox/mlx5/core/en.h
++++ b/drivers/net/ethernet/mellanox/mlx5/core/en.h
+@@ -244,6 +244,7 @@ struct mlx5e_params {
+ 	bool rx_cqe_compress_def;
+ 	struct net_dim_cq_moder rx_cq_moderation;
+ 	struct net_dim_cq_moder tx_cq_moderation;
++	bool tunneled_offload_en;
+ 	bool lro_en;
+ 	u32 lro_wqe_sz;
+ 	u8  tx_min_inline_mode;
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_main.c b/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
+index 1c5678542928..b83b2aa7198d 100644
+--- a/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
+@@ -2796,7 +2796,6 @@ static void mlx5e_build_inner_indir_tir_ctx(struct mlx5e_priv *priv,
+ 
+ 	MLX5_SET(tirc, tirc, disp_type, MLX5_TIRC_DISP_TYPE_INDIRECT);
+ 	MLX5_SET(tirc, tirc, indirect_table, priv->indir_rqt.rqtn);
+-	MLX5_SET(tirc, tirc, tunneled_offload_en, 0x1);
+ 
+ 	mlx5e_build_indir_tir_ctx_hash(&priv->channels.params, tt, tirc, true);
+ }
+@@ -3187,6 +3186,8 @@ static void mlx5e_build_indir_tir_ctx(struct mlx5e_priv *priv,
+ 				      u32 *tirc)
+ {
+ 	MLX5_SET(tirc, tirc, transport_domain, priv->mdev->mlx5e_res.td.tdn);
++	MLX5_SET(tirc, tirc, tunneled_offload_en,
++		 priv->channels.params.tunneled_offload_en);
+ 
+ 	mlx5e_build_tir_ctx_lro(&priv->channels.params, tirc);
+ 
+@@ -4606,6 +4607,8 @@ void mlx5e_build_nic_params(struct mlx5_core_dev *mdev,
+ 
+ 	/* RSS */
+ 	mlx5e_build_rss_params(params);
++	params->tunneled_offload_en =
++		mlx5e_tunnel_inner_ft_supported(mdev);
+ }
+ 
+ static void mlx5e_set_netdev_dev_addr(struct net_device *netdev)
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_rep.c b/drivers/net/ethernet/mellanox/mlx5/core/en_rep.c
+index 1ca844e30616..d7f765f72094 100644
+--- a/drivers/net/ethernet/mellanox/mlx5/core/en_rep.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/en_rep.c
+@@ -1011,6 +1011,7 @@ static void mlx5e_build_rep_params(struct mlx5_core_dev *mdev,
+ 	mlx5e_set_rx_cq_mode_params(params, cq_period_mode);
+ 
+ 	params->num_tc                = 1;
++	params->tunneled_offload_en = false;
+ 
+ 	mlx5_query_min_inline(mdev, &params->tx_min_inline_mode);
+ 
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/ipoib/ipoib.c b/drivers/net/ethernet/mellanox/mlx5/core/ipoib/ipoib.c
+index ebb2922826dd..08aa2dbd8bbb 100644
+--- a/drivers/net/ethernet/mellanox/mlx5/core/ipoib/ipoib.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/ipoib/ipoib.c
+@@ -68,6 +68,7 @@ static void mlx5i_build_nic_params(struct mlx5_core_dev *mdev,
+ 
+ 	params->lro_en = false;
+ 	params->hard_mtu = MLX5_IB_GRH_BYTES + MLX5_IPOIB_HARD_LEN;
++	params->tunneled_offload_en = false;
+ }
+ 
+ /* Called directly after IPoIB netdevice was created to initialize SW structs */
+-- 
+2.16.4
+

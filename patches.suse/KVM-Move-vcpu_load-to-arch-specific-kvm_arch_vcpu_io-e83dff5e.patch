@@ -1,0 +1,117 @@
+From: Christoffer Dall <christoffer.dall@linaro.org>
+Date: Mon, 4 Dec 2017 21:35:31 +0100
+Subject: KVM: Move vcpu_load to arch-specific kvm_arch_vcpu_ioctl_set_mpstate
+Patch-mainline: v4.16-rc1
+Git-commit: e83dff5edf0c3f014e4b4ac5e1c86dbe797687c7
+References: jsc#SLE-4084
+
+Move vcpu_load() and vcpu_put() into the architecture specific
+implementations of kvm_arch_vcpu_ioctl_set_mpstate().
+
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Signed-off-by: Christoffer Dall <christoffer.dall@linaro.org>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ arch/s390/kvm/kvm-s390.c |    3 +++
+ arch/x86/kvm/x86.c       |   14 +++++++++++---
+ virt/kvm/arm/arm.c       |    9 +++++++--
+ virt/kvm/kvm_main.c      |    2 --
+ 4 files changed, 21 insertions(+), 7 deletions(-)
+
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -2861,6 +2861,8 @@ int kvm_arch_vcpu_ioctl_set_mpstate(stru
+ {
+ 	int rc = 0;
+ 
++	vcpu_load(vcpu);
++
+ 	/* user space knows about this interface - let it control the state */
+ 	vcpu->kvm->arch.user_cpu_state_ctrl = 1;
+ 
+@@ -2878,6 +2880,7 @@ int kvm_arch_vcpu_ioctl_set_mpstate(stru
+ 		rc = -ENXIO;
+ 	}
+ 
++	vcpu_put(vcpu);
+ 	return rc;
+ }
+ 
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -7484,15 +7484,19 @@ int kvm_arch_vcpu_ioctl_get_mpstate(stru
+ int kvm_arch_vcpu_ioctl_set_mpstate(struct kvm_vcpu *vcpu,
+ 				    struct kvm_mp_state *mp_state)
+ {
++	int ret = -EINVAL;
++
++	vcpu_load(vcpu);
++
+ 	if (!lapic_in_kernel(vcpu) &&
+ 	    mp_state->mp_state != KVM_MP_STATE_RUNNABLE)
+-		return -EINVAL;
++		goto out;
+ 
+ 	/* INITs are latched while in SMM */
+ 	if ((is_smm(vcpu) || vcpu->arch.smi_pending) &&
+ 	    (mp_state->mp_state == KVM_MP_STATE_SIPI_RECEIVED ||
+ 	     mp_state->mp_state == KVM_MP_STATE_INIT_RECEIVED))
+-		return -EINVAL;
++		goto out;
+ 
+ 	if (mp_state->mp_state == KVM_MP_STATE_SIPI_RECEIVED) {
+ 		vcpu->arch.mp_state = KVM_MP_STATE_INIT_RECEIVED;
+@@ -7500,7 +7504,11 @@ int kvm_arch_vcpu_ioctl_set_mpstate(stru
+ 	} else
+ 		vcpu->arch.mp_state = mp_state->mp_state;
+ 	kvm_make_request(KVM_REQ_EVENT, vcpu);
+-	return 0;
++
++	ret = 0;
++out:
++	vcpu_put(vcpu);
++	return ret;
+ }
+ 
+ int kvm_task_switch(struct kvm_vcpu *vcpu, u16 tss_selector, int idt_index,
+--- a/virt/kvm/arm/arm.c
++++ b/virt/kvm/arm/arm.c
+@@ -395,6 +395,10 @@ int kvm_arch_vcpu_ioctl_get_mpstate(stru
+ int kvm_arch_vcpu_ioctl_set_mpstate(struct kvm_vcpu *vcpu,
+ 				    struct kvm_mp_state *mp_state)
+ {
++	int ret = 0;
++
++	vcpu_load(vcpu);
++
+ 	switch (mp_state->mp_state) {
+ 	case KVM_MP_STATE_RUNNABLE:
+ 		vcpu->arch.power_off = false;
+@@ -403,10 +407,11 @@ int kvm_arch_vcpu_ioctl_set_mpstate(stru
+ 		vcpu_power_off(vcpu);
+ 		break;
+ 	default:
+-		return -EINVAL;
++		ret = -EINVAL;
+ 	}
+ 
+-	return 0;
++	vcpu_put(vcpu);
++	return ret;
+ }
+ 
+ /**
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -2691,9 +2691,7 @@ out_free1:
+ 		r = -EFAULT;
+ 		if (copy_from_user(&mp_state, argp, sizeof(mp_state)))
+ 			goto out;
+-		vcpu_load(vcpu);
+ 		r = kvm_arch_vcpu_ioctl_set_mpstate(vcpu, &mp_state);
+-		vcpu_put(vcpu);
+ 		break;
+ 	}
+ 	case KVM_TRANSLATE: {

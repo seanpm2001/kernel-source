@@ -1,0 +1,83 @@
+From: Christoffer Dall <christoffer.dall@linaro.org>
+Date: Wed, 11 Oct 2017 15:20:41 +0200
+Subject: KVM: arm64: Change 32-bit handling of VM system registers
+Patch-mainline: v4.17-rc1
+Git-commit: 52f6c4f0216427e9d922498048e4bd24f1b00232
+References: jsc#SLE-4084
+
+We currently handle 32-bit accesses to trapped VM system registers using
+the 32-bit index into the coproc array on the vcpu structure, which is a
+union of the coproc array and the sysreg array.
+
+Since all the 32-bit coproc indices are created to correspond to the
+architectural mapping between 64-bit system registers and 32-bit
+coprocessor registers, and because the AArch64 system registers are the
+double in size of the AArch32 coprocessor registers, we can always find
+the system register entry that we must update by dividing the 32-bit
+coproc index by 2.
+
+This is going to make our lives much easier when we have to start
+accessing system registers that use deferred save/restore and might
+have to be read directly from the physical CPU.
+
+Reviewed-by: Andrew Jones <drjones@redhat.com>
+Reviewed-by: Marc Zyngier <marc.zyngier@arm.com>
+Signed-off-by: Christoffer Dall <christoffer.dall@linaro.org>
+Signed-off-by: Marc Zyngier <marc.zyngier@arm.com>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ arch/arm64/include/asm/kvm_host.h |    8 --------
+ arch/arm64/kvm/sys_regs.c         |   20 +++++++++++++++-----
+ 2 files changed, 15 insertions(+), 13 deletions(-)
+
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -293,14 +293,6 @@ struct kvm_vcpu_arch {
+ #define vcpu_cp14(v,r)		((v)->arch.ctxt.copro[(r)])
+ #define vcpu_cp15(v,r)		((v)->arch.ctxt.copro[(r)])
+ 
+-#ifdef CONFIG_CPU_BIG_ENDIAN
+-#define vcpu_cp15_64_high(v,r)	vcpu_cp15((v),(r))
+-#define vcpu_cp15_64_low(v,r)	vcpu_cp15((v),(r) + 1)
+-#else
+-#define vcpu_cp15_64_high(v,r)	vcpu_cp15((v),(r) + 1)
+-#define vcpu_cp15_64_low(v,r)	vcpu_cp15((v),(r))
+-#endif
+-
+ struct kvm_vm_stat {
+ 	ulong remote_tlb_flush;
+ };
+--- a/arch/arm64/kvm/sys_regs.c
++++ b/arch/arm64/kvm/sys_regs.c
+@@ -121,16 +121,26 @@ static bool access_vm_reg(struct kvm_vcp
+ 			  const struct sys_reg_desc *r)
+ {
+ 	bool was_enabled = vcpu_has_cache_enabled(vcpu);
++	u64 val;
++	int reg = r->reg;
+ 
+ 	BUG_ON(!p->is_write);
+ 
+-	if (!p->is_aarch32) {
+-		vcpu_sys_reg(vcpu, r->reg) = p->regval;
++	/* See the 32bit mapping in kvm_host.h */
++	if (p->is_aarch32)
++		reg = r->reg / 2;
++
++	if (!p->is_aarch32 || !p->is_32bit) {
++		val = p->regval;
+ 	} else {
+-		if (!p->is_32bit)
+-			vcpu_cp15_64_high(vcpu, r->reg) = upper_32_bits(p->regval);
+-		vcpu_cp15_64_low(vcpu, r->reg) = lower_32_bits(p->regval);
++		val = vcpu_sys_reg(vcpu, reg);
++		if (r->reg % 2)
++			val = (p->regval << 32) | (u64)lower_32_bits(val);
++		else
++			val = ((u64)upper_32_bits(val) << 32) |
++				lower_32_bits(p->regval);
+ 	}
++	vcpu_sys_reg(vcpu, reg) = val;
+ 
+ 	kvm_toggle_cache(vcpu, was_enabled);
+ 	return true;

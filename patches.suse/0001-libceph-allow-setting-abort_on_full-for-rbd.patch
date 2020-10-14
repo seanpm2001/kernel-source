@@ -1,0 +1,176 @@
+From: Dongsheng Yang <dongsheng.yang@easystack.cn>
+Date: Tue, 18 Dec 2018 04:31:48 -0500
+Subject: libceph: allow setting abort_on_full for rbd
+Git-commit: 02b2f549d502b46e68b97ea1452fb8853b3327dd
+Patch-mainline: v5.0-rc2
+References: bsc#1169972
+
+Introduce a new option abort_on_full, default to false. Then
+we can get -ENOSPC when the pool is full, or reaches quota.
+
+[ Don't show abort_on_full in /proc/mounts. ]
+
+Signed-off-by: Dongsheng Yang <dongsheng.yang@easystack.cn>
+Reviewed-by: Ilya Dryomov <idryomov@gmail.com>
+Signed-off-by: Ilya Dryomov <idryomov@gmail.com>
+Acked-by: Luis Henriques <lhenriques@suse.com>
+---
+ fs/ceph/super.c                 |  4 ++--
+ include/linux/ceph/libceph.h    |  6 ++++--
+ include/linux/ceph/osd_client.h |  1 -
+ net/ceph/ceph_common.c          | 11 ++++++++++-
+ net/ceph/debugfs.c              |  2 +-
+ net/ceph/osd_client.c           |  4 ++--
+ 6 files changed, 19 insertions(+), 9 deletions(-)
+
+diff --git a/fs/ceph/super.c b/fs/ceph/super.c
+index 4e9a7cc488da..da2cd8e89062 100644
+--- a/fs/ceph/super.c
++++ b/fs/ceph/super.c
+@@ -530,7 +530,7 @@ static int ceph_show_options(struct seq_file *m, struct dentry *root)
+ 	seq_putc(m, ',');
+ 	pos = m->count;
+ 
+-	ret = ceph_print_client_options(m, fsc->client);
++	ret = ceph_print_client_options(m, fsc->client, false);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -640,7 +640,7 @@ static struct ceph_fs_client *create_fs_client(struct ceph_mount_options *fsopt,
+ 	opt = NULL; /* fsc->client now owns this */
+ 
+ 	fsc->client->extra_mon_dispatch = extra_mon_dispatch;
+-	fsc->client->osdc.abort_on_full = true;
++	ceph_set_opt(fsc->client, ABORT_ON_FULL);
+ 
+ 	if (!fsopt->mds_namespace) {
+ 		ceph_monc_want_map(&fsc->client->monc, CEPH_SUB_MDSMAP,
+diff --git a/include/linux/ceph/libceph.h b/include/linux/ceph/libceph.h
+index 68bb09c29ce8..a420c07904bc 100644
+--- a/include/linux/ceph/libceph.h
++++ b/include/linux/ceph/libceph.h
+@@ -35,6 +35,7 @@
+ #define CEPH_OPT_NOMSGAUTH	  (1<<4) /* don't require msg signing feat */
+ #define CEPH_OPT_TCP_NODELAY	  (1<<5) /* TCP_NODELAY on TCP sockets */
+ #define CEPH_OPT_NOMSGSIGN	  (1<<6) /* don't sign msgs */
++#define CEPH_OPT_ABORT_ON_FULL	  (1<<7) /* abort w/ ENOSPC when full */
+ 
+ #define CEPH_OPT_DEFAULT   (CEPH_OPT_TCP_NODELAY)
+ 
+@@ -53,7 +54,7 @@ struct ceph_options {
+ 	unsigned long osd_request_timeout;	/* jiffies */
+ 
+ 	/*
+-	 * any type that can't be simply compared or doesn't need need
++	 * any type that can't be simply compared or doesn't need
+ 	 * to be compared should go beyond this point,
+ 	 * ceph_compare_options() should be updated accordingly
+ 	 */
+@@ -281,7 +282,8 @@ extern struct ceph_options *ceph_parse_options(char *options,
+ 			      const char *dev_name, const char *dev_name_end,
+ 			      int (*parse_extra_token)(char *c, void *private),
+ 			      void *private);
+-int ceph_print_client_options(struct seq_file *m, struct ceph_client *client);
++int ceph_print_client_options(struct seq_file *m, struct ceph_client *client,
++			      bool show_all);
+ extern void ceph_destroy_options(struct ceph_options *opt);
+ extern int ceph_compare_options(struct ceph_options *new_opt,
+ 				struct ceph_client *client);
+diff --git a/include/linux/ceph/osd_client.h b/include/linux/ceph/osd_client.h
+index 7a2af5034278..2294f963dab7 100644
+--- a/include/linux/ceph/osd_client.h
++++ b/include/linux/ceph/osd_client.h
+@@ -354,7 +354,6 @@ struct ceph_osd_client {
+ 	struct rb_root         linger_map_checks;
+ 	atomic_t               num_requests;
+ 	atomic_t               num_homeless;
+-	bool                   abort_on_full; /* abort w/ ENOSPC when full */
+ 	int                    abort_err;
+ 	struct delayed_work    timeout_work;
+ 	struct delayed_work    osds_timeout_work;
+diff --git a/net/ceph/ceph_common.c b/net/ceph/ceph_common.c
+index 87afb9ec4c68..9cab80207ced 100644
+--- a/net/ceph/ceph_common.c
++++ b/net/ceph/ceph_common.c
+@@ -255,6 +255,7 @@ enum {
+ 	Opt_nocephx_sign_messages,
+ 	Opt_tcp_nodelay,
+ 	Opt_notcp_nodelay,
++	Opt_abort_on_full,
+ };
+ 
+ static match_table_t opt_tokens = {
+@@ -280,6 +281,7 @@ static match_table_t opt_tokens = {
+ 	{Opt_nocephx_sign_messages, "nocephx_sign_messages"},
+ 	{Opt_tcp_nodelay, "tcp_nodelay"},
+ 	{Opt_notcp_nodelay, "notcp_nodelay"},
++	{Opt_abort_on_full, "abort_on_full"},
+ 	{-1, NULL}
+ };
+ 
+@@ -535,6 +537,10 @@ ceph_parse_options(char *options, const char *dev_name,
+ 			opt->flags &= ~CEPH_OPT_TCP_NODELAY;
+ 			break;
+ 
++		case Opt_abort_on_full:
++			opt->flags |= CEPH_OPT_ABORT_ON_FULL;
++			break;
++
+ 		default:
+ 			BUG_ON(token);
+ 		}
+@@ -549,7 +555,8 @@ ceph_parse_options(char *options, const char *dev_name,
+ }
+ EXPORT_SYMBOL(ceph_parse_options);
+ 
+-int ceph_print_client_options(struct seq_file *m, struct ceph_client *client)
++int ceph_print_client_options(struct seq_file *m, struct ceph_client *client,
++			      bool show_all)
+ {
+ 	struct ceph_options *opt = client->options;
+ 	size_t pos = m->count;
+@@ -574,6 +581,8 @@ int ceph_print_client_options(struct seq_file *m, struct ceph_client *client)
+ 		seq_puts(m, "nocephx_sign_messages,");
+ 	if ((opt->flags & CEPH_OPT_TCP_NODELAY) == 0)
+ 		seq_puts(m, "notcp_nodelay,");
++	if (show_all && (opt->flags & CEPH_OPT_ABORT_ON_FULL))
++		seq_puts(m, "abort_on_full,");
+ 
+ 	if (opt->mount_timeout != CEPH_MOUNT_TIMEOUT_DEFAULT)
+ 		seq_printf(m, "mount_timeout=%d,",
+diff --git a/net/ceph/debugfs.c b/net/ceph/debugfs.c
+index 02952605d121..46f65709a6ff 100644
+--- a/net/ceph/debugfs.c
++++ b/net/ceph/debugfs.c
+@@ -375,7 +375,7 @@ static int client_options_show(struct seq_file *s, void *p)
+ 	struct ceph_client *client = s->private;
+ 	int ret;
+ 
+-	ret = ceph_print_client_options(s, client);
++	ret = ceph_print_client_options(s, client, true);
+ 	if (ret)
+ 		return ret;
+ 
+diff --git a/net/ceph/osd_client.c b/net/ceph/osd_client.c
+index d23a9f81f3d7..fa9530dd876e 100644
+--- a/net/ceph/osd_client.c
++++ b/net/ceph/osd_client.c
+@@ -2315,7 +2315,7 @@ static void __submit_request(struct ceph_osd_request *req, bool wrlocked)
+ 		   (ceph_osdmap_flag(osdc, CEPH_OSDMAP_FULL) ||
+ 		    pool_full(osdc, req->r_t.base_oloc.pool))) {
+ 		dout("req %p full/pool_full\n", req);
+-		if (osdc->abort_on_full) {
++		if (ceph_test_opt(osdc->client, ABORT_ON_FULL)) {
+ 			err = -ENOSPC;
+ 		} else {
+ 			pr_warn_ratelimited("FULL or reached pool quota\n");
+@@ -2545,7 +2545,7 @@ static void ceph_osdc_abort_on_full(struct ceph_osd_client *osdc)
+ {
+ 	bool victims = false;
+ 
+-	if (osdc->abort_on_full &&
++	if (ceph_test_opt(osdc->client, ABORT_ON_FULL) &&
+ 	    (ceph_osdmap_flag(osdc, CEPH_OSDMAP_FULL) || have_pool_full(osdc)))
+ 		for_each_request(osdc, abort_on_full_fn, &victims);
+ }
+

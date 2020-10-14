@@ -1,0 +1,41 @@
+From 79b4686857029cdea97d0102d179aef2f58e5acb Mon Sep 17 00:00:00 2001
+From: Alexey Kardashevskiy <aik@ozlabs.ru>
+Date: Tue, 9 Jan 2018 16:45:20 +1100
+Subject: [PATCH] powerpc/init: Do not advertise radix during
+ client-architecture-support
+
+References: bsc#1055186 ltc#153436 FATE#323286
+Patch-mainline: v4.17-rc1
+Git-commit: 79b4686857029cdea97d0102d179aef2f58e5acb
+
+Currently the pseries kernel advertises radix MMU support even if
+the actual support is disabled via the CONFIG_PPC_RADIX_MMU option.
+
+This adds a check for CONFIG_PPC_RADIX_MMU to avoid advertising radix
+to the hypervisor.
+
+Suggested-by: Paul Mackerras <paulus@ozlabs.org>
+Signed-off-by: Alexey Kardashevskiy <aik@ozlabs.ru>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kernel/prom_init.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/arch/powerpc/kernel/prom_init.c b/arch/powerpc/kernel/prom_init.c
+index d22c41c26bb3..8ca3f4c915e3 100644
+--- a/arch/powerpc/kernel/prom_init.c
++++ b/arch/powerpc/kernel/prom_init.c
+@@ -1111,7 +1111,8 @@ static void __init prom_check_platform_support(void)
+ 		}
+ 	}
+ 
+-	if (supported.radix_mmu && supported.radix_gtse) {
++	if (supported.radix_mmu && supported.radix_gtse &&
++	    IS_ENABLED(CONFIG_PPC_RADIX_MMU)) {
+ 		/* Radix preferred - but we require GTSE for now */
+ 		prom_debug("Asking for radix with GTSE\n");
+ 		ibm_architecture_vec.vec5.mmu = OV5_FEAT(OV5_MMU_RADIX);
+-- 
+2.26.2
+

@@ -1,0 +1,108 @@
+From 1513c33d7174e87a079cfa2666cb9a3eba56a0ea Mon Sep 17 00:00:00 2001
+From: Nicholas Piggin <npiggin@gmail.com>
+Date: Fri, 22 Dec 2017 21:17:08 +1000
+Subject: [PATCH] powerpc/powernv: Remove real mode access limit for early
+ allocations
+
+References: bsc#1176022 ltc#187208
+Patch-mainline: v4.16-rc1
+Git-commit: 1513c33d7174e87a079cfa2666cb9a3eba56a0ea
+
+This removes the RMA limit on powernv platform, which constrains
+early allocations such as PACAs and stacks. There are still other
+restrictions that must be followed, such as bolted SLB limits, but
+real mode addressing has no constraints.
+
+Signed-off-by: Nicholas Piggin <npiggin@gmail.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/mm/hash_utils_64.c | 20 +++++++++++-------
+ arch/powerpc/mm/pgtable-radix.c | 37 +++++++++++++++++++--------------
+ 2 files changed, 34 insertions(+), 23 deletions(-)
+
+diff --git a/arch/powerpc/mm/hash_utils_64.c b/arch/powerpc/mm/hash_utils_64.c
+index 69fa01e02b63..a386bd854b1c 100644
+--- a/arch/powerpc/mm/hash_utils_64.c
++++ b/arch/powerpc/mm/hash_utils_64.c
+@@ -1848,16 +1848,22 @@ void hash__setup_initial_memory_limit(phys_addr_t first_memblock_base,
+ 	 */
+ 	BUG_ON(first_memblock_base != 0);
+ 
+-	/* On LPAR systems, the first entry is our RMA region,
+-	 * non-LPAR 64-bit hash MMU systems don't have a limitation
+-	 * on real mode access, but using the first entry works well
+-	 * enough. We also clamp it to 1G to avoid some funky things
++	/*
++	 * On virtualized systems the first entry is our RMA region aka VRMA,
++	 * non-virtualized 64-bit hash MMU systems don't have a limitation
++	 * on real mode access.
++	 *
++	 * We also clamp it to 1G to avoid some funky things
+ 	 * such as RTAS bugs etc...
+ 	 */
+-	ppc64_rma_size = min_t(u64, first_memblock_size, 0x40000000);
++	if (!early_cpu_has_feature(CPU_FTR_HVMODE)) {
++		ppc64_rma_size = min_t(u64, first_memblock_size, 0x40000000);
+ 
+-	/* Finally limit subsequent allocations */
+-	memblock_set_current_limit(ppc64_rma_size);
++		/* Finally limit subsequent allocations */
++		memblock_set_current_limit(ppc64_rma_size);
++	} else {
++		ppc64_rma_size = ULONG_MAX;
++	}
+ }
+ 
+ #ifdef CONFIG_DEBUG_FS
+diff --git a/arch/powerpc/mm/pgtable-radix.c b/arch/powerpc/mm/pgtable-radix.c
+index 27ccab28665b..ddf584333bcf 100644
+--- a/arch/powerpc/mm/pgtable-radix.c
++++ b/arch/powerpc/mm/pgtable-radix.c
+@@ -628,22 +628,27 @@ void radix__setup_initial_memory_limit(phys_addr_t first_memblock_base,
+ 	 * physical on those processors
+ 	 */
+ 	BUG_ON(first_memblock_base != 0);
+-	/*
+-	 * We limit the allocation that depend on ppc64_rma_size
+-	 * to first_memblock_size. We also clamp it to 1GB to
+-	 * avoid some funky things such as RTAS bugs.
+-	 *
+-	 * On radix config we really don't have a limitation
+-	 * on real mode access. But keeping it as above works
+-	 * well enough.
+-	 */
+-	ppc64_rma_size = min_t(u64, first_memblock_size, 0x40000000);
+-	/*
+-	 * Finally limit subsequent allocations. We really don't want
+-	 * to limit the memblock allocations to rma_size. FIXME!! should
+-	 * we even limit at all ?
+-	 */
+-	memblock_set_current_limit(first_memblock_base + first_memblock_size);
++
++	if (!early_cpu_has_feature(CPU_FTR_HVMODE)) {
++		/*
++		 * We limit the allocation that depend on ppc64_rma_size
++		 * to first_memblock_size. We also clamp it to 1GB to
++		 * avoid some funky things such as RTAS bugs.
++		 *
++		 * On radix config we really don't have a limitation
++		 * on real mode access. But keeping it as above works
++		 * well enough.
++		 */
++		ppc64_rma_size = min_t(u64, first_memblock_size, 0x40000000);
++		/*
++		 * Finally limit subsequent allocations. We really don't want
++		 * to limit the memblock allocations to rma_size. FIXME!! should
++		 * we even limit at all ?
++		 */
++		memblock_set_current_limit(first_memblock_base + first_memblock_size);
++	} else {
++		ppc64_rma_size = ULONG_MAX;
++	}
+ }
+ 
+ #ifdef CONFIG_MEMORY_HOTPLUG
+-- 
+2.28.0
+

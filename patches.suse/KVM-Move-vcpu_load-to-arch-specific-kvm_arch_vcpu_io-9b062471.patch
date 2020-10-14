@@ -1,0 +1,378 @@
+From: Christoffer Dall <christoffer.dall@linaro.org>
+Date: Mon, 4 Dec 2017 21:35:36 +0100
+Subject: KVM: Move vcpu_load to arch-specific kvm_arch_vcpu_ioctl
+Patch-mainline: v4.16-rc1
+Git-commit: 9b062471e52a1692c5563ba1535c84d708e2ff6f
+References: jsc#SLE-4084
+
+Move the calls to vcpu_load() and vcpu_put() in to the architecture
+specific implementations of kvm_arch_vcpu_ioctl() which dispatches
+further architecture-specific ioctls on to other functions.
+
+Some architectures support asynchronous vcpu ioctls which cannot call
+vcpu_load() or take the vcpu->mutex, because that would prevent
+concurrent execution with a running VCPU, which is the intended purpose
+of these ioctls, for example because they inject interrupts.
+
+We repeat the separate checks for these specifics in the architecture
+code for MIPS, S390 and PPC, and avoid taking the vcpu->mutex and
+calling vcpu_load for these ioctls.
+
+Signed-off-by: Christoffer Dall <christoffer.dall@linaro.org>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ arch/mips/kvm/mips.c       |   49 ++++++++++++++++++++++----------------
+ arch/powerpc/kvm/powerpc.c |   13 +++++-----
+ arch/s390/kvm/kvm-s390.c   |   19 ++++++++------
+ arch/x86/kvm/x86.c         |   22 ++++++++++++-----
+ virt/kvm/arm/arm.c         |   58 +++++++++++++++++++++++++++++++--------------
+ virt/kvm/kvm_main.c        |    2 -
+ 6 files changed, 103 insertions(+), 60 deletions(-)
+
+--- a/arch/mips/kvm/mips.c
++++ b/arch/mips/kvm/mips.c
+@@ -910,56 +910,65 @@ long kvm_arch_vcpu_ioctl(struct file *fi
+ 	void __user *argp = (void __user *)arg;
+ 	long r;
+ 
++	if (ioctl == KVM_INTERRUPT) {
++		struct kvm_mips_interrupt irq;
++
++		if (copy_from_user(&irq, argp, sizeof(irq)))
++			return -EFAULT;
++		kvm_debug("[%d] %s: irq: %d\n", vcpu->vcpu_id, __func__,
++			  irq.irq);
++
++		return kvm_vcpu_ioctl_interrupt(vcpu, &irq);
++	}
++
++	vcpu_load(vcpu);
++
+ 	switch (ioctl) {
+ 	case KVM_SET_ONE_REG:
+ 	case KVM_GET_ONE_REG: {
+ 		struct kvm_one_reg reg;
+ 
++		r = -EFAULT;
+ 		if (copy_from_user(&reg, argp, sizeof(reg)))
+-			return -EFAULT;
++			break;
+ 		if (ioctl == KVM_SET_ONE_REG)
+-			return kvm_mips_set_reg(vcpu, &reg);
++			r = kvm_mips_set_reg(vcpu, &reg);
+ 		else
+-			return kvm_mips_get_reg(vcpu, &reg);
++			r = kvm_mips_get_reg(vcpu, &reg);
++		break;
+ 	}
+ 	case KVM_GET_REG_LIST: {
+ 		struct kvm_reg_list __user *user_list = argp;
+ 		struct kvm_reg_list reg_list;
+ 		unsigned n;
+ 
++		r = -EFAULT;
+ 		if (copy_from_user(&reg_list, user_list, sizeof(reg_list)))
+-			return -EFAULT;
++			break;
+ 		n = reg_list.n;
+ 		reg_list.n = kvm_mips_num_regs(vcpu);
+ 		if (copy_to_user(user_list, &reg_list, sizeof(reg_list)))
+-			return -EFAULT;
++			break;
++		r = -E2BIG;
+ 		if (n < reg_list.n)
+-			return -E2BIG;
+-		return kvm_mips_copy_reg_indices(vcpu, user_list->reg);
+-	}
+-	case KVM_INTERRUPT:
+-		{
+-			struct kvm_mips_interrupt irq;
+-
+-			if (copy_from_user(&irq, argp, sizeof(irq)))
+-				return -EFAULT;
+-			kvm_debug("[%d] %s: irq: %d\n", vcpu->vcpu_id, __func__,
+-				  irq.irq);
+-
+-			r = kvm_vcpu_ioctl_interrupt(vcpu, &irq);
+ 			break;
+-		}
++		r = kvm_mips_copy_reg_indices(vcpu, user_list->reg);
++		break;
++	}
+ 	case KVM_ENABLE_CAP: {
+ 		struct kvm_enable_cap cap;
+ 
++		r = -EFAULT;
+ 		if (copy_from_user(&cap, argp, sizeof(cap)))
+-			return -EFAULT;
++			break;
+ 		r = kvm_vcpu_ioctl_enable_cap(vcpu, &cap);
+ 		break;
+ 	}
+ 	default:
+ 		r = -ENOIOCTLCMD;
+ 	}
++
++	vcpu_put(vcpu);
+ 	return r;
+ }
+ 
+--- a/arch/powerpc/kvm/powerpc.c
++++ b/arch/powerpc/kvm/powerpc.c
+@@ -1619,16 +1619,16 @@ long kvm_arch_vcpu_ioctl(struct file *fi
+ 	void __user *argp = (void __user *)arg;
+ 	long r;
+ 
+-	switch (ioctl) {
+-	case KVM_INTERRUPT: {
++	if (ioctl == KVM_INTERRUPT) {
+ 		struct kvm_interrupt irq;
+-		r = -EFAULT;
+ 		if (copy_from_user(&irq, argp, sizeof(irq)))
+-			goto out;
+-		r = kvm_vcpu_ioctl_interrupt(vcpu, &irq);
+-		goto out;
++			return -EFAULT;
++		return kvm_vcpu_ioctl_interrupt(vcpu, &irq);
+ 	}
+ 
++	vcpu_load(vcpu);
++
++	switch (ioctl) {
+ 	case KVM_ENABLE_CAP:
+ 	{
+ 		struct kvm_enable_cap cap;
+@@ -1668,6 +1668,7 @@ long kvm_arch_vcpu_ioctl(struct file *fi
+ 	}
+ 
+ out:
++	vcpu_put(vcpu);
+ 	return r;
+ }
+ 
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -3754,24 +3754,25 @@ long kvm_arch_vcpu_ioctl(struct file *fi
+ 	case KVM_S390_IRQ: {
+ 		struct kvm_s390_irq s390irq;
+ 
+-		r = -EFAULT;
+ 		if (copy_from_user(&s390irq, argp, sizeof(s390irq)))
+-			break;
+-		r = kvm_s390_inject_vcpu(vcpu, &s390irq);
+-		break;
++			return -EFAULT;
++		return kvm_s390_inject_vcpu(vcpu, &s390irq);
+ 	}
+ 	case KVM_S390_INTERRUPT: {
+ 		struct kvm_s390_interrupt s390int;
+ 		struct kvm_s390_irq s390irq;
+ 
+-		r = -EFAULT;
+ 		if (copy_from_user(&s390int, argp, sizeof(s390int)))
+-			break;
++			return -EFAULT;
+ 		if (s390int_to_s390irq(&s390int, &s390irq))
+ 			return -EINVAL;
+-		r = kvm_s390_inject_vcpu(vcpu, &s390irq);
+-		break;
++		return kvm_s390_inject_vcpu(vcpu, &s390irq);
++	}
+ 	}
++
++	vcpu_load(vcpu);
++
++	switch (ioctl) {
+ 	case KVM_S390_STORE_STATUS:
+ 		idx = srcu_read_lock(&vcpu->kvm->srcu);
+ 		r = kvm_s390_vcpu_store_status(vcpu, arg);
+@@ -3896,6 +3897,8 @@ long kvm_arch_vcpu_ioctl(struct file *fi
+ 	default:
+ 		r = -ENOTTY;
+ 	}
++
++	vcpu_put(vcpu);
+ 	return r;
+ }
+ 
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -3476,6 +3476,8 @@ long kvm_arch_vcpu_ioctl(struct file *fi
+ 		void *buffer;
+ 	} u;
+ 
++	vcpu_load(vcpu);
++
+ 	u.buffer = NULL;
+ 	switch (ioctl) {
+ 	case KVM_GET_LAPIC: {
+@@ -3501,8 +3503,10 @@ long kvm_arch_vcpu_ioctl(struct file *fi
+ 		if (!lapic_in_kernel(vcpu))
+ 			goto out;
+ 		u.lapic = memdup_user(argp, sizeof(*u.lapic));
+-		if (IS_ERR(u.lapic))
+-			return PTR_ERR(u.lapic);
++		if (IS_ERR(u.lapic)) {
++			r = PTR_ERR(u.lapic);
++			goto out_nofree;
++		}
+ 
+ 		r = kvm_vcpu_ioctl_set_lapic(vcpu, u.lapic);
+ 		break;
+@@ -3676,8 +3680,10 @@ long kvm_arch_vcpu_ioctl(struct file *fi
+ 	}
+ 	case KVM_SET_XSAVE: {
+ 		u.xsave = memdup_user(argp, sizeof(*u.xsave));
+-		if (IS_ERR(u.xsave))
+-			return PTR_ERR(u.xsave);
++		if (IS_ERR(u.xsave)) {
++			r = PTR_ERR(u.xsave);
++			goto out_nofree;
++		}
+ 
+ 		r = kvm_vcpu_ioctl_x86_set_xsave(vcpu, u.xsave);
+ 		break;
+@@ -3699,8 +3705,10 @@ long kvm_arch_vcpu_ioctl(struct file *fi
+ 	}
+ 	case KVM_SET_XCRS: {
+ 		u.xcrs = memdup_user(argp, sizeof(*u.xcrs));
+-		if (IS_ERR(u.xcrs))
+-			return PTR_ERR(u.xcrs);
++		if (IS_ERR(u.xcrs)) {
++			r = PTR_ERR(u.xcrs);
++			goto out_nofree;
++		}
+ 
+ 		r = kvm_vcpu_ioctl_x86_set_xcrs(vcpu, u.xcrs);
+ 		break;
+@@ -3744,6 +3752,8 @@ long kvm_arch_vcpu_ioctl(struct file *fi
+ 	}
+ out:
+ 	kfree(u.buffer);
++out_nofree:
++	vcpu_put(vcpu);
+ 	return r;
+ }
+ 
+--- a/virt/kvm/arm/arm.c
++++ b/virt/kvm/arm/arm.c
+@@ -1010,66 +1010,88 @@ long kvm_arch_vcpu_ioctl(struct file *fi
+ 	struct kvm_vcpu *vcpu = filp->private_data;
+ 	void __user *argp = (void __user *)arg;
+ 	struct kvm_device_attr attr;
++	long r;
++
++	vcpu_load(vcpu);
+ 
+ 	switch (ioctl) {
+ 	case KVM_ARM_VCPU_INIT: {
+ 		struct kvm_vcpu_init init;
+ 
++		r = -EFAULT;
+ 		if (copy_from_user(&init, argp, sizeof(init)))
+-			return -EFAULT;
++			break;
+ 
+-		return kvm_arch_vcpu_ioctl_vcpu_init(vcpu, &init);
++		r = kvm_arch_vcpu_ioctl_vcpu_init(vcpu, &init);
++		break;
+ 	}
+ 	case KVM_SET_ONE_REG:
+ 	case KVM_GET_ONE_REG: {
+ 		struct kvm_one_reg reg;
+ 
++		r = -ENOEXEC;
+ 		if (unlikely(!kvm_vcpu_initialized(vcpu)))
+-			return -ENOEXEC;
++			break;
+ 
++		r = -EFAULT;
+ 		if (copy_from_user(&reg, argp, sizeof(reg)))
+-			return -EFAULT;
++			break;
++
+ 		if (ioctl == KVM_SET_ONE_REG)
+-			return kvm_arm_set_reg(vcpu, &reg);
++			r = kvm_arm_set_reg(vcpu, &reg);
+ 		else
+-			return kvm_arm_get_reg(vcpu, &reg);
++			r = kvm_arm_get_reg(vcpu, &reg);
++		break;
+ 	}
+ 	case KVM_GET_REG_LIST: {
+ 		struct kvm_reg_list __user *user_list = argp;
+ 		struct kvm_reg_list reg_list;
+ 		unsigned n;
+ 
++		r = -ENOEXEC;
+ 		if (unlikely(!kvm_vcpu_initialized(vcpu)))
+-			return -ENOEXEC;
++			break;
+ 
++		r = -EFAULT;
+ 		if (copy_from_user(&reg_list, user_list, sizeof(reg_list)))
+-			return -EFAULT;
++			break;
+ 		n = reg_list.n;
+ 		reg_list.n = kvm_arm_num_regs(vcpu);
+ 		if (copy_to_user(user_list, &reg_list, sizeof(reg_list)))
+-			return -EFAULT;
++			break;
++		r = -E2BIG;
+ 		if (n < reg_list.n)
+-			return -E2BIG;
+-		return kvm_arm_copy_reg_indices(vcpu, user_list->reg);
++			break;
++		r = kvm_arm_copy_reg_indices(vcpu, user_list->reg);
++		break;
+ 	}
+ 	case KVM_SET_DEVICE_ATTR: {
++		r = -EFAULT;
+ 		if (copy_from_user(&attr, argp, sizeof(attr)))
+-			return -EFAULT;
+-		return kvm_arm_vcpu_set_attr(vcpu, &attr);
++			break;
++		r = kvm_arm_vcpu_set_attr(vcpu, &attr);
++		break;
+ 	}
+ 	case KVM_GET_DEVICE_ATTR: {
++		r = -EFAULT;
+ 		if (copy_from_user(&attr, argp, sizeof(attr)))
+-			return -EFAULT;
+-		return kvm_arm_vcpu_get_attr(vcpu, &attr);
++			break;
++		r = kvm_arm_vcpu_get_attr(vcpu, &attr);
++		break;
+ 	}
+ 	case KVM_HAS_DEVICE_ATTR: {
++		r = -EFAULT;
+ 		if (copy_from_user(&attr, argp, sizeof(attr)))
+-			return -EFAULT;
+-		return kvm_arm_vcpu_has_attr(vcpu, &attr);
++			break;
++		r = kvm_arm_vcpu_has_attr(vcpu, &attr);
++		break;
+ 	}
+ 	default:
+-		return -EINVAL;
++		r = -EINVAL;
+ 	}
++
++	vcpu_put(vcpu);
++	return r;
+ }
+ 
+ /**
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -2766,9 +2766,7 @@ out_free1:
+ 		break;
+ 	}
+ 	default:
+-		vcpu_load(vcpu);
+ 		r = kvm_arch_vcpu_ioctl(filp, ioctl, arg);
+-		vcpu_put(vcpu);
+ 	}
+ out:
+ 	mutex_unlock(&vcpu->mutex);

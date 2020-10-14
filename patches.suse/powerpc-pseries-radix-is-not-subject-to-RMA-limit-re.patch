@@ -1,0 +1,46 @@
+From 98ae0069cb78ca4f5d14f203e3bb43874591123f Mon Sep 17 00:00:00 2001
+From: Nicholas Piggin <npiggin@gmail.com>
+Date: Fri, 22 Dec 2017 21:17:09 +1000
+Subject: [PATCH] powerpc/pseries: radix is not subject to RMA limit, remove it
+
+References: bsc#1176022 ltc#187208
+Patch-mainline: v4.16-rc1
+Git-commit: 98ae0069cb78ca4f5d14f203e3bb43874591123f
+
+The radix guest is not subject to the paravirtualized HPT VRMA limit,
+so remove that from ppc64_rma_size calculation for that platform.
+
+Signed-off-by: Nicholas Piggin <npiggin@gmail.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/mm/pgtable-radix.c | 11 ++++-------
+ 1 file changed, 4 insertions(+), 7 deletions(-)
+
+diff --git a/arch/powerpc/mm/pgtable-radix.c b/arch/powerpc/mm/pgtable-radix.c
+index ddf584333bcf..60927d019bbf 100644
+--- a/arch/powerpc/mm/pgtable-radix.c
++++ b/arch/powerpc/mm/pgtable-radix.c
+@@ -631,15 +631,12 @@ void radix__setup_initial_memory_limit(phys_addr_t first_memblock_base,
+ 
+ 	if (!early_cpu_has_feature(CPU_FTR_HVMODE)) {
+ 		/*
+-		 * We limit the allocation that depend on ppc64_rma_size
+-		 * to first_memblock_size. We also clamp it to 1GB to
+-		 * avoid some funky things such as RTAS bugs.
++		 * Radix mode guests are not limited by RMA / VRMA addressing.
+ 		 *
+-		 * On radix config we really don't have a limitation
+-		 * on real mode access. But keeping it as above works
+-		 * well enough.
++		 * We do clamp addresses to 1GB to avoid some funky things
++		 * such as RTAS bugs.
+ 		 */
+-		ppc64_rma_size = min_t(u64, first_memblock_size, 0x40000000);
++		ppc64_rma_size = 0x40000000;
+ 		/*
+ 		 * Finally limit subsequent allocations. We really don't want
+ 		 * to limit the memblock allocations to rma_size. FIXME!! should
+-- 
+2.28.0
+

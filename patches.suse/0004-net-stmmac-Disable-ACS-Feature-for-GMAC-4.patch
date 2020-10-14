@@ -1,0 +1,64 @@
+From 5c1a11bcb4c25511b400eb0b89ec04a1738cb82f Mon Sep 17 00:00:00 2001
+From: Jose Abreu <Jose.Abreu@synopsys.com>
+Date: Wed, 18 Apr 2018 10:57:55 +0100
+Subject: [PATCH 04/12] net: stmmac: Disable ACS Feature for GMAC >= 4
+Git-commit: 565020aaeebfa7c8b3ec077bee38f4c15acc9905
+Patch-mainline: v4.17-rc2
+References: git-fixes
+
+ACS Feature is currently enabled for GMAC >= 4 but the llc_snap status
+is never checked in descriptor rx_status callback. This will cause
+stmmac to always strip packets even that ACS feature is already
+stripping them.
+
+Lets be safe and disable the ACS feature for GMAC >= 4 and always strip
+the packets for this GMAC version.
+
+Fixes: 477286b53f55 ("stmmac: add GMAC4 core support")
+Signed-off-by: Jose Abreu <joabreu@synopsys.com>
+Cc: David S. Miller <davem@davemloft.net>
+Cc: Joao Pinto <jpinto@synopsys.com>
+Cc: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Cc: Alexandre Torgue <alexandre.torgue@st.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/dwmac4.h      | 2 +-
+ drivers/net/ethernet/stmicro/stmmac/stmmac_main.c | 7 ++++++-
+ 2 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/dwmac4.h b/drivers/net/ethernet/stmicro/stmmac/dwmac4.h
+index d74cedf2a397..db5f2aee360b 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/dwmac4.h
++++ b/drivers/net/ethernet/stmicro/stmmac/dwmac4.h
+@@ -336,7 +336,7 @@ enum power_event {
+ #define MTL_RX_OVERFLOW_INT		BIT(16)
+ 
+ /* Default operating mode of the MAC */
+-#define GMAC_CORE_INIT (GMAC_CONFIG_JD | GMAC_CONFIG_PS | GMAC_CONFIG_ACS | \
++#define GMAC_CORE_INIT (GMAC_CONFIG_JD | GMAC_CONFIG_PS | \
+ 			GMAC_CONFIG_BE | GMAC_CONFIG_DCRS)
+ 
+ /* To dump the core regs excluding  the Address Registers */
+diff --git a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+index 70d34933618c..4e8951065106 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+@@ -3445,8 +3445,13 @@ static int stmmac_rx(struct stmmac_priv *priv, int limit, u32 queue)
+ 
+ 			/* ACS is set; GMAC core strips PAD/FCS for IEEE 802.3
+ 			 * Type frames (LLC/LLC-SNAP)
++			 *
++			 * llc_snap is never checked in GMAC >= 4, so this ACS
++			 * feature is always disabled and packets need to be
++			 * stripped manually.
+ 			 */
+-			if (unlikely(status != llc_snap))
++			if (unlikely(priv->synopsys_id >= DWMAC_CORE_4_00) ||
++			    unlikely(status != llc_snap))
+ 				frame_len -= ETH_FCS_LEN;
+ 
+ 			if (netif_msg_rx_status(priv)) {
+-- 
+2.16.4
+

@@ -1,0 +1,39 @@
+From 0ad17b22830190e4ee934c05e7693275d1c2299c Mon Sep 17 00:00:00 2001
+From: Michael Karcher <kernel@mkarcher.dialup.fu-berlin.de>
+Date: Thu, 19 Apr 2018 14:05:21 +1200
+Subject: [PATCH 05/12] net-next: ax88796: Do not free IRQ in ax_remove()
+ (already freed in ax_close()).
+Git-commit: 9144c3795c2636351d553e4d0fc5297201182de2
+Patch-mainline: v4.18-rc1
+References: git-fixes
+
+This complements the fix in 82533ad9a1c ("net: ethernet: ax88796:
+don't call free_irq without request_irq first") that removed the
+free_irq call in the error path of probe, to also not call free_irq
+when remove is called to revert the effects of probe.
+
+Fixes: 82533ad9a1c (net: ethernet: ax88796: don't call free_irq without request_irq first)
+Signed-off-by: Michael Karcher <kernel@mkarcher.dialup.fu-berlin.de>
+Signed-off-by: Michael Schmitz <schmitzmic@gmail.com>
+Reviewed-by: Geert Uytterhoeven <geert@linux-m68k.org>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/8390/ax88796.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/8390/ax88796.c b/drivers/net/ethernet/8390/ax88796.c
+index db02bc2fb4b2..92210c915ec6 100644
+--- a/drivers/net/ethernet/8390/ax88796.c
++++ b/drivers/net/ethernet/8390/ax88796.c
+@@ -774,7 +774,6 @@ static int ax_remove(struct platform_device *pdev)
+ 	struct resource *mem;
+ 
+ 	unregister_netdev(dev);
+-	free_irq(dev->irq, dev);
+ 
+ 	iounmap(ei_local->mem);
+ 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+-- 
+2.16.4
+

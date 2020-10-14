@@ -1,0 +1,108 @@
+From: Christoffer Dall <christoffer.dall@linaro.org>
+Date: Mon, 4 Dec 2017 21:35:28 +0100
+Subject: KVM: Move vcpu_load to arch-specific kvm_arch_vcpu_ioctl_get_sregs
+Patch-mainline: v4.16-rc1
+Git-commit: bcdec41cefbea525ad424050650acb0f2eed1378
+References: jsc#SLE-4084
+
+Move vcpu_load() and vcpu_put() into the architecture specific
+implementations of kvm_arch_vcpu_ioctl_get_sregs().
+
+Signed-off-by: Christoffer Dall <christoffer.dall@linaro.org>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ arch/powerpc/kvm/book3s.c |    8 +++++++-
+ arch/powerpc/kvm/booke.c  |    9 ++++++++-
+ arch/s390/kvm/kvm-s390.c  |    4 ++++
+ arch/x86/kvm/x86.c        |    3 +++
+ virt/kvm/kvm_main.c       |    2 --
+ 5 files changed, 22 insertions(+), 4 deletions(-)
+
+--- a/arch/powerpc/kvm/book3s.c
++++ b/arch/powerpc/kvm/book3s.c
+@@ -484,7 +484,13 @@ void kvmppc_subarch_vcpu_uninit(struct k
+ int kvm_arch_vcpu_ioctl_get_sregs(struct kvm_vcpu *vcpu,
+ 				  struct kvm_sregs *sregs)
+ {
+-	return vcpu->kvm->arch.kvm_ops->get_sregs(vcpu, sregs);
++	int ret;
++
++	vcpu_load(vcpu);
++	ret = vcpu->kvm->arch.kvm_ops->get_sregs(vcpu, sregs);
++	vcpu_put(vcpu);
++
++	return ret;
+ }
+ 
+ int kvm_arch_vcpu_ioctl_set_sregs(struct kvm_vcpu *vcpu,
+--- a/arch/powerpc/kvm/booke.c
++++ b/arch/powerpc/kvm/booke.c
+@@ -1614,11 +1614,18 @@ int kvmppc_set_sregs_ivor(struct kvm_vcp
+ int kvm_arch_vcpu_ioctl_get_sregs(struct kvm_vcpu *vcpu,
+                                   struct kvm_sregs *sregs)
+ {
++	int ret;
++
++	vcpu_load(vcpu);
++
+ 	sregs->pvr = vcpu->arch.pvr;
+ 
+ 	get_sregs_base(vcpu, sregs);
+ 	get_sregs_arch206(vcpu, sregs);
+-	return vcpu->kvm->arch.kvm_ops->get_sregs(vcpu, sregs);
++	ret = vcpu->kvm->arch.kvm_ops->get_sregs(vcpu, sregs);
++
++	vcpu_put(vcpu);
++	return ret;
+ }
+ 
+ int kvm_arch_vcpu_ioctl_set_sregs(struct kvm_vcpu *vcpu,
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -2745,8 +2745,12 @@ int kvm_arch_vcpu_ioctl_set_sregs(struct
+ int kvm_arch_vcpu_ioctl_get_sregs(struct kvm_vcpu *vcpu,
+ 				  struct kvm_sregs *sregs)
+ {
++	vcpu_load(vcpu);
++
+ 	memcpy(&sregs->acrs, &vcpu->run->s.regs.acrs, sizeof(sregs->acrs));
+ 	memcpy(&sregs->crs, &vcpu->arch.sie_block->gcr, sizeof(sregs->crs));
++
++	vcpu_put(vcpu);
+ 	return 0;
+ }
+ 
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -7428,6 +7428,8 @@ int kvm_arch_vcpu_ioctl_get_sregs(struct
+ {
+ 	struct desc_ptr dt;
+ 
++	vcpu_load(vcpu);
++
+ 	kvm_get_segment(vcpu, &sregs->cs, VCPU_SREG_CS);
+ 	kvm_get_segment(vcpu, &sregs->ds, VCPU_SREG_DS);
+ 	kvm_get_segment(vcpu, &sregs->es, VCPU_SREG_ES);
+@@ -7459,6 +7461,7 @@ int kvm_arch_vcpu_ioctl_get_sregs(struct
+ 		set_bit(vcpu->arch.interrupt.nr,
+ 			(unsigned long *)sregs->interrupt_bitmap);
+ 
++	vcpu_put(vcpu);
+ 	return 0;
+ }
+ 
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -2654,9 +2654,7 @@ out_free1:
+ 		r = -ENOMEM;
+ 		if (!kvm_sregs)
+ 			goto out;
+-		vcpu_load(vcpu);
+ 		r = kvm_arch_vcpu_ioctl_get_sregs(vcpu, kvm_sregs);
+-		vcpu_put(vcpu);
+ 		if (r)
+ 			goto out;
+ 		r = -EFAULT;

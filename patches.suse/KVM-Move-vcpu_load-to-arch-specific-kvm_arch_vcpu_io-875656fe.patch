@@ -1,0 +1,124 @@
+From: Christoffer Dall <christoffer.dall@linaro.org>
+Date: Mon, 4 Dec 2017 21:35:27 +0100
+Subject: KVM: Move vcpu_load to arch-specific kvm_arch_vcpu_ioctl_set_regs
+Patch-mainline: v4.16-rc1
+Git-commit: 875656fe0c8473c544860d557ca1512753d6aeef
+References: jsc#SLE-4084
+
+Move vcpu_load() and vcpu_put() into the architecture specific
+implementations of kvm_arch_vcpu_ioctl_set_regs().
+
+Signed-off-by: Christoffer Dall <christoffer.dall@linaro.org>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ arch/mips/kvm/mips.c      |    3 +++
+ arch/powerpc/kvm/book3s.c |    3 +++
+ arch/powerpc/kvm/booke.c  |    3 +++
+ arch/s390/kvm/kvm-s390.c  |    2 ++
+ arch/x86/kvm/x86.c        |    3 +++
+ virt/kvm/kvm_main.c       |    2 --
+ 6 files changed, 14 insertions(+), 2 deletions(-)
+
+--- a/arch/mips/kvm/mips.c
++++ b/arch/mips/kvm/mips.c
+@@ -1148,6 +1148,8 @@ int kvm_arch_vcpu_ioctl_set_regs(struct
+ {
+ 	int i;
+ 
++	vcpu_load(vcpu);
++
+ 	for (i = 1; i < ARRAY_SIZE(vcpu->arch.gprs); i++)
+ 		vcpu->arch.gprs[i] = regs->gpr[i];
+ 	vcpu->arch.gprs[0] = 0; /* zero is special, and cannot be set. */
+@@ -1155,6 +1157,7 @@ int kvm_arch_vcpu_ioctl_set_regs(struct
+ 	vcpu->arch.lo = regs->lo;
+ 	vcpu->arch.pc = regs->pc;
+ 
++	vcpu_put(vcpu);
+ 	return 0;
+ }
+ 
+--- a/arch/powerpc/kvm/book3s.c
++++ b/arch/powerpc/kvm/book3s.c
+@@ -528,6 +528,8 @@ int kvm_arch_vcpu_ioctl_set_regs(struct
+ {
+ 	int i;
+ 
++	vcpu_load(vcpu);
++
+ 	kvmppc_set_pc(vcpu, regs->pc);
+ 	kvmppc_set_cr(vcpu, regs->cr);
+ 	kvmppc_set_ctr(vcpu, regs->ctr);
+@@ -548,6 +550,7 @@ int kvm_arch_vcpu_ioctl_set_regs(struct
+ 	for (i = 0; i < ARRAY_SIZE(regs->gpr); i++)
+ 		kvmppc_set_gpr(vcpu, i, regs->gpr[i]);
+ 
++	vcpu_put(vcpu);
+ 	return 0;
+ }
+ 
+--- a/arch/powerpc/kvm/booke.c
++++ b/arch/powerpc/kvm/booke.c
+@@ -1463,6 +1463,8 @@ int kvm_arch_vcpu_ioctl_set_regs(struct
+ {
+ 	int i;
+ 
++	vcpu_load(vcpu);
++
+ 	vcpu->arch.pc = regs->pc;
+ 	kvmppc_set_cr(vcpu, regs->cr);
+ 	vcpu->arch.ctr = regs->ctr;
+@@ -1484,6 +1486,7 @@ int kvm_arch_vcpu_ioctl_set_regs(struct
+ 	for (i = 0; i < ARRAY_SIZE(regs->gpr); i++)
+ 		kvmppc_set_gpr(vcpu, i, regs->gpr[i]);
+ 
++	vcpu_put(vcpu);
+ 	return 0;
+ }
+ 
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -2720,7 +2720,9 @@ static int kvm_arch_vcpu_ioctl_initial_r
+ 
+ int kvm_arch_vcpu_ioctl_set_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
+ {
++	vcpu_load(vcpu);
+ 	memcpy(&vcpu->run->s.regs.gprs, &regs->gprs, sizeof(regs->gprs));
++	vcpu_put(vcpu);
+ 	return 0;
+ }
+ 
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -7378,6 +7378,8 @@ int kvm_arch_vcpu_ioctl_get_regs(struct
+ 
+ int kvm_arch_vcpu_ioctl_set_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
+ {
++	vcpu_load(vcpu);
++
+ 	vcpu->arch.emulate_regs_need_sync_from_vcpu = true;
+ 	vcpu->arch.emulate_regs_need_sync_to_vcpu = false;
+ 
+@@ -7407,6 +7409,7 @@ int kvm_arch_vcpu_ioctl_set_regs(struct
+ 
+ 	kvm_make_request(KVM_REQ_EVENT, vcpu);
+ 
++	vcpu_put(vcpu);
+ 	return 0;
+ }
+ 
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -2645,9 +2645,7 @@ out_free1:
+ 			r = PTR_ERR(kvm_regs);
+ 			goto out;
+ 		}
+-		vcpu_load(vcpu);
+ 		r = kvm_arch_vcpu_ioctl_set_regs(vcpu, kvm_regs);
+-		vcpu_put(vcpu);
+ 		kfree(kvm_regs);
+ 		break;
+ 	}

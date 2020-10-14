@@ -1,0 +1,121 @@
+From af9681ecb9c76955378203a4fb6d5dfe38b5c930 Mon Sep 17 00:00:00 2001
+From: Niklas Cassel <niklas.cassel@axis.com>
+Date: Mon, 19 Feb 2018 18:11:09 +0100
+Subject: [PATCH 22/24] net: stmmac: set MSS for each tx DMA channel
+Git-commit: 8d212a9ea65af7082adc577ec46b6d1372d0a8f3 
+Patch-mainline: v4.17-rc1
+References: git-fixes
+
+The DMA engine in dwmac4 can segment a large TSO packet to several
+smaller packets of (max) size Maximum Segment Size (MSS).
+
+The DMA engine fetches and saves the MSS via a context descriptor.
+
+This context decriptor has to be provided to each tx DMA channel.
+To ensure that this is done, move struct member mss from stmmac_priv
+to stmmac_tx_queue.
+
+stmmac_reset_queues_param() now also resets mss, together with other
+queue parameters, so reset of mss value can be removed from
+stmmac_resume().
+
+init_dma_tx_desc_rings() now also resets mss, together with other
+queue parameters, so reset of mss value can be removed from
+stmmac_open().
+
+This fixes tx queue timeouts for dwmac4, with DT property
+snps,tx-queues-to-use > 1, when running iperf3 with multiple threads.
+
+Fixes: ce736788e8a9 ("net: stmmac: adding multiple buffers for TX")
+Signed-off-by: Niklas Cassel <niklas.cassel@axis.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/stmmac.h      |  2 +-
+ drivers/net/ethernet/stmicro/stmmac/stmmac_main.c | 13 +++++--------
+ 2 files changed, 6 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/stmmac.h b/drivers/net/ethernet/stmicro/stmmac/stmmac.h
+index 3bb61460b67e..904965a2cee7 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac.h
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac.h
+@@ -58,6 +58,7 @@ struct stmmac_tx_queue {
+ 	unsigned int dirty_tx;
+ 	dma_addr_t dma_tx_phy;
+ 	u32 tx_tail_addr;
++	u32 mss;
+ };
+ 
+ struct stmmac_rx_queue {
+@@ -138,7 +139,6 @@ struct stmmac_priv {
+ 	spinlock_t ptp_lock;
+ 	void __iomem *mmcaddr;
+ 	void __iomem *ptpaddr;
+-	u32 mss;
+ 
+ #ifdef CONFIG_DEBUG_FS
+ 	struct dentry *dbgfs_dir;
+diff --git a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+index e2be2fa5b767..16a90d054c39 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+@@ -1367,6 +1367,7 @@ static int init_dma_tx_desc_rings(struct net_device *dev)
+ 
+ 		tx_q->dirty_tx = 0;
+ 		tx_q->cur_tx = 0;
++		tx_q->mss = 0;
+ 
+ 		netdev_tx_reset_queue(netdev_get_tx_queue(priv->dev, queue));
+ 	}
+@@ -1951,6 +1952,7 @@ static void stmmac_tx_err(struct stmmac_priv *priv, u32 chan)
+ 						     (i == DMA_TX_SIZE - 1));
+ 	tx_q->dirty_tx = 0;
+ 	tx_q->cur_tx = 0;
++	tx_q->mss = 0;
+ 	netdev_tx_reset_queue(netdev_get_tx_queue(priv->dev, chan));
+ 	stmmac_start_tx_dma(priv, chan);
+ 
+@@ -2634,7 +2636,6 @@ static int stmmac_open(struct net_device *dev)
+ 
+ 	priv->dma_buf_sz = STMMAC_ALIGN(buf_sz);
+ 	priv->rx_copybreak = STMMAC_RX_COPYBREAK;
+-	priv->mss = 0;
+ 
+ 	ret = alloc_dma_desc_resources(priv);
+ 	if (ret < 0) {
+@@ -2874,10 +2875,10 @@ static netdev_tx_t stmmac_tso_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	mss = skb_shinfo(skb)->gso_size;
+ 
+ 	/* set new MSS value if needed */
+-	if (mss != priv->mss) {
++	if (mss != tx_q->mss) {
+ 		mss_desc = tx_q->dma_tx + tx_q->cur_tx;
+ 		priv->hw->desc->set_mss(mss_desc, mss);
+-		priv->mss = mss;
++		tx_q->mss = mss;
+ 		tx_q->cur_tx = STMMAC_GET_ENTRY(tx_q->cur_tx, DMA_TX_SIZE);
+ 	}
+ 
+@@ -4425,6 +4426,7 @@ static void stmmac_reset_queues_param(struct stmmac_priv *priv)
+ 
+ 		tx_q->cur_tx = 0;
+ 		tx_q->dirty_tx = 0;
++		tx_q->mss = 0;
+ 	}
+ }
+ 
+@@ -4471,11 +4473,6 @@ int stmmac_resume(struct device *dev)
+ 
+ 	stmmac_reset_queues_param(priv);
+ 
+-	/* reset private mss value to force mss context settings at
+-	 * next tso xmit (only used for gmac4).
+-	 */
+-	priv->mss = 0;
+-
+ 	stmmac_clear_descriptors(priv);
+ 
+ 	stmmac_hw_setup(ndev, false);
+-- 
+2.16.4
+

@@ -1,0 +1,39 @@
+From 68d0e5bd57e07618349b7bb55ffb7069e2eed643 Mon Sep 17 00:00:00 2001
+From: Emiliano Ingrassia <ingrassia@epigenesys.com>
+Date: Thu, 12 Oct 2017 11:00:47 +0200
+Subject: [PATCH 06/24] net: stmmac: dwmac_lib: fix interchanged sleep/timeout
+ values in DMA reset function
+Git-commit: b9849860675f925da0380f4ea76c3f5041909737
+Patch-mainline: v4.14-rc6
+References: git-fixes
+
+The DMA reset timeout, used in read_poll_timeout, is
+ten times shorter than the sleep time.
+This patch fixes these values interchanging them, as it was
+before the read_poll_timeout introduction.
+
+Fixes: 8a70aeca80c2 ("net: stmmac: Use readl_poll_timeout")
+
+Signed-off-by: Emiliano Ingrassia <ingrassia@epigenesys.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/dwmac_lib.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/dwmac_lib.c b/drivers/net/ethernet/stmicro/stmmac/dwmac_lib.c
+index 38f94305aab5..92c376d5f28a 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/dwmac_lib.c
++++ b/drivers/net/ethernet/stmicro/stmmac/dwmac_lib.c
+@@ -34,7 +34,7 @@ int dwmac_dma_reset(void __iomem *ioaddr)
+ 
+ 	err = readl_poll_timeout(ioaddr + DMA_BUS_MODE, value,
+ 				 !(value & DMA_BUS_MODE_SFT_RESET),
+-				 100000, 10000);
++				 10000, 100000);
+ 	if (err)
+ 		return -EBUSY;
+ 
+-- 
+2.16.4
+

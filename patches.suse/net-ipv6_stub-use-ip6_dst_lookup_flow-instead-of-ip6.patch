@@ -25,21 +25,21 @@ Signed-off-by: David S. Miller <davem@davemloft.net>
 Acked-by: Michal Kubecek <mkubecek@suse.cz>
 
 ---
- drivers/infiniband/core/addr.c                  |  7 +++----
- drivers/infiniband/sw/rxe/rxe_net.c             |  8 +++++---
- drivers/net/ethernet/mellanox/mlx5/core/en_tc.c |  9 ++++-----
- drivers/net/geneve.c                            |  4 +++-
- drivers/net/vxlan.c                             |  8 +++-----
- include/net/addrconf.h                          |  6 ++++--
- net/ipv6/addrconf_core.c                        | 11 ++++++-----
- net/ipv6/af_inet6.c                             |  2 +-
- net/mpls/af_mpls.c                              |  7 +++----
- net/tipc/udp_media.c                            |  8 +++++---
- 10 files changed, 37 insertions(+), 33 deletions(-)
+ drivers/infiniband/core/addr.c                  |    7 +++----
+ drivers/infiniband/sw/rxe/rxe_net.c             |    8 +++++---
+ drivers/net/ethernet/mellanox/mlx5/core/en_tc.c |   11 +++++------
+ drivers/net/geneve.c                            |    4 +++-
+ drivers/net/vxlan.c                             |    8 +++-----
+ include/net/addrconf.h                          |    6 ++++--
+ net/ipv6/addrconf_core.c                        |   11 ++++++-----
+ net/ipv6/af_inet6.c                             |    2 +-
+ net/mpls/af_mpls.c                              |    7 +++----
+ net/tipc/udp_media.c                            |    8 +++++---
+ 10 files changed, 38 insertions(+), 34 deletions(-)
 
 --- a/drivers/infiniband/core/addr.c
 +++ b/drivers/infiniband/core/addr.c
-@@ -420,16 +420,15 @@ static int addr6_resolve(struct sockaddr *src_sock,
+@@ -420,16 +420,15 @@ static int addr6_resolve(struct sockaddr
  				(const struct sockaddr_in6 *)dst_sock;
  	struct flowi6 fl6;
  	struct dst_entry *dst;
@@ -61,7 +61,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  		src_in->sin6_addr = fl6.saddr;
 --- a/drivers/infiniband/sw/rxe/rxe_net.c
 +++ b/drivers/infiniband/sw/rxe/rxe_net.c
-@@ -154,10 +154,12 @@ static struct dst_entry *rxe_find_route6(struct net_device *ndev,
+@@ -154,10 +154,12 @@ static struct dst_entry *rxe_find_route6
  	memcpy(&fl6.daddr, daddr, sizeof(*daddr));
  	fl6.flowi6_proto = IPPROTO_UDP;
  
@@ -79,7 +79,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  	if (unlikely(ndst->error)) {
 --- a/drivers/net/ethernet/mellanox/mlx5/core/en_tc.c
 +++ b/drivers/net/ethernet/mellanox/mlx5/core/en_tc.c
-@@ -2384,12 +2384,11 @@ static int mlx5e_route_lookup_ipv6(struct mlx5e_priv *priv,
+@@ -2384,12 +2384,11 @@ static int mlx5e_route_lookup_ipv6(struc
  #if IS_ENABLED(CONFIG_INET) && IS_ENABLED(CONFIG_IPV6)
  	struct mlx5e_rep_priv *uplink_rpriv;
  	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
@@ -96,9 +96,18 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  
  	if (!(*out_ttl))
  		*out_ttl = ip6_dst_hoplimit(dst);
+@@ -2597,7 +2596,7 @@ static int mlx5e_create_encap_header_ipv
+ 	int max_encap_size = MLX5_CAP_ESW(priv->mdev, max_encap_header_size);
+ 	int ipv6_encap_size = ETH_HLEN + sizeof(struct ipv6hdr) + VXLAN_HLEN;
+ 	struct ip_tunnel_key *tun_key = &e->tun_info.key;
+-	struct net_device *out_dev;
++	struct net_device *out_dev = NULL;
+ 	struct neighbour *n = NULL;
+ 	struct flowi6 fl6 = {};
+ 	u8 nud_state, tos, ttl;
 --- a/drivers/net/geneve.c
 +++ b/drivers/net/geneve.c
-@@ -787,7 +787,9 @@ static struct dst_entry *geneve_get_v6_dst(struct sk_buff *skb,
+@@ -787,7 +787,9 @@ static struct dst_entry *geneve_get_v6_d
  		if (dst)
  			return dst;
  	}
@@ -111,7 +120,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  	}
 --- a/drivers/net/vxlan.c
 +++ b/drivers/net/vxlan.c
-@@ -2023,7 +2023,6 @@ static struct dst_entry *vxlan6_get_route(struct vxlan_dev *vxlan,
+@@ -2023,7 +2023,6 @@ static struct dst_entry *vxlan6_get_rout
  	bool use_cache = ip_tunnel_dst_cache_usable(skb, info);
  	struct dst_entry *ndst;
  	struct flowi6 fl6;
@@ -119,7 +128,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  
  	if (!sock6)
  		return ERR_PTR(-EIO);
-@@ -2046,10 +2045,9 @@ static struct dst_entry *vxlan6_get_route(struct vxlan_dev *vxlan,
+@@ -2046,10 +2045,9 @@ static struct dst_entry *vxlan6_get_rout
  	fl6.fl6_dport = dport;
  	fl6.fl6_sport = sport;
  
@@ -150,7 +159,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  			      const struct in6_addr *solicited_addr,
 --- a/net/ipv6/addrconf_core.c
 +++ b/net/ipv6/addrconf_core.c
-@@ -127,15 +127,16 @@ int inet6addr_validator_notifier_call_chain(unsigned long val, void *v)
+@@ -127,15 +127,16 @@ int inet6addr_validator_notifier_call_ch
  }
  EXPORT_SYMBOL(inet6addr_validator_notifier_call_chain);
  
@@ -174,7 +183,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  
 --- a/net/ipv6/af_inet6.c
 +++ b/net/ipv6/af_inet6.c
-@@ -898,7 +898,7 @@ static struct pernet_operations inet6_net_ops = {
+@@ -898,7 +898,7 @@ static struct pernet_operations inet6_ne
  static const struct ipv6_stub ipv6_stub_impl = {
  	.ipv6_sock_mc_join = ipv6_sock_mc_join,
  	.ipv6_sock_mc_drop = ipv6_sock_mc_drop,
@@ -185,7 +194,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  	.nd_tbl	= &nd_tbl,
 --- a/net/mpls/af_mpls.c
 +++ b/net/mpls/af_mpls.c
-@@ -586,16 +586,15 @@ static struct net_device *inet6_fib_lookup_dev(struct net *net,
+@@ -586,16 +586,15 @@ static struct net_device *inet6_fib_look
  	struct net_device *dev;
  	struct dst_entry *dst;
  	struct flowi6 fl6;
@@ -207,7 +216,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  	dev_hold(dev);
 --- a/net/tipc/udp_media.c
 +++ b/net/tipc/udp_media.c
-@@ -187,10 +187,12 @@ static int tipc_udp_xmit(struct net *net, struct sk_buff *skb,
+@@ -187,10 +187,12 @@ static int tipc_udp_xmit(struct net *net
  			.saddr = src->ipv6,
  			.flowi6_proto = IPPROTO_UDP
  		};

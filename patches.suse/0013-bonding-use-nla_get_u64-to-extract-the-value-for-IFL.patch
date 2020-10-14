@@ -1,0 +1,37 @@
+From 56351b08796a3daba0bc889be6abcb2d3a6b1d4b Mon Sep 17 00:00:00 2001
+From: Xin Long <lucien.xin@gmail.com>
+Date: Sun, 26 Nov 2017 21:12:09 +0800
+Subject: [PATCH 13/24] bonding: use nla_get_u64 to extract the value for
+ IFLA_BOND_AD_ACTOR_SYSTEM
+Git-commit: 5eb3d22a8a05af401257e781ddeefc412bfb8542
+Patch-mainline: v4.15-rc2
+References: git-fixes
+
+bond_opt_initval expects a u64 type param, it's better to use
+nla_get_u64 to extract the value here, to eliminate a sparse
+endianness mismatch warning.
+
+Fixes: 171a42c38c6e ("bonding: add netlink support for sys prio, actor sys mac, and port key")
+Signed-off-by: Xin Long <lucien.xin@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/bonding/bond_netlink.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/bonding/bond_netlink.c b/drivers/net/bonding/bond_netlink.c
+index 6e9e4b7440ef..0d993c65e027 100644
+--- a/drivers/net/bonding/bond_netlink.c
++++ b/drivers/net/bonding/bond_netlink.c
+@@ -422,7 +422,7 @@ static int bond_changelink(struct net_device *bond_dev, struct nlattr *tb[],
+ 			return -EINVAL;
+ 
+ 		bond_opt_initval(&newval,
+-				 nla_get_be64(data[IFLA_BOND_AD_ACTOR_SYSTEM]));
++				 nla_get_u64(data[IFLA_BOND_AD_ACTOR_SYSTEM]));
+ 		err = __bond_opt_set(bond, BOND_OPT_AD_ACTOR_SYSTEM, &newval);
+ 		if (err)
+ 			return err;
+-- 
+2.16.4
+

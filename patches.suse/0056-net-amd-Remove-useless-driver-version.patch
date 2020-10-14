@@ -1,0 +1,258 @@
+From b39911d3279fa6f1a458499ffeda34f1949d75fc Mon Sep 17 00:00:00 2001
+From: Leon Romanovsky <leonro@mellanox.com>
+Date: Mon, 24 Feb 2020 10:53:06 +0200
+Subject: [PATCH 56/59] net/amd: Remove useless driver version
+References: git-fixes
+Patch-mainline: v5.7-rc1
+Git-commit: 7f4d2537f0b9630dbe1a7d7c4ea1b9479f4451e9
+
+Convert AMD drivers to respect universal linux kernel version.
+
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/amd/amd8111e.c          |  5 +----
+ drivers/net/ethernet/amd/au1000_eth.c        |  5 -----
+ drivers/net/ethernet/amd/nmclan_cs.c         |  9 +++------
+ drivers/net/ethernet/amd/pcnet32.c           |  7 -------
+ drivers/net/ethernet/amd/sunlance.c          | 10 ----------
+ drivers/net/ethernet/amd/xgbe/xgbe-ethtool.c |  1 -
+ drivers/net/ethernet/amd/xgbe/xgbe-main.c    |  1 -
+ drivers/net/ethernet/amd/xgbe/xgbe.h         |  1 -
+ 8 files changed, 4 insertions(+), 35 deletions(-)
+
+diff --git a/drivers/net/ethernet/amd/amd8111e.c b/drivers/net/ethernet/amd/amd8111e.c
+index 7b5df562f30f..194ae9a343e8 100644
+--- a/drivers/net/ethernet/amd/amd8111e.c
++++ b/drivers/net/ethernet/amd/amd8111e.c
+@@ -97,9 +97,8 @@ Revision History:
+ 
+ #include "amd8111e.h"
+ #define MODULE_NAME	"amd8111e"
+-#define MODULE_VERS	"3.0.7"
+ MODULE_AUTHOR("Advanced Micro Devices, Inc.");
+-MODULE_DESCRIPTION ("AMD8111 based 10/100 Ethernet Controller. Driver Version "MODULE_VERS);
++MODULE_DESCRIPTION("AMD8111 based 10/100 Ethernet Controller.");
+ MODULE_LICENSE("GPL");
+ module_param_array(speed_duplex, int, NULL, 0);
+ MODULE_PARM_DESC(speed_duplex, "Set device speed and duplex modes, 0: Auto Negotiate, 1: 10Mbps Half Duplex, 2: 10Mbps Full Duplex, 3: 100Mbps Half Duplex, 4: 100Mbps Full Duplex");
+@@ -1383,7 +1382,6 @@ static void amd8111e_get_drvinfo(struct net_device *dev,
+ 	struct amd8111e_priv *lp = netdev_priv(dev);
+ 	struct pci_dev *pci_dev = lp->pci_dev;
+ 	strlcpy(info->driver, MODULE_NAME, sizeof(info->driver));
+-	strlcpy(info->version, MODULE_VERS, sizeof(info->version));
+ 	snprintf(info->fw_version, sizeof(info->fw_version),
+ 		"%u", chip_version);
+ 	strlcpy(info->bus_info, pci_name(pci_dev), sizeof(info->bus_info));
+@@ -1894,7 +1892,6 @@ static int amd8111e_probe_one(struct pci_dev *pdev,
+ 
+ 	/*  display driver and device information */
+     	chip_version = (readl(lp->mmio + CHIPID) & 0xf0000000)>>28;
+-	dev_info(&pdev->dev, "AMD-8111e Driver Version: %s\n", MODULE_VERS);
+ 	dev_info(&pdev->dev, "[ Rev %x ] PCI 10/100BaseT Ethernet %pM\n",
+ 		 chip_version, dev->dev_addr);
+ 	if (lp->ext_phy_id)
+diff --git a/drivers/net/ethernet/amd/au1000_eth.c b/drivers/net/ethernet/amd/au1000_eth.c
+index a3c90fe5de00..f7e3fba46600 100644
+--- a/drivers/net/ethernet/amd/au1000_eth.c
++++ b/drivers/net/ethernet/amd/au1000_eth.c
+@@ -80,14 +80,12 @@ static int au1000_debug = 3;
+ 				NETIF_MSG_LINK)
+ 
+ #define DRV_NAME	"au1000_eth"
+-#define DRV_VERSION	"1.7"
+ #define DRV_AUTHOR	"Pete Popov <ppopov@embeddedalley.com>"
+ #define DRV_DESC	"Au1xxx on-chip Ethernet driver"
+ 
+ MODULE_AUTHOR(DRV_AUTHOR);
+ MODULE_DESCRIPTION(DRV_DESC);
+ MODULE_LICENSE("GPL");
+-MODULE_VERSION(DRV_VERSION);
+ 
+ /* AU1000 MAC registers and bits */
+ #define MAC_CONTROL		0x0
+@@ -683,7 +681,6 @@ au1000_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
+ 	struct au1000_private *aup = netdev_priv(dev);
+ 
+ 	strlcpy(info->driver, DRV_NAME, sizeof(info->driver));
+-	strlcpy(info->version, DRV_VERSION, sizeof(info->version));
+ 	snprintf(info->bus_info, sizeof(info->bus_info), "%s %d", DRV_NAME,
+ 		 aup->mac_id);
+ }
+@@ -1331,8 +1328,6 @@ static int au1000_probe(struct platform_device *pdev)
+ 	netdev_info(dev, "Au1xx0 Ethernet found at 0x%lx, irq %d\n",
+ 			(unsigned long)base->start, irq);
+ 
+-	pr_info_once("%s version %s %s\n", DRV_NAME, DRV_VERSION, DRV_AUTHOR);
+-
+ 	return 0;
+ 
+ err_out:
+diff --git a/drivers/net/ethernet/amd/nmclan_cs.c b/drivers/net/ethernet/amd/nmclan_cs.c
+index 9c152d85840d..3902609d4198 100644
+--- a/drivers/net/ethernet/amd/nmclan_cs.c
++++ b/drivers/net/ethernet/amd/nmclan_cs.c
+@@ -114,8 +114,6 @@ Log: nmclan_cs.c,v
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ 
+ #define DRV_NAME	"nmclan_cs"
+-#define DRV_VERSION	"0.16"
+-
+ 
+ /* ----------------------------------------------------------------------------
+ Conditional Compilation Options
+@@ -367,7 +365,7 @@ typedef struct _mace_private {
+ 
+     char tx_free_frames; /* Number of free transmit frame buffers */
+     char tx_irq_disabled; /* MACE TX interrupt disabled */
+-    
++
+     spinlock_t bank_lock; /* Must be held if you step off bank 0 */
+ } mace_private;
+ 
+@@ -444,7 +442,7 @@ static int nmclan_probe(struct pcmcia_device *link)
+     lp = netdev_priv(dev);
+     lp->p_dev = link;
+     link->priv = dev;
+-    
++
+     spin_lock_init(&lp->bank_lock);
+     link->resource[0]->end = 32;
+     link->resource[0]->flags |= IO_DATA_PATH_WIDTH_AUTO;
+@@ -817,7 +815,6 @@ static void netdev_get_drvinfo(struct net_device *dev,
+ 			       struct ethtool_drvinfo *info)
+ {
+ 	strlcpy(info->driver, DRV_NAME, sizeof(info->driver));
+-	strlcpy(info->version, DRV_VERSION, sizeof(info->version));
+ 	snprintf(info->bus_info, sizeof(info->bus_info),
+ 		"PCMCIA 0x%lx", dev->base_addr);
+ }
+@@ -1110,7 +1107,7 @@ static int mace_rx(struct net_device *dev, unsigned char RxCnt)
+ 	if (pkt_len & 1)
+ 	    *(skb_tail_pointer(skb) - 1) = inb(ioaddr + AM2150_RCV);
+ 	skb->protocol = eth_type_trans(skb, dev);
+-	
++
+ 	netif_rx(skb); /* Send the packet to the upper (protocol) layers. */
+ 
+ 	dev->stats.rx_packets++;
+diff --git a/drivers/net/ethernet/amd/pcnet32.c b/drivers/net/ethernet/amd/pcnet32.c
+index 7f60d17819ce..583b0b0c0968 100644
+--- a/drivers/net/ethernet/amd/pcnet32.c
++++ b/drivers/net/ethernet/amd/pcnet32.c
+@@ -24,13 +24,9 @@
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ 
+ #define DRV_NAME	"pcnet32"
+-#define DRV_VERSION	"1.35"
+ #define DRV_RELDATE	"21.Apr.2008"
+ #define PFX		DRV_NAME ": "
+ 
+-static const char *const version =
+-    DRV_NAME ".c:v" DRV_VERSION " " DRV_RELDATE " tsbogend@alpha.franken.de\n";
+-
+ #include <linux/module.h>
+ #include <linux/kernel.h>
+ #include <linux/sched.h>
+@@ -809,7 +805,6 @@ static void pcnet32_get_drvinfo(struct net_device *dev,
+ 	struct pcnet32_private *lp = netdev_priv(dev);
+ 
+ 	strlcpy(info->driver, DRV_NAME, sizeof(info->driver));
+-	strlcpy(info->version, DRV_VERSION, sizeof(info->version));
+ 	if (lp->pci_dev)
+ 		strlcpy(info->bus_info, pci_name(lp->pci_dev),
+ 			sizeof(info->bus_info));
+@@ -3003,8 +2998,6 @@ MODULE_LICENSE("GPL");
+ 
+ static int __init pcnet32_init_module(void)
+ {
+-	pr_info("%s", version);
+-
+ 	pcnet32_debug = netif_msg_init(debug, PCNET32_MSG_DEFAULT);
+ 
+ 	if ((tx_start_pt >= 0) && (tx_start_pt <= 3))
+diff --git a/drivers/net/ethernet/amd/sunlance.c b/drivers/net/ethernet/amd/sunlance.c
+index 7d1c07f33504..0fec99ac13f0 100644
+--- a/drivers/net/ethernet/amd/sunlance.c
++++ b/drivers/net/ethernet/amd/sunlance.c
+@@ -104,14 +104,9 @@ static char lancestr[] = "LANCE";
+ #include <asm/irq.h>
+ 
+ #define DRV_NAME	"sunlance"
+-#define DRV_VERSION	"2.02"
+ #define DRV_RELDATE	"8/24/03"
+ #define DRV_AUTHOR	"Miguel de Icaza (miguel@nuclecu.unam.mx)"
+ 
+-static char version[] =
+-	DRV_NAME ".c:v" DRV_VERSION " " DRV_RELDATE " " DRV_AUTHOR "\n";
+-
+-MODULE_VERSION(DRV_VERSION);
+ MODULE_AUTHOR(DRV_AUTHOR);
+ MODULE_DESCRIPTION("Sun Lance ethernet driver");
+ MODULE_LICENSE("GPL");
+@@ -1280,7 +1275,6 @@ static void lance_free_hwresources(struct lance_private *lp)
+ static void sparc_lance_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
+ {
+ 	strlcpy(info->driver, "sunlance", sizeof(info->driver));
+-	strlcpy(info->version, "2.02", sizeof(info->version));
+ }
+ 
+ static const struct ethtool_ops sparc_lance_ethtool_ops = {
+@@ -1303,7 +1297,6 @@ static int sparc_lance_probe_one(struct platform_device *op,
+ 				 struct platform_device *lebuffer)
+ {
+ 	struct device_node *dp = op->dev.of_node;
+-	static unsigned version_printed;
+ 	struct lance_private *lp;
+ 	struct net_device *dev;
+ 	int    i;
+@@ -1314,9 +1307,6 @@ static int sparc_lance_probe_one(struct platform_device *op,
+ 
+ 	lp = netdev_priv(dev);
+ 
+-	if (sparc_lance_debug && version_printed++ == 0)
+-		printk (KERN_INFO "%s", version);
+-
+ 	spin_lock_init(&lp->lock);
+ 
+ 	/* Copy the IDPROM ethernet address to the device structure, later we
+diff --git a/drivers/net/ethernet/amd/xgbe/xgbe-ethtool.c b/drivers/net/ethernet/amd/xgbe/xgbe-ethtool.c
+index a880f10e3e70..33423aaec23d 100644
+--- a/drivers/net/ethernet/amd/xgbe/xgbe-ethtool.c
++++ b/drivers/net/ethernet/amd/xgbe/xgbe-ethtool.c
+@@ -405,7 +405,6 @@ static void xgbe_get_drvinfo(struct net_device *netdev,
+ 	struct xgbe_hw_features *hw_feat = &pdata->hw_feat;
+ 
+ 	strlcpy(drvinfo->driver, XGBE_DRV_NAME, sizeof(drvinfo->driver));
+-	strlcpy(drvinfo->version, XGBE_DRV_VERSION, sizeof(drvinfo->version));
+ 	strlcpy(drvinfo->bus_info, dev_name(pdata->dev),
+ 		sizeof(drvinfo->bus_info));
+ 	snprintf(drvinfo->fw_version, sizeof(drvinfo->fw_version), "%d.%d.%d",
+diff --git a/drivers/net/ethernet/amd/xgbe/xgbe-main.c b/drivers/net/ethernet/amd/xgbe/xgbe-main.c
+index 7ce9c69e9c44..2a70714a791d 100644
+--- a/drivers/net/ethernet/amd/xgbe/xgbe-main.c
++++ b/drivers/net/ethernet/amd/xgbe/xgbe-main.c
+@@ -127,7 +127,6 @@
+ 
+ MODULE_AUTHOR("Tom Lendacky <thomas.lendacky@amd.com>");
+ MODULE_LICENSE("Dual BSD/GPL");
+-MODULE_VERSION(XGBE_DRV_VERSION);
+ MODULE_DESCRIPTION(XGBE_DRV_DESC);
+ 
+ static int debug = -1;
+diff --git a/drivers/net/ethernet/amd/xgbe/xgbe.h b/drivers/net/ethernet/amd/xgbe/xgbe.h
+index d3c476531518..c4608b40f5d5 100644
+--- a/drivers/net/ethernet/amd/xgbe/xgbe.h
++++ b/drivers/net/ethernet/amd/xgbe/xgbe.h
+@@ -135,7 +135,6 @@
+ #include <linux/list.h>
+ 
+ #define XGBE_DRV_NAME		"amd-xgbe"
+-#define XGBE_DRV_VERSION	"1.0.3"
+ #define XGBE_DRV_DESC		"AMD 10 Gigabit Ethernet Driver"
+ 
+ /* Descriptor related defines */
+-- 
+2.16.4
+

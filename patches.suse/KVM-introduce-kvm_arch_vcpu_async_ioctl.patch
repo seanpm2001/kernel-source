@@ -1,0 +1,219 @@
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Tue, 12 Dec 2017 17:41:34 +0100
+Subject: KVM: introduce kvm_arch_vcpu_async_ioctl
+Patch-mainline: v4.16-rc1
+Git-commit: 5cb0944c0c66004c0d9006a7f0fba5782ae38f69
+References: jsc#SLE-4084
+
+After the vcpu_load/vcpu_put pushdown, the handling of asynchronous VCPU
+ioctl is already much clearer in that it is obvious that they bypass
+vcpu_load and vcpu_put.
+
+However, it is still not perfect in that the different state of the VCPU
+mutex is still hidden in the caller.  Separate those ioctls into a new
+function kvm_arch_vcpu_async_ioctl that returns -ENOIOCTLCMD for more
+"traditional" synchronous ioctls.
+
+Cc: James Hogan <jhogan@kernel.org>
+Cc: Paul Mackerras <paulus@ozlabs.org>
+Cc: Christian Borntraeger <borntraeger@de.ibm.com>
+Reviewed-by: Christoffer Dall <christoffer.dall@linaro.org>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Suggested-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ arch/mips/kvm/Kconfig      |    1 +
+ arch/mips/kvm/mips.c       |   15 ++++++++++++---
+ arch/powerpc/kvm/Kconfig   |    1 +
+ arch/powerpc/kvm/powerpc.c |   14 +++++++++++---
+ arch/s390/kvm/Kconfig      |    1 +
+ arch/s390/kvm/kvm-s390.c   |   16 ++++++++++++----
+ include/linux/kvm_host.h   |   12 ++++++++++++
+ virt/kvm/Kconfig           |    3 +++
+ virt/kvm/kvm_main.c        |   12 +++++-------
+ 9 files changed, 58 insertions(+), 17 deletions(-)
+
+--- a/arch/mips/kvm/Kconfig
++++ b/arch/mips/kvm/Kconfig
+@@ -21,6 +21,7 @@ config KVM
+ 	select PREEMPT_NOTIFIERS
+ 	select ANON_INODES
+ 	select KVM_GENERIC_DIRTYLOG_READ_PROTECT
++	select HAVE_KVM_VCPU_ASYNC_IOCTL
+ 	select KVM_MMIO
+ 	select MMU_NOTIFIER
+ 	select SRCU
+--- a/arch/mips/kvm/mips.c
++++ b/arch/mips/kvm/mips.c
+@@ -903,12 +903,11 @@ static int kvm_vcpu_ioctl_enable_cap(str
+ 	return r;
+ }
+ 
+-long kvm_arch_vcpu_ioctl(struct file *filp, unsigned int ioctl,
+-			 unsigned long arg)
++long kvm_arch_vcpu_async_ioctl(struct file *filp, unsigned int ioctl,
++			       unsigned long arg)
+ {
+ 	struct kvm_vcpu *vcpu = filp->private_data;
+ 	void __user *argp = (void __user *)arg;
+-	long r;
+ 
+ 	if (ioctl == KVM_INTERRUPT) {
+ 		struct kvm_mips_interrupt irq;
+@@ -921,6 +920,16 @@ long kvm_arch_vcpu_ioctl(struct file *fi
+ 		return kvm_vcpu_ioctl_interrupt(vcpu, &irq);
+ 	}
+ 
++	return -ENOIOCTLCMD;
++}
++
++long kvm_arch_vcpu_ioctl(struct file *filp, unsigned int ioctl,
++			 unsigned long arg)
++{
++	struct kvm_vcpu *vcpu = filp->private_data;
++	void __user *argp = (void __user *)arg;
++	long r;
++
+ 	vcpu_load(vcpu);
+ 
+ 	switch (ioctl) {
+--- a/arch/powerpc/kvm/Kconfig
++++ b/arch/powerpc/kvm/Kconfig
+@@ -21,6 +21,7 @@ config KVM
+ 	select PREEMPT_NOTIFIERS
+ 	select ANON_INODES
+ 	select HAVE_KVM_EVENTFD
++	select HAVE_KVM_VCPU_ASYNC_IOCTL
+ 	select SRCU
+ 	select KVM_VFIO
+ 	select IRQ_BYPASS_MANAGER
+--- a/arch/powerpc/kvm/powerpc.c
++++ b/arch/powerpc/kvm/powerpc.c
+@@ -1612,12 +1612,11 @@ int kvm_arch_vcpu_ioctl_set_mpstate(stru
+ 	return -EINVAL;
+ }
+ 
+-long kvm_arch_vcpu_ioctl(struct file *filp,
+-                         unsigned int ioctl, unsigned long arg)
++long kvm_arch_vcpu_async_ioctl(struct file *filp,
++			       unsigned int ioctl, unsigned long arg)
+ {
+ 	struct kvm_vcpu *vcpu = filp->private_data;
+ 	void __user *argp = (void __user *)arg;
+-	long r;
+ 
+ 	if (ioctl == KVM_INTERRUPT) {
+ 		struct kvm_interrupt irq;
+@@ -1625,6 +1624,15 @@ long kvm_arch_vcpu_ioctl(struct file *fi
+ 			return -EFAULT;
+ 		return kvm_vcpu_ioctl_interrupt(vcpu, &irq);
+ 	}
++	return -ENOIOCTLCMD;
++}
++
++long kvm_arch_vcpu_ioctl(struct file *filp,
++                         unsigned int ioctl, unsigned long arg)
++{
++	struct kvm_vcpu *vcpu = filp->private_data;
++	void __user *argp = (void __user *)arg;
++	long r;
+ 
+ 	vcpu_load(vcpu);
+ 
+--- a/arch/s390/kvm/Kconfig
++++ b/arch/s390/kvm/Kconfig
+@@ -22,6 +22,7 @@ config KVM
+ 	select PREEMPT_NOTIFIERS
+ 	select ANON_INODES
+ 	select HAVE_KVM_CPU_RELAX_INTERCEPT
++	select HAVE_KVM_VCPU_ASYNC_IOCTL
+ 	select HAVE_KVM_EVENTFD
+ 	select KVM_ASYNC_PF
+ 	select KVM_ASYNC_PF_SYNC
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -3742,13 +3742,11 @@ static long kvm_s390_guest_mem_op(struct
+ 	return r;
+ }
+ 
+-long kvm_arch_vcpu_ioctl(struct file *filp,
+-			 unsigned int ioctl, unsigned long arg)
++long kvm_arch_vcpu_async_ioctl(struct file *filp,
++			       unsigned int ioctl, unsigned long arg)
+ {
+ 	struct kvm_vcpu *vcpu = filp->private_data;
+ 	void __user *argp = (void __user *)arg;
+-	int idx;
+-	long r;
+ 
+ 	switch (ioctl) {
+ 	case KVM_S390_IRQ: {
+@@ -3769,6 +3767,16 @@ long kvm_arch_vcpu_ioctl(struct file *fi
+ 		return kvm_s390_inject_vcpu(vcpu, &s390irq);
+ 	}
+ 	}
++	return -ENOIOCTLCMD;
++}
++
++long kvm_arch_vcpu_ioctl(struct file *filp,
++			 unsigned int ioctl, unsigned long arg)
++{
++	struct kvm_vcpu *vcpu = filp->private_data;
++	void __user *argp = (void __user *)arg;
++	int idx;
++	long r;
+ 
+ 	vcpu_load(vcpu);
+ 
+--- a/include/linux/kvm_host.h
++++ b/include/linux/kvm_host.h
+@@ -1260,4 +1260,16 @@ static inline bool vcpu_valid_wakeup(str
+ }
+ #endif /* CONFIG_HAVE_KVM_INVALID_WAKEUPS */
+ 
++#ifdef CONFIG_HAVE_KVM_VCPU_ASYNC_IOCTL
++long kvm_arch_vcpu_async_ioctl(struct file *filp,
++			       unsigned int ioctl, unsigned long arg);
++#else
++static inline long kvm_arch_vcpu_async_ioctl(struct file *filp,
++					     unsigned int ioctl,
++					     unsigned long arg)
++{
++	return -ENOIOCTLCMD;
++}
++#endif /* CONFIG_HAVE_KVM_VCPU_ASYNC_IOCTL */
++
+ #endif
+--- a/virt/kvm/Kconfig
++++ b/virt/kvm/Kconfig
+@@ -50,3 +50,6 @@ config KVM_COMPAT
+ 
+ config HAVE_KVM_IRQ_BYPASS
+        bool
++
++config HAVE_KVM_VCPU_ASYNC_IOCTL
++       bool
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -2586,15 +2586,13 @@ static long kvm_vcpu_ioctl(struct file *
+ 	if (unlikely(_IOC_TYPE(ioctl) != KVMIO))
+ 		return -EINVAL;
+ 
+-#if defined(CONFIG_S390) || defined(CONFIG_PPC) || defined(CONFIG_MIPS)
+ 	/*
+-	 * Special cases: vcpu ioctls that are asynchronous to vcpu execution,
+-	 * so vcpu_load() would break it.
++	 * Some architectures have vcpu ioctls that are asynchronous to vcpu
++	 * execution; mutex_lock() would break them.
+ 	 */
+-	if (ioctl == KVM_S390_INTERRUPT || ioctl == KVM_S390_IRQ || ioctl == KVM_INTERRUPT)
+-		return kvm_arch_vcpu_ioctl(filp, ioctl, arg);
+-#endif
+-
++	r = kvm_arch_vcpu_async_ioctl(filp, ioctl, arg);
++	if (r != -ENOIOCTLCMD)
++		return r;
+ 
+ 	if (mutex_lock_killable(&vcpu->mutex))
+ 		return -EINTR;

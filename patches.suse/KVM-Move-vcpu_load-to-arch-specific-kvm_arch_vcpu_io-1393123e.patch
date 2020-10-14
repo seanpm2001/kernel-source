@@ -1,0 +1,77 @@
+From: Christoffer Dall <christoffer.dall@linaro.org>
+Date: Mon, 4 Dec 2017 21:35:34 +0100
+Subject: KVM: Move vcpu_load to arch-specific kvm_arch_vcpu_ioctl_get_fpu
+Patch-mainline: v4.16-rc1
+Git-commit: 1393123e1e24aba96413d351b9546086ea07504d
+References: jsc#SLE-4084
+
+Move vcpu_load() and vcpu_put() into the architecture specific
+implementations of kvm_arch_vcpu_ioctl_get_fpu().
+
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Signed-off-by: Christoffer Dall <christoffer.dall@linaro.org>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Liang Yan <lyan@suse.com>
+---
+ arch/s390/kvm/kvm-s390.c |    4 ++++
+ arch/x86/kvm/x86.c       |    7 +++++--
+ virt/kvm/kvm_main.c      |    2 --
+ 3 files changed, 9 insertions(+), 4 deletions(-)
+
+--- a/arch/s390/kvm/kvm-s390.c
++++ b/arch/s390/kvm/kvm-s390.c
+@@ -2773,6 +2773,8 @@ int kvm_arch_vcpu_ioctl_set_fpu(struct k
+ 
+ int kvm_arch_vcpu_ioctl_get_fpu(struct kvm_vcpu *vcpu, struct kvm_fpu *fpu)
+ {
++	vcpu_load(vcpu);
++
+ 	/* make sure we have the latest values */
+ 	save_fpu_regs();
+ 	if (MACHINE_HAS_VX)
+@@ -2781,6 +2783,8 @@ int kvm_arch_vcpu_ioctl_get_fpu(struct k
+ 	else
+ 		memcpy(fpu->fprs, vcpu->run->s.regs.fprs, sizeof(fpu->fprs));
+ 	fpu->fpc = vcpu->run->s.regs.fpc;
++
++	vcpu_put(vcpu);
+ 	return 0;
+ }
+ 
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -7731,9 +7731,11 @@ int kvm_arch_vcpu_ioctl_translate(struct
+ 
+ int kvm_arch_vcpu_ioctl_get_fpu(struct kvm_vcpu *vcpu, struct kvm_fpu *fpu)
+ {
+-	struct fxregs_state *fxsave =
+-			&vcpu->arch.guest_fpu.state.fxsave;
++	struct fxregs_state *fxsave;
+ 
++	vcpu_load(vcpu);
++
++	fxsave = &vcpu->arch.guest_fpu.state.fxsave;
+ 	memcpy(fpu->fpr, fxsave->st_space, 128);
+ 	fpu->fcw = fxsave->cwd;
+ 	fpu->fsw = fxsave->swd;
+@@ -7743,6 +7745,7 @@ int kvm_arch_vcpu_ioctl_get_fpu(struct k
+ 	fpu->last_dp = fxsave->rdp;
+ 	memcpy(fpu->xmm, fxsave->xmm_space, sizeof fxsave->xmm_space);
+ 
++	vcpu_put(vcpu);
+ 	return 0;
+ }
+ 
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -2746,9 +2746,7 @@ out_free1:
+ 		r = -ENOMEM;
+ 		if (!fpu)
+ 			goto out;
+-		vcpu_load(vcpu);
+ 		r = kvm_arch_vcpu_ioctl_get_fpu(vcpu, fpu);
+-		vcpu_put(vcpu);
+ 		if (r)
+ 			goto out;
+ 		r = -EFAULT;
