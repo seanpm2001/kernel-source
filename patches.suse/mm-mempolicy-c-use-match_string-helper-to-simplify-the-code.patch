@@ -1,0 +1,55 @@
+From: zhong jiang <zhongjiang@huawei.com>
+Date: Fri, 26 Oct 2018 15:06:57 -0700
+Subject: mm/mempolicy.c: use match_string() helper to simplify the code
+Git-commit: dedf2c73b80b4566dfcae8ebe9ed46a38b63a1f9
+Patch-mainline: v4.20-rc1
+References: git-fixes (mm/mempolicy)
+
+match_string() returns the index of an array for a matching string, which
+can be used intead of open coded implementation.
+
+Link: http://lkml.kernel.org/r/1536988365-50310-1-git-send-email-zhongjiang@huawei.com
+Signed-off-by: zhong jiang <zhongjiang@huawei.com>
+Reviewed-by: Andrew Morton <akpm@linux-foundation.org>
+Acked-by: Michal Hocko <mhocko@suse.com>
+Cc: Vlastimil Babka <vbabka@suse.cz>
+Cc: Andrey Ryabinin <aryabinin@virtuozzo.com>
+Cc: Andrea Arcangeli <aarcange@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Vlastimil Babka <vbabka@suse.cz>
+---
+ mm/mempolicy.c |   11 +++--------
+ 1 file changed, 3 insertions(+), 8 deletions(-)
+
+--- a/mm/mempolicy.c
++++ b/mm/mempolicy.c
+@@ -2681,12 +2681,11 @@ static const char * const policy_modes[]
+ int mpol_parse_str(char *str, struct mempolicy **mpol)
+ {
+ 	struct mempolicy *new = NULL;
+-	unsigned short mode;
+ 	unsigned short mode_flags;
+ 	nodemask_t nodes;
+ 	char *nodelist = strchr(str, ':');
+ 	char *flags = strchr(str, '=');
+-	int err = 1;
++	int err = 1, mode;
+ 
+ 	if (nodelist) {
+ 		/* NUL-terminate mode or flags string */
+@@ -2701,12 +2700,8 @@ int mpol_parse_str(char *str, struct mem
+ 	if (flags)
+ 		*flags++ = '\0';	/* terminate mode string */
+ 
+-	for (mode = 0; mode < MPOL_MAX; mode++) {
+-		if (!strcmp(str, policy_modes[mode])) {
+-			break;
+-		}
+-	}
+-	if (mode >= MPOL_MAX)
++	mode = match_string(policy_modes, MPOL_MAX, str);
++	if (mode < 0)
+ 		goto out;
+ 
+ 	switch (mode) {
