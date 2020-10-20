@@ -22,15 +22,15 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 
 --- a/mm/zsmalloc.c
 +++ b/mm/zsmalloc.c
-@@ -53,6 +53,7 @@
- #include <linux/mount.h>
+@@ -54,6 +54,7 @@
  #include <linux/migrate.h>
+ #include <linux/wait.h>
  #include <linux/pagemap.h>
 +#include <linux/locallock.h>
  
  #define ZSPAGE_MAGIC	0x58
  
-@@ -70,9 +71,22 @@
+@@ -71,9 +72,22 @@
   */
  #define ZS_MAX_ZSPAGE_ORDER 2
  #define ZS_MAX_PAGES_PER_ZSPAGE (_AC(1, UL) << ZS_MAX_ZSPAGE_ORDER)
@@ -54,7 +54,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  /*
   * Object location (<PFN>, <obj_idx>) is encoded as
   * as single (unsigned long) handle value.
-@@ -323,7 +337,7 @@ static void SetZsPageMovable(struct zs_p
+@@ -328,7 +342,7 @@ static void SetZsPageMovable(struct zs_p
  
  static int create_cache(struct zs_pool *pool)
  {
@@ -63,7 +63,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  					0, 0, NULL);
  	if (!pool->handle_cachep)
  		return 1;
-@@ -347,10 +361,27 @@ static void destroy_cache(struct zs_pool
+@@ -352,10 +366,27 @@ static void destroy_cache(struct zs_pool
  
  static unsigned long cache_alloc_handle(struct zs_pool *pool, gfp_t gfp)
  {
@@ -93,7 +93,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  static void cache_free_handle(struct zs_pool *pool, unsigned long handle)
  {
  	kmem_cache_free(pool->handle_cachep, (void *)handle);
-@@ -369,12 +400,18 @@ static void cache_free_zspage(struct zs_
+@@ -374,12 +405,18 @@ static void cache_free_zspage(struct zs_
  
  static void record_obj(unsigned long handle, unsigned long obj)
  {
@@ -112,7 +112,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  /* zpool driver */
-@@ -463,6 +500,7 @@ MODULE_ALIAS("zpool-zsmalloc");
+@@ -468,6 +505,7 @@ MODULE_ALIAS("zpool-zsmalloc");
  
  /* per-cpu VM mapping areas for zspage accesses that cross page boundaries */
  static DEFINE_PER_CPU(struct mapping_area, zs_map_area);
@@ -120,7 +120,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  static bool is_zspage_isolated(struct zspage *zspage)
  {
-@@ -898,7 +936,13 @@ static unsigned long location_to_obj(str
+@@ -903,7 +941,13 @@ static unsigned long location_to_obj(str
  
  static unsigned long handle_to_obj(unsigned long handle)
  {
@@ -134,7 +134,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  static unsigned long obj_to_head(struct page *page, void *obj)
-@@ -912,22 +956,46 @@ static unsigned long obj_to_head(struct
+@@ -917,22 +961,46 @@ static unsigned long obj_to_head(struct
  
  static inline int testpin_tag(unsigned long handle)
  {
@@ -181,7 +181,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  static void reset_page(struct page *page)
-@@ -1376,7 +1444,7 @@ void *zs_map_object(struct zs_pool *pool
+@@ -1381,7 +1449,7 @@ void *zs_map_object(struct zs_pool *pool
  	class = pool->size_class[class_idx];
  	off = (class->size * obj_idx) & ~PAGE_MASK;
  
@@ -190,7 +190,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	area->vm_mm = mm;
  	if (off + class->size <= PAGE_SIZE) {
  		/* this object is contained entirely within a page */
-@@ -1430,7 +1498,7 @@ void zs_unmap_object(struct zs_pool *poo
+@@ -1435,7 +1503,7 @@ void zs_unmap_object(struct zs_pool *poo
  
  		__zs_unmap_object(area, pages, off, class->size);
  	}
