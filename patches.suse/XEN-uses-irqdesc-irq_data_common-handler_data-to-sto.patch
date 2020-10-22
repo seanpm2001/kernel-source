@@ -1,6 +1,6 @@
 Patch-mainline: v5.9-rc3
 Git-commit: c330fb1ddc0a922f044989492b7fcca77ee1db46
-References: bsc#1065600
+References: XSA-332 bsc#1065600
 From: Thomas Gleixner <tglx@linutronix.de>
 Date: Tue, 25 Aug 2020 17:22:58 +0200
 Subject: [PATCH] XEN uses irqdesc::irq_data_common::handler_data to store a
@@ -33,7 +33,7 @@ diff --git a/drivers/xen/events/events_base.c b/drivers/xen/events/events_base.c
 index 140c7bf33a98..90b8f56fbadb 100644
 --- a/drivers/xen/events/events_base.c
 +++ b/drivers/xen/events/events_base.c
-@@ -156,7 +156,7 @@ int get_evtchn_to_irq(evtchn_port_t evtchn)
+@@ -154,7 +154,7 @@ int get_evtchn_to_irq(evtchn_port_t evtchn)
  /* Get info for IRQ */
  struct irq_info *info_for_irq(unsigned irq)
  {
@@ -42,7 +42,7 @@ index 140c7bf33a98..90b8f56fbadb 100644
  }
  
  /* Constructors for packed IRQ information. */
-@@ -377,7 +377,7 @@ static void xen_irq_init(unsigned irq)
+@@ -383,7 +383,7 @@ static void xen_irq_init(unsigned irq)
  	info->type = IRQT_UNBOUND;
  	info->refcnt = -1;
  
@@ -51,7 +51,7 @@ index 140c7bf33a98..90b8f56fbadb 100644
  
  	list_add_tail(&info->list, &xen_irq_list_head);
  }
-@@ -426,14 +426,14 @@ static int __must_check xen_allocate_irq_gsi(unsigned gsi)
+@@ -432,14 +432,14 @@ static int __must_check xen_allocate_irq_gsi(unsigned gsi)
  
  static void xen_free_irq(unsigned irq)
  {
@@ -68,7 +68,7 @@ index 140c7bf33a98..90b8f56fbadb 100644
  
  	WARN_ON(info->refcnt > 0);
  
-@@ -603,7 +603,7 @@ EXPORT_SYMBOL_GPL(xen_irq_from_gsi);
+@@ -609,7 +609,7 @@ EXPORT_SYMBOL_GPL(xen_irq_from_gsi);
  static void __unbind_from_irq(unsigned int irq)
  {
  	int evtchn = evtchn_from_irq(irq);
@@ -77,7 +77,7 @@ index 140c7bf33a98..90b8f56fbadb 100644
  
  	if (info->refcnt > 0) {
  		info->refcnt--;
-@@ -1108,7 +1108,7 @@ int bind_ipi_to_irqhandler(enum ipi_vector ipi,
+@@ -1113,7 +1113,7 @@ int bind_ipi_to_irqhandler(enum ipi_vector ipi,
  
  void unbind_from_irqhandler(unsigned int irq, void *dev_id)
  {
@@ -86,7 +86,7 @@ index 140c7bf33a98..90b8f56fbadb 100644
  
  	if (WARN_ON(!info))
  		return;
-@@ -1142,7 +1142,7 @@ int evtchn_make_refcounted(evtchn_port_t evtchn)
+@@ -1147,7 +1147,7 @@ int evtchn_make_refcounted(evtchn_port_t evtchn)
  	if (irq == -1)
  		return -ENOENT;
  
@@ -95,7 +95,7 @@ index 140c7bf33a98..90b8f56fbadb 100644
  
  	if (!info)
  		return -ENOENT;
-@@ -1170,7 +1170,7 @@ int evtchn_get(evtchn_port_t evtchn)
+@@ -1175,7 +1175,7 @@ int evtchn_get(evtchn_port_t evtchn)
  	if (irq == -1)
  		goto done;
  

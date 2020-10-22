@@ -1,6 +1,6 @@
 Patch-mainline: v5.9-rc8
 Git-commit: 0891fb39ba67bd7ae023ea0d367297ffff010781
-References: bsc#1065600
+References: XSA-332 bsc#1065600
 From: Juergen Gross <jgross@suse.com>
 Date: Mon, 5 Oct 2020 07:39:34 +0200
 Subject: [PATCH] xen/events: don't use chip_data for legacy IRQs
@@ -28,7 +28,7 @@ diff --git a/drivers/xen/events/events_base.c b/drivers/xen/events/events_base.c
 index 55f2b834cf13..e402620b8920 100644
 --- a/drivers/xen/events/events_base.c
 +++ b/drivers/xen/events/events_base.c
-@@ -91,6 +91,8 @@ static bool (*pirq_needs_eoi)(unsigned irq);
+@@ -90,6 +90,8 @@ static bool (*pirq_needs_eoi)(unsigned irq);
  /* Xen will never allocate port zero for any purpose. */
  #define VALID_EVTCHN(chn)	((chn) != 0)
  
@@ -37,7 +37,7 @@ index 55f2b834cf13..e402620b8920 100644
  static struct irq_chip xen_dynamic_chip;
  static struct irq_chip xen_percpu_chip;
  static struct irq_chip xen_pirq_chip;
-@@ -155,7 +157,18 @@ int get_evtchn_to_irq(unsigned evtchn)
+@@ -154,7 +156,18 @@ int get_evtchn_to_irq(unsigned evtchn)
  /* Get info for IRQ */
  struct irq_info *info_for_irq(unsigned irq)
  {
@@ -57,7 +57,7 @@ index 55f2b834cf13..e402620b8920 100644
  }
  
  /* Constructors for packed IRQ information. */
-@@ -376,7 +389,7 @@ static void xen_irq_init(unsigned irq)
+@@ -383,7 +396,7 @@ static void xen_irq_init(unsigned irq)
  	info->type = IRQT_UNBOUND;
  	info->refcnt = -1;
  
@@ -66,7 +66,7 @@ index 55f2b834cf13..e402620b8920 100644
  
  	list_add_tail(&info->list, &xen_irq_list_head);
  }
-@@ -425,14 +438,14 @@ static int __must_check xen_allocate_irq_gsi(unsigned gsi)
+@@ -432,14 +445,14 @@ static int __must_check xen_allocate_irq_gsi(unsigned gsi)
  
  static void xen_free_irq(unsigned irq)
  {
@@ -83,7 +83,7 @@ index 55f2b834cf13..e402620b8920 100644
  
  	WARN_ON(info->refcnt > 0);
  
-@@ -602,7 +615,7 @@ EXPORT_SYMBOL_GPL(xen_irq_from_gsi);
+@@ -609,7 +622,7 @@ EXPORT_SYMBOL_GPL(xen_irq_from_gsi);
  static void __unbind_from_irq(unsigned int irq)
  {
  	int evtchn = evtchn_from_irq(irq);
@@ -92,7 +92,7 @@ index 55f2b834cf13..e402620b8920 100644
  
  	if (info->refcnt > 0) {
  		info->refcnt--;
-@@ -1106,7 +1119,7 @@ int bind_ipi_to_irqhandler(enum ipi_vector ipi,
+@@ -1113,7 +1126,7 @@ int bind_ipi_to_irqhandler(enum ipi_vector ipi,
  
  void unbind_from_irqhandler(unsigned int irq, void *dev_id)
  {
@@ -101,7 +101,7 @@ index 55f2b834cf13..e402620b8920 100644
  
  	if (WARN_ON(!info))
  		return;
-@@ -1140,7 +1153,7 @@ int evtchn_make_refcounted(unsigned int evtchn)
+@@ -1147,7 +1160,7 @@ int evtchn_make_refcounted(unsigned int evtchn)
  	if (irq == -1)
  		return -ENOENT;
  
@@ -110,7 +110,7 @@ index 55f2b834cf13..e402620b8920 100644
  
  	if (!info)
  		return -ENOENT;
-@@ -1168,7 +1181,7 @@ int evtchn_get(unsigned int evtchn)
+@@ -1175,7 +1188,7 @@ int evtchn_get(unsigned int evtchn)
  	if (irq == -1)
  		goto done;
  
