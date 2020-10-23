@@ -23,7 +23,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 
 --- a/fs/btrfs/block-group.c
 +++ b/fs/btrfs/block-group.c
-@@ -2712,9 +2712,6 @@ int btrfs_update_block_group(struct btrf
+@@ -2698,9 +2698,6 @@ int btrfs_update_block_group(struct btrf
  			spin_unlock(&cache->lock);
  			spin_unlock(&cache->space_info->lock);
  
@@ -97,7 +97,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  			spin_unlock(&global_rsv->lock);
 --- a/fs/btrfs/space-info.c
 +++ b/fs/btrfs/space-info.c
-@@ -306,8 +306,6 @@ again:
+@@ -304,8 +304,6 @@ again:
  		goto again;
  	}
  	btrfs_space_info_update_bytes_may_use(fs_info, space_info, -num_bytes);
@@ -106,7 +106,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	spin_unlock(&space_info->lock);
  }
  /*
-@@ -327,9 +325,6 @@ again:
+@@ -325,9 +323,6 @@ again:
  		ticket = list_first_entry(head, struct reserve_ticket,
  					  list);
  		if (num_bytes >= ticket->bytes) {
@@ -116,7 +116,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  			list_del_init(&ticket->list);
  			num_bytes -= ticket->bytes;
  			btrfs_space_info_update_bytes_may_use(fs_info,
-@@ -338,9 +333,6 @@ again:
+@@ -336,9 +331,6 @@ again:
  			space_info->tickets_id++;
  			wake_up(&ticket->wait);
  		} else {
@@ -126,15 +126,15 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  			btrfs_space_info_update_bytes_may_use(fs_info,
  					space_info, num_bytes);
  			ticket->bytes -= num_bytes;
-@@ -1029,8 +1021,6 @@ static int __reserve_metadata_bytes(stru
- 	     can_overcommit(root, space_info, orig_bytes, flush))) {
+@@ -1023,8 +1015,6 @@ static int __reserve_metadata_bytes(stru
+ 	     can_overcommit(fs_info, space_info, orig_bytes, flush))) {
  		btrfs_space_info_update_bytes_may_use(fs_info, space_info,
  						      orig_bytes);
 -		trace_btrfs_space_reservation(fs_info, "space_info",
 -					      space_info->flags, orig_bytes, 1);
  		ret = 0;
  	}
- 	/*
+ 
 --- a/fs/btrfs/space-info.h
 +++ b/fs/btrfs/space-info.h
 @@ -87,14 +87,18 @@ static inline bool btrfs_mixed_space_inf
