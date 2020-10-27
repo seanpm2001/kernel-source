@@ -19,10 +19,10 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -97,12 +97,6 @@ static int __reserve_metadata_bytes(stru
- 				    struct btrfs_space_info *space_info,
+@@ -102,12 +102,6 @@ static int __reserve_metadata_bytes(stru
  				    u64 orig_bytes,
- 				    enum btrfs_reserve_flush_enum flush);
+ 				    enum btrfs_reserve_flush_enum flush,
+ 				    bool system_chunk);
 -static void space_info_add_new_bytes(struct btrfs_fs_info *fs_info,
 -				     struct btrfs_space_info *space_info,
 -				     u64 num_bytes);
@@ -32,7 +32,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  static noinline int
  block_group_cache_done(struct btrfs_block_group_cache *cache)
-@@ -4131,8 +4125,8 @@ static void update_space_info(struct btr
+@@ -4123,8 +4117,8 @@ static void update_space_info(struct btr
  	found->bytes_readonly += bytes_readonly;
  	if (total_bytes > 0)
  		found->full = 0;
@@ -43,7 +43,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	spin_unlock(&found->lock);
  	*space_info = found;
  }
-@@ -5319,7 +5313,8 @@ static int wait_reserve_ticket(struct bt
+@@ -5331,7 +5325,8 @@ static int wait_reserve_ticket(struct bt
  	spin_unlock(&space_info->lock);
  
  	if (reclaim_bytes)
@@ -53,7 +53,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	return ret;
  }
  
-@@ -5434,7 +5429,8 @@ static int __reserve_metadata_bytes(stru
+@@ -5448,7 +5443,8 @@ static int __reserve_metadata_bytes(stru
  	spin_unlock(&space_info->lock);
  
  	if (reclaim_bytes)
@@ -63,7 +63,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	ASSERT(list_empty(&ticket.list));
  	return ret;
  }
-@@ -5594,8 +5590,8 @@ void btrfs_migrate_to_delayed_refs_rsv(s
+@@ -5614,8 +5610,8 @@ void btrfs_migrate_to_delayed_refs_rsv(s
  		trace_btrfs_space_reservation(fs_info, "delayed_refs_rsv",
  					      0, num_bytes, 1);
  	if (to_free)
@@ -74,7 +74,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  }
  
  /**
-@@ -5638,9 +5634,9 @@ int btrfs_delayed_refs_rsv_refill(struct
+@@ -5658,9 +5654,9 @@ int btrfs_delayed_refs_rsv_refill(struct
   * This is for space we already have accounted in space_info->bytes_may_use, so
   * basically when we're returning space from block_rsv's.
   */
@@ -87,7 +87,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  {
  	struct reserve_ticket *ticket;
  	struct list_head *head;
-@@ -5701,9 +5697,9 @@ again:
+@@ -5720,9 +5716,9 @@ again:
   * space_info->bytes_may_use yet.  So if we allocate a chunk or unpin an extent
   * we use this helper.
   */
@@ -100,7 +100,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  {
  	struct reserve_ticket *ticket;
  	struct list_head *head = &space_info->priority_tickets;
-@@ -5786,8 +5782,8 @@ static u64 block_rsv_release_bytes(struc
+@@ -5806,8 +5802,8 @@ static u64 block_rsv_release_bytes(struc
  			spin_unlock(&dest->lock);
  		}
  		if (num_bytes)
@@ -111,7 +111,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	}
  	if (qgroup_to_release_ret)
  		*qgroup_to_release_ret = qgroup_to_release;
-@@ -7011,8 +7007,8 @@ static int unpin_extent_range(struct btr
+@@ -7021,8 +7017,8 @@ static int unpin_extent_range(struct btr
  			spin_unlock(&global_rsv->lock);
  			/* Add to any tickets we may have */
  			if (len)
