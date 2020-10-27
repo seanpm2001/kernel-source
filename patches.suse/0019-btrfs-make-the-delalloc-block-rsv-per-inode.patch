@@ -22,16 +22,14 @@ Signed-off-by: David Sterba <dsterba@suse.com>
 Signed-off-by: Qu Wenruo <wqu@suse.com>
 Signed-off-by: Filipe Manana <fdmanana@suse.com>
 ---
- fs/btrfs/btrfs_inode.h   |  26 ++--
- fs/btrfs/ctree.h         |   5 +-
- fs/btrfs/delayed-inode.c |  46 +------
- fs/btrfs/disk-io.c       |  18 ++-
- fs/btrfs/extent-tree.c   | 320 ++++++++++++++++-------------------------------
- fs/btrfs/inode.c         |  18 +--
- 6 files changed, 141 insertions(+), 292 deletions(-)
+ fs/btrfs/btrfs_inode.h   |   26 +--
+ fs/btrfs/ctree.h         |    5 
+ fs/btrfs/delayed-inode.c |   46 ------
+ fs/btrfs/disk-io.c       |   18 +-
+ fs/btrfs/extent-tree.c   |  322 ++++++++++++++++-------------------------------
+ fs/btrfs/inode.c         |   18 +-
+ 6 files changed, 142 insertions(+), 293 deletions(-)
 
-diff --git a/fs/btrfs/btrfs_inode.h b/fs/btrfs/btrfs_inode.h
-index 7cda5fd..1495c3c 100644
 --- a/fs/btrfs/btrfs_inode.h
 +++ b/fs/btrfs/btrfs_inode.h
 @@ -36,14 +36,13 @@
@@ -66,7 +64,7 @@ index 7cda5fd..1495c3c 100644
  
  	/*
  	 * always compress this one file
-@@ -273,14 +273,6 @@ static inline void btrfs_mod_outstanding_extents(struct btrfs_inode *inode,
+@@ -273,14 +273,6 @@ static inline void btrfs_mod_outstanding
  						  mod);
  }
  
@@ -81,11 +79,9 @@ index 7cda5fd..1495c3c 100644
  static inline int btrfs_inode_in_log(struct btrfs_inode *inode, u64 generation)
  {
  	int ret = 0;
-diff --git a/fs/btrfs/ctree.h b/fs/btrfs/ctree.h
-index 24fe407..24571e6 100644
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -762,8 +762,6 @@ struct btrfs_fs_info {
+@@ -763,8 +763,6 @@ struct btrfs_fs_info {
  	 * delayed dir index item
  	 */
  	struct btrfs_block_rsv global_block_rsv;
@@ -94,7 +90,7 @@ index 24fe407..24571e6 100644
  	/* block reservation for metadata operations */
  	struct btrfs_block_rsv trans_block_rsv;
  	/* block reservation for chunk tree */
-@@ -2772,6 +2770,9 @@ int btrfs_delalloc_reserve_space(struct inode *inode,
+@@ -2775,6 +2773,9 @@ int btrfs_delalloc_reserve_space(struct
  void btrfs_init_block_rsv(struct btrfs_block_rsv *rsv, unsigned short type);
  struct btrfs_block_rsv *btrfs_alloc_block_rsv(struct btrfs_fs_info *fs_info,
  					      unsigned short type);
@@ -104,11 +100,9 @@ index 24fe407..24571e6 100644
  void btrfs_free_block_rsv(struct btrfs_fs_info *fs_info,
  			  struct btrfs_block_rsv *rsv);
  void __btrfs_free_block_rsv(struct btrfs_block_rsv *rsv);
-diff --git a/fs/btrfs/delayed-inode.c b/fs/btrfs/delayed-inode.c
-index 8ae409b..5b1b933 100644
 --- a/fs/btrfs/delayed-inode.c
 +++ b/fs/btrfs/delayed-inode.c
-@@ -581,36 +581,12 @@ static int btrfs_delayed_inode_reserve_metadata(
+@@ -581,7 +581,6 @@ static int btrfs_delayed_inode_reserve_m
  	struct btrfs_block_rsv *dst_rsv;
  	u64 num_bytes;
  	int ret;
@@ -116,10 +110,10 @@ index 8ae409b..5b1b933 100644
  
  	src_rsv = trans->block_rsv;
  	dst_rsv = &fs_info->delayed_block_rsv;
- 
+@@ -589,36 +588,13 @@ static int btrfs_delayed_inode_reserve_m
  	num_bytes = btrfs_calc_trans_metadata_size(fs_info, 1);
  
--	/*
+ 	/*
 -	 * If our block_rsv is the delalloc block reserve then check and see if
 -	 * we have our extra reservation for updating the inode.  If not fall
 -	 * through and try to reserve space quickly.
@@ -142,10 +136,10 @@ index 8ae409b..5b1b933 100644
 -		spin_unlock(&inode->lock);
 -	}
 -
- 	/*
+-	/*
  	 * btrfs_dirty_inode will update the inode under btrfs_join_transaction
  	 * which doesn't reserve space for speed.  This is a problem since we
-@@ -618,7 +594,7 @@ static int btrfs_delayed_inode_reserve_metadata(
+ 	 * still need to reserve space for this update, so try to reserve the
  	 * space.
  	 *
  	 * Now if src_rsv == delalloc_block_rsv we'll let it just steal since
@@ -154,7 +148,7 @@ index 8ae409b..5b1b933 100644
  	 */
  	if (!src_rsv || (!trans->bytes_reserved &&
  			 src_rsv->type != BTRFS_BLOCK_RSV_DELALLOC)) {
-@@ -643,32 +619,12 @@ static int btrfs_delayed_inode_reserve_metadata(
+@@ -643,32 +619,12 @@ static int btrfs_delayed_inode_reserve_m
  	}
  
  	ret = btrfs_block_rsv_migrate(src_rsv, dst_rsv, num_bytes, 1);
@@ -187,8 +181,6 @@ index 8ae409b..5b1b933 100644
  	return ret;
  }
  
-diff --git a/fs/btrfs/disk-io.c b/fs/btrfs/disk-io.c
-index b1e5d1d..85baf54 100644
 --- a/fs/btrfs/disk-io.c
 +++ b/fs/btrfs/disk-io.c
 @@ -2466,14 +2466,6 @@ int open_ctree(struct super_block *sb,
@@ -230,8 +222,6 @@ index b1e5d1d..85baf54 100644
  	fs_info->delayed_root = kmalloc(sizeof(struct btrfs_delayed_root),
  					GFP_KERNEL);
  	if (!fs_info->delayed_root) {
-diff --git a/fs/btrfs/extent-tree.c b/fs/btrfs/extent-tree.c
-index b83d948..fa513cb 100644
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
 @@ -26,6 +26,7 @@
@@ -242,15 +232,15 @@ index b83d948..fa513cb 100644
  #include "hash.h"
  #include "tree-log.h"
  #include "disk-io.h"
-@@ -4810,7 +4811,6 @@ static void shrink_delalloc(struct btrfs_root *root, u64 to_reclaim, u64 orig,
- 			    bool wait_ordered)
+@@ -4829,7 +4830,6 @@ static inline u64 calc_reclaim_items_nr(
+ static void shrink_delalloc(struct btrfs_fs_info *fs_info, u64 to_reclaim,
+ 			    u64 orig, bool wait_ordered)
  {
- 	struct btrfs_fs_info *fs_info = root->fs_info;
 -	struct btrfs_block_rsv *block_rsv;
  	struct btrfs_space_info *space_info;
  	struct btrfs_trans_handle *trans;
  	u64 delalloc_bytes;
-@@ -4826,8 +4826,7 @@ static void shrink_delalloc(struct btrfs_root *root, u64 to_reclaim, u64 orig,
+@@ -4845,8 +4845,7 @@ static void shrink_delalloc(struct btrfs
  	to_reclaim = items * EXTENT_SIZE_PER_ITEM;
  
  	trans = (struct btrfs_trans_handle *)current->journal_info;
@@ -260,7 +250,7 @@ index b83d948..fa513cb 100644
  
  	delalloc_bytes = percpu_counter_sum_positive(
  						&fs_info->delalloc_bytes);
-@@ -5563,11 +5562,12 @@ static void space_info_add_new_bytes(struct btrfs_fs_info *fs_info,
+@@ -5586,11 +5585,12 @@ again:
  	}
  }
  
@@ -274,7 +264,7 @@ index b83d948..fa513cb 100644
  
  	spin_lock(&block_rsv->lock);
  	if (num_bytes == (u64)-1)
-@@ -5582,6 +5582,7 @@ static void block_rsv_release_bytes(struct btrfs_fs_info *fs_info,
+@@ -5605,6 +5605,7 @@ static void block_rsv_release_bytes(stru
  	}
  	spin_unlock(&block_rsv->lock);
  
@@ -282,7 +272,7 @@ index b83d948..fa513cb 100644
  	if (num_bytes > 0) {
  		if (dest) {
  			spin_lock(&dest->lock);
-@@ -5601,6 +5602,7 @@ static void block_rsv_release_bytes(struct btrfs_fs_info *fs_info,
+@@ -5624,6 +5625,7 @@ static void block_rsv_release_bytes(stru
  			space_info_add_old_bytes(fs_info, space_info,
  						 num_bytes);
  	}
@@ -290,7 +280,7 @@ index b83d948..fa513cb 100644
  }
  
  int btrfs_block_rsv_migrate(struct btrfs_block_rsv *src,
-@@ -5624,6 +5626,15 @@ void btrfs_init_block_rsv(struct btrfs_block_rsv *rsv, unsigned short type)
+@@ -5647,6 +5649,15 @@ void btrfs_init_block_rsv(struct btrfs_b
  	rsv->type = type;
  }
  
@@ -306,7 +296,7 @@ index b83d948..fa513cb 100644
  struct btrfs_block_rsv *btrfs_alloc_block_rsv(struct btrfs_fs_info *fs_info,
  					      unsigned short type)
  {
-@@ -5633,9 +5644,7 @@ struct btrfs_block_rsv *btrfs_alloc_block_rsv(struct btrfs_fs_info *fs_info,
+@@ -5656,9 +5667,7 @@ struct btrfs_block_rsv *btrfs_alloc_bloc
  	if (!block_rsv)
  		return NULL;
  
@@ -317,7 +307,7 @@ index b83d948..fa513cb 100644
  	return block_rsv;
  }
  
-@@ -5718,6 +5727,66 @@ int btrfs_block_rsv_refill(struct btrfs_root *root,
+@@ -5741,6 +5750,66 @@ int btrfs_block_rsv_refill(struct btrfs_
  	return ret;
  }
  
@@ -384,7 +374,7 @@ index b83d948..fa513cb 100644
  void btrfs_block_rsv_release(struct btrfs_fs_info *fs_info,
  			     struct btrfs_block_rsv *block_rsv,
  			     u64 num_bytes)
-@@ -5789,7 +5858,6 @@ static void init_global_block_rsv(struct btrfs_fs_info *fs_info)
+@@ -5812,7 +5881,6 @@ static void init_global_block_rsv(struct
  
  	space_info = __find_space_info(fs_info, BTRFS_BLOCK_GROUP_METADATA);
  	fs_info->global_block_rsv.space_info = space_info;
@@ -392,7 +382,7 @@ index b83d948..fa513cb 100644
  	fs_info->trans_block_rsv.space_info = space_info;
  	fs_info->empty_block_rsv.space_info = space_info;
  	fs_info->delayed_block_rsv.space_info = space_info;
-@@ -5809,8 +5877,6 @@ static void release_global_block_rsv(struct btrfs_fs_info *fs_info)
+@@ -5832,8 +5900,6 @@ static void release_global_block_rsv(str
  {
  	block_rsv_release_bytes(fs_info, &fs_info->global_block_rsv, NULL,
  				(u64)-1);
@@ -401,7 +391,7 @@ index b83d948..fa513cb 100644
  	WARN_ON(fs_info->trans_block_rsv.size > 0);
  	WARN_ON(fs_info->trans_block_rsv.reserved > 0);
  	WARN_ON(fs_info->chunk_block_rsv.size > 0);
-@@ -5949,95 +6015,37 @@ void btrfs_subvolume_release_metadata(struct btrfs_fs_info *fs_info,
+@@ -5975,95 +6041,37 @@ void btrfs_subvolume_release_metadata(st
  	btrfs_block_rsv_release(fs_info, rsv, (u64)-1);
  }
  
@@ -461,25 +451,11 @@ index b83d948..fa513cb 100644
 -
 -	if (inode->flags & BTRFS_INODE_NODATASUM && inode->csum_bytes == 0)
 -		return 0;
--
--	old_csums = btrfs_csum_bytes_to_leaves(fs_info, inode->csum_bytes);
--	if (reserve)
--		inode->csum_bytes += num_bytes;
--	else
--		inode->csum_bytes -= num_bytes;
--	num_csums = btrfs_csum_bytes_to_leaves(fs_info, inode->csum_bytes);
--
--	/* No change, no need to reserve more */
--	if (old_csums == num_csums)
--		return 0;
 +	struct btrfs_block_rsv *block_rsv = &inode->block_rsv;
 +	u64 reserve_size = 0;
 +	u64 csum_leaves;
 +	unsigned outstanding_extents;
- 
--	if (reserve)
--		return btrfs_calc_trans_metadata_size(fs_info,
--						      num_csums - old_csums);
++
 +	lockdep_assert_held(&inode->lock);
 +	outstanding_extents = inode->outstanding_extents;
 +	if (outstanding_extents)
@@ -490,6 +466,21 @@ index b83d948..fa513cb 100644
 +	reserve_size += btrfs_calc_trans_metadata_size(fs_info,
 +						       csum_leaves);
  
+-	old_csums = btrfs_csum_bytes_to_leaves(fs_info, inode->csum_bytes);
+-	if (reserve)
+-		inode->csum_bytes += num_bytes;
+-	else
+-		inode->csum_bytes -= num_bytes;
+-	num_csums = btrfs_csum_bytes_to_leaves(fs_info, inode->csum_bytes);
+-
+-	/* No change, no need to reserve more */
+-	if (old_csums == num_csums)
+-		return 0;
+-
+-	if (reserve)
+-		return btrfs_calc_trans_metadata_size(fs_info,
+-						      num_csums - old_csums);
+-
 -	return btrfs_calc_trans_metadata_size(fs_info, old_csums - num_csums);
 +	spin_lock(&block_rsv->lock);
 +	block_rsv->size = reserve_size;
@@ -516,7 +507,7 @@ index b83d948..fa513cb 100644
  
  	/* If we are a free space inode we need to not flush since we will be in
  	 * the middle of a transaction commit.  We also don't need the delalloc
-@@ -6062,33 +6070,13 @@ int btrfs_delalloc_reserve_metadata(struct btrfs_inode *inode, u64 num_bytes)
+@@ -6088,33 +6096,13 @@ int btrfs_delalloc_reserve_metadata(stru
  		mutex_lock(&inode->delalloc_mutex);
  
  	num_bytes = ALIGN(num_bytes, fs_info->sectorsize);
@@ -555,7 +546,7 @@ index b83d948..fa513cb 100644
  	spin_unlock(&inode->lock);
  
  	if (test_bit(BTRFS_FS_QUOTA_ENABLED, &fs_info->flags)) {
-@@ -6098,100 +6086,26 @@ int btrfs_delalloc_reserve_metadata(struct btrfs_inode *inode, u64 num_bytes)
+@@ -6124,100 +6112,26 @@ retry:
  			goto out_fail;
  	}
  
@@ -660,7 +651,7 @@ index b83d948..fa513cb 100644
  	if (delalloc_lock)
  		mutex_unlock(&inode->delalloc_mutex);
  	return ret;
-@@ -6209,25 +6123,17 @@ int btrfs_delalloc_reserve_metadata(struct btrfs_inode *inode, u64 num_bytes)
+@@ -6235,25 +6149,17 @@ out_fail:
  void btrfs_delalloc_release_metadata(struct btrfs_inode *inode, u64 num_bytes)
  {
  	struct btrfs_fs_info *fs_info = btrfs_sb(inode->vfs_inode.i_sb);
@@ -689,7 +680,7 @@ index b83d948..fa513cb 100644
  }
  
  /**
-@@ -6245,25 +6151,17 @@ void btrfs_delalloc_release_extents(struct btrfs_inode *inode, u64 num_bytes)
+@@ -6271,25 +6177,17 @@ void btrfs_delalloc_release_extents(stru
  {
  	struct btrfs_fs_info *fs_info = btrfs_sb(inode->vfs_inode.i_sb);
  	unsigned num_extents;
@@ -717,8 +708,6 @@ index b83d948..fa513cb 100644
  }
  
  /**
-diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
-index d2928b3..d561b01 100644
 --- a/fs/btrfs/inode.c
 +++ b/fs/btrfs/inode.c
 @@ -42,6 +42,7 @@
@@ -729,7 +718,7 @@ index d2928b3..d561b01 100644
  #include "ctree.h"
  #include "disk-io.h"
  #include "transaction.h"
-@@ -320,7 +321,7 @@ static noinline int cow_file_range_inline(struct btrfs_root *root,
+@@ -320,7 +321,7 @@ static noinline int cow_file_range_inlin
  		btrfs_free_path(path);
  		return PTR_ERR(trans);
  	}
@@ -738,7 +727,7 @@ index d2928b3..d561b01 100644
  
  	if (compressed_size && compressed_pages)
  		extent_item_size = btrfs_file_extent_calc_inline_size(
-@@ -2953,7 +2954,7 @@ static int btrfs_finish_ordered_io(struct btrfs_ordered_extent *ordered_extent)
+@@ -2954,7 +2955,7 @@ static int btrfs_finish_ordered_io(struc
  			trans = NULL;
  			goto out;
  		}
@@ -747,7 +736,7 @@ index d2928b3..d561b01 100644
  		ret = btrfs_update_inode_fallback(trans, root, inode);
  		if (ret) /* -ENOMEM or corruption */
  			btrfs_abort_transaction(trans, ret);
-@@ -2989,7 +2990,7 @@ static int btrfs_finish_ordered_io(struct btrfs_ordered_extent *ordered_extent)
+@@ -2990,7 +2991,7 @@ static int btrfs_finish_ordered_io(struc
  		goto out;
  	}
  
@@ -756,7 +745,7 @@ index d2928b3..d561b01 100644
  
  	if (test_bit(BTRFS_ORDERED_COMPRESSED, &ordered_extent->flags))
  		compress_type = ordered_extent->compress_type;
-@@ -8818,7 +8819,6 @@ static ssize_t btrfs_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
+@@ -8818,7 +8819,6 @@ static ssize_t btrfs_direct_IO(struct ki
  	if (iov_iter_rw(iter) == WRITE) {
  		up_read(&BTRFS_I(inode)->dio_sem);
  		current->journal_info = NULL;
@@ -764,7 +753,7 @@ index d2928b3..d561b01 100644
  		if (ret < 0 && ret != -EIOCBQUEUED) {
  			if (dio_data.reserve)
  				btrfs_delalloc_release_space(inode, data_reserved,
-@@ -8839,6 +8839,7 @@ static ssize_t btrfs_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
+@@ -8839,6 +8839,7 @@ static ssize_t btrfs_direct_IO(struct ki
  		} else if (ret >= 0 && (size_t)ret < count)
  			btrfs_delalloc_release_space(inode, data_reserved,
  					offset, count - (size_t)ret);
@@ -772,7 +761,7 @@ index d2928b3..d561b01 100644
  	}
  out:
  	if (wakeup)
-@@ -9403,6 +9404,7 @@ int btrfs_create_subvol_root(struct btrfs_trans_handle *trans,
+@@ -9403,6 +9404,7 @@ int btrfs_create_subvol_root(struct btrf
  
  struct inode *btrfs_alloc_inode(struct super_block *sb)
  {
@@ -780,7 +769,7 @@ index d2928b3..d561b01 100644
  	struct btrfs_inode *ei;
  	struct inode *inode;
  
-@@ -9429,8 +9431,9 @@ struct inode *btrfs_alloc_inode(struct super_block *sb)
+@@ -9429,8 +9431,9 @@ struct inode *btrfs_alloc_inode(struct s
  
  	spin_lock_init(&ei->lock);
  	ei->outstanding_extents = 0;
@@ -792,7 +781,7 @@ index d2928b3..d561b01 100644
  	ei->runtime_flags = 0;
  	ei->force_compress = BTRFS_COMPRESS_NONE;
  
-@@ -9479,8 +9482,9 @@ void btrfs_destroy_inode(struct inode *inode)
+@@ -9479,8 +9482,9 @@ void btrfs_destroy_inode(struct inode *i
  
  	WARN_ON(!hlist_empty(&inode->i_dentry));
  	WARN_ON(inode->i_data.nrpages);
@@ -803,6 +792,3 @@ index d2928b3..d561b01 100644
  	WARN_ON(BTRFS_I(inode)->delalloc_bytes);
  	WARN_ON(BTRFS_I(inode)->new_delalloc_bytes);
  	WARN_ON(BTRFS_I(inode)->csum_bytes);
--- 
-2.16.4
-
