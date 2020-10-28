@@ -1,0 +1,65 @@
+From c8a61d6970783a2f9d8a78792a4ef193e0e86a4a Mon Sep 17 00:00:00 2001
+From: David Disseldorp <ddiss@suse.de>
+Date: Wed, 21 Oct 2020 21:20:24 +0200
+Subject: [PATCH] target: use scsi_set_sense_information() helper on miscompare
+References: bsc#1177719
+Patch-mainline: Not yet, SES clustered LIO/RBD
+
+The current transport_err_sense_info() helper assumes "Fixed" sense
+format. This is broken for 2TB+ LUNs where Descriptor sense format is
+already initialized by scsi_build_sense_buffer().
+
+Signed-off-by: David Disseldorp <ddiss@suse.de>
+Reviewed-by: Luis Henriques <lhenriques@suse.de>
+---
+ drivers/target/target_core_rbd.c       |  4 ++--
+ drivers/target/target_core_transport.c | 11 +++--------
+ 2 files changed, 5 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/target/target_core_rbd.c b/drivers/target/target_core_rbd.c
+index 788485979b18..e74a90db9c6f 100644
+--- a/drivers/target/target_core_rbd.c
++++ b/drivers/target/target_core_rbd.c
+@@ -408,8 +408,8 @@ static void tcm_rbd_cmp_and_write_callback(struct rbd_img_request *img_request)
+ 	if (img_request->result <= -MAX_ERRNO) {
+ 		/* OSDs return -MAX_ERRNO - offset_of_mismatch */
+ 		cmd->sense_info = (u32)(-1 * (img_request->result + MAX_ERRNO));
+-		pr_notice("COMPARE_AND_WRITE: miscompare at offset %llu\n",
+-			  (unsigned long long)cmd->bad_sector);
++		pr_debug("COMPARE_AND_WRITE: miscompare at offset %u\n",
++			 cmd->sense_info);
+ 		sense_reason = TCM_MISCOMPARE_VERIFY;
+ 	}
+ 	kfree(caw_state->cmp_and_write_sg);
+diff --git a/drivers/target/target_core_transport.c b/drivers/target/target_core_transport.c
+index 73719990f9d7..20382e9b3d9c 100644
+--- a/drivers/target/target_core_transport.c
++++ b/drivers/target/target_core_transport.c
+@@ -3164,13 +3164,6 @@ static const struct sense_info sense_info_table[] = {
+ 	},
+ };
+ 
+-static void transport_err_sense_info(unsigned char *buffer, u32 info)
+-{
+-	buffer[SPC_INFO_VALIDITY_OFFSET] |= 0x80;
+-	/* Sense Information */
+-	put_unaligned_be32(info, &buffer[3]);
+-}
+-
+ static int translate_sense_reason(struct se_cmd *cmd, sense_reason_t reason)
+ {
+ 	const struct sense_info *si;
+@@ -3204,7 +3197,9 @@ static int translate_sense_reason(struct se_cmd *cmd, sense_reason_t reason)
+ 						  cmd->bad_sector);
+ 
+ 	if (si->add_sense_info)
+-		transport_err_sense_info(buffer, cmd->sense_info);
++		scsi_set_sense_information(buffer,
++					   cmd->scsi_sense_length,
++					   cmd->sense_info);
+ 
+ 	return 0;
+ }
+-- 
+2.26.2
+
