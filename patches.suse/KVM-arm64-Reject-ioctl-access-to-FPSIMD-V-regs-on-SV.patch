@@ -27,7 +27,7 @@ Signed-off-by: Matthias Brugger <mbrugger@suse.com>
 
 --- a/arch/arm64/kvm/guest.c
 +++ b/arch/arm64/kvm/guest.c
-@@ -52,12 +52,19 @@ int kvm_arch_vcpu_setup(struct kvm_vcpu
+@@ -53,12 +53,19 @@ int kvm_arch_vcpu_setup(struct kvm_vcpu
  	return 0;
  }
  
@@ -48,7 +48,7 @@ Signed-off-by: Matthias Brugger <mbrugger@suse.com>
  {
  	u64 off = core_reg_offset_from_id(reg->id);
  	int size;
-@@ -89,11 +96,11 @@ static int validate_core_offset(const st
+@@ -90,11 +97,11 @@ static int validate_core_offset(const st
  		return -EINVAL;
  	}
  
@@ -64,7 +64,7 @@ Signed-off-by: Matthias Brugger <mbrugger@suse.com>
  }
  
  static int get_core_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
-@@ -115,7 +122,7 @@ static int get_core_reg(struct kvm_vcpu
+@@ -116,7 +123,7 @@ static int get_core_reg(struct kvm_vcpu
  	    (off + (KVM_REG_SIZE(reg->id) / sizeof(__u32))) >= nr_regs)
  		return -ENOENT;
  
@@ -73,7 +73,7 @@ Signed-off-by: Matthias Brugger <mbrugger@suse.com>
  		return -EINVAL;
  
  	if (copy_to_user(uaddr, ((u32 *)regs) + off, KVM_REG_SIZE(reg->id)))
-@@ -140,7 +147,7 @@ static int set_core_reg(struct kvm_vcpu
+@@ -141,7 +148,7 @@ static int set_core_reg(struct kvm_vcpu
  	    (off + (KVM_REG_SIZE(reg->id) / sizeof(__u32))) >= nr_regs)
  		return -ENOENT;
  
@@ -82,7 +82,7 @@ Signed-off-by: Matthias Brugger <mbrugger@suse.com>
  		return -EINVAL;
  
  	if (KVM_REG_SIZE(reg->id) > sizeof(tmp))
-@@ -193,7 +200,8 @@ int kvm_arch_vcpu_ioctl_set_regs(struct
+@@ -194,7 +201,8 @@ int kvm_arch_vcpu_ioctl_set_regs(struct
  	return -EINVAL;
  }
  
@@ -92,7 +92,7 @@ Signed-off-by: Matthias Brugger <mbrugger@suse.com>
  {
  	unsigned int i;
  	int n = 0;
-@@ -212,9 +220,9 @@ static int kvm_arm_copy_core_reg_indices
+@@ -213,9 +221,9 @@ static int kvm_arm_copy_core_reg_indices
  	return n;
  }
  
@@ -104,16 +104,16 @@ Signed-off-by: Matthias Brugger <mbrugger@suse.com>
  }
  
  /**
-@@ -277,7 +285,7 @@ static int get_timer_reg(struct kvm_vcpu
+@@ -278,7 +286,7 @@ static int get_timer_reg(struct kvm_vcpu
   */
  unsigned long kvm_arm_num_regs(struct kvm_vcpu *vcpu)
  {
 -	return num_core_regs() + kvm_arm_num_sys_reg_descs(vcpu)
 +	return num_core_regs(vcpu) + kvm_arm_num_sys_reg_descs(vcpu)
-                 + NUM_TIMER_REGS;
+ 		+ kvm_arm_get_fw_num_regs(vcpu)	+ NUM_TIMER_REGS;
  }
  
-@@ -290,7 +298,7 @@ int kvm_arm_copy_reg_indices(struct kvm_
+@@ -291,7 +299,7 @@ int kvm_arm_copy_reg_indices(struct kvm_
  {
  	int ret;
  
