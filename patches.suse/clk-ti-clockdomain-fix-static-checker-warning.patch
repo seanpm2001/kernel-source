@@ -1,0 +1,35 @@
+From b7a7943fe291b983b104bcbd2f16e8e896f56590 Mon Sep 17 00:00:00 2001
+From: Tero Kristo <t-kristo@ti.com>
+Date: Mon, 7 Sep 2020 11:25:59 +0300
+Subject: [PATCH] clk: ti: clockdomain: fix static checker warning
+Git-commit: b7a7943fe291b983b104bcbd2f16e8e896f56590
+Patch-mainline: v5.10-rc1
+References: git-fixes
+
+Fix a memory leak induced by not calling clk_put after doing of_clk_get.
+
+Reported-by: Dan Murphy <dmurphy@ti.com>
+Signed-off-by: Tero Kristo <t-kristo@ti.com>
+Link: https://lore.kernel.org/r/20200907082600.454-3-t-kristo@ti.com
+Signed-off-by: Stephen Boyd <sboyd@kernel.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/clk/ti/clockdomain.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/drivers/clk/ti/clockdomain.c
++++ b/drivers/clk/ti/clockdomain.c
+@@ -146,10 +146,12 @@ static void __init of_ti_clockdomain_set
+ 		if (clk_hw_get_flags(clk_hw) & CLK_IS_BASIC) {
+ 			pr_warn("can't setup clkdm for basic clk %s\n",
+ 				__clk_get_name(clk));
++			clk_put(clk);
+ 			continue;
+ 		}
+ 		to_clk_hw_omap(clk_hw)->clkdm_name = clkdm_name;
+ 		omap2_init_clk_clkdm(clk_hw);
++		clk_put(clk);
+ 	}
+ }
+ 
