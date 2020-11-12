@@ -1,6 +1,6 @@
 From: Jeff Mahoney <jeffm@suse.com>
 Subject: vfs: add super_operations->get_inode_dev
-References: bsc#927455
+References: bsc#927455 bsc#1176983
 Patch-mainline: Never, Upstream submissions have been met with a request to use per-subvolume superblocks, which is unworkable in practice
 
 There are many places where a dev_t:ino_t pair are passed to userspace
@@ -27,6 +27,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  fs/proc/nommu.c                            |    2 +-
  fs/proc/task_mmu.c                         |    2 +-
  fs/proc/task_nommu.c                       |    2 +-
+ fs/proc_namespace.c                        |    3 ++-
  fs/stat.c                                  |    2 +-
  include/linux/fs.h                         |    9 +++++++++
  include/trace/events/filelock.h            |    8 ++++----
@@ -40,7 +41,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  mm/memory-failure.c                        |    2 +-
  net/unix/diag.c                            |    2 +-
  security/tomoyo/condition.c                |    2 +-
- 23 files changed, 41 insertions(+), 32 deletions(-)
+ 24 files changed, 43 insertions(+), 33 deletions(-)
 
 --- a/arch/arc/kernel/troubleshoot.c
 +++ b/arch/arc/kernel/troubleshoot.c
@@ -181,6 +182,21 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  		ino = inode->i_ino;
  		pgoff = (loff_t)vma->vm_pgoff << PAGE_SHIFT;
  	}
+--- a/fs/proc_namespace.c
++++ b/fs/proc_namespace.c
+@@ -133,10 +133,11 @@ static int show_mountinfo(struct seq_fil
+ 	struct mount *r = real_mount(mnt);
+ 	struct super_block *sb = mnt->mnt_sb;
+ 	struct path mnt_path = { .dentry = mnt->mnt_root, .mnt = mnt };
++	dev_t dev = inode_get_dev(mnt->mnt_root->d_inode);
+ 	int err;
+ 
+ 	seq_printf(m, "%i %i %u:%u ", r->mnt_id, r->mnt_parent->mnt_id,
+-		   MAJOR(sb->s_dev), MINOR(sb->s_dev));
++		   MAJOR(dev), MINOR(dev));
+ 	if (sb->s_op->show_path) {
+ 		err = sb->s_op->show_path(m, mnt->mnt_root);
+ 		if (err)
 --- a/fs/stat.c
 +++ b/fs/stat.c
 @@ -31,7 +31,7 @@
@@ -202,7 +218,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  };
  
  /*
-@@ -3358,4 +3359,12 @@ static inline bool dir_relax_shared(stru
+@@ -3363,4 +3364,12 @@ static inline bool dir_relax_shared(stru
  extern bool path_noexec(const struct path *path);
  extern void inode_nohighmem(struct inode *inode);
  
@@ -266,7 +282,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  	),
 --- a/include/trace/events/writeback.h
 +++ b/include/trace/events/writeback.h
-@@ -709,7 +709,7 @@ DECLARE_EVENT_CLASS(writeback_inode_temp
+@@ -708,7 +708,7 @@ DECLARE_EVENT_CLASS(writeback_inode_temp
  	),
  
  	TP_fast_assign(
@@ -348,7 +364,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  			if (n->type == AUDIT_TYPE_UNKNOWN)
 --- a/kernel/events/core.c
 +++ b/kernel/events/core.c
-@@ -6874,7 +6874,7 @@ static void perf_event_mmap_event(struct
+@@ -7169,7 +7169,7 @@ static void perf_event_mmap_event(struct
  			goto cpy_name;
  		}
  		inode = file_inode(vma->vm_file);
