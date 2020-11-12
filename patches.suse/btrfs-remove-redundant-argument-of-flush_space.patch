@@ -16,13 +16,13 @@ Signed-off-by: Nikolay Borisov <nborisov@suse.com>
 Reviewed-by: David Sterba <dsterba@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 ---
- fs/btrfs/extent-tree.c       |   18 ++++++++----------
+ fs/btrfs/extent-tree.c       |   16 +++++++---------
  include/trace/events/btrfs.h |   13 +++++--------
- 2 files changed, 13 insertions(+), 18 deletions(-)
+ 2 files changed, 12 insertions(+), 17 deletions(-)
 
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -4890,7 +4890,7 @@ struct reserve_ticket {
+@@ -4908,7 +4908,7 @@ struct reserve_ticket {
  
  static int flush_space(struct btrfs_fs_info *fs_info,
  		       struct btrfs_space_info *space_info, u64 num_bytes,
@@ -31,16 +31,16 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  {
  	struct btrfs_root *root = fs_info->extent_root;
  	struct btrfs_trans_handle *trans;
-@@ -4915,7 +4915,7 @@ static int flush_space(struct btrfs_fs_i
+@@ -4933,7 +4933,7 @@ static int flush_space(struct btrfs_fs_i
  		break;
  	case FLUSH_DELALLOC:
  	case FLUSH_DELALLOC_WAIT:
--		shrink_delalloc(root, num_bytes * 2, orig_bytes,
-+		shrink_delalloc(root, num_bytes * 2, num_bytes,
+-		shrink_delalloc(fs_info, num_bytes * 2, orig_bytes,
++		shrink_delalloc(fs_info, num_bytes * 2, num_bytes,
  				state == FLUSH_DELALLOC_WAIT);
  		break;
  	case ALLOC_CHUNK:
-@@ -4933,15 +4933,15 @@ static int flush_space(struct btrfs_fs_i
+@@ -4951,15 +4951,15 @@ static int flush_space(struct btrfs_fs_i
  		break;
  	case COMMIT_TRANS:
  		ret = may_commit_transaction(fs_info, space_info,
@@ -59,7 +59,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	return ret;
  }
  
-@@ -5045,8 +5045,7 @@ static void btrfs_async_reclaim_metadata
+@@ -5066,8 +5066,7 @@ static void btrfs_async_reclaim_metadata
  		struct reserve_ticket *ticket;
  		int ret;
  
@@ -69,7 +69,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  		spin_lock(&space_info->lock);
  		if (list_empty(&space_info->tickets)) {
  			space_info->flush = 0;
-@@ -5101,8 +5100,7 @@ static void priority_reclaim_metadata_sp
+@@ -5123,8 +5122,7 @@ static void priority_reclaim_metadata_sp
  	spin_unlock(&space_info->lock);
  
  	do {
@@ -79,15 +79,6 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  		flush_state++;
  		spin_lock(&space_info->lock);
  		if (ticket->bytes == 0) {
-@@ -5803,7 +5801,7 @@ int btrfs_orphan_reserve_metadata(struct
- 	 */
- 	u64 num_bytes = btrfs_calc_trans_metadata_size(fs_info, 1);
- 
--	trace_btrfs_space_reservation(fs_info, "orphan", btrfs_ino(inode), 
-+	trace_btrfs_space_reservation(fs_info, "orphan", btrfs_ino(inode),
- 			num_bytes, 1);
- 	return btrfs_block_rsv_migrate(src_rsv, dst_rsv, num_bytes, 1);
- }
 --- a/include/trace/events/btrfs.h
 +++ b/include/trace/events/btrfs.h
 @@ -1011,15 +1011,14 @@ TRACE_EVENT(btrfs_trigger_flush,

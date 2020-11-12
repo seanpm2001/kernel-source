@@ -53,8 +53,8 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
 +	int cq_nvecs;
 +
  	/* debugfs memories */
- 	void *debugfs_global_reg;
- 	void *debugfs_port_reg[HISI_SAS_MAX_PHYS];
+ 	u32 *debugfs_global_reg;
+ 	u32 *debugfs_port_reg[HISI_SAS_MAX_PHYS];
 --- a/drivers/scsi/hisi_sas/hisi_sas_main.c
 +++ b/drivers/scsi/hisi_sas/hisi_sas_main.c
 @@ -1023,7 +1023,7 @@ static void hisi_sas_dev_gone(struct dom
@@ -66,7 +66,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  
  		hisi_sas_dereg_device(hisi_hba, device);
  
-@@ -1631,7 +1631,8 @@ static int hisi_sas_abort_task(struct sa
+@@ -1630,7 +1630,8 @@ static int hisi_sas_abort_task(struct sa
  		task->task_proto & SAS_PROTOCOL_STP) {
  		if (task->dev->dev_type == SAS_SATA_DEV) {
  			rc = hisi_sas_internal_task_abort(hisi_hba, device,
@@ -76,7 +76,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  			if (rc < 0) {
  				dev_err(dev, "abort task: internal abort failed\n");
  				goto out;
-@@ -1646,7 +1647,7 @@ static int hisi_sas_abort_task(struct sa
+@@ -1645,7 +1646,7 @@ static int hisi_sas_abort_task(struct sa
  		struct hisi_sas_cq *cq = &hisi_hba->cq[slot->dlvry_queue];
  
  		rc = hisi_sas_internal_task_abort(hisi_hba, device,
@@ -85,7 +85,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  		if (((rc < 0) || (rc == TMF_RESP_FUNC_FAILED)) &&
  					task->lldd_task) {
  			/*
-@@ -1672,7 +1673,7 @@ static int hisi_sas_abort_task_set(struc
+@@ -1671,7 +1672,7 @@ static int hisi_sas_abort_task_set(struc
  	int rc = TMF_RESP_FUNC_FAILED;
  
  	rc = hisi_sas_internal_task_abort(hisi_hba, device,
@@ -94,7 +94,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  	if (rc < 0) {
  		dev_err(dev, "abort task set: internal abort rc=%d\n", rc);
  		return TMF_RESP_FUNC_FAILED;
-@@ -1744,7 +1745,7 @@ static int hisi_sas_I_T_nexus_reset(stru
+@@ -1743,7 +1744,7 @@ static int hisi_sas_I_T_nexus_reset(stru
  	int rc = TMF_RESP_FUNC_FAILED;
  
  	rc = hisi_sas_internal_task_abort(hisi_hba, device,
@@ -103,7 +103,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  	if (rc < 0) {
  		dev_err(dev, "I_T nexus reset: internal abort (%d)\n", rc);
  		return TMF_RESP_FUNC_FAILED;
-@@ -1789,7 +1790,7 @@ static int hisi_sas_lu_reset(struct doma
+@@ -1788,7 +1789,7 @@ static int hisi_sas_lu_reset(struct doma
  		struct hisi_sas_tmf_task tmf_task = { .tmf =  TMF_LU_RESET };
  
  		rc = hisi_sas_internal_task_abort(hisi_hba, device,
@@ -112,7 +112,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  		if (rc < 0) {
  			dev_err(dev, "lu_reset: internal abort failed\n");
  			goto out;
-@@ -1875,7 +1876,7 @@ static int hisi_sas_query_task(struct sa
+@@ -1874,7 +1875,7 @@ static int hisi_sas_query_task(struct sa
  static int
  hisi_sas_internal_abort_task_exec(struct hisi_hba *hisi_hba, int device_id,
  				  struct sas_task *task, int abort_flag,
@@ -121,7 +121,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  {
  	struct domain_device *device = task->dev;
  	struct hisi_sas_device *sas_dev = device->lldd_dev;
-@@ -1884,7 +1885,6 @@ hisi_sas_internal_abort_task_exec(struct
+@@ -1883,7 +1884,6 @@ hisi_sas_internal_abort_task_exec(struct
  	struct hisi_sas_slot *slot;
  	struct asd_sas_port *sas_port = device->port;
  	struct hisi_sas_cmd_hdr *cmd_hdr_base;
@@ -129,7 +129,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  	int dlvry_queue_slot, dlvry_queue, n_elem = 0, rc, slot_idx;
  	unsigned long flags, flags_dq = 0;
  	int wr_q_index;
-@@ -1956,18 +1956,19 @@ err_out:
+@@ -1955,18 +1955,19 @@ hisi_sas_internal_abort_task_exec(struct
  }
  
  /**
@@ -153,7 +153,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  {
  	struct sas_task *task;
  	struct hisi_sas_device *sas_dev = device->lldd_dev;
-@@ -1995,7 +1996,7 @@ hisi_sas_internal_task_abort(struct hisi
+@@ -1994,7 +1995,7 @@ hisi_sas_internal_task_abort(struct hisi
  	add_timer(&task->slow_task->timer);
  
  	res = hisi_sas_internal_abort_task_exec(hisi_hba, sas_dev->device_id,
@@ -162,7 +162,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  	if (res) {
  		del_timer(&task->slow_task->timer);
  		dev_err(dev, "internal task abort: executing internal task failed: %d\n",
-@@ -2052,6 +2053,41 @@ exit:
+@@ -2051,6 +2052,41 @@ hisi_sas_internal_task_abort(struct hisi
  	return res;
  }
  
@@ -204,7 +204,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  static void hisi_sas_port_formed(struct asd_sas_phy *sas_phy)
  {
  	hisi_sas_port_notify_formed(sas_phy);
-@@ -2118,7 +2154,7 @@ void hisi_sas_kill_tasklets(struct hisi_
+@@ -2117,7 +2153,7 @@ void hisi_sas_kill_tasklets(struct hisi_
  {
  	int i;
  
@@ -264,7 +264,7 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  		struct hisi_sas_cq *cq = &hisi_hba->cq[i];
  		struct tasklet_struct *t = &cq->tasklet;
  		int nr = hisi_sas_intr_conv ? 16 : 16 + i;
-@@ -2796,7 +2800,7 @@ hisi_sas_v3_destroy_irqs(struct pci_dev
+@@ -2798,7 +2802,7 @@ hisi_sas_v3_destroy_irqs(struct pci_dev
  	free_irq(pci_irq_vector(pdev, 1), hisi_hba);
  	free_irq(pci_irq_vector(pdev, 2), hisi_hba);
  	free_irq(pci_irq_vector(pdev, 11), hisi_hba);

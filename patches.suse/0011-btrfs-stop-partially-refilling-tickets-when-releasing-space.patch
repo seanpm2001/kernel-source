@@ -42,12 +42,12 @@ Signed-off-by: Josef Bacik <josef@toxicpanda.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 Acked-by: Nikolay Borisov <nborisov@suse.com>
 ---
- fs/btrfs/space-info.c |   43 +++++++++++++++----------------------------
- 1 file changed, 15 insertions(+), 28 deletions(-)
+ fs/btrfs/space-info.c |   39 ++++++++++++---------------------------
+ 1 file changed, 12 insertions(+), 27 deletions(-)
 
 --- a/fs/btrfs/space-info.c
 +++ b/fs/btrfs/space-info.c
-@@ -257,55 +257,42 @@ void btrfs_space_info_add_old_bytes(stru
+@@ -256,54 +256,39 @@ void btrfs_space_info_add_old_bytes(stru
  				    struct btrfs_space_info *space_info,
  				    u64 num_bytes)
  {
@@ -84,14 +84,11 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 -		 * adding the ticket space would be a double count.
 -		 */
 -		if (check_overcommit &&
--		    !can_overcommit(fs_info->extent_root, space_info, 0,
--				    flush))
+-		    !can_overcommit(fs_info, space_info, 0, flush))
 -			break;
 -		if (num_bytes >= ticket->bytes) {
-+		/* Check and see if our ticket can be satisified now. */
 +		if ((used + ticket->bytes <= space_info->total_bytes) ||
-+		    can_overcommit(fs_info->extent_root, space_info,
-+				   ticket->bytes, flush)) {
++		    can_overcommit(fs_info, space_info, ticket->bytes, flush)) {
 +			btrfs_space_info_update_bytes_may_use(fs_info,
 +							      space_info,
 +							      ticket->bytes);
@@ -100,7 +97,6 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  			ticket->bytes = 0;
  			space_info->tickets_id++;
  			wake_up(&ticket->wait);
-+
  		} else {
 -			ticket->bytes -= num_bytes;
 -			num_bytes = 0;

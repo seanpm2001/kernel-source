@@ -1,0 +1,64 @@
+From: Christoph Hellwig <hch@lst.de>
+Date: Tue, 28 Jul 2020 13:09:03 +0200
+Subject: nvme: add a Identify Namespace Identification Descriptor list quirk
+Git-commit: 5bedd3afee8eb01ccd256f0cd2cc0fa6f841417a
+Patch-mainline: v5.8
+References: bsc#1174748
+
+Add a quirk for a device that does not support the Identify Namespace
+Identification Descriptor list despite claiming 1.3 compliance.
+
+Fixes: ea43d9709f72 ("nvme: fix identify error status silent ignore")
+Reported-by: Ingo Brunberg <ingo_brunberg@web.de>
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Tested-by: Ingo Brunberg <ingo_brunberg@web.de>
+Reviewed-by: Sagi Grimberg <sagi@grimberg.me>
+[dwagner: - context updated
+          - updated core.c as we are don't have to revert things
+	    previous attempts]
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/nvme/host/core.c |    3 +++
+ drivers/nvme/host/nvme.h |    7 +++++++
+ drivers/nvme/host/pci.c  |    2 ++
+ 3 files changed, 12 insertions(+)
+
+--- a/drivers/nvme/host/core.c
++++ b/drivers/nvme/host/core.c
+@@ -959,6 +959,9 @@ static int nvme_identify_ns_descs(struct
+ 	int pos;
+ 	int len;
+ 
++	if (ctrl->quirks & NVME_QUIRK_NO_NS_DESC_LIST)
++		return 0;
++
+ 	c.identify.opcode = nvme_admin_identify;
+ 	c.identify.nsid = cpu_to_le32(nsid);
+ 	c.identify.cns = NVME_ID_CNS_NS_DESC_LIST;
+--- a/drivers/nvme/host/nvme.h
++++ b/drivers/nvme/host/nvme.h
+@@ -95,6 +95,13 @@ enum nvme_quirks {
+ 	 * Ignore device provided subnqn.
+ 	 */
+ 	NVME_QUIRK_IGNORE_DEV_SUBNQN		= (1 << 8),
++
++	/*
++	 * The controller doesn't handle the Identify Namespace
++	 * Identification Descriptor list subcommand despite claiming
++	 * NVMe 1.3 compliance.
++	 */
++	NVME_QUIRK_NO_NS_DESC_LIST              = (1 << 15),
+ };
+ 
+ /*
+--- a/drivers/nvme/host/pci.c
++++ b/drivers/nvme/host/pci.c
+@@ -2684,6 +2684,8 @@ static const struct pci_device_id nvme_i
+ 		.driver_data = NVME_QUIRK_IGNORE_DEV_SUBNQN, },
+ 	{ PCI_VDEVICE(INTEL, 0x5845),	/* Qemu emulated controller */
+ 		.driver_data = NVME_QUIRK_IDENTIFY_CNS, },
++	{ PCI_DEVICE(0x126f, 0x2263),	/* Silicon Motion unidentified */
++		.driver_data = NVME_QUIRK_NO_NS_DESC_LIST, },
+ 	{ PCI_DEVICE(0x1bb1, 0x0100),   /* Seagate Nytro Flash Storage */
+ 		.driver_data = NVME_QUIRK_DELAY_BEFORE_CHK_RDY, },
+ 	{ PCI_DEVICE(0x1c58, 0x0003),	/* HGST adapter */

@@ -1,0 +1,176 @@
+From e85fde5162bf1b242cbd6daf7dba0f9b457d592b Mon Sep 17 00:00:00 2001
+From: Qu Wenruo <wqu@suse.com>
+Date: Fri, 24 Jul 2020 14:46:10 +0800
+Patch-mainline: v5.10-rc1
+Git-commit: e85fde5162bf1b242cbd6daf7dba0f9b457d592b
+References: bsc#1177856
+Subject: [PATCH] btrfs: qgroup: fix qgroup meta rsv leak for subvolume
+ operations
+
+[BUG]
+When quota is enabled for TEST_DEV, generic/013 sometimes fails like this:
+
+  generic/013 14s ... _check_dmesg: something found in dmesg (see xfstests-dev/results//generic/013.dmesg)
+
+And with the following metadata leak:
+
+  BTRFS warning (device dm-3): qgroup 0/1370 has unreleased space, type 2 rsv 49152
+  ------------[ cut here ]------------
+  WARNING: CPU: 2 PID: 47912 at fs/btrfs/disk-io.c:4078 close_ctree+0x1dc/0x323 [btrfs]
+  Call Trace:
+   btrfs_put_super+0x15/0x17 [btrfs]
+   generic_shutdown_super+0x72/0x110
+   kill_anon_super+0x18/0x30
+   btrfs_kill_super+0x17/0x30 [btrfs]
+   deactivate_locked_super+0x3b/0xa0
+   deactivate_super+0x40/0x50
+   cleanup_mnt+0x135/0x190
+   __cleanup_mnt+0x12/0x20
+   task_work_run+0x64/0xb0
+   __prepare_exit_to_usermode+0x1bc/0x1c0
+   __syscall_return_slowpath+0x47/0x230
+   do_syscall_64+0x64/0xb0
+   entry_SYSCALL_64_after_hwframe+0x44/0xa9
+  ---[ end trace a6cfd45ba80e4e06 ]---
+  BTRFS error (device dm-3): qgroup reserved space leaked
+  BTRFS info (device dm-3): disk space caching is enabled
+  BTRFS info (device dm-3): has skinny extents
+
+[CAUSE]
+The qgroup preallocated meta rsv operations of that offending root are:
+
+  btrfs_delayed_inode_reserve_metadata: rsv_meta_prealloc root=1370 num_bytes=131072
+  btrfs_delayed_inode_reserve_metadata: rsv_meta_prealloc root=1370 num_bytes=131072
+  btrfs_subvolume_reserve_metadata: rsv_meta_prealloc root=1370 num_bytes=49152
+  btrfs_delayed_inode_release_metadata: convert_meta_prealloc root=1370 num_bytes=-131072
+  btrfs_delayed_inode_release_metadata: convert_meta_prealloc root=1370 num_bytes=-131072
+
+It's pretty obvious that, we reserve qgroup meta rsv in
+btrfs_subvolume_reserve_metadata(), but doesn't have corresponding
+release/convert calls in btrfs_subvolume_release_metadata().
+
+This leads to the leakage.
+
+[FIX]
+To fix this bug, we should follow what we're doing in
+btrfs_delalloc_reserve_metadata(), where we reserve qgroup space, and
+add it to block_rsv->qgroup_rsv_reserved.
+
+And free the qgroup reserved metadata space when releasing the
+block_rsv.
+
+To do this, we need to change the btrfs_subvolume_release_metadata() to
+accept btrfs_root, and record the qgroup_to_release number, and call
+btrfs_qgroup_convert_reserved_meta() for it.
+
+Fixes: 733e03a0b26a ("btrfs: qgroup: Split meta rsv type into meta_prealloc and meta_pertrans")
+CC: stable@vger.kernel.org # 4.19+
+Reviewed-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/ctree.h     |    2 +-
+ fs/btrfs/ioctl.c     |    8 ++++----
+ fs/btrfs/root-tree.c |   25 ++++++++++++++++++-------
+ 3 files changed, 23 insertions(+), 12 deletions(-)
+
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -2575,7 +2575,7 @@ int btrfs_subvolume_reserve_metadata(str
+ 				     struct btrfs_block_rsv *rsv,
+ 				     int nitems,
+ 				     bool use_global_rsv);
+-void btrfs_subvolume_release_metadata(struct btrfs_fs_info *fs_info,
++void btrfs_subvolume_release_metadata(struct btrfs_root *root,
+ 				      struct btrfs_block_rsv *rsv);
+ void btrfs_delalloc_release_extents(struct btrfs_inode *inode, u64 num_bytes);
+ 
+--- a/fs/btrfs/ioctl.c
++++ b/fs/btrfs/ioctl.c
+@@ -504,7 +504,7 @@ static noinline int create_subvol(struct
+ 	trans = btrfs_start_transaction(root, 0);
+ 	if (IS_ERR(trans)) {
+ 		ret = PTR_ERR(trans);
+-		btrfs_subvolume_release_metadata(fs_info, &block_rsv);
++		btrfs_subvolume_release_metadata(root, &block_rsv);
+ 		goto fail_free;
+ 	}
+ 	trans->block_rsv = &block_rsv;
+@@ -635,7 +635,7 @@ fail:
+ 	kfree(root_item);
+ 	trans->block_rsv = NULL;
+ 	trans->bytes_reserved = 0;
+-	btrfs_subvolume_release_metadata(fs_info, &block_rsv);
++	btrfs_subvolume_release_metadata(root, &block_rsv);
+ 
+ 	if (async_transid) {
+ 		*async_transid = trans->transid;
+@@ -774,7 +774,7 @@ static int create_snapshot(struct btrfs_
+ 	d_instantiate(dentry, inode);
+ 	ret = 0;
+ fail:
+-	btrfs_subvolume_release_metadata(fs_info, &pending_snapshot->block_rsv);
++	btrfs_subvolume_release_metadata(root, &pending_snapshot->block_rsv);
+ dec_and_free:
+ 	if (atomic_dec_and_test(&root->will_be_snapshoted))
+ 		wake_up_atomic_t(&root->will_be_snapshoted);
+@@ -2579,7 +2579,7 @@ out_end_trans:
+ 		err = ret;
+ 	inode->i_flags |= S_DEAD;
+ out_release:
+-	btrfs_subvolume_release_metadata(fs_info, &block_rsv);
++	btrfs_subvolume_release_metadata(root, &block_rsv);
+ out_up_write:
+ 	up_write(&fs_info->subvol_sem);
+ 	if (err) {
+--- a/fs/btrfs/root-tree.c
++++ b/fs/btrfs/root-tree.c
+@@ -536,6 +536,7 @@ int btrfs_subvolume_reserve_metadata(str
+ 				     struct btrfs_block_rsv *rsv, int items,
+ 				     bool use_global_rsv)
+ {
++	u64 qgroup_num_bytes = 0;
+ 	u64 num_bytes;
+ 	int ret;
+ 	struct btrfs_fs_info *fs_info = root->fs_info;
+@@ -543,8 +544,9 @@ int btrfs_subvolume_reserve_metadata(str
+ 
+ 	if (test_bit(BTRFS_FS_QUOTA_ENABLED, &fs_info->flags)) {
+ 		/* One for parent inode, two for dir entries */
+-		num_bytes = 3 * fs_info->nodesize;
+-		ret = btrfs_qgroup_reserve_meta_prealloc(root, num_bytes, true);
++		qgroup_num_bytes = 3 * fs_info->nodesize;
++		ret = btrfs_qgroup_reserve_meta_prealloc(root,
++				qgroup_num_bytes, true);
+ 		if (ret)
+ 			return ret;
+ 	}
+@@ -558,14 +560,23 @@ int btrfs_subvolume_reserve_metadata(str
+ 	if (ret == -ENOSPC && use_global_rsv)
+ 		ret = btrfs_block_rsv_migrate(global_rsv, rsv, num_bytes, true);
+ 
+-	if (ret && num_bytes)
+-		btrfs_qgroup_free_meta_prealloc(root, num_bytes);
++	if (ret && qgroup_num_bytes)
++		btrfs_qgroup_free_meta_prealloc(root, qgroup_num_bytes);
+ 
++	if (!ret) {
++		spin_lock(&rsv->lock);
++		rsv->qgroup_rsv_reserved += qgroup_num_bytes;
++		spin_unlock(&rsv->lock);
++	}
+ 	return ret;
+ }
+ 
+-void btrfs_subvolume_release_metadata(struct btrfs_fs_info *fs_info,
+-				      struct btrfs_block_rsv *rsv)
++void btrfs_subvolume_release_metadata(struct btrfs_root *root,
++ 				      struct btrfs_block_rsv *rsv)
+ {
+-	btrfs_block_rsv_release(fs_info, rsv, (u64)-1);
++	struct btrfs_fs_info *fs_info = root->fs_info;
++	u64 qgroup_to_release;
++
++	__btrfs_block_rsv_release(fs_info, rsv, (u64)-1, &qgroup_to_release);
++	btrfs_qgroup_convert_reserved_meta(root, qgroup_to_release);
+ }

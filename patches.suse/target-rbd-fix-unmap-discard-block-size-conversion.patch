@@ -1,0 +1,34 @@
+From 3a7d8b2ec1fd0ee281693f8469a07880cf3f9d86 Mon Sep 17 00:00:00 2001
+From: David Disseldorp <ddiss@suse.de>
+Date: Wed, 14 Oct 2020 17:19:33 +0200
+Subject: [PATCH] target/rbd: fix unmap / discard block-size conversion
+References: bsc#1177271
+Patch-mainline: Not yet, SES clustered LIO/RBD
+
+The current conversion assumes 512 byte blocks.
+
+Signed-off-by: David Disseldorp <ddiss@suse.de>
+Reviewed-by: Roman Penyaev <rpenyaev@suse.com>
+[ddiss: backport from SLE15-SP2]
+Reviewed-by: Luis Henriques <lhenriques@suse.de>
+---
+ drivers/target/target_core_rbd.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/target/target_core_rbd.c b/drivers/target/target_core_rbd.c
+index 0f54c316bbf3..788485979b18 100644
+--- a/drivers/target/target_core_rbd.c
++++ b/drivers/target/target_core_rbd.c
+@@ -360,7 +360,8 @@ static sense_reason_t tcm_rbd_execute_unmap(struct se_cmd *cmd,
+ 	}
+ 
+ 	return tcm_rbd_execute_cmd(cmd, rbd_dev, NULL, OBJ_OP_DISCARD,
+-				   lba << SECTOR_SHIFT, nolb << SECTOR_SHIFT,
++				   rbd_lba_shift(cmd->se_dev, lba),
++				   rbd_lba_shift(cmd->se_dev, nolb),
+ 				   true);
+ }
+ 
+-- 
+2.26.2
+

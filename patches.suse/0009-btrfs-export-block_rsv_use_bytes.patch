@@ -19,7 +19,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -2838,6 +2838,7 @@ int btrfs_block_rsv_refill(struct btrfs_
+@@ -2841,6 +2841,7 @@ int btrfs_block_rsv_refill(struct btrfs_
  int btrfs_block_rsv_migrate(struct btrfs_block_rsv *src_rsv,
  			    struct btrfs_block_rsv *dst_rsv, u64 num_bytes,
  			    int update_size);
@@ -35,10 +35,10 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  				     u64 num_bytes, int delalloc);
 -static int block_rsv_use_bytes(struct btrfs_block_rsv *block_rsv,
 -			       u64 num_bytes);
- static int __reserve_metadata_bytes(struct btrfs_root *root,
+ static int __reserve_metadata_bytes(struct btrfs_fs_info *fs_info,
  				    struct btrfs_space_info *space_info,
  				    u64 orig_bytes,
-@@ -5236,7 +5234,7 @@ static int reserve_metadata_bytes(struct
+@@ -5249,7 +5247,7 @@ static int reserve_metadata_bytes(struct
  	if (ret == -ENOSPC &&
  	    unlikely(root->orphan_cleanup_state == ORPHAN_CLEANUP_STARTED)) {
  		if (block_rsv != global_rsv &&
@@ -47,7 +47,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  			ret = 0;
  	}
  	if (ret == -ENOSPC) {
-@@ -5272,8 +5270,7 @@ static struct btrfs_block_rsv *get_block
+@@ -5285,8 +5283,7 @@ static struct btrfs_block_rsv *get_block
  	return block_rsv;
  }
  
@@ -57,7 +57,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  {
  	int ret = -ENOSPC;
  	spin_lock(&block_rsv->lock);
-@@ -5470,7 +5467,7 @@ int btrfs_block_rsv_migrate(struct btrfs
+@@ -5483,7 +5480,7 @@ int btrfs_block_rsv_migrate(struct btrfs
  {
  	int ret;
  
@@ -66,7 +66,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	if (ret)
  		return ret;
  
-@@ -8251,7 +8248,7 @@ use_block_rsv(struct btrfs_trans_handle
+@@ -8257,7 +8254,7 @@ use_block_rsv(struct btrfs_trans_handle
  	if (unlikely(block_rsv->size == 0))
  		goto try_reserve;
  again:
@@ -75,7 +75,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	if (!ret)
  		return block_rsv;
  
-@@ -8289,7 +8286,7 @@ try_reserve:
+@@ -8295,7 +8292,7 @@ try_reserve:
  	 */
  	if (block_rsv->type != BTRFS_BLOCK_RSV_GLOBAL &&
  	    block_rsv->space_info == global_rsv->space_info) {

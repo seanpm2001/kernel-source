@@ -1,0 +1,65 @@
+From: Sagi Grimberg <sagi@grimberg.me>
+Date: Thu, 1 Nov 2018 09:13:12 -0700
+Subject: mlx5: remove support for ib_get_vector_affinity
+Patch-mainline: v5.0-rc1
+Git-commit: 9afc97c29b032af9a4112c2f4a02d5313b4dc71f
+References: bsc#1174748
+
+Devices that does not use managed affinity can not export a vector
+affinity as the consumer relies on having a static mapping it can map to
+upper layer affinity (e.g. sw queues). If the driver allows the user to
+set the device irq affinity, then the affinitization of a long term
+existing entites is not relevant.
+
+For example, nvme-rdma controllers queue-irq affinitization is determined
+at init time so if the irq affinity changes over time, we are no longer
+aligned.
+
+Signed-off-by: Sagi Grimberg <sagi@grimberg.me>
+Acked-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: Doug Ledford <dledford@redhat.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/infiniband/hw/mlx5/main.c |    9 ---------
+ include/linux/mlx5/driver.h       |    6 ------
+ 2 files changed, 15 deletions(-)
+
+--- a/drivers/infiniband/hw/mlx5/main.c
++++ b/drivers/infiniband/hw/mlx5/main.c
+@@ -5325,14 +5325,6 @@ static void init_delay_drop(struct mlx5_
+ 		mlx5_ib_warn(dev, "Failed to init delay drop debugfs\n");
+ }
+ 
+-static const struct cpumask *
+-mlx5_ib_get_vector_affinity(struct ib_device *ibdev, int comp_vector)
+-{
+-	struct mlx5_ib_dev *dev = to_mdev(ibdev);
+-
+-	return mlx5_get_vector_affinity_hint(dev->mdev, comp_vector);
+-}
+-
+ /* The mlx5_ib_multiport_mutex should be held when calling this function */
+ static void mlx5_ib_unbind_slave_port(struct mlx5_ib_dev *ibdev,
+ 				      struct mlx5_ib_multiport_info *mpi)
+@@ -5838,7 +5830,6 @@ int mlx5_ib_stage_caps_init(struct mlx5_
+ 	dev->ib_dev.map_mr_sg		= mlx5_ib_map_mr_sg;
+ 	dev->ib_dev.check_mr_status	= mlx5_ib_check_mr_status;
+ 	dev->ib_dev.get_dev_fw_str      = get_dev_fw_str;
+-	dev->ib_dev.get_vector_affinity	= mlx5_ib_get_vector_affinity;
+ 	if (MLX5_CAP_GEN(mdev, ipoib_enhanced_offloads) &&
+ 	    IS_ENABLED(CONFIG_MLX5_CORE_IPOIB))
+ 		dev->ib_dev.rdma_netdev_get_params = mlx5_ib_rn_get_params;
+--- a/include/linux/mlx5/driver.h
++++ b/include/linux/mlx5/driver.h
+@@ -1306,10 +1306,4 @@ enum {
+ 	MLX5_TRIGGERED_CMD_COMP = (u64)1 << 32,
+ };
+ 
+-static inline const struct cpumask *
+-mlx5_get_vector_affinity_hint(struct mlx5_core_dev *dev, int vector)
+-{
+-	return dev->priv.irq_info[vector].mask;
+-}
+-
+ #endif /* MLX5_DRIVER_H */

@@ -29,7 +29,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -4929,6 +4929,7 @@ skip_async:
+@@ -4934,6 +4934,7 @@ skip_async:
  }
  
  struct reserve_ticket {
@@ -37,7 +37,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	u64 bytes;
  	int error;
  	struct list_head list;
-@@ -5151,7 +5152,7 @@ static inline int need_do_async_reclaim(
+@@ -5159,7 +5160,7 @@ static inline int need_do_async_reclaim(
  		!test_bit(BTRFS_FS_STATE_REMOUNTING, &fs_info->fs_state));
  }
  
@@ -46,7 +46,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  {
  	struct reserve_ticket *ticket;
  
-@@ -5160,7 +5161,10 @@ static void wake_all_tickets(struct list
+@@ -5168,7 +5169,10 @@ static void wake_all_tickets(struct list
  		list_del_init(&ticket->list);
  		ticket->error = -ENOSPC;
  		wake_up(&ticket->wait);
@@ -57,7 +57,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  }
  
  /*
-@@ -5233,8 +5237,12 @@ static void btrfs_async_reclaim_metadata
+@@ -5241,8 +5245,12 @@ static void btrfs_async_reclaim_metadata
  		if (flush_state > COMMIT_TRANS) {
  			commit_cycles++;
  			if (commit_cycles > 2) {
@@ -72,7 +72,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  			} else {
  				flush_state = FLUSH_DELAYED_ITEMS_NR;
  			}
-@@ -5287,10 +5295,11 @@ static void priority_reclaim_metadata_sp
+@@ -5294,10 +5302,11 @@ static void priority_reclaim_metadata_sp
  
  static int wait_reserve_ticket(struct btrfs_fs_info *fs_info,
  			       struct btrfs_space_info *space_info,
@@ -85,7 +85,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	int ret = 0;
  
  	spin_lock(&space_info->lock);
-@@ -5311,14 +5320,12 @@ static int wait_reserve_ticket(struct bt
+@@ -5318,14 +5327,12 @@ static int wait_reserve_ticket(struct bt
  		ret = ticket->error;
  	if (!list_empty(&ticket->list))
  		list_del_init(&ticket->list);
@@ -104,15 +104,15 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	return ret;
  }
  
-@@ -5344,6 +5351,7 @@ static int __reserve_metadata_bytes(stru
- 	struct btrfs_fs_info *fs_info = root->fs_info;
+@@ -5351,6 +5358,7 @@ static int __reserve_metadata_bytes(stru
+ {
  	struct reserve_ticket ticket;
  	u64 used;
 +	u64 reclaim_bytes = 0;
  	int ret = 0;
  
  	ASSERT(orig_bytes);
-@@ -5378,6 +5386,7 @@ static int __reserve_metadata_bytes(stru
+@@ -5386,6 +5394,7 @@ static int __reserve_metadata_bytes(stru
  	 * the list and we will do our own flushing further down.
  	 */
  	if (ret && flush != BTRFS_RESERVE_NO_FLUSH) {
@@ -120,7 +120,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		ticket.bytes = orig_bytes;
  		ticket.error = 0;
  		init_waitqueue_head(&ticket.wait);
-@@ -5417,25 +5426,21 @@ static int __reserve_metadata_bytes(stru
+@@ -5426,25 +5435,21 @@ static int __reserve_metadata_bytes(stru
  		return ret;
  
  	if (flush == BTRFS_RESERVE_FLUSH_ALL)
