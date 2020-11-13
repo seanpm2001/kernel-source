@@ -1,0 +1,54 @@
+From f2ac428e0edabbca41b9dfe9473a90147962e4e9 Mon Sep 17 00:00:00 2001
+From: Nicholas Piggin <npiggin@gmail.com>
+Date: Tue, 10 Oct 2017 17:11:09 +1000
+Subject: [PATCH] powerpc/pseries/cpuidle: add polling idle for shared
+ processor guests
+
+References: bsc#1178765 ltc#188968
+Patch-mainline: v4.16-rc1
+Git-commit: f2ac428e0edabbca41b9dfe9473a90147962e4e9
+
+For shared processor guests (e.g., KVM), add an idle polling mode rather
+than immediately returning to the hypervisor when the guest CPU goes
+idle.
+
+Test setup is a 2 socket POWER9 with 4 guests running, each with vCPUs
+equal to 1/2 of real of CPUs. Saturated each guest with tbench. Using
+polling idle gives about 1.4x throughput.
+
+Kernel compile speed was not changed significantly.
+
+Signed-off-by: Nicholas Piggin <npiggin@gmail.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ drivers/cpuidle/cpuidle-pseries.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/cpuidle/cpuidle-pseries.c b/drivers/cpuidle/cpuidle-pseries.c
+index 0f2b697cbb27..9e56bc411061 100644
+--- a/drivers/cpuidle/cpuidle-pseries.c
++++ b/drivers/cpuidle/cpuidle-pseries.c
+@@ -174,11 +174,17 @@ static struct cpuidle_state dedicated_states[] = {
+  * States for shared partition case.
+  */
+ static struct cpuidle_state shared_states[] = {
++	{ /* Snooze */
++		.name = "snooze",
++		.desc = "snooze",
++		.exit_latency = 0,
++		.target_residency = 0,
++		.enter = &snooze_loop },
+ 	{ /* Shared Cede */
+ 		.name = "Shared Cede",
+ 		.desc = "Shared Cede",
+-		.exit_latency = 0,
+-		.target_residency = 0,
++		.exit_latency = 10,
++		.target_residency = 100,
+ 		.enter = &shared_cede_loop },
+ };
+ 
+-- 
+2.26.2
+
