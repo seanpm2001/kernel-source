@@ -117,18 +117,18 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
 --- a/kernel/trace/ring_buffer.c
 +++ b/kernel/trace/ring_buffer.c
-@@ -2601,16 +2601,16 @@ rb_wakeups(struct ring_buffer *buffer, s
+@@ -2603,16 +2603,16 @@ rb_wakeups(struct ring_buffer *buffer, s
   *  IRQ context
   *  NMI context
   *
 - * If for some reason the ring buffer starts to recurse, we
 - * only allow that to happen at most 4 times (one for each
 - * context). If it happens 5 times, then we consider this a
-- * recusive loop and do not let it go further.
+- * recursive loop and do not let it go further.
 + * If for some reason the ring buffer starts to recurse, we only allow
 + * that to happen at most 6 times (one for each context, plus possibly
 + * two levels of synthetic event generation). If it happens 7 times,
-+ * then we consider this a recusive loop and do not let it go further.
++ * then we consider this a recursive loop and do not let it go further.
   */
  
  static __always_inline int
@@ -141,7 +141,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	cpu_buffer->current_context++;
 --- a/kernel/trace/trace.c
 +++ b/kernel/trace/trace.c
-@@ -7570,6 +7570,7 @@ static int instance_mkdir(const char *na
+@@ -7599,6 +7599,7 @@ static int instance_mkdir(const char *na
  	struct trace_array *tr;
  	int ret;
  
@@ -149,7 +149,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	mutex_lock(&trace_types_lock);
  
  	ret = -EEXIST;
-@@ -7626,6 +7627,7 @@ static int instance_mkdir(const char *na
+@@ -7655,6 +7656,7 @@ static int instance_mkdir(const char *na
  	list_add(&tr->list, &ftrace_trace_arrays);
  
  	mutex_unlock(&trace_types_lock);
@@ -157,7 +157,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	return 0;
  
-@@ -7637,6 +7639,7 @@ static int instance_mkdir(const char *na
+@@ -7666,6 +7668,7 @@ static int instance_mkdir(const char *na
  
   out_unlock:
  	mutex_unlock(&trace_types_lock);
@@ -165,7 +165,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	return ret;
  
-@@ -7649,6 +7652,7 @@ static int instance_rmdir(const char *na
+@@ -7678,6 +7681,7 @@ static int instance_rmdir(const char *na
  	int ret;
  	int i;
  
@@ -173,7 +173,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	mutex_lock(&trace_types_lock);
  
  	ret = -ENODEV;
-@@ -7694,6 +7698,7 @@ static int instance_rmdir(const char *na
+@@ -7723,6 +7727,7 @@ static int instance_rmdir(const char *na
  
   out_unlock:
  	mutex_unlock(&trace_types_lock);
