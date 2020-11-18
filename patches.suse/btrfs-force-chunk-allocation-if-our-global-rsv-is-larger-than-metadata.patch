@@ -2,7 +2,8 @@ From: Josef Bacik <josef@toxicpanda.com>
 Date: Fri, 13 Mar 2020 15:28:48 -0400
 Subject: btrfs: force chunk allocation if our global rsv is larger than
  metadata
-Patch-mainline: Submitted, https://lore.kernel.org/linux-btrfs/20200313192848.140759-1-josef@toxicpanda.com/
+Git-commit: 9c343784c4328781129bcf9e671645f69fe4b38a
+Patch-mainline: v5.8-rc1
 References: bsc#1165949
 
 Nikolay noticed a bunch of test failures with my global rsv steal
@@ -50,13 +51,13 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  #include "math.h"
  #include "transaction.h"
 +#include "block-group.h"
- 
+
  static u64 block_rsv_release_bytes(struct btrfs_fs_info *fs_info,
  				    struct btrfs_block_rsv *block_rsv,
 @@ -313,6 +314,8 @@ void btrfs_update_global_block_rsv(struc
  	else
  		block_rsv->full = 0;
- 
+
 +	if (block_rsv->size >= sinfo->total_bytes)
 +		sinfo->force_alloc = CHUNK_ALLOC_FORCE;
  	spin_unlock(&block_rsv->lock);
@@ -69,16 +70,16 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  #include "qgroup.h"
  #include "block-group.h"
 +#include "space-info.h"
- 
+
  #define BTRFS_ROOT_TRANS_TAG 0
- 
+
 @@ -504,6 +505,7 @@ start_transaction(struct btrfs_root *roo
  	u64 num_bytes = 0;
  	u64 qgroup_reserved = 0;
  	bool reloc_reserved = false;
 +	bool do_chunk_alloc = false;
  	int ret;
- 
+
  	/* Send isn't supposed to start transactions. */
 @@ -566,6 +568,9 @@ start_transaction(struct btrfs_root *roo
  							  delayed_refs_bytes);
@@ -91,7 +92,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		   !delayed_refs_rsv->full) {
  		/*
 @@ -647,6 +652,19 @@ got_it:
- 
+
  	if (!current->journal_info && type != TRANS_USERSPACE)
  		current->journal_info = h;
 +
@@ -108,5 +109,5 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 +	}
 +
  	return h;
- 
+
  join_fail:
