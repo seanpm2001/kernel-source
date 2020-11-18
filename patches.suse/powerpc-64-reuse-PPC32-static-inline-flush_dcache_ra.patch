@@ -1,0 +1,164 @@
+From 22e9c88d486a0536d337d6e0973968be0a4cd4b2 Mon Sep 17 00:00:00 2001
+From: Christophe Leroy <christophe.leroy@c-s.fr>
+Date: Tue, 14 May 2019 09:05:16 +0000
+Subject: [PATCH] powerpc/64: reuse PPC32 static inline flush_dcache_range()
+
+References: jsc#SLE-16402 jsc#SLE-16497 bsc#1176109 ltc#187964
+Patch-mainline: v5.3-rc1
+Git-commit: 22e9c88d486a0536d337d6e0973968be0a4cd4b2
+
+This patch drops the assembly PPC64 version of flush_dcache_range()
+and re-uses the PPC32 static inline version.
+
+With GCC 8.1, the following code is generated:
+
+void flush_test(unsigned long start, unsigned long stop)
+{
+	flush_dcache_range(start, stop);
+}
+
+0000000000000130 <.flush_test>:
+ 130:	3d 22 00 00 	addis   r9,r2,0
+			132: R_PPC64_TOC16_HA	.data+0x8
+ 134:	81 09 00 00 	lwz     r8,0(r9)
+			136: R_PPC64_TOC16_LO	.data+0x8
+ 138:	3d 22 00 00 	addis   r9,r2,0
+			13a: R_PPC64_TOC16_HA	.data+0xc
+ 13c:	80 e9 00 00 	lwz     r7,0(r9)
+			13e: R_PPC64_TOC16_LO	.data+0xc
+ 140:	7d 48 00 d0 	neg     r10,r8
+ 144:	7d 43 18 38 	and     r3,r10,r3
+ 148:	7c 00 04 ac 	hwsync
+ 14c:	4c 00 01 2c 	isync
+ 150:	39 28 ff ff 	addi    r9,r8,-1
+ 154:	7c 89 22 14 	add     r4,r9,r4
+ 158:	7c 83 20 50 	subf    r4,r3,r4
+ 15c:	7c 89 3c 37 	srd.    r9,r4,r7
+ 160:	41 82 00 1c 	beq     17c <.flush_test+0x4c>
+ 164:	7d 29 03 a6 	mtctr   r9
+ 168:	60 00 00 00 	nop
+ 16c:	60 00 00 00 	nop
+ 170:	7c 00 18 ac 	dcbf    0,r3
+ 174:	7c 63 42 14 	add     r3,r3,r8
+ 178:	42 00 ff f8 	bdnz    170 <.flush_test+0x40>
+ 17c:	7c 00 04 ac 	hwsync
+ 180:	4c 00 01 2c 	isync
+ 184:	4e 80 00 20 	blr
+ 188:	60 00 00 00 	nop
+ 18c:	60 00 00 00 	nop
+
+Signed-off-by: Christophe Leroy <christophe.leroy@c-s.fr>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/include/asm/cache.h      | 10 +++++++++
+ arch/powerpc/include/asm/cacheflush.h | 14 +++++++------
+ arch/powerpc/kernel/misc_64.S         | 29 ---------------------------
+ 3 files changed, 18 insertions(+), 35 deletions(-)
+
+diff --git a/arch/powerpc/include/asm/cache.h b/arch/powerpc/include/asm/cache.h
+index e84d1622eeb6..b3388d95f451 100644
+--- a/arch/powerpc/include/asm/cache.h
++++ b/arch/powerpc/include/asm/cache.h
+@@ -54,6 +54,16 @@ struct ppc64_caches {
+ };
+ 
+ extern struct ppc64_caches ppc64_caches;
++
++static inline u32 l1_cache_shift(void)
++{
++	return ppc64_caches.l1d.log_block_size;
++}
++
++static inline u32 l1_cache_bytes(void)
++{
++	return ppc64_caches.l1d.block_size;
++}
+ #else
+ static inline u32 l1_cache_shift(void)
+ {
+diff --git a/arch/powerpc/include/asm/cacheflush.h b/arch/powerpc/include/asm/cacheflush.h
+index 217f183aa8c4..5c5a4538fc47 100644
+--- a/arch/powerpc/include/asm/cacheflush.h
++++ b/arch/powerpc/include/asm/cacheflush.h
+@@ -60,7 +60,6 @@ static inline void __flush_dcache_icache_phys(unsigned long physaddr)
+ }
+ #endif
+ 
+-#ifdef CONFIG_PPC32
+ /*
+  * Write any modified data cache blocks out to memory and invalidate them.
+  * Does not invalidate the corresponding instruction cache blocks.
+@@ -73,9 +72,17 @@ static inline void flush_dcache_range(unsigned long start, unsigned long stop)
+ 	unsigned long size = stop - (unsigned long)addr + (bytes - 1);
+ 	unsigned long i;
+ 
++	if (IS_ENABLED(CONFIG_PPC64)) {
++		mb();	/* sync */
++		isync();
++	}
++
+ 	for (i = 0; i < size >> shift; i++, addr += bytes)
+ 		dcbf(addr);
+ 	mb();	/* sync */
++
++	if (IS_ENABLED(CONFIG_PPC64))
++		isync();
+ }
+ 
+ /*
+@@ -115,11 +122,6 @@ static inline void invalidate_dcache_range(unsigned long start,
+ 	mb();	/* sync */
+ }
+ 
+-#endif /* CONFIG_PPC32 */
+-#ifdef CONFIG_PPC64
+-extern void flush_dcache_range(unsigned long start, unsigned long stop);
+-#endif
+-
+ #define copy_to_user_page(vma, page, vaddr, dst, src, len) \
+ 	do { \
+ 		memcpy(dst, src, len); \
+diff --git a/arch/powerpc/kernel/misc_64.S b/arch/powerpc/kernel/misc_64.S
+index a4fd536efb44..1b0a42c50ef1 100644
+--- a/arch/powerpc/kernel/misc_64.S
++++ b/arch/powerpc/kernel/misc_64.S
+@@ -114,35 +114,6 @@ END_FTR_SECTION_IFSET(CPU_FTR_COHERENT_ICACHE)
+ _ASM_NOKPROBE_SYMBOL(flush_icache_range)
+ EXPORT_SYMBOL(flush_icache_range)
+ 
+-/*
+- * Like above, but only do the D-cache.
+- *
+- * flush_dcache_range(unsigned long start, unsigned long stop)
+- *
+- *    flush all bytes from start to stop-1 inclusive
+- */
+-
+-_GLOBAL_TOC(flush_dcache_range)
+- 	ld	r10,PPC64_CACHES@toc(r2)
+-	lwz	r7,DCACHEL1BLOCKSIZE(r10)	/* Get dcache block size */
+-	addi	r5,r7,-1
+-	andc	r6,r3,r5		/* round low to line bdy */
+-	subf	r8,r6,r4		/* compute length */
+-	add	r8,r8,r5		/* ensure we get enough */
+-	lwz	r9,DCACHEL1LOGBLOCKSIZE(r10)/* Get log-2 of dcache block size */
+-	srw.	r8,r8,r9		/* compute line count */
+-	beqlr				/* nothing to do? */
+-	sync
+-	isync
+-	mtctr	r8
+-0:	dcbf	0,r6
+-	add	r6,r6,r7
+-	bdnz	0b
+-	sync
+-	isync
+-	blr
+-EXPORT_SYMBOL(flush_dcache_range)
+-
+ /*
+  * Flush a particular page from the data cache to RAM.
+  * Note: this is necessary because the instruction cache does *not*
+-- 
+2.29.1
+
