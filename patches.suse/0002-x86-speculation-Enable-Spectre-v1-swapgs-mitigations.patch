@@ -87,20 +87,10 @@ Reviewed-by: Dave Hansen <dave.hansen@intel.com>
 Signed-off-by: Michal Hocko <mhocko@suse.com>
 
 ---
- Documentation/admin-guide/kernel-parameters.txt |    1 
+ Documentation/admin-guide/kernel-parameters.txt |    8 -
  arch/x86/kernel/cpu/bugs.c                      |  115 ++++++++++++++++++++++--
- 2 files changed, 107 insertions(+), 9 deletions(-)
+ 2 files changed, 110 insertions(+), 13 deletions(-)
 
---- a/Documentation/admin-guide/kernel-parameters.txt
-+++ b/Documentation/admin-guide/kernel-parameters.txt
-@@ -2420,6 +2420,7 @@
- 					       kpti=0 [ARM64]
- 					       nospectre_v1 [PPC]
- 					       nobp=0 [S390]
-+					       nospectre_v1 [X86]
- 					       nospectre_v2 [X86,PPC,S390,ARM64]
- 					       spectre_v2_user=off [X86]
- 					       spec_store_bypass_disable=off [X86,PPC]
 --- a/arch/x86/kernel/cpu/bugs.c
 +++ b/arch/x86/kernel/cpu/bugs.c
 @@ -31,6 +31,7 @@
@@ -240,7 +230,7 @@ Signed-off-by: Michal Hocko <mhocko@suse.com>
  #define pr_fmt(fmt)     "Spectre V2 : " fmt
  
  static enum spectre_v2_mitigation spectre_v2_enabled __ro_after_init =
-@@ -1276,7 +1373,7 @@ static ssize_t cpu_show_common(struct de
+@@ -1259,7 +1356,7 @@ static ssize_t cpu_show_common(struct de
  		break;
  
  	case X86_BUG_SPECTRE_V1:
@@ -249,3 +239,27 @@ Signed-off-by: Michal Hocko <mhocko@suse.com>
  
  	case X86_BUG_SPECTRE_V2:
  		return sprintf(buf, "%s%s%s%s%s%s\n", spectre_v2_strings[spectre_v2_enabled],
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -2418,7 +2418,7 @@
+ 				expose users to several CPU vulnerabilities.
+ 				Equivalent to: nopti [X86,PPC]
+ 					       kpti=0 [ARM64]
+-					       nospectre_v1 [PPC]
++					       nospectre_v1 [X86,PPC]
+ 					       nobp=0 [S390]
+ 					       nospectre_v2 [X86,PPC,S390,ARM64]
+ 					       spectre_v2_user=off [X86]
+@@ -2761,9 +2761,9 @@
+ 				     cannot be undone. Depending on the CPU
+ 				     type this might have a performance impact.
+ 
+-	nospectre_v1	[PPC] Disable mitigations for Spectre Variant 1 (bounds
+-			check bypass). With this option data leaks are possible
+-			in the system.
++	nospectre_v1	[X86,PPC] Disable mitigations for Spectre Variant 1
++			(bounds check bypass). With this option data leaks are
++			possible in the system.
+ 
+ 	nospectre_v2	[X86,ARM64] Disable all mitigations for
+ 			the Spectre variant 2 (indirect branch prediction)
