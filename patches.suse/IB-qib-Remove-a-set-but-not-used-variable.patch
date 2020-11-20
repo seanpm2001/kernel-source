@@ -1,0 +1,46 @@
+From 196b4ce57d1612ca03be3c7f14bfb6b0740c5c53 Mon Sep 17 00:00:00 2001
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Wed, 27 Mar 2019 16:50:51 -0700
+Subject: [PATCH 1/1] IB/qib: Remove a set-but-not-used variable
+Git-commit: 196b4ce57d1612ca03be3c7f14bfb6b0740c5c53
+Patch-mainline: v5.10-rc1
+References: bsc#1111666
+
+This patch avoids that a compiler warning is reported when building with
+W=1.
+
+Reviewed-by: Leon Romanovsky <leonro@mellanox.com>
+Fixes: 49c0e2414b20 ("IB/qib: Change SDMA progression mode depending on single- or multi-rail")
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/hw/qib/qib_user_sdma.c | 5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/drivers/infiniband/hw/qib/qib_user_sdma.c b/drivers/infiniband/hw/qib/qib_user_sdma.c
+index 31c523b2a9f5..ef19d39a44b1 100644
+--- a/drivers/infiniband/hw/qib/qib_user_sdma.c
++++ b/drivers/infiniband/hw/qib/qib_user_sdma.c
+@@ -225,8 +225,6 @@ qib_user_sdma_queue_create(struct device *dev, int unit, int ctxt, int sctxt)
+ 	if (sdma_rb_node) {
+ 		sdma_rb_node->refcount++;
+ 	} else {
+-		int ret;
+-
+ 		sdma_rb_node = kmalloc(sizeof(
+ 			struct qib_user_sdma_rb_node), GFP_KERNEL);
+ 		if (!sdma_rb_node)
+@@ -235,8 +233,7 @@ qib_user_sdma_queue_create(struct device *dev, int unit, int ctxt, int sctxt)
+ 		sdma_rb_node->refcount = 1;
+ 		sdma_rb_node->pid = current->pid;
+ 
+-		ret = qib_user_sdma_rb_insert(&qib_user_sdma_rb_root,
+-					sdma_rb_node);
++		qib_user_sdma_rb_insert(&qib_user_sdma_rb_root, sdma_rb_node);
+ 	}
+ 	pq->sdma_rb_node = sdma_rb_node;
+ 
+-- 
+2.26.2
+
