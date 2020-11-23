@@ -33,14 +33,12 @@ Fixes: edf064e7c6fec3 ("btrfs: nowait aio support")
 Signed-off-by: Filipe Manana <fdmanana@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 ---
- fs/btrfs/file.c | 37 ++++++++++++++++++++++++++-----------
- 1 file changed, 26 insertions(+), 11 deletions(-)
+ fs/btrfs/file.c |   38 ++++++++++++++++++++++++++------------
+ 1 file changed, 26 insertions(+), 12 deletions(-)
 
-diff --git a/fs/btrfs/file.c b/fs/btrfs/file.c
-index 87f0f72869ab..d5479f307337 100644
 --- a/fs/btrfs/file.c
 +++ b/fs/btrfs/file.c
-@@ -1547,7 +1547,7 @@ lock_and_cleanup_extent_if_need(struct btrfs_inode *inode, struct page **pages,
+@@ -1547,7 +1547,7 @@ lock_and_cleanup_extent_if_need(struct b
  }
  
  static noinline int check_can_nocow(struct btrfs_inode *inode, loff_t pos,
@@ -49,7 +47,7 @@ index 87f0f72869ab..d5479f307337 100644
  {
  	struct btrfs_fs_info *fs_info = btrfs_sb(inode->vfs_inode.i_sb);
  	struct btrfs_root *root = inode->root;
-@@ -1555,28 +1555,44 @@ static noinline int check_can_nocow(struct btrfs_inode *inode, loff_t pos,
+@@ -1555,28 +1555,43 @@ static noinline int check_can_nocow(stru
  	u64 num_bytes;
  	int ret;
  
@@ -88,7 +86,7 @@ index 87f0f72869ab..d5479f307337 100644
  			NULL, NULL, NULL);
  	if (ret <= 0) {
  		ret = 0;
- 		btrfs_end_write_no_snapshoting(root);
+-		btrfs_end_write_no_snapshoting(root);
 +		if (!nowait)
 +			btrfs_end_write_no_snapshoting(root);
  	} else {
@@ -100,7 +98,7 @@ index 87f0f72869ab..d5479f307337 100644
  	unlock_extent(&inode->io_tree, lockstart, lockend);
  
  	return ret;
-@@ -1647,7 +1663,7 @@ static noinline ssize_t __btrfs_buffered_write(struct file *file,
+@@ -1647,7 +1662,7 @@ static noinline ssize_t __btrfs_buffered
  			if ((BTRFS_I(inode)->flags & (BTRFS_INODE_NODATACOW |
  						      BTRFS_INODE_PREALLOC)) &&
  			    check_can_nocow(BTRFS_I(inode), pos,
@@ -109,7 +107,7 @@ index 87f0f72869ab..d5479f307337 100644
  				/*
  				 * For nodata cow case, no need to reserve
  				 * data space.
-@@ -1912,12 +1928,11 @@ static ssize_t btrfs_file_write_iter(struct kiocb *iocb,
+@@ -1912,12 +1927,11 @@ static ssize_t btrfs_file_write_iter(str
  		 */
  		if (!(BTRFS_I(inode)->flags & (BTRFS_INODE_NODATACOW |
  					      BTRFS_INODE_PREALLOC)) ||
@@ -124,6 +122,3 @@ index 87f0f72869ab..d5479f307337 100644
  		/*
  		 * There are holes in the range or parts of the range that must
  		 * be COWed (shared extents, RO block groups, etc), so just bail
--- 
-2.26.2
-
