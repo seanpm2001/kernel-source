@@ -1,0 +1,85 @@
+From: Anand Jain <anand.jain@oracle.com>
+Date: Fri, 10 Aug 2018 13:53:21 +0800
+Subject: btrfs: add helper to obtain number of devices with ongoing dev-replace
+Git-commit: 1da739678e0b7a764a0f1ef46886f919f19f6446
+Patch-mainline: v4.20-rc1
+References: bsc#1178897
+
+When the replace is running the fs_devices::num_devices also includes
+the replaced device, however in some operations like device delete and
+balance it needs the actual num_devices without the repalced devices.
+The function btrfs_num_devices() just provides that.
+
+And here is a scenario how balance and repalce items could co-exist:
+
+Consider balance is started and paused, now start the replace followed
+by a unmount or system power-cycle. During following mount, the
+open_ctree() first restarts the balance so it must check for the device
+replace otherwise our num_devices calculation will be wrong.
+
+Signed-off-by: Anand Jain <anand.jain@oracle.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+[ update changelog ]
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/volumes.c |   34 ++++++++++++++++++++--------------
+ 1 file changed, 20 insertions(+), 14 deletions(-)
+
+--- a/fs/btrfs/volumes.c
++++ b/fs/btrfs/volumes.c
+@@ -1853,6 +1853,24 @@ void btrfs_assign_next_active_device(str
+ 		fs_info->fs_devices->latest_bdev = next_device->bdev;
+ }
+ 
++/*
++ * Return btrfs_fs_devices::num_devices excluding the device that's being
++ * currently replaced.
++ */
++static u64 btrfs_num_devices(struct btrfs_fs_info *fs_info)
++{
++	u64 num_devices = fs_info->fs_devices->num_devices;
++
++	btrfs_dev_replace_read_lock(&fs_info->dev_replace);
++	if (btrfs_dev_replace_is_ongoing(&fs_info->dev_replace)) {
++		ASSERT(num_devices > 1);
++		num_devices--;
++	}
++	btrfs_dev_replace_read_unlock(&fs_info->dev_replace);
++
++	return num_devices;
++}
++
+ int btrfs_rm_device(struct btrfs_fs_info *fs_info, const char *device_path,
+ 		u64 devid)
+ {
+@@ -1864,13 +1882,7 @@ int btrfs_rm_device(struct btrfs_fs_info
+ 
+ 	mutex_lock(&uuid_mutex);
+ 
+-	num_devices = fs_info->fs_devices->num_devices;
+-	btrfs_dev_replace_read_lock(&fs_info->dev_replace);
+-	if (btrfs_dev_replace_is_ongoing(&fs_info->dev_replace)) {
+-		WARN_ON(num_devices < 1);
+-		num_devices--;
+-	}
+-	btrfs_dev_replace_read_unlock(&fs_info->dev_replace);
++	num_devices = btrfs_num_devices(fs_info);
+ 
+ 	ret = btrfs_check_raid_min_devices(fs_info, num_devices - 1);
+ 	if (ret)
+@@ -3857,13 +3869,7 @@ int btrfs_balance(struct btrfs_balance_c
+ 		}
+ 	}
+ 
+-	num_devices = fs_info->fs_devices->num_devices;
+-	btrfs_dev_replace_read_lock(&fs_info->dev_replace);
+-	if (btrfs_dev_replace_is_ongoing(&fs_info->dev_replace)) {
+-		BUG_ON(num_devices < 1);
+-		num_devices--;
+-	}
+-	btrfs_dev_replace_read_unlock(&fs_info->dev_replace);
++	num_devices = btrfs_num_devices(fs_info);
+ 	allowed = BTRFS_AVAIL_ALLOC_BIT_SINGLE | BTRFS_BLOCK_GROUP_DUP;
+ 	if (num_devices > 1)
+ 		allowed |= (BTRFS_BLOCK_GROUP_RAID0 | BTRFS_BLOCK_GROUP_RAID1);
