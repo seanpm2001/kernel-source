@@ -1,0 +1,168 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Wed, 18 Dec 2019 17:20:27 -0500
+Subject: btrfs: rework arguments of btrfs_unlink_subvol
+Git-commit: 045d3967b6920b663fc010ad414ade1b24143bd1
+Patch-mainline: v5.5-rc7
+References: bsc#1178962
+
+btrfs_unlink_subvol takes the name of the dentry and the root objectid
+based on what kind of inode this is, either a real subvolume link or a
+empty one that we inherited as a snapshot.  We need to fix how we unlink
+in the case for BTRFS_EMPTY_SUBVOL_DIR_OBJECTID in the future, so rework
+btrfs_unlink_subvol to just take the dentry and handle getting the right
+objectid given the type of inode this is.  There is no functional change
+here, simply pushing the work into btrfs_unlink_subvol() proper.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/ctree.h |    4 +---
+ fs/btrfs/inode.c |   48 ++++++++++++++++++++----------------------------
+ fs/btrfs/ioctl.c |    5 +----
+ 3 files changed, 22 insertions(+), 35 deletions(-)
+
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -2967,9 +2967,7 @@ int btrfs_add_link(struct btrfs_trans_ha
+ 		   struct btrfs_inode *parent_inode, struct btrfs_inode *inode,
+ 		   const char *name, int name_len, int add_backref, u64 index);
+ int btrfs_unlink_subvol(struct btrfs_trans_handle *trans,
+-			struct btrfs_root *root,
+-			struct inode *dir, u64 objectid,
+-			const char *name, int name_len);
++			struct inode *dir, struct dentry *dentry);
+ int btrfs_truncate_block(struct inode *inode, loff_t from, loff_t len,
+ 			int front);
+ int btrfs_truncate_inode_items(struct btrfs_trans_handle *trans,
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -4119,19 +4119,31 @@ out:
+ }
+ 
+ int btrfs_unlink_subvol(struct btrfs_trans_handle *trans,
+-			struct btrfs_root *root,
+-			struct inode *dir, u64 objectid,
+-			const char *name, int name_len)
++			struct inode *dir, struct dentry *dentry)
+ {
++	struct btrfs_root *root = BTRFS_I(dir)->root;
+ 	struct btrfs_fs_info *fs_info = root->fs_info;
++	struct btrfs_inode *inode = BTRFS_I(d_inode(dentry));
+ 	struct btrfs_path *path;
+ 	struct extent_buffer *leaf;
+ 	struct btrfs_dir_item *di;
+ 	struct btrfs_key key;
++	const char *name = dentry->d_name.name;
++	int name_len = dentry->d_name.len;
+ 	u64 index;
+ 	int ret;
++	u64 objectid;
+ 	u64 dir_ino = btrfs_ino(BTRFS_I(dir));
+ 
++	if (btrfs_ino(inode) == BTRFS_FIRST_FREE_OBJECTID) {
++		objectid = inode->root->root_key.objectid;
++	} else if (btrfs_ino(inode) == BTRFS_EMPTY_SUBVOL_DIR_OBJECTID) {
++		objectid = inode->location.objectid;
++	} else {
++		WARN_ON(1);
++		return -EINVAL;
++	}
++
+ 	path = btrfs_alloc_path();
+ 	if (!path)
+ 		return -ENOMEM;
+@@ -4217,10 +4229,7 @@ static int btrfs_rmdir(struct inode *dir
+ 		return PTR_ERR(trans);
+ 
+ 	if (unlikely(btrfs_ino(BTRFS_I(inode)) == BTRFS_EMPTY_SUBVOL_DIR_OBJECTID)) {
+-		err = btrfs_unlink_subvol(trans, root, dir,
+-					  BTRFS_I(inode)->location.objectid,
+-					  dentry->d_name.name,
+-					  dentry->d_name.len);
++		err = btrfs_unlink_subvol(trans, dir, dentry);
+ 		goto out;
+ 	}
+ 
+@@ -9407,7 +9416,6 @@ static int btrfs_rename_exchange(struct
+ 	u64 new_ino = btrfs_ino(BTRFS_I(new_inode));
+ 	u64 old_idx = 0;
+ 	u64 new_idx = 0;
+-	u64 root_objectid;
+ 	int ret;
+ 	bool root_log_pinned = false;
+ 	bool dest_log_pinned = false;
+@@ -9513,11 +9521,7 @@ static int btrfs_rename_exchange(struct
+ 
+ 	/* src is a subvolume */
+ 	if (old_ino == BTRFS_FIRST_FREE_OBJECTID) {
+-		root_objectid = BTRFS_I(old_inode)->root->root_key.objectid;
+-		ret = btrfs_unlink_subvol(trans, root, old_dir,
+-					  root_objectid,
+-					  old_dentry->d_name.name,
+-					  old_dentry->d_name.len);
++		ret = btrfs_unlink_subvol(trans, old_dir, old_dentry);
+ 	} else { /* src is an inode */
+ 		ret = __btrfs_unlink_inode(trans, root, BTRFS_I(old_dir),
+ 					   BTRFS_I(old_dentry->d_inode),
+@@ -9533,11 +9537,7 @@ static int btrfs_rename_exchange(struct
+ 
+ 	/* dest is a subvolume */
+ 	if (new_ino == BTRFS_FIRST_FREE_OBJECTID) {
+-		root_objectid = BTRFS_I(new_inode)->root->root_key.objectid;
+-		ret = btrfs_unlink_subvol(trans, dest, new_dir,
+-					  root_objectid,
+-					  new_dentry->d_name.name,
+-					  new_dentry->d_name.len);
++		ret = btrfs_unlink_subvol(trans, new_dir, new_dentry);
+ 	} else { /* dest is an inode */
+ 		ret = __btrfs_unlink_inode(trans, dest, BTRFS_I(new_dir),
+ 					   BTRFS_I(new_dentry->d_inode),
+@@ -9735,7 +9735,6 @@ static int btrfs_rename(struct inode *ol
+ 	struct inode *new_inode = d_inode(new_dentry);
+ 	struct inode *old_inode = d_inode(old_dentry);
+ 	u64 index = 0;
+-	u64 root_objectid;
+ 	int ret;
+ 	u64 old_ino = btrfs_ino(BTRFS_I(old_inode));
+ 	bool log_pinned = false;
+@@ -9843,10 +9842,7 @@ static int btrfs_rename(struct inode *ol
+ 				BTRFS_I(old_inode), 1);
+ 
+ 	if (unlikely(old_ino == BTRFS_FIRST_FREE_OBJECTID)) {
+-		root_objectid = BTRFS_I(old_inode)->root->root_key.objectid;
+-		ret = btrfs_unlink_subvol(trans, root, old_dir, root_objectid,
+-					old_dentry->d_name.name,
+-					old_dentry->d_name.len);
++		ret = btrfs_unlink_subvol(trans, old_dir, old_dentry);
+ 	} else {
+ 		ret = __btrfs_unlink_inode(trans, root, BTRFS_I(old_dir),
+ 					BTRFS_I(d_inode(old_dentry)),
+@@ -9865,11 +9861,7 @@ static int btrfs_rename(struct inode *ol
+ 		new_inode->i_ctime = current_time(new_inode);
+ 		if (unlikely(btrfs_ino(BTRFS_I(new_inode)) ==
+ 			     BTRFS_EMPTY_SUBVOL_DIR_OBJECTID)) {
+-			root_objectid = BTRFS_I(new_inode)->location.objectid;
+-			ret = btrfs_unlink_subvol(trans, dest, new_dir,
+-						root_objectid,
+-						new_dentry->d_name.name,
+-						new_dentry->d_name.len);
++			ret = btrfs_unlink_subvol(trans, new_dir, new_dentry);
+ 			BUG_ON(new_inode->i_nlink == 0);
+ 		} else {
+ 			ret = btrfs_unlink_inode(trans, dest, BTRFS_I(new_dir),
+--- a/fs/btrfs/ioctl.c
++++ b/fs/btrfs/ioctl.c
+@@ -2523,10 +2523,7 @@ static noinline int btrfs_ioctl_snap_des
+ 
+ 	btrfs_record_snapshot_destroy(trans, BTRFS_I(dir));
+ 
+-	ret = btrfs_unlink_subvol(trans, root, dir,
+-				dest->root_key.objectid,
+-				dentry->d_name.name,
+-				dentry->d_name.len);
++	ret = btrfs_unlink_subvol(trans, dir, dentry);
+ 	if (ret) {
+ 		err = ret;
+ 		btrfs_abort_transaction(trans, ret);

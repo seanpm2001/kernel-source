@@ -1,7 +1,8 @@
 From: Josef Bacik <josef@toxicpanda.com>
 Date: Fri, 13 Mar 2020 15:58:08 -0400
 Subject: btrfs: only check priority tickets for priority flushing
-Patch-mainline: Submitted, https://lore.kernel.org/linux-btrfs/20200313195809.141753-1-josef@toxicpanda.com/
+Git-commit: 666daa9f977d46010e2597a3b4f6524ba4d28129
+Patch-mainline: V5.8-rc1
 References: bsc#1165949
 
 In debugging a generic/320 failure on ppc64, Nikolay noticed that
@@ -49,10 +50,10 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 
 --- a/fs/btrfs/space-info.c
 +++ b/fs/btrfs/space-info.c
-@@ -1030,6 +1030,17 @@ static int handle_reserve_ticket(struct
+@@ -1047,6 +1047,17 @@ static int handle_reserve_ticket(struct
  	return ret;
  }
-
+ 
 +
 +/*
 + * This returns true if this flush state will go through the ordinary flushing
@@ -67,13 +68,13 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  /**
   * reserve_metadata_bytes - try to reserve bytes from the block_rsv's space
   * @root - the root we're allocating for
-@@ -1061,10 +1072,18 @@ static int __reserve_metadata_bytes(stru
+@@ -1077,10 +1088,18 @@ static int __reserve_metadata_bytes(stru
  	spin_lock(&space_info->lock);
  	ret = -ENOSPC;
  	used = btrfs_space_info_used(space_info, true);
 -	pending_tickets = !list_empty(&space_info->tickets) ||
 -		!list_empty(&space_info->priority_tickets);
-
+ 
  	/*
 +	 * We don't want NO_FLUSH allocations to jump everybody, they can
 +	 * generally handle ENOSPC in a different way, so treat them the same as
@@ -88,8 +89,8 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	 * If we have enough space then hooray, make our reservation and carry
  	 * on.  If not see if we can overcommit, and if we can, hooray carry on.
  	 * If not things get more complicated.
-@@ -1088,8 +1107,7 @@ static int __reserve_metadata_bytes(stru
- 		ticket.error = 0;
+@@ -1107,8 +1126,7 @@ static int __reserve_metadata_bytes(stru
+ 		space_info->reclaim_size += ticket.bytes;
  		init_waitqueue_head(&ticket.wait);
  		ticket.steal = (flush == BTRFS_RESERVE_FLUSH_ALL_STEAL);
 -		if (flush == BTRFS_RESERVE_FLUSH_ALL ||

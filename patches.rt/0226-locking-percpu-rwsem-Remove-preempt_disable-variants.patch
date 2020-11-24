@@ -31,7 +31,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	spin_lock(&ctx->flc_lock);
  	if (request->fl_flags & FL_ACCESS)
  		goto find_conflict;
-@@ -976,7 +976,7 @@ static int flock_lock_inode(struct inode
+@@ -976,7 +976,7 @@ find_conflict:
  
  out:
  	spin_unlock(&ctx->flc_lock);
@@ -67,7 +67,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	spin_lock(&ctx->flc_lock);
  
  	time_out_leases(inode, &dispose);
-@@ -1512,13 +1512,13 @@ int __break_lease(struct inode *inode, u
+@@ -1512,13 +1512,13 @@ restart:
  	locks_insert_block(fl, new_fl);
  	trace_break_lease_block(inode, new_fl);
  	spin_unlock(&ctx->flc_lock);
@@ -83,7 +83,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	spin_lock(&ctx->flc_lock);
  	trace_break_lease_unblock(inode, new_fl);
  	locks_delete_block(new_fl);
-@@ -1535,7 +1535,7 @@ int __break_lease(struct inode *inode, u
+@@ -1535,7 +1535,7 @@ restart:
  	}
  out:
  	spin_unlock(&ctx->flc_lock);
@@ -119,7 +119,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	spin_lock(&ctx->flc_lock);
  	time_out_leases(inode, &dispose);
  	error = check_conflicting_open(dentry, arg, lease->fl_flags);
-@@ -1765,7 +1765,7 @@ generic_add_lease(struct file *filp, lon
+@@ -1765,7 +1765,7 @@ out_setup:
  		lease->fl_lmops->lm_setup(lease, priv);
  out:
  	spin_unlock(&ctx->flc_lock);
@@ -174,7 +174,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	might_sleep();
  
 @@ -46,16 +46,10 @@ static inline void percpu_down_read_pree
- 	__this_cpu_inc(*sem->read_count);
+ 	this_cpu_inc(*sem->read_count);
  	if (unlikely(!rcu_sync_is_idle(&sem->rss)))
  		__percpu_down_read(sem, false); /* Unconditional memory barrier */
 -	barrier();
