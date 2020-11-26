@@ -1,0 +1,51 @@
+From: Dave Martin <Dave.Martin@arm.com>
+Date: Fri, 28 Sep 2018 14:39:07 +0100
+Subject: KVM: arm64: Refactor kvm_arm_num_regs() for easier maintenance
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Git-commit: 7aa92cf318f8136c445c1656d291f50df189b56a
+Patch-mainline: v5.2-rc1
+References: bsc#1174726
+
+kvm_arm_num_regs() adds together various partial register counts in
+a freeform sum expression, which makes it harder than necessary to
+read diffs that add, modify or remove a single term in the sum
+(which is expected to the common case under maintenance).
+
+This patch refactors the code to add the term one per line, for
+maximum readability.
+
+Signed-off-by: Dave Martin <Dave.Martin@arm.com>
+Reviewed-by: Alex Bennée <alex.bennee@linaro.org>
+Tested-by: zhang.lei <zhang.lei@jp.fujitsu.com>
+Signed-off-by: Marc Zyngier <marc.zyngier@arm.com>
+Signed-off-by: Matthias Brugger <mbrugger@suse.com>
+---
+ arch/arm64/kvm/guest.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/kvm/guest.c b/arch/arm64/kvm/guest.c
+index dd436a50fce7..62514cba95ca 100644
+--- a/arch/arm64/kvm/guest.c
++++ b/arch/arm64/kvm/guest.c
+@@ -258,8 +258,14 @@ static int get_timer_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
+  */
+ unsigned long kvm_arm_num_regs(struct kvm_vcpu *vcpu)
+ {
+-	return num_core_regs() + kvm_arm_num_sys_reg_descs(vcpu)
+-		+ kvm_arm_get_fw_num_regs(vcpu)	+ NUM_TIMER_REGS;
++	unsigned long res = 0;
++
++	res += num_core_regs();
++	res += kvm_arm_num_sys_reg_descs(vcpu);
++	res += kvm_arm_get_fw_num_regs(vcpu);
++	res += NUM_TIMER_REGS;
++
++	return res;
+ }
+ 
+ /**
+-- 
+2.28.0
+
