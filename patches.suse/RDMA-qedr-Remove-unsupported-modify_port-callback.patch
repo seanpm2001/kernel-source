@@ -1,0 +1,76 @@
+From ad0593ec8930d2e3fa4252cb7ad666bdfe4ed4f1 Mon Sep 17 00:00:00 2001
+From: Kamal Heib <kamalheib1@gmail.com>
+Date: Mon, 28 Oct 2019 17:59:31 +0200
+Subject: [PATCH 1/1] RDMA/qedr: Remove unsupported modify_port callback
+Git-commit: ad0593ec8930d2e3fa4252cb7ad666bdfe4ed4f1
+Patch-mainline: v5.10-rc1
+References: bsc#1111666
+
+There is no need to return always zero for function which is not
+supported.
+
+Fixes: ac1b36e55a51 ("qedr: Add support for user context verbs")
+Link: https://lore.kernel.org/r/20191028155931.1114-5-kamalheib1@gmail.com
+Signed-off-by: Kamal Heib <kamalheib1@gmail.com>
+Reviewed-by: Jason Gunthorpe <jgg@mellanox.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/hw/qedr/main.c  | 1 -
+ drivers/infiniband/hw/qedr/verbs.c | 6 ------
+ drivers/infiniband/hw/qedr/verbs.h | 2 --
+ 3 files changed, 9 deletions(-)
+
+diff --git a/drivers/infiniband/hw/qedr/main.c b/drivers/infiniband/hw/qedr/main.c
+index 03fd168cccc0..ee47f6ce0c12 100644
+--- a/drivers/infiniband/hw/qedr/main.c
++++ b/drivers/infiniband/hw/qedr/main.c
+@@ -255,7 +255,6 @@ static int qedr_register_device(struct qedr_dev *dev)
+ 
+ 	dev->ibdev.query_device = qedr_query_device;
+ 	dev->ibdev.query_port = qedr_query_port;
+-	dev->ibdev.modify_port = qedr_modify_port;
+ 
+ 	dev->ibdev.alloc_ucontext = qedr_alloc_ucontext;
+ 	dev->ibdev.dealloc_ucontext = qedr_dealloc_ucontext;
+diff --git a/drivers/infiniband/hw/qedr/verbs.c b/drivers/infiniband/hw/qedr/verbs.c
+index 9a674e65c4f7..8096b8fcab4e 100644
+--- a/drivers/infiniband/hw/qedr/verbs.c
++++ b/drivers/infiniband/hw/qedr/verbs.c
+@@ -256,20 +256,6 @@ int qedr_query_port(struct ib_device *ibdev, u8 port, struct ib_port_attr *attr)
+ 	return 0;
+ }
+ 
+-int qedr_modify_port(struct ib_device *ibdev, u8 port, int mask,
+-		     struct ib_port_modify *props)
+-{
+-	struct qedr_dev *dev;
+-
+-	dev = get_qedr_dev(ibdev);
+-	if (port > 1) {
+-		DP_ERR(dev, "invalid_port=0x%x\n", port);
+-		return -EINVAL;
+-	}
+-
+-	return 0;
+-}
+-
+ static int qedr_add_mmap(struct qedr_ucontext *uctx, u64 phy_addr,
+ 			 unsigned long len)
+ {
+diff --git a/drivers/infiniband/hw/qedr/verbs.h b/drivers/infiniband/hw/qedr/verbs.h
+index 3606e97e95da..620472116c6d 100644
+--- a/drivers/infiniband/hw/qedr/verbs.h
++++ b/drivers/infiniband/hw/qedr/verbs.h
+@@ -35,8 +35,6 @@
+ int qedr_query_device(struct ib_device *ibdev,
+ 		      struct ib_device_attr *attr, struct ib_udata *udata);
+ int qedr_query_port(struct ib_device *, u8 port, struct ib_port_attr *props);
+-int qedr_modify_port(struct ib_device *, u8 port, int mask,
+-		     struct ib_port_modify *props);
+ 
+ int qedr_iw_query_gid(struct ib_device *ibdev, u8 port,
+ 		      int index, union ib_gid *gid);
+-- 
+2.26.2
+

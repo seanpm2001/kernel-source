@@ -1,0 +1,68 @@
+From e502b8b011294c293064ef1baeb04235ccc05439 Mon Sep 17 00:00:00 2001
+From: Leon Romanovsky <leonro@mellanox.com>
+Date: Tue, 8 Jan 2019 16:07:24 +0200
+Subject: [PATCH 1/1] RDMA/core: Don't depend device ODP capabilities on
+Git-commit: e502b8b011294c293064ef1baeb04235ccc05439
+Patch-mainline: v5.1
+References: bsc#1111666
+ kconfig option
+
+Device capability bits are exposing what specific device supports from HW
+perspective. Those bits are not dependent on kernel configurations and
+RDMA/core should ensure that proper interfaces to users will be disabled
+if CONFIG_INFINIBAND_ON_DEMAND_PAGING is not set.
+
+Fixes: f4056bfd8ccf ("IB/core: Add on demand paging caps to ib_uverbs_ex_query_device")
+Fixes: 8cdd312cfed7 ("IB/mlx5: Implement the ODP capability query verb")
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/core/uverbs_cmd.c |  2 --
+ drivers/infiniband/hw/mlx5/main.c    | 10 +++++-----
+ 2 files changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/infiniband/core/uverbs_cmd.c b/drivers/infiniband/core/uverbs_cmd.c
+index 6b12cc5f97b2..549d9eedf62e 100644
+--- a/drivers/infiniband/core/uverbs_cmd.c
++++ b/drivers/infiniband/core/uverbs_cmd.c
+@@ -3609,7 +3609,6 @@ static int ib_uverbs_ex_query_device(struct uverbs_attr_bundle *attrs)
+ 	if (ucore->outlen < resp.response_length + sizeof(resp.odp_caps))
+ 		goto end;
+ 
+-#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
+ 	resp.odp_caps.general_caps = attr.odp_caps.general_caps;
+ 	resp.odp_caps.per_transport_caps.rc_odp_caps =
+ 		attr.odp_caps.per_transport_caps.rc_odp_caps;
+@@ -3617,7 +3616,6 @@ static int ib_uverbs_ex_query_device(struct uverbs_attr_bundle *attrs)
+ 		attr.odp_caps.per_transport_caps.uc_odp_caps;
+ 	resp.odp_caps.per_transport_caps.ud_odp_caps =
+ 		attr.odp_caps.per_transport_caps.ud_odp_caps;
+-#endif
+ 	resp.response_length += sizeof(resp.odp_caps);
+ 
+ 	if (ucore->outlen < resp.response_length + sizeof(resp.timestamp_mask))
+diff --git a/drivers/infiniband/hw/mlx5/main.c b/drivers/infiniband/hw/mlx5/main.c
+index 94fe253d4956..06ee1f0cb22d 100644
+--- a/drivers/infiniband/hw/mlx5/main.c
++++ b/drivers/infiniband/hw/mlx5/main.c
+@@ -923,11 +923,11 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
+ 	props->hca_core_clock = MLX5_CAP_GEN(mdev, device_frequency_khz);
+ 	props->timestamp_mask = 0x7FFFFFFFFFFFFFFFULL;
+ 
+-#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
+-	if (MLX5_CAP_GEN(mdev, pg))
+-		props->device_cap_flags |= IB_DEVICE_ON_DEMAND_PAGING;
+-	props->odp_caps = dev->odp_caps;
+-#endif
++	if (IS_ENABLED(CONFIG_INFINIBAND_ON_DEMAND_PAGING)) {
++		if (MLX5_CAP_GEN(mdev, pg))
++			props->device_cap_flags |= IB_DEVICE_ON_DEMAND_PAGING;
++		props->odp_caps = dev->odp_caps;
++	}
+ 
+ 	if (MLX5_CAP_GEN(mdev, cd))
+ 		props->device_cap_flags |= IB_DEVICE_CROSS_CHANNEL;
+-- 
+2.29.2
+
