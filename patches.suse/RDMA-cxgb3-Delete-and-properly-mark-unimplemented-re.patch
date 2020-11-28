@@ -1,0 +1,150 @@
+From a80287c8130552a837eb61e1ba14844bf2d03156 Mon Sep 17 00:00:00 2001
+From: Leon Romanovsky <leonro@mellanox.com>
+Date: Mon, 20 May 2019 09:54:30 +0300
+Subject: [PATCH 1/1] RDMA/cxgb3: Delete and properly mark unimplemented resize
+Git-commit: a80287c8130552a837eb61e1ba14844bf2d03156
+Patch-mainline: v5.10-rc1
+References: bsc#1111666
+ CQ function
+
+Resize CQ implementation was guarded by undeclared "notyet" define while
+cxgb3 was added to the kernel. Twelve years later, this call is still
+unimplemented, so safely delete it and fix improper return error code when
+.resize_cq() is not implemented.
+
+Fixes: b038ced7b370 ("RDMA/cxgb3: Add driver for Chelsio T3 RNIC")
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/hw/cxgb3/cxio_hal.c      | 14 -----
+ drivers/infiniband/hw/cxgb3/cxio_hal.h      |  1 -
+ drivers/infiniband/hw/cxgb3/iwch_provider.c | 68 ---------------------
+ 3 files changed, 83 deletions(-)
+
+diff --git a/drivers/infiniband/hw/cxgb3/cxio_hal.c b/drivers/infiniband/hw/cxgb3/cxio_hal.c
+index 73bc6b8f2a0c..d9c741fea0e9 100644
+--- a/drivers/infiniband/hw/cxgb3/cxio_hal.c
++++ b/drivers/infiniband/hw/cxgb3/cxio_hal.c
+@@ -187,20 +187,6 @@ int cxio_create_cq(struct cxio_rdev *rdev_p, struct t3_cq *cq, int kernel)
+ 	return (rdev_p->t3cdev_p->ctl(rdev_p->t3cdev_p, RDMA_CQ_SETUP, &setup));
+ }
+ 
+-#ifdef notyet
+-int cxio_resize_cq(struct cxio_rdev *rdev_p, struct t3_cq *cq)
+-{
+-	struct rdma_cq_setup setup;
+-	setup.id = cq->cqid;
+-	setup.base_addr = (u64) (cq->dma_addr);
+-	setup.size = 1UL << cq->size_log2;
+-	setup.credits = setup.size;
+-	setup.credit_thres = setup.size;	/* TBD: overflow recovery */
+-	setup.ovfl_mode = 1;
+-	return (rdev_p->t3cdev_p->ctl(rdev_p->t3cdev_p, RDMA_CQ_SETUP, &setup));
+-}
+-#endif
+-
+ static u32 get_qpid(struct cxio_rdev *rdev_p, struct cxio_ucontext *uctx)
+ {
+ 	struct cxio_qpid_list *entry;
+diff --git a/drivers/infiniband/hw/cxgb3/cxio_hal.h b/drivers/infiniband/hw/cxgb3/cxio_hal.h
+index c64e50b5a548..5fc26a4648d3 100644
+--- a/drivers/infiniband/hw/cxgb3/cxio_hal.h
++++ b/drivers/infiniband/hw/cxgb3/cxio_hal.h
+@@ -159,7 +159,6 @@ int cxio_hal_cq_op(struct cxio_rdev *rdev, struct t3_cq *cq,
+ 		   enum t3_cq_opcode op, u32 credit);
+ int cxio_create_cq(struct cxio_rdev *rdev, struct t3_cq *cq, int kernel);
+ int cxio_destroy_cq(struct cxio_rdev *rdev, struct t3_cq *cq);
+-int cxio_resize_cq(struct cxio_rdev *rdev, struct t3_cq *cq);
+ void cxio_release_ucontext(struct cxio_rdev *rdev, struct cxio_ucontext *uctx);
+ void cxio_init_ucontext(struct cxio_rdev *rdev, struct cxio_ucontext *uctx);
+ int cxio_create_qp(struct cxio_rdev *rdev, u32 kernel_domain, struct t3_wq *wq,
+diff --git a/drivers/infiniband/hw/cxgb3/iwch_provider.c b/drivers/infiniband/hw/cxgb3/iwch_provider.c
+index 7e6adf01d1d6..4bfab739ec0d 100644
+--- a/drivers/infiniband/hw/cxgb3/iwch_provider.c
++++ b/drivers/infiniband/hw/cxgb3/iwch_provider.c
+@@ -211,73 +211,6 @@ static struct ib_cq *iwch_create_cq(struct ib_device *ibdev,
+ 	return &chp->ibcq;
+ }
+ 
+-static int iwch_resize_cq(struct ib_cq *cq, int cqe, struct ib_udata *udata)
+-{
+-#ifdef notyet
+-	struct iwch_cq *chp = to_iwch_cq(cq);
+-	struct t3_cq oldcq, newcq;
+-	int ret;
+-
+-	pr_debug("%s ib_cq %p cqe %d\n", __func__, cq, cqe);
+-
+-	/* We don't downsize... */
+-	if (cqe <= cq->cqe)
+-		return 0;
+-
+-	/* create new t3_cq with new size */
+-	cqe = roundup_pow_of_two(cqe+1);
+-	newcq.size_log2 = ilog2(cqe);
+-
+-	/* Dont allow resize to less than the current wce count */
+-	if (cqe < Q_COUNT(chp->cq.rptr, chp->cq.wptr)) {
+-		return -ENOMEM;
+-	}
+-
+-	/* Quiesce all QPs using this CQ */
+-	ret = iwch_quiesce_qps(chp);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-	ret = cxio_create_cq(&chp->rhp->rdev, &newcq);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-	/* copy CQEs */
+-	memcpy(newcq.queue, chp->cq.queue, (1 << chp->cq.size_log2) *
+-				        sizeof(struct t3_cqe));
+-
+-	/* old iwch_qp gets new t3_cq but keeps old cqid */
+-	oldcq = chp->cq;
+-	chp->cq = newcq;
+-	chp->cq.cqid = oldcq.cqid;
+-
+-	/* resize new t3_cq to update the HW context */
+-	ret = cxio_resize_cq(&chp->rhp->rdev, &chp->cq);
+-	if (ret) {
+-		chp->cq = oldcq;
+-		return ret;
+-	}
+-	chp->ibcq.cqe = (1<<chp->cq.size_log2) - 1;
+-
+-	/* destroy old t3_cq */
+-	oldcq.cqid = newcq.cqid;
+-	ret = cxio_destroy_cq(&chp->rhp->rdev, &oldcq);
+-	if (ret) {
+-		pr_err("%s - cxio_destroy_cq failed %d\n", __func__, ret);
+-	}
+-
+-	/* add user hooks here */
+-
+-	/* resume qps */
+-	ret = iwch_resume_qps(chp);
+-	return ret;
+-#else
+-	return -ENOSYS;
+-#endif
+-}
+-
+ static int iwch_arm_cq(struct ib_cq *ibcq, enum ib_cq_notify_flags flags)
+ {
+ 	struct iwch_dev *rhp;
+@@ -1371,7 +1304,6 @@ int iwch_register_device(struct iwch_dev *dev)
+ 	dev->ibdev.destroy_qp = iwch_destroy_qp;
+ 	dev->ibdev.create_cq = iwch_create_cq;
+ 	dev->ibdev.destroy_cq = iwch_destroy_cq;
+-	dev->ibdev.resize_cq = iwch_resize_cq;
+ 	dev->ibdev.poll_cq = iwch_poll_cq;
+ 	dev->ibdev.get_dma_mr = iwch_get_dma_mr;
+ 	dev->ibdev.reg_user_mr = iwch_reg_user_mr;
+-- 
+2.26.2
+

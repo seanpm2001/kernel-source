@@ -1,0 +1,83 @@
+From cf7ad3030271c55a7119a8c2162563e3f6e93879 Mon Sep 17 00:00:00 2001
+From: Parav Pandit <parav@mellanox.com>
+Date: Fri, 21 Dec 2018 16:19:24 +0200
+Subject: [PATCH 1/1] IB/umad: Avoid destroying device while it is accessed
+Git-commit: cf7ad3030271c55a7119a8c2162563e3f6e93879
+Patch-mainline: v5.0
+References: bsc#1111666
+
+ib_umad_reg_agent2() and ib_umad_reg_agent() access the device name in
+dev_notice(), while concurrently, ib_umad_kill_port() can destroy the
+device using device_destroy().
+
+        cpu-0                               cpu-1
+        -----                               -----
+    ib_umad_ioctl()
+        [...]                            ib_umad_kill_port()
+                                              device_destroy(dev)
+
+        ib_umad_reg_agent()
+            dev_notice(dev)
+
+Therefore, first mark ib_dev as NULL, to block any further access in file
+ops, unregister the mad agent and destroy the device at the end after
+mutex is unlocked.
+
+This ensures that device doesn't get destroyed, while it may get accessed.
+
+Fixes: 0f29b46d49b0 ("IB/mad: add new ioctl to ABI to support new registration options")
+Signed-off-by: Parav Pandit <parav@mellanox.com>
+Reviewed-by: Jack Morgenstein <jackm@mellanox.com>
+Reviewed-by: Ira Weiny <ira.weiny@intel.com>
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/core/user_mad.c | 22 +++++++++++++---------
+ 1 file changed, 13 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/infiniband/core/user_mad.c b/drivers/infiniband/core/user_mad.c
+index 52ebb1711d14..0204a4fefd13 100644
+--- a/drivers/infiniband/core/user_mad.c
++++ b/drivers/infiniband/core/user_mad.c
+@@ -1244,17 +1244,11 @@ static void ib_umad_kill_port(struct ib_umad_port *port)
+ 	struct ib_umad_file *file;
+ 	int id;
+ 
+-	dev_set_drvdata(port->dev,    NULL);
+-	dev_set_drvdata(port->sm_dev, NULL);
+-
+-	device_destroy(&umad_class, port->cdev.dev);
+-	device_destroy(&umad_class, port->sm_cdev.dev);
+-
+-	cdev_del(&port->cdev);
+-	cdev_del(&port->sm_cdev);
+-
+ 	mutex_lock(&port->file_mutex);
+ 
++	/* Mark ib_dev NULL and block ioctl or other file ops to progress
++	 * further.
++	 */
+ 	port->ib_dev = NULL;
+ 
+ 	list_for_each_entry(file, &port->file_list, port_list) {
+@@ -1268,6 +1262,16 @@ static void ib_umad_kill_port(struct ib_umad_port *port)
+ 	}
+ 
+ 	mutex_unlock(&port->file_mutex);
++
++	dev_set_drvdata(port->dev,    NULL);
++	dev_set_drvdata(port->sm_dev, NULL);
++
++	device_destroy(&umad_class, port->cdev.dev);
++	device_destroy(&umad_class, port->sm_cdev.dev);
++
++	cdev_del(&port->cdev);
++	cdev_del(&port->sm_cdev);
++
+ 	ida_free(&umad_ida, port->dev_num);
+ }
+ 
+-- 
+2.26.2
+

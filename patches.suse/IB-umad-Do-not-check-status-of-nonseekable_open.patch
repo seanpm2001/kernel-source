@@ -1,0 +1,106 @@
+From 039d713a59c8fcfdf0f89efcce131e15a34284e8 Mon Sep 17 00:00:00 2001
+From: Parav Pandit <parav@mellanox.com>
+Date: Tue, 22 Jan 2019 08:31:20 +0200
+Subject: [PATCH 1/1] IB/umad: Do not check status of nonseekable_open()
+Git-commit: 039d713a59c8fcfdf0f89efcce131e15a34284e8
+Patch-mainline: v5.1
+References: bsc#1111666
+
+As the comment block of nonseekable_open() describes, nonseekable_open()
+can never fail. Several places in kernel depend on this behavior.
+Therefore, simplify the umad module to depend on this basic kernel
+functionality.
+
+Signed-off-by: Parav Pandit <parav@mellanox.com>
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Reviewed-by: Ira Weiny <ira.weiny@intel.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/core/user_mad.c | 36 +++++++++++-------------------
+ 1 file changed, 13 insertions(+), 23 deletions(-)
+
+diff --git a/drivers/infiniband/core/user_mad.c b/drivers/infiniband/core/user_mad.c
+index 097f153f0f22..3ebd211a87ed 100644
+--- a/drivers/infiniband/core/user_mad.c
++++ b/drivers/infiniband/core/user_mad.c
+@@ -957,19 +957,22 @@ static int ib_umad_open(struct inode *inode, struct file *filp)
+ {
+ 	struct ib_umad_port *port;
+ 	struct ib_umad_file *file;
+-	int ret = -ENXIO;
++	int ret = 0;
+ 
+ 	port = container_of(inode->i_cdev, struct ib_umad_port, cdev);
+ 
+ 	mutex_lock(&port->file_mutex);
+ 
+-	if (!port->ib_dev)
++	if (!port->ib_dev) {
++		ret = -ENXIO;
+ 		goto out;
++	}
+ 
+-	ret = -ENOMEM;
+-	file = kzalloc(sizeof *file, GFP_KERNEL);
+-	if (!file)
++	file = kzalloc(sizeof(*file), GFP_KERNEL);
++	if (!file) {
++		ret = -ENOMEM;
+ 		goto out;
++	}
+ 
+ 	mutex_init(&file->mutex);
+ 	spin_lock_init(&file->send_lock);
+@@ -982,13 +985,7 @@ static int ib_umad_open(struct inode *inode, struct file *filp)
+ 
+ 	list_add_tail(&file->port_list, &port->file_list);
+ 
+-	ret = nonseekable_open(inode, filp);
+-	if (ret) {
+-		list_del(&file->port_list);
+-		kfree(file);
+-		goto out;
+-	}
+-
++	nonseekable_open(inode, filp);
+ out:
+ 	mutex_unlock(&port->file_mutex);
+ 	return ret;
+@@ -1070,16 +1067,9 @@ static int ib_umad_sm_open(struct inode *inode, struct file *filp)
+ 
+ 	filp->private_data = port;
+ 
+-	ret = nonseekable_open(inode, filp);
+-	if (ret)
+-		goto err_clr_sm_cap;
+-
++	nonseekable_open(inode, filp);
+ 	return 0;
+ 
+-err_clr_sm_cap:
+-	swap(props.set_port_cap_mask, props.clr_port_cap_mask);
+-	ib_modify_port(port->ib_dev, port->port_num, 0, &props);
+-
+ err_up_sem:
+ 	up(&port->sm_sem);
+ 
+@@ -1278,12 +1268,12 @@ static void ib_umad_kill_port(struct ib_umad_port *port)
+ 	mutex_unlock(&port->file_mutex);
+ 
+ 	cdev_device_del(&port->sm_cdev, &port->sm_dev);
+-	/* balances device_initialize() */
+-	put_device(&port->sm_dev);
+ 	cdev_device_del(&port->cdev, &port->dev);
++	ida_free(&umad_ida, port->dev_num);
++
+ 	/* balances device_initialize() */
++	put_device(&port->sm_dev);
+ 	put_device(&port->dev);
+-	ida_free(&umad_ida, port->dev_num);
+ }
+ 
+ static void ib_umad_add_one(struct ib_device *device)
+-- 
+2.26.2
+

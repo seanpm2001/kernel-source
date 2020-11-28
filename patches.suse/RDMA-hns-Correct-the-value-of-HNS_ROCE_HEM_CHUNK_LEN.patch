@@ -1,0 +1,38 @@
+From 531eb45b3da4267fc2a64233ba256c8ffb02edd2 Mon Sep 17 00:00:00 2001
+From: Sirong Wang <wangsirong@huawei.com>
+Date: Fri, 1 Nov 2019 10:33:29 +0800
+Subject: [PATCH 1/1] RDMA/hns: Correct the value of HNS_ROCE_HEM_CHUNK_LEN
+Git-commit: 531eb45b3da4267fc2a64233ba256c8ffb02edd2
+Patch-mainline: v5.10-rc1
+References: bsc#1111666
+
+Size of pointer to buf field of struct hns_roce_hem_chunk should be
+considered when calculating HNS_ROCE_HEM_CHUNK_LEN, or sg table size will
+be larger than expected when allocating hem.
+
+Fixes: 9a4435375cd1 ("IB/hns: Add driver files for hns RoCE driver")
+Link: https://lore.kernel.org/r/1572575610-52530-2-git-send-email-liweihang@hisilicon.com
+Signed-off-by: Sirong Wang <wangsirong@huawei.com>
+Signed-off-by: Weihang Li <liweihang@hisilicon.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/hw/hns/hns_roce_hem.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/infiniband/hw/hns/hns_roce_hem.h b/drivers/infiniband/hw/hns/hns_roce_hem.h
+index 86783276fb1f..3bb8f78fb7b0 100644
+--- a/drivers/infiniband/hw/hns/hns_roce_hem.h
++++ b/drivers/infiniband/hw/hns/hns_roce_hem.h
+@@ -59,7 +59,7 @@ enum {
+ 
+ #define HNS_ROCE_HEM_CHUNK_LEN	\
+ 	 ((256 - sizeof(struct list_head) - 2 * sizeof(int)) /	 \
+-	 (sizeof(struct scatterlist)))
++	 (sizeof(struct scatterlist) + sizeof(void *)))
+ 
+ #define check_whether_bt_num_3(type, hop_num) \
+ 	(type < HEM_TYPE_MTT && hop_num == 2)
+-- 
+2.26.2
+
