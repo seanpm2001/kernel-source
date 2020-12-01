@@ -1,0 +1,41 @@
+From d1de9a88074b66482443f0cd91618d7b51a7c9b6 Mon Sep 17 00:00:00 2001
+From: Jason Gunthorpe <jgg@mellanox.com>
+Date: Tue, 10 Mar 2020 11:25:39 +0200
+Subject: [PATCH 1/1] RDMA/cm: Add missing locking around id.state in
+Git-commit: d1de9a88074b66482443f0cd91618d7b51a7c9b6
+Patch-mainline: v5.10-rc1
+References: bsc#1111666
+ cm_dup_req_handler
+
+All accesses to id.state must be done under the spinlock.
+
+Fixes: a977049dacde ("[PATCH] IB: Add the kernel CM implementation")
+Link: https://lore.kernel.org/r/20200310092545.251365-10-leon@kernel.org
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/core/cm.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/infiniband/core/cm.c b/drivers/infiniband/core/cm.c
+index 3f125044d35e..3ce735527938 100644
+--- a/drivers/infiniband/core/cm.c
++++ b/drivers/infiniband/core/cm.c
+@@ -1872,8 +1872,12 @@ static void cm_dup_req_handler(struct cm_work *work,
+ 			counter[CM_REQ_COUNTER]);
+ 
+ 	/* Quick state check to discard duplicate REQs. */
+-	if (cm_id_priv->id.state == IB_CM_REQ_RCVD)
++	spin_lock_irq(&cm_id_priv->lock);
++	if (cm_id_priv->id.state == IB_CM_REQ_RCVD) {
++		spin_unlock_irq(&cm_id_priv->lock);
+ 		return;
++	}
++	spin_unlock_irq(&cm_id_priv->lock);
+ 
+ 	ret = cm_alloc_response_msg(work->port, work->mad_recv_wc, &msg);
+ 	if (ret)
+-- 
+2.29.2.405.gfdfcad78fd04
+
