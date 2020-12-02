@@ -1,0 +1,41 @@
+From c08cfb2d8d78bfe81b37cc6ba84f0875bddd0d5c Mon Sep 17 00:00:00 2001
+From: Alaa Hleihel <alaa@mellanox.com>
+Date: Mon, 13 Apr 2020 16:22:35 +0300
+Subject: [PATCH 1/1] RDMA/mlx4: Initialize ib_spec on the stack
+Git-commit: c08cfb2d8d78bfe81b37cc6ba84f0875bddd0d5c
+Patch-mainline: v5.10-rc1
+References: bsc#1111666
+
+Initialize ib_spec on the stack before using it, otherwise we will have
+garbage values that will break creating default rules with invalid parsing
+error.
+
+Fixes: a37a1a428431 ("IB/mlx4: Add mechanism to support flow steering over IB links")
+Link: https://lore.kernel.org/r/20200413132235.930642-1-leon@kernel.org
+Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
+Reviewed-by: Maor Gottlieb <maorg@mellanox.com>
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/hw/mlx4/main.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/infiniband/hw/mlx4/main.c b/drivers/infiniband/hw/mlx4/main.c
+index a66518a5c938..275722cec8c6 100644
+--- a/drivers/infiniband/hw/mlx4/main.c
++++ b/drivers/infiniband/hw/mlx4/main.c
+@@ -1499,8 +1499,9 @@ static int __mlx4_ib_create_default_rules(
+ 	int i;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(pdefault_rules->rules_create_list); i++) {
++		union ib_flow_spec ib_spec = {};
+ 		int ret;
+-		union ib_flow_spec ib_spec;
++
+ 		switch (pdefault_rules->rules_create_list[i]) {
+ 		case 0:
+ 			/* no rule */
+-- 
+2.29.2.405.gfdfcad78fd04
+

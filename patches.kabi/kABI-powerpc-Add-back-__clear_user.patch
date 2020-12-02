@@ -1,0 +1,57 @@
+From 0b67bc55053b2e57e36a2527deb67b3bcfe21c94 Mon Sep 17 00:00:00 2001
+From: Michal Suchanek <msuchanek@suse.de>
+Date: Thu, 26 Nov 2020 12:16:25 +0100
+Subject: [PATCH] kABI: powerpc: Add back __clear_user
+
+References: CVE-2020-4788 bsc#1177666
+Patch-mainline: never, kABI
+
+Signed-off-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/include/asm/uaccess.h | 7 ++-----
+ arch/powerpc/lib/alloc.c           | 7 +++++++
+ 2 files changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/arch/powerpc/include/asm/uaccess.h b/arch/powerpc/include/asm/uaccess.h
+index f05c9da423ea..16e363c1068c 100644
+--- a/arch/powerpc/include/asm/uaccess.h
++++ b/arch/powerpc/include/asm/uaccess.h
+@@ -411,6 +411,8 @@ raw_copy_to_user_allowed(void __user *to, const void *from, unsigned long n)
+ 	return __copy_tofrom_user(to, (__force const void __user *)from, n);
+ }
+ 
++extern unsigned long __clear_user(void __user *addr, unsigned long size);
++
+ static inline unsigned long
+ raw_copy_to_user(void __user *to, const void *from, unsigned long n)
+ {
+@@ -436,11 +438,6 @@ static inline unsigned long clear_user(void __user *addr, unsigned long size)
+ 	return ret;
+ }
+ 
+-static inline unsigned long __clear_user(void __user *addr, unsigned long size)
+-{
+-	return clear_user(addr, size);
+-}
+-
+ extern long strncpy_from_user(char *dst, const char __user *src, long count);
+ extern __must_check long strlen_user(const char __user *str);
+ extern __must_check long strnlen_user(const char __user *str, long n);
+diff --git a/arch/powerpc/lib/alloc.c b/arch/powerpc/lib/alloc.c
+index a58abe4afbd1..09542b657cbf 100644
+--- a/arch/powerpc/lib/alloc.c
++++ b/arch/powerpc/lib/alloc.c
+@@ -17,3 +17,10 @@ void * __ref zalloc_maybe_bootmem(size_t size, gfp_t mask)
+ 	}
+ 	return p;
+ }
++
++#include <asm/uaccess.h>
++unsigned long __clear_user(void __user *addr, unsigned long size)
++{
++	return clear_user(addr, size);
++}
++EXPORT_SYMBOL(__clear_user);
+-- 
+2.26.2
+

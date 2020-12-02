@@ -1,8 +1,7 @@
-From 7aa8dd101fe3759ed5038891e4856ef3d25cab5a Mon Sep 17 00:00:00 2001
+From af375eefbfb27cbb5b831984e66d724a40d26b5c Mon Sep 17 00:00:00 2001
 From: Michael Ellerman <mpe@ellerman.id.au>
 Date: Sat, 28 Jul 2018 09:06:35 +1000
-Subject: [PATCH 03/10] powerpc/64: Call setup_barrier_nospec() from
- setup_arch()
+Subject: [PATCH] powerpc/64: Call setup_barrier_nospec() from setup_arch()
 
 References: bsc#1131107
 Patch-mainline: v4.19-rc1
@@ -16,16 +15,33 @@ Signed-off-by: Diana Craciun <diana.craciun@nxp.com>
 Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
 Acked-by: Michal Suchanek <msuchanek@suse.de>
 ---
+ arch/powerpc/include/asm/setup.h       | 4 ++++
  arch/powerpc/kernel/setup-common.c     | 2 ++
  arch/powerpc/platforms/powernv/setup.c | 1 -
  arch/powerpc/platforms/pseries/setup.c | 1 -
- 3 files changed, 2 insertions(+), 2 deletions(-)
+ 4 files changed, 6 insertions(+), 2 deletions(-)
 
+diff --git a/arch/powerpc/include/asm/setup.h b/arch/powerpc/include/asm/setup.h
+index 8205f9fdfd67..1a951b00465d 100644
+--- a/arch/powerpc/include/asm/setup.h
++++ b/arch/powerpc/include/asm/setup.h
+@@ -52,7 +52,11 @@ enum l1d_flush_type {
+ 
+ void setup_rfi_flush(enum l1d_flush_type, bool enable);
+ void do_rfi_flush_fixups(enum l1d_flush_type types);
++#ifdef CONFIG_PPC_BARRIER_NOSPEC
+ void setup_barrier_nospec(void);
++#else
++static inline void setup_barrier_nospec(void) { };
++#endif
+ void do_barrier_nospec_fixups(bool enable);
+ extern bool barrier_nospec_enabled;
+ 
 diff --git a/arch/powerpc/kernel/setup-common.c b/arch/powerpc/kernel/setup-common.c
-index d6f34d812cef..954c6d6226f4 100644
+index 40b44bb53a4e..93fa0c99681e 100644
 --- a/arch/powerpc/kernel/setup-common.c
 +++ b/arch/powerpc/kernel/setup-common.c
-@@ -964,6 +964,8 @@ void __init setup_arch(char **cmdline_p)
+@@ -972,6 +972,8 @@ void __init setup_arch(char **cmdline_p)
  	if (ppc_md.setup_arch)
  		ppc_md.setup_arch();
  
@@ -35,7 +51,7 @@ index d6f34d812cef..954c6d6226f4 100644
  
  	/* Initialize the MMU context management stuff. */
 diff --git a/arch/powerpc/platforms/powernv/setup.c b/arch/powerpc/platforms/powernv/setup.c
-index ef88a5b6a222..d997b411cd14 100644
+index 7b09f66ee8c6..3fc25304af38 100644
 --- a/arch/powerpc/platforms/powernv/setup.c
 +++ b/arch/powerpc/platforms/powernv/setup.c
 @@ -124,7 +124,6 @@ static void pnv_setup_rfi_flush(void)
@@ -47,10 +63,10 @@ index ef88a5b6a222..d997b411cd14 100644
  
  static void __init pnv_setup_arch(void)
 diff --git a/arch/powerpc/platforms/pseries/setup.c b/arch/powerpc/platforms/pseries/setup.c
-index 4ecc57683521..3bce80140d24 100644
+index b411a74b861d..08f0c5de5b09 100644
 --- a/arch/powerpc/platforms/pseries/setup.c
 +++ b/arch/powerpc/platforms/pseries/setup.c
-@@ -563,7 +563,6 @@ void pseries_setup_rfi_flush(void)
+@@ -551,7 +551,6 @@ void pseries_setup_rfi_flush(void)
  		 security_ftr_enabled(SEC_FTR_L1D_FLUSH_PR);
  
  	setup_rfi_flush(types, enable);
@@ -59,5 +75,5 @@ index 4ecc57683521..3bce80140d24 100644
  
  #ifdef CONFIG_PCI_IOV
 -- 
-2.20.1
+2.26.2
 
