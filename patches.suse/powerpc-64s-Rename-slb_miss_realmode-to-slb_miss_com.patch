@@ -1,0 +1,68 @@
+From 442b6e8e03e44dc3a33142ab3b8d0b3395053274 Mon Sep 17 00:00:00 2001
+From: Michael Ellerman <mpe@ellerman.id.au>
+Date: Mon, 19 Jun 2017 21:52:03 +1000
+Subject: [PATCH] powerpc/64s: Rename slb_miss_realmode() to slb_miss_common()
+
+References: CVE-2020-4788 bsc#1177666
+Patch-mainline: v4.13-rc1
+Git-commit: 442b6e8e03e44dc3a33142ab3b8d0b3395053274
+
+slb_miss_realmode() doesn't always runs in real mode, which is what the
+name implies. So rename it to avoid confusing people.
+
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Reviewed-by: Nicholas Piggin <npiggin@gmail.com>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kernel/exceptions-64s.S | 15 +++++++++------
+ 1 file changed, 9 insertions(+), 6 deletions(-)
+
+--- a/arch/powerpc/kernel/exceptions-64s.S
++++ b/arch/powerpc/kernel/exceptions-64s.S
+@@ -514,7 +514,7 @@ EXC_REAL_BEGIN(data_access_slb, 0x380, 0
+ 	mfspr	r3,SPRN_DAR
+ 	mfspr	r12,SPRN_SRR1
+ 	crset	4*cr6+eq
+-	BRANCH_TO_COMMON(r10, slb_miss_realmode)
++	BRANCH_TO_COMMON(r10, slb_miss_common)
+ EXC_REAL_END(data_access_slb, 0x380, 0x80)
+ 
+ EXC_VIRT_BEGIN(data_access_slb, 0x4380, 0x80)
+@@ -525,7 +525,7 @@ EXC_VIRT_BEGIN(data_access_slb, 0x4380,
+ 	mfspr	r3,SPRN_DAR
+ 	mfspr	r12,SPRN_SRR1
+ 	crset	4*cr6+eq
+-	BRANCH_TO_COMMON(r10, slb_miss_realmode)
++	BRANCH_TO_COMMON(r10, slb_miss_common)
+ EXC_VIRT_END(data_access_slb, 0x4380, 0x80)
+ TRAMP_KVM_SKIP(PACA_EXSLB, 0x380)
+ 
+@@ -558,7 +558,7 @@ EXC_REAL_BEGIN(instruction_access_slb, 0
+ 	mfspr	r3,SPRN_SRR0		/* SRR0 is faulting address */
+ 	mfspr	r12,SPRN_SRR1
+ 	crclr	4*cr6+eq
+-	BRANCH_TO_COMMON(r10, slb_miss_realmode)
++	BRANCH_TO_COMMON(r10, slb_miss_common)
+ EXC_REAL_END(instruction_access_slb, 0x480, 0x80)
+ 
+ EXC_VIRT_BEGIN(instruction_access_slb, 0x4480, 0x80)
+@@ -569,13 +569,16 @@ EXC_VIRT_BEGIN(instruction_access_slb, 0
+ 	mfspr	r3,SPRN_SRR0		/* SRR0 is faulting address */
+ 	mfspr	r12,SPRN_SRR1
+ 	crclr	4*cr6+eq
+-	BRANCH_TO_COMMON(r10, slb_miss_realmode)
++	BRANCH_TO_COMMON(r10, slb_miss_common)
+ EXC_VIRT_END(instruction_access_slb, 0x4480, 0x80)
+ TRAMP_KVM(PACA_EXSLB, 0x480)
+ 
+ 
+-/* This handler is used by both 0x380 and 0x480 slb miss interrupts */
+-EXC_COMMON_BEGIN(slb_miss_realmode)
++/*
++ * This handler is used by the 0x380 and 0x480 SLB miss interrupts, as well as
++ * the virtual mode 0x4380 and 0x4480 interrupts if AIL is enabled.
++ */
++EXC_COMMON_BEGIN(slb_miss_common)
+ 	/*
+ 	 * r13 points to the PACA, r9 contains the saved CR,
+ 	 * r12 contain the saved SRR1, SRR0 is still ready for return

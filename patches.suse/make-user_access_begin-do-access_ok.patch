@@ -1,0 +1,220 @@
+From 8f89f89bdb41711a7cfd5417b9bfdb1dff4bf04d Mon Sep 17 00:00:00 2001
+From: Linus Torvalds <torvalds@linux-foundation.org>
+Date: Fri, 4 Jan 2019 12:56:09 -0800
+Subject: [PATCH] make 'user_access_begin()' do 'access_ok()'
+
+References: CVE-2018-20669 bsc#1122971 CVE-2020-4788 bsc#1177666
+Patch-mainline: v4.19.129
+Git-commit: 216284c4a126b28469eb0bf4994c669e251f47ba
+
+[no user in compat.c due to missing 1e1fc133483ef3b56c20bf3cd9241146c41042f8]
+[no user in exit.c due to missing 4c48abe91be03d191d0c20cc755877da2cb35622+fixes]
+[additional user in lib/strnlen_user.c]
+
+commit 594cc251fdd0d231d342d88b2fdff4bc42fb0690 upstream.
+commit ab10ae1c3bef56c29bac61e1201c752221b87b41 upstream.
+
+Originally, the rule used to be that you'd have to do access_ok()
+separately, and then user_access_begin() before actually doing the
+direct (optimized) user access.
+
+But experience has shown that people then decide not to do access_ok()
+at all, and instead rely on it being implied by other operations or
+similar.  Which makes it very hard to verify that the access has
+actually been range-checked.
+
+If you use the unsafe direct user accesses, hardware features (either
+SMAP - Supervisor Mode Access Protection - on x86, or PAN - Privileged
+Access Never - on ARM) do force you to use user_access_begin().  But
+nothing really forces the range check.
+
+By putting the range check into user_access_begin(), we actually force
+people to do the right thing (tm), and the range check vill be visible
+near the actual accesses.  We have way too long a history of people
+trying to avoid them.
+
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Miles Chen <miles.chen@mediatek.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/x86/include/asm/uaccess.h             | 12 +++++++-
+ drivers/gpu/drm/i915/i915_gem_execbuffer.c | 16 +++++++++--
+ include/linux/uaccess.h                    |  2 +-
+ lib/strncpy_from_user.c                    | 23 ++++++++--------
+ lib/strnlen_user.c                         | 32 ++++++++++++----------
+ 5 files changed, 55 insertions(+), 30 deletions(-)
+
+diff --git a/arch/x86/include/asm/uaccess.h b/arch/x86/include/asm/uaccess.h
+index 53de05433d98..4fa92312bae4 100644
+--- a/arch/x86/include/asm/uaccess.h
++++ b/arch/x86/include/asm/uaccess.h
+@@ -707,7 +707,17 @@ extern struct movsl_mask {
+  * checking before using them, but you have to surround them with the
+  * user_access_begin/end() pair.
+  */
+-#define user_access_begin()	__uaccess_begin()
++static __must_check inline bool user_access_begin(int type,
++						  const void __user *ptr,
++						  size_t len)
++{
++	if (unlikely(!access_ok(type, ptr, len)))
++		return 0;
++	__uaccess_begin();
++	return 1;
++}
++
++#define user_access_begin(a, b, c)	user_access_begin(a, b, c)
+ #define user_access_end()	__uaccess_end()
+ 
+ #define unsafe_put_user(x, ptr, err_label)					\
+diff --git a/drivers/gpu/drm/i915/i915_gem_execbuffer.c b/drivers/gpu/drm/i915/i915_gem_execbuffer.c
+index da5b9abd9626..be38d9f6b08e 100644
+--- a/drivers/gpu/drm/i915/i915_gem_execbuffer.c
++++ b/drivers/gpu/drm/i915/i915_gem_execbuffer.c
+@@ -1569,7 +1569,9 @@ static int eb_copy_relocations(const struct i915_execbuffer *eb)
+ 		 * happened we would make the mistake of assuming that the
+ 		 * relocations were valid.
+ 		 */
+-		user_access_begin();
++		if (unlikely(!user_access_begin(VERIFY_WRITE, urelocs, size)))
++			goto end_user;
++
+ 		for (copied = 0; copied < nreloc; copied++)
+ 			unsafe_put_user(-1,
+ 					&urelocs[copied].presumed_offset,
+@@ -2669,7 +2671,17 @@ i915_gem_execbuffer2(struct drm_device *dev, void *data,
+ 		unsigned int i;
+ 
+ 		/* Copy the new buffer offsets back to the user's exec list. */
+-		user_access_begin();
++		/*
++		 * Note: count * sizeof(*user_exec_list) does not overflow,
++		 * because we checked 'count' in check_buffer_count().
++		 *
++		 * And this range already got effectively checked earlier
++		 * when we did the "copy_from_user()" above.
++		 */
++		if (unlikely(!user_access_begin(VERIFY_WRITE, user_exec_list,
++					count * sizeof(*user_exec_list))))
++			goto end_user;
++
+ 		for (i = 0; i < args->buffer_count; i++) {
+ 			if (!(exec2_list[i].offset & UPDATE))
+ 				continue;
+diff --git a/include/linux/uaccess.h b/include/linux/uaccess.h
+index 7c4e2d65e999..8f80dadfc7ef 100644
+--- a/include/linux/uaccess.h
++++ b/include/linux/uaccess.h
+@@ -308,7 +308,7 @@ extern long strncpy_from_unsafe(char *dst, const void *unsafe_addr, long count);
+ 	probe_kernel_read(&retval, addr, sizeof(retval))
+ 
+ #ifndef user_access_begin
+-#define user_access_begin() do { } while (0)
++#define user_access_begin(type, ptr, len) access_ok(type, ptr, len)
+ #define user_access_end() do { } while (0)
+ #define unsafe_get_user(x, ptr, err) do { if (unlikely(__get_user(x, ptr))) goto err; } while (0)
+ #define unsafe_put_user(x, ptr, err) do { if (unlikely(__put_user(x, ptr))) goto err; } while (0)
+diff --git a/lib/strncpy_from_user.c b/lib/strncpy_from_user.c
+index 7e35fc450c5b..875acb67205e 100644
+--- a/lib/strncpy_from_user.c
++++ b/lib/strncpy_from_user.c
+@@ -27,13 +27,6 @@ static inline long do_strncpy_from_user(char *dst, const char __user *src, long
+ 	const struct word_at_a_time constants = WORD_AT_A_TIME_CONSTANTS;
+ 	long res = 0;
+ 
+-	/*
+-	 * Truncate 'max' to the user-specified limit, so that
+-	 * we only have one limit we need to check in the loop
+-	 */
+-	if (max > count)
+-		max = count;
+-
+ 	if (IS_UNALIGNED(src, dst))
+ 		goto byte_at_a_time;
+ 
+@@ -111,12 +104,20 @@ long strncpy_from_user(char *dst, const char __user *src, long count)
+ 		unsigned long max = max_addr - src_addr;
+ 		long retval;
+ 
++		/*
++		 * Truncate 'max' to the user-specified limit, so that
++		 * we only have one limit we need to check in the loop
++		 */
++		if (max > count)
++			max = count;
++
+ 		kasan_check_write(dst, count);
+ 		check_object_size(dst, count, false);
+-		user_access_begin();
+-		retval = do_strncpy_from_user(dst, src, count, max);
+-		user_access_end();
+-		return retval;
++		if (user_access_begin(VERIFY_READ, src, max)) {
++			retval = do_strncpy_from_user(dst, src, count, max);
++			user_access_end();
++			return retval;
++		}
+ 	}
+ 	return -EFAULT;
+ }
+diff --git a/lib/strnlen_user.c b/lib/strnlen_user.c
+index 8e105ed4df12..10ebc39bf0d6 100644
+--- a/lib/strnlen_user.c
++++ b/lib/strnlen_user.c
+@@ -30,13 +30,6 @@ static inline long do_strnlen_user(const char __user *src, unsigned long count,
+ 	long align, res = 0;
+ 	unsigned long c;
+ 
+-	/*
+-	 * Truncate 'max' to the user-specified limit, so that
+-	 * we only have one limit we need to check in the loop
+-	 */
+-	if (max > count)
+-		max = count;
+-
+ 	/*
+ 	 * Do everything aligned. But that means that we
+ 	 * need to also expand the maximum..
+@@ -113,10 +106,18 @@ long strnlen_user(const char __user *str, long count)
+ 		unsigned long max = max_addr - src_addr;
+ 		long retval;
+ 
+-		user_access_begin();
+-		retval = do_strnlen_user(str, count, max);
+-		user_access_end();
+-		return retval;
++		/*
++		 * Truncate 'max' to the user-specified limit, so that
++		 * we only have one limit we need to check in the loop
++		 */
++		if (max > count)
++			max = count;
++
++		if (user_access_begin(VERIFY_READ, str, max)) {
++			retval = do_strnlen_user(str, count, max);
++			user_access_end();
++			return retval;
++		}
+ 	}
+ 	return 0;
+ }
+@@ -147,10 +148,11 @@ long strlen_user(const char __user *str)
+ 		unsigned long max = max_addr - src_addr;
+ 		long retval;
+ 
+-		user_access_begin();
+-		retval = do_strnlen_user(str, ~0ul, max);
+-		user_access_end();
+-		return retval;
++		if (user_access_begin(VERIFY_READ, str, max)) {
++			retval = do_strnlen_user(str, ~0ul, max);
++			user_access_end();
++			return retval;
++		}
+ 	}
+ 	return 0;
+ }
+-- 
+2.26.2
+

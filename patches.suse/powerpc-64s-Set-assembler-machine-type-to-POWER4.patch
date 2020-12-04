@@ -33,8 +33,6 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  arch/powerpc/lib/memcpy_power7.S     |  3 ---
  11 files changed, 18 insertions(+), 27 deletions(-)
 
-diff --git a/arch/powerpc/Makefile b/arch/powerpc/Makefile
-index 1a3cbd5e88a9..8bd4b61195c1 100644
 --- a/arch/powerpc/Makefile
 +++ b/arch/powerpc/Makefile
 @@ -230,6 +230,7 @@ endif
@@ -45,8 +43,6 @@ index 1a3cbd5e88a9..8bd4b61195c1 100644
  
  KBUILD_AFLAGS += $(cpu-as-y)
  KBUILD_CFLAGS += $(cpu-as-y)
-diff --git a/arch/powerpc/include/asm/ppc_asm.h b/arch/powerpc/include/asm/ppc_asm.h
-index 722a264e3f2c..15c4c237ef61 100644
 --- a/arch/powerpc/include/asm/ppc_asm.h
 +++ b/arch/powerpc/include/asm/ppc_asm.h
 @@ -433,14 +433,11 @@ END_FTR_SECTION_IFCLR(CPU_FTR_601)
@@ -68,11 +64,9 @@ index 722a264e3f2c..15c4c237ef61 100644
  
  /*
   * toreal/fromreal/tophys/tovirt macros. 32-bit BookE makes them
-diff --git a/arch/powerpc/kernel/entry_64.S b/arch/powerpc/kernel/entry_64.S
-index 4de3efe03955..d5974d94f42f 100644
 --- a/arch/powerpc/kernel/entry_64.S
 +++ b/arch/powerpc/kernel/entry_64.S
-@@ -532,7 +532,7 @@ _GLOBAL(_switch)
+@@ -530,7 +530,7 @@ _GLOBAL(_switch)
  /* Cancel all explict user streams as they will have no use after context
   * switch and will stop the HW from creating streams itself
   */
@@ -81,11 +75,9 @@ index 4de3efe03955..d5974d94f42f 100644
  #endif
  
  	addi	r6,r4,-THREAD	/* Convert THREAD to 'current' */
-diff --git a/arch/powerpc/kernel/exceptions-64s.S b/arch/powerpc/kernel/exceptions-64s.S
-index 42becf8745eb..40007ebf0fb1 100644
 --- a/arch/powerpc/kernel/exceptions-64s.S
 +++ b/arch/powerpc/kernel/exceptions-64s.S
-@@ -659,12 +659,9 @@ END_MMU_FTR_SECTION_IFCLR(MMU_FTR_TYPE_RADIX)
+@@ -620,12 +620,9 @@ END_MMU_FTR_SECTION_IFCLR(MMU_FTR_TYPE_R
  
  	/* All done -- return from exception. */
  
@@ -96,9 +88,9 @@ index 42becf8745eb..40007ebf0fb1 100644
  	mtcrf	0x01,r9		/* slb_allocate uses cr0 and cr7 */
 -.machine	pop
  
+ 	RESTORE_CTR(r9, PACA_EXSLB)
  	RESTORE_PPR_PACA(PACA_EXSLB, r9)
- 	ld	r9,PACA_EXSLB+EX_R9(r13)
-@@ -676,12 +673,9 @@ END_MMU_FTR_SECTION_IFCLR(MMU_FTR_TYPE_RADIX)
+@@ -638,12 +635,9 @@ END_MMU_FTR_SECTION_IFCLR(MMU_FTR_TYPE_R
  	b	.	/* prevent speculative execution */
  
  1:
@@ -109,9 +101,9 @@ index 42becf8745eb..40007ebf0fb1 100644
  	mtcrf	0x01,r9		/* slb_allocate uses cr0 and cr7 */
 -.machine	pop
  
+ 	RESTORE_CTR(r9, PACA_EXSLB)
  	RESTORE_PPR_PACA(PACA_EXSLB, r9)
- 	ld	r9,PACA_EXSLB+EX_R9(r13)
-@@ -1440,7 +1434,7 @@ TRAMP_REAL_BEGIN(rfi_flush_fallback)
+@@ -1403,7 +1397,7 @@ TRAMP_REAL_BEGIN(rfi_flush_fallback)
  	ld	r11,PACA_L1D_FLUSH_SIZE(r13)
  	srdi	r11,r11,(7 + 3) /* 128 byte lines, unrolled 8x */
  	mtctr	r11
@@ -120,7 +112,7 @@ index 42becf8745eb..40007ebf0fb1 100644
  
  	/* order ld/st prior to dcbt stop all streams with flushing */
  	sync
-@@ -1480,7 +1474,7 @@ TRAMP_REAL_BEGIN(hrfi_flush_fallback)
+@@ -1443,7 +1437,7 @@ TRAMP_REAL_BEGIN(hrfi_flush_fallback)
  	ld	r11,PACA_L1D_FLUSH_SIZE(r13)
  	srdi	r11,r11,(7 + 3) /* 128 byte lines, unrolled 8x */
  	mtctr	r11
@@ -129,11 +121,9 @@ index 42becf8745eb..40007ebf0fb1 100644
  
  	/* order ld/st prior to dcbt stop all streams with flushing */
  	sync
-diff --git a/arch/powerpc/lib/Makefile b/arch/powerpc/lib/Makefile
-index 20f926c1988a..d83a20fc1565 100644
 --- a/arch/powerpc/lib/Makefile
 +++ b/arch/powerpc/lib/Makefile
-@@ -14,9 +14,11 @@ obj-y += string.o alloc.o crtsavres.o code-patching.o \
+@@ -14,9 +14,11 @@ obj-y += string.o alloc.o crtsavres.o co
  
  obj-$(CONFIG_PPC32)	+= div64.o copy_32.o
  
@@ -147,8 +137,6 @@ index 20f926c1988a..d83a20fc1565 100644
  
  obj64-$(CONFIG_SMP)	+= locks.o
  obj64-$(CONFIG_ALTIVEC)	+= vmx-helper.o
-diff --git a/arch/powerpc/lib/copypage_64.S b/arch/powerpc/lib/copypage_64.S
-index 4bcc9e76fb55..8d5034f645f3 100644
 --- a/arch/powerpc/lib/copypage_64.S
 +++ b/arch/powerpc/lib/copypage_64.S
 @@ -21,7 +21,9 @@ _GLOBAL_TOC(copy_page)
@@ -161,8 +149,6 @@ index 4bcc9e76fb55..8d5034f645f3 100644
  ALT_FTR_SECTION_END_IFCLR(CPU_FTR_VMX_COPY)
  	ori	r5,r5,PAGE_SIZE@l
  BEGIN_FTR_SECTION
-diff --git a/arch/powerpc/lib/copypage_power7.S b/arch/powerpc/lib/copypage_power7.S
-index ca5fc8fa7efc..8fa73b7ab20e 100644
 --- a/arch/powerpc/lib/copypage_power7.S
 +++ b/arch/powerpc/lib/copypage_power7.S
 @@ -42,8 +42,6 @@ _GLOBAL(copypage_power7)
@@ -182,8 +168,6 @@ index ca5fc8fa7efc..8fa73b7ab20e 100644
  
  #ifdef CONFIG_ALTIVEC
  	mflr	r0
-diff --git a/arch/powerpc/lib/copyuser_64.S b/arch/powerpc/lib/copyuser_64.S
-index 08da06e1bd72..506677395681 100644
 --- a/arch/powerpc/lib/copyuser_64.S
 +++ b/arch/powerpc/lib/copyuser_64.S
 @@ -20,11 +20,13 @@
@@ -200,8 +184,6 @@ index 08da06e1bd72..506677395681 100644
  _GLOBAL(__copy_tofrom_user_base)
  	/* first check for a whole page copy on a page boundary */
  	cmpldi	cr1,r5,16
-diff --git a/arch/powerpc/lib/copyuser_power7.S b/arch/powerpc/lib/copyuser_power7.S
-index a95fef3bed10..36d8f563870b 100644
 --- a/arch/powerpc/lib/copyuser_power7.S
 +++ b/arch/powerpc/lib/copyuser_power7.S
 @@ -312,8 +312,6 @@ err1;	stb	r0,0(r3)
@@ -221,8 +203,6 @@ index a95fef3bed10..36d8f563870b 100644
  
  	beq	cr1,.Lunwind_stack_nonvmx_copy
  
-diff --git a/arch/powerpc/lib/memcpy_64.S b/arch/powerpc/lib/memcpy_64.S
-index f4d6088e2d53..8d8265be1a59 100644
 --- a/arch/powerpc/lib/memcpy_64.S
 +++ b/arch/powerpc/lib/memcpy_64.S
 @@ -19,9 +19,11 @@ BEGIN_FTR_SECTION
@@ -237,8 +217,6 @@ index f4d6088e2d53..8d8265be1a59 100644
  ALT_FTR_SECTION_END_IFCLR(CPU_FTR_VMX_COPY)
  #ifdef __LITTLE_ENDIAN__
  	/* dumb little-endian memcpy that will get replaced at runtime */
-diff --git a/arch/powerpc/lib/memcpy_power7.S b/arch/powerpc/lib/memcpy_power7.S
-index 193909abd18b..df7de9d3da08 100644
 --- a/arch/powerpc/lib/memcpy_power7.S
 +++ b/arch/powerpc/lib/memcpy_power7.S
 @@ -259,15 +259,12 @@ _GLOBAL(memcpy_power7)
@@ -257,6 +235,3 @@ index 193909abd18b..df7de9d3da08 100644
  
  	beq	cr1,.Lunwind_stack_nonvmx_copy
  
--- 
-2.13.6
-
