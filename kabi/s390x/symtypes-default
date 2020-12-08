@@ -13870,7 +13870,7 @@ s#crush_rule struct crush_rule { t#__u32 len ; s#crush_rule_mask mask ; s#crush_
 s#crush_map struct crush_map { s#crush_bucket * * buckets ; s#crush_rule * * rules ; t#__s32 max_buckets ; t#__u32 max_rules ; t#__s32 max_devices ; t#__u32 choose_local_tries ; t#__u32 choose_local_fallback_tries ; t#__u32 choose_total_tries ; t#__u32 chooseleaf_descend_once ; t#__u8 chooseleaf_vary_r ; t#__u8 chooseleaf_stable ; t#size_t working_size ; s#rb_root choose_args ; } 
 s#ceph_osdmap struct ceph_osdmap { s#ceph_fsid fsid ; t#u32 epoch ; s#ceph_timespec created , modified ; t#u32 flags ; t#u32 max_osd ; t#u32 * osd_state ; t#u32 * osd_weight ; s#ceph_entity_addr * osd_addr ; s#rb_root pg_temp ; s#rb_root primary_temp ; s#rb_root pg_upmap ; s#rb_root pg_upmap_items ; t#u32 * osd_primary_affinity ; s#rb_root pg_pools ; t#u32 pool_max ; s#crush_map * crush ; s#mutex crush_workspace_mutex ; void * crush_workspace ; } 
 s#ceph_osd struct ceph_osd { t#refcount_t o_ref ; s#ceph_osd_client * o_osdc ; int o_osd ; int o_incarnation ; s#rb_node o_node ; s#ceph_connection o_con ; s#rb_root o_requests ; s#rb_root o_linger_requests ; s#rb_root o_backoff_mappings ; s#rb_root o_backoffs_by_id ; s#list_head o_osd_lru ; s#ceph_auth_handshake o_auth ; unsigned long lru_ttl ; s#list_head o_keepalive_item ; s#mutex lock ; } 
-s#ceph_osd_client struct ceph_osd_client { s#ceph_client * client ; s#ceph_osdmap * osdmap ; s#rw_semaphore lock ; s#rb_root osds ; s#list_head osd_lru ; t#spinlock_t osd_lru_lock ; t#u32 epoch_barrier ; s#ceph_osd homeless_osd ; t#atomic64_t last_tid ; t#u64 last_linger_id ; s#rb_root linger_requests ; s#rb_root map_checks ; s#rb_root linger_map_checks ; t#atomic_t num_requests ; t#atomic_t num_homeless ; t#bool abort_on_full ; int abort_err ; s#delayed_work timeout_work ; s#delayed_work osds_timeout_work ; s#dentry * debugfs_file ; t#mempool_t * req_mempool ; s#ceph_msgpool msgpool_op ; s#ceph_msgpool msgpool_op_reply ; s#workqueue_struct * notify_wq ; s#workqueue_struct * completion_wq ; } 
+s#ceph_osd_client struct ceph_osd_client { s#ceph_client * client ; s#ceph_osdmap * osdmap ; s#rw_semaphore lock ; s#rb_root osds ; s#list_head osd_lru ; t#spinlock_t osd_lru_lock ; t#u32 epoch_barrier ; s#ceph_osd homeless_osd ; t#atomic64_t last_tid ; t#u64 last_linger_id ; s#rb_root linger_requests ; s#rb_root map_checks ; s#rb_root linger_map_checks ; t#atomic_t num_requests ; t#atomic_t num_homeless ; int abort_err ; s#delayed_work timeout_work ; s#delayed_work osds_timeout_work ; s#dentry * debugfs_file ; t#mempool_t * req_mempool ; s#ceph_msgpool msgpool_op ; s#ceph_msgpool msgpool_op_reply ; s#workqueue_struct * notify_wq ; s#workqueue_struct * completion_wq ; } 
 s#ceph_pg struct ceph_pg { t#uint64_t pool ; t#uint32_t seed ; } 
 s#ceph_spg struct ceph_spg { s#ceph_pg pgid ; t#s8 shard ; } 
 s#ceph_osds struct ceph_osds { int osds [ 32 ] ; int size ; int primary ; } 
@@ -29210,6 +29210,7 @@ dm_internal_suspend_fast void dm_internal_suspend_fast ( s#mapped_device * )
 dm_internal_resume_fast void dm_internal_resume_fast ( s#mapped_device * ) 
 dm_disk s#gendisk * dm_disk ( s#mapped_device * ) 
 dm_suspended int dm_suspended ( s#dm_target * ) 
+dm_post_suspending int dm_post_suspending ( s#dm_target * ) 
 dm_noflush_suspending int dm_noflush_suspending ( s#dm_target * ) 
 
 /* drivers/md/dm-bio-prison-v1.o */
@@ -48431,8 +48432,8 @@ s#qeth_ipa_cmd struct qeth_ipa_cmd { s#qeth_ipacmd_hdr hdr ; union { s#qeth_ipac
 s#qeth_discipline struct qeth_discipline { const s#device_type * devtype ; int ( * process_rx_buffer ) ( s#qeth_card * , int , int * ) ; int ( * recover ) ( void * ) ; int ( * setup ) ( s#ccwgroup_device * ) ; void ( * remove ) ( s#ccwgroup_device * ) ; int ( * set_online ) ( s#ccwgroup_device * ) ; int ( * set_offline ) ( s#ccwgroup_device * ) ; int ( * freeze ) ( s#ccwgroup_device * ) ; int ( * thaw ) ( s#ccwgroup_device * ) ; int ( * restore ) ( s#ccwgroup_device * ) ; int ( * do_ioctl ) ( s#net_device * , s#ifreq * , int ) ; int ( * control_event_handler ) ( s#qeth_card * , s#qeth_ipa_cmd * ) ; } 
 s#gro_list struct gro_list { s#list_head list ; int count ; } 
 s#napi_struct struct napi_struct { s#list_head poll_list ; unsigned long state ; int weight ; unsigned long gro_bitmask ; int ( * poll ) ( s#napi_struct * , int ) ; s#net_device * dev ; s#gro_list gro_hash [ 8 ] ; s#sk_buff * skb ; s#hrtimer timer ; s#list_head dev_list ; s#hlist_node napi_hash_node ; unsigned int napi_id ; } 
-s#qeth_rx struct qeth_rx { int b_count ; int b_index ; s#qdio_buffer_element * b_element ; int e_offset ; int qdio_err ; } 
-s#qeth_card struct qeth_card { s#list_head list ; e#qeth_card_states state ; t#spinlock_t lock ; s#ccwgroup_device * gdev ; s#qeth_channel read ; s#qeth_channel write ; s#qeth_channel data ; s#net_device * dev ; s#net_device_stats stats ; s#qeth_card_info info ; s#qeth_token token ; s#qeth_seqno seqno ; s#qeth_card_options options ; s#workqueue_struct * event_wq ; t#wait_queue_head_t wait_q ; t#spinlock_t mclock ; unsigned long active_vlans [ ( ( ( 4096 ) + ( 8 * sizeof ( long ) ) - 1 ) / ( 8 * sizeof ( long ) ) ) ] ; s#mutex vid_list_mutex ; s#list_head vid_list ; s#hlist_head mac_htable [ 1 << ( 4 ) ] ; s#hlist_head ip_htable [ 1 << ( 4 ) ] ; s#hlist_head ip_mc_htable [ 1 << ( 4 ) ] ; s#work_struct kernel_thread_starter ; t#spinlock_t thread_mask_lock ; unsigned long thread_start_mask ; unsigned long thread_allowed_mask ; unsigned long thread_running_mask ; s#task_struct * recovery_task ; t#spinlock_t ip_lock ; s#qeth_ipato ipato ; s#list_head cmd_waiter_list ; s#qeth_qdio_info qdio ; s#qeth_perf_stats perf_stats ; int read_or_write_problem ; s#qeth_osn_info osn_info ; s#qeth_discipline * discipline ; t#atomic_t force_alloc_skb ; s#service_level qeth_service_level ; s#qdio_ssqd_desc ssqd ; t#debug_info_t * debug ; s#mutex sbp_lock ; s#mutex conf_mutex ; s#mutex discipline_mutex ; s#napi_struct napi ; s#qeth_rx rx ; s#delayed_work buffer_reclaim_work ; int reclaim_index ; s#work_struct close_dev_work ; } 
+s#qeth_rx struct qeth_rx { int b_count ; int b_index ; s#qdio_buffer_element * b_element ; int e_offset ; int qdio_err ; t#u8 bufs_refill ; } 
+s#qeth_card struct qeth_card { s#list_head list ; e#qeth_card_states state ; t#spinlock_t lock ; s#ccwgroup_device * gdev ; s#qeth_channel read ; s#qeth_channel write ; s#qeth_channel data ; s#net_device * dev ; s#net_device_stats stats ; s#qeth_card_info info ; s#qeth_token token ; s#qeth_seqno seqno ; s#qeth_card_options options ; s#workqueue_struct * event_wq ; t#wait_queue_head_t wait_q ; t#spinlock_t mclock ; unsigned long active_vlans [ ( ( ( 4096 ) + ( 8 * sizeof ( long ) ) - 1 ) / ( 8 * sizeof ( long ) ) ) ] ; s#mutex vid_list_mutex ; s#list_head vid_list ; s#hlist_head mac_htable [ 1 << ( 4 ) ] ; s#hlist_head ip_htable [ 1 << ( 4 ) ] ; s#hlist_head ip_mc_htable [ 1 << ( 4 ) ] ; s#work_struct kernel_thread_starter ; t#spinlock_t thread_mask_lock ; unsigned long thread_start_mask ; unsigned long thread_allowed_mask ; unsigned long thread_running_mask ; s#task_struct * recovery_task ; t#spinlock_t ip_lock ; s#qeth_ipato ipato ; s#list_head cmd_waiter_list ; s#qeth_qdio_info qdio ; s#qeth_perf_stats perf_stats ; int read_or_write_problem ; s#qeth_osn_info osn_info ; s#qeth_discipline * discipline ; t#atomic_t force_alloc_skb ; s#service_level qeth_service_level ; s#qdio_ssqd_desc ssqd ; t#debug_info_t * debug ; s#mutex sbp_lock ; s#mutex conf_mutex ; s#mutex discipline_mutex ; s#napi_struct napi ; s#qeth_rx rx ; s#delayed_work buffer_reclaim_work ; s#work_struct close_dev_work ; } 
 qeth_card_hw_is_reachable int qeth_card_hw_is_reachable ( s#qeth_card * ) 
 qeth_close_dev void qeth_close_dev ( s#qeth_card * ) 
 qeth_set_recovery_task void qeth_set_recovery_task ( s#qeth_card * ) 
@@ -91035,7 +91036,7 @@ ceph_check_fsid extern int ceph_check_fsid ( s#ceph_client * , s#ceph_fsid * )
 ceph_compare_options extern int ceph_compare_options ( s#ceph_options * , s#ceph_client * ) 
 ceph_destroy_options extern void ceph_destroy_options ( s#ceph_options * ) 
 ceph_parse_options extern s#ceph_options * ceph_parse_options ( char * , const char * , const char * , int ( * ) ( char * , void * ) , void * ) 
-ceph_print_client_options int ceph_print_client_options ( s#seq_file * , s#ceph_client * ) 
+ceph_print_client_options int ceph_print_client_options ( s#seq_file * , s#ceph_client * , t#bool ) 
 ceph_client_addr s#ceph_entity_addr * ceph_client_addr ( s#ceph_client * ) 
 ceph_client_gid t#u64 ceph_client_gid ( s#ceph_client * ) 
 ceph_create_client s#ceph_client * ceph_create_client ( s#ceph_options * , void * ) 
@@ -134051,7 +134052,7 @@ s##fscrypt_info
 kvm_debugfs_dir extern s#dentry * kvm_debugfs_dir 
 kvm_rebooting extern t#bool kvm_rebooting 
 s##gmap
-vcpu_load int vcpu_load ( s#kvm_vcpu * ) 
+vcpu_load void vcpu_load ( s#kvm_vcpu * ) 
 vcpu_put void vcpu_put ( s#kvm_vcpu * ) 
 kvm_flush_remote_tlbs void kvm_flush_remote_tlbs ( s#kvm * ) 
 kvm_vcpu_init int kvm_vcpu_init ( s#kvm_vcpu * , s#kvm * , unsigned ) 
