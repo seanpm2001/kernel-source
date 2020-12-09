@@ -1,0 +1,72 @@
+From b02394aa75e3942bea8dac6efc7f1a179fbe011f Mon Sep 17 00:00:00 2001
+From: Moni Shoua <monis@mellanox.com>
+Date: Thu, 8 Nov 2018 21:10:17 +0200
+Subject: [PATCH 1/1] IB/mlx5: Improve ODP debugging messages
+Git-commit: b02394aa75e3942bea8dac6efc7f1a179fbe011f
+Patch-mainline: v5.0
+References: bsc#1111666
+
+Add and modify debug messages to ODP related error flows.
+In that context, return code EAGAIN is considered less severe and print
+level for it is set debug instead of warn.
+
+Signed-off-by: Moni Shoua <monis@mellanox.com>
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/core/umem_odp.c | 14 ++++++++++++--
+ drivers/infiniband/hw/mlx5/odp.c   |  4 ++--
+ 2 files changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/infiniband/core/umem_odp.c b/drivers/infiniband/core/umem_odp.c
+index 2b4c5e7dd5a1..e334480b56bf 100644
+--- a/drivers/infiniband/core/umem_odp.c
++++ b/drivers/infiniband/core/umem_odp.c
+@@ -655,8 +655,13 @@ int ib_umem_odp_map_dma_pages(struct ib_umem_odp *umem_odp, u64 user_virt,
+ 				flags, local_page_list, NULL, NULL);
+ 		up_read(&owning_mm->mmap_sem);
+ 
+-		if (npages < 0)
++		if (npages < 0) {
++			if (npages != -EAGAIN)
++				pr_warn("fail to get %zu user pages with error %d\n", gup_num_pages, npages);
++			else
++				pr_debug("fail to get %zu user pages with error %d\n", gup_num_pages, npages);
+ 			break;
++		}
+ 
+ 		bcnt -= min_t(size_t, npages << PAGE_SHIFT, bcnt);
+ 		mutex_lock(&umem_odp->umem_mutex);
+@@ -674,8 +679,13 @@ int ib_umem_odp_map_dma_pages(struct ib_umem_odp *umem_odp, u64 user_virt,
+ 			ret = ib_umem_odp_map_dma_single_page(
+ 					umem_odp, k, local_page_list[j],
+ 					access_mask, current_seq);
+-			if (ret < 0)
++			if (ret < 0) {
++				if (ret != -EAGAIN)
++					pr_warn("ib_umem_odp_map_dma_single_page failed with error %d\n", ret);
++				else
++					pr_debug("ib_umem_odp_map_dma_single_page failed with error %d\n", ret);
+ 				break;
++			}
+ 
+ 			p = page_to_phys(local_page_list[j]);
+ 			k++;
+diff --git a/drivers/infiniband/hw/mlx5/odp.c b/drivers/infiniband/hw/mlx5/odp.c
+index abce55b8b9ba..7d784b40e017 100644
+--- a/drivers/infiniband/hw/mlx5/odp.c
++++ b/drivers/infiniband/hw/mlx5/odp.c
+@@ -607,8 +607,8 @@ out:
+ 			if (!wait_for_completion_timeout(
+ 					&odp->notifier_completion,
+ 					timeout)) {
+-				mlx5_ib_warn(dev, "timeout waiting for mmu notifier. seq %d against %d\n",
+-					     current_seq, odp->notifiers_seq);
++				mlx5_ib_warn(dev, "timeout waiting for mmu notifier. seq %d against %d. notifiers_count=%d\n",
++					     current_seq, odp->notifiers_seq, odp->notifiers_count);
+ 			}
+ 		} else {
+ 			/* The MR is being killed, kill the QP as well. */
+-- 
+2.29.2
+

@@ -1,0 +1,73 @@
+From 8317d6cdc1c7b8add6f2e5b915b5b5f80fdbfa5b Mon Sep 17 00:00:00 2001
+From: "Shiraz, Saleem" <shiraz.saleem@intel.com>
+Date: Mon, 11 Feb 2019 09:25:07 -0600
+Subject: [PATCH 1/1] RDMA/rxe: Use for_each_sg_page iterator on umem SGL
+Git-commit: 8317d6cdc1c7b8add6f2e5b915b5b5f80fdbfa5b
+Patch-mainline: v5.1
+References: bsc#1111666
+
+The driver walks the umem SGL assuming a 1:1 mapping between SGE and
+system page. Update to use the for_each_sg_page iterator to get individual
+pages contained in the SGEs.  This is a pre-requisite before adding page
+combining into SGEs while building the scatter table in IB core.
+
+Additionally, purge umem->page_shift usage in the driver as its only
+relevant for ODP MRs. Use system page size and shift instead.
+
+Signed-off-by: Shiraz, Saleem <shiraz.saleem@intel.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/sw/rxe/rxe_mr.c | 13 ++++++-------
+ 1 file changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/infiniband/sw/rxe/rxe_mr.c b/drivers/infiniband/sw/rxe/rxe_mr.c
+index 2438093776a0..42f0f25e396c 100644
+--- a/drivers/infiniband/sw/rxe/rxe_mr.c
++++ b/drivers/infiniband/sw/rxe/rxe_mr.c
+@@ -162,11 +162,10 @@ int rxe_mem_init_user(struct rxe_pd *pd, u64 start,
+ 		      u64 length, u64 iova, int access, struct ib_udata *udata,
+ 		      struct rxe_mem *mem)
+ {
+-	int			entry;
+ 	struct rxe_map		**map;
+ 	struct rxe_phys_buf	*buf = NULL;
+ 	struct ib_umem		*umem;
+-	struct scatterlist	*sg;
++	struct sg_page_iter	sg_iter;
+ 	int			num_buf;
+ 	void			*vaddr;
+ 	int err;
+@@ -191,16 +190,16 @@ int rxe_mem_init_user(struct rxe_pd *pd, u64 start,
+ 		goto err1;
+ 	}
+ 
+-	mem->page_shift		= umem->page_shift;
+-	mem->page_mask		= BIT(umem->page_shift) - 1;
++	mem->page_shift		= PAGE_SHIFT;
++	mem->page_mask = PAGE_SIZE - 1;
+ 
+ 	num_buf			= 0;
+ 	map			= mem->map;
+ 	if (length > 0) {
+ 		buf = map[0]->buf;
+ 
+-		for_each_sg(umem->sg_head.sgl, sg, umem->nmap, entry) {
+-			vaddr = page_address(sg_page(sg));
++		for_each_sg_page(umem->sg_head.sgl, &sg_iter, umem->nmap, 0) {
++			vaddr = page_address(sg_page_iter_page(&sg_iter));
+ 			if (!vaddr) {
+ 				pr_warn("null vaddr\n");
+ 				err = -ENOMEM;
+@@ -208,7 +207,7 @@ int rxe_mem_init_user(struct rxe_pd *pd, u64 start,
+ 			}
+ 
+ 			buf->addr = (uintptr_t)vaddr;
+-			buf->size = BIT(umem->page_shift);
++			buf->size = PAGE_SIZE;
+ 			num_buf++;
+ 			buf++;
+ 
+-- 
+2.26.2
+

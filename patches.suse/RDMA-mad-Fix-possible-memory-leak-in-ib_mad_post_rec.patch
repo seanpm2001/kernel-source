@@ -1,0 +1,38 @@
+From a17f4bed811c60712d8131883cdba11a105d0161 Mon Sep 17 00:00:00 2001
+From: Fan Guo <guofan5@huawei.com>
+Date: Fri, 12 Jun 2020 14:38:24 +0800
+Subject: [PATCH 1/1] RDMA/mad: Fix possible memory leak in
+Git-commit: a17f4bed811c60712d8131883cdba11a105d0161
+Patch-mainline: v5.10-rc1
+References: bsc#1111666
+ ib_mad_post_receive_mads()
+
+If ib_dma_mapping_error() returns non-zero value,
+ib_mad_post_receive_mads() will jump out of loops and return -ENOMEM
+without freeing mad_priv. Fix this memory-leak problem by freeing mad_priv
+in this case.
+
+Fixes: 2c34e68f4261 ("IB/mad: Check and handle potential DMA mapping errors")
+Link: https://lore.kernel.org/r/20200612063824.180611-1-guofan5@huawei.com
+Signed-off-by: Fan Guo <guofan5@huawei.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/core/mad.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/infiniband/core/mad.c b/drivers/infiniband/core/mad.c
+index 186e0d652e8b..5e080191a725 100644
+--- a/drivers/infiniband/core/mad.c
++++ b/drivers/infiniband/core/mad.c
+@@ -2718,6 +2718,7 @@ static int ib_mad_post_receive_mads(struct ib_mad_qp_info *qp_info,
+ 						 DMA_FROM_DEVICE);
+ 		if (unlikely(ib_dma_mapping_error(qp_info->port_priv->device,
+ 						  sg_list.addr))) {
++			kfree(mad_priv);
+ 			ret = -ENOMEM;
+ 			break;
+ 		}
+-- 
+2.29.2.405.gfdfcad78fd04
+

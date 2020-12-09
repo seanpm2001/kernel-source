@@ -1,0 +1,75 @@
+From 6135b71159de3bc66964ad9157f1a62a77590006 Mon Sep 17 00:00:00 2001
+From: Kamal Heib <kamalheib1@gmail.com>
+Date: Mon, 28 Oct 2019 17:59:30 +0200
+Subject: [PATCH 1/1] RDMA/ocrdma: Remove unsupported modify_port callback
+Git-commit: 6135b71159de3bc66964ad9157f1a62a77590006
+Patch-mainline: v5.10-rc1
+References: bsc#1111666
+
+There is no need to return always zero for function which is not
+supported.
+
+Fixes: fe2caefcdf58 ("RDMA/ocrdma: Add driver for Emulex OneConnect IBoE RDMA adapter")
+Link: https://lore.kernel.org/r/20191028155931.1114-4-kamalheib1@gmail.com
+Signed-off-by: Kamal Heib <kamalheib1@gmail.com>
+Reviewed-by: Jason Gunthorpe <jgg@mellanox.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/hw/ocrdma/ocrdma_main.c  | 1 -
+ drivers/infiniband/hw/ocrdma/ocrdma_verbs.c | 6 ------
+ drivers/infiniband/hw/ocrdma/ocrdma_verbs.h | 2 --
+ 3 files changed, 9 deletions(-)
+
+diff --git a/drivers/infiniband/hw/ocrdma/ocrdma_main.c b/drivers/infiniband/hw/ocrdma/ocrdma_main.c
+index c15cfc6cef81..d8c47d24d6d6 100644
+--- a/drivers/infiniband/hw/ocrdma/ocrdma_main.c
++++ b/drivers/infiniband/hw/ocrdma/ocrdma_main.c
+@@ -185,7 +185,6 @@ static int ocrdma_register_device(struct ocrdma_dev *dev)
+ 	/* mandatory verbs. */
+ 	dev->ibdev.query_device = ocrdma_query_device;
+ 	dev->ibdev.query_port = ocrdma_query_port;
+-	dev->ibdev.modify_port = ocrdma_modify_port;
+ 	dev->ibdev.get_netdev = ocrdma_get_netdev;
+ 	dev->ibdev.get_link_layer = ocrdma_link_layer;
+ 	dev->ibdev.alloc_pd = ocrdma_alloc_pd;
+diff --git a/drivers/infiniband/hw/ocrdma/ocrdma_verbs.c b/drivers/infiniband/hw/ocrdma/ocrdma_verbs.c
+index e8267e590772..e72050de5734 100644
+--- a/drivers/infiniband/hw/ocrdma/ocrdma_verbs.c
++++ b/drivers/infiniband/hw/ocrdma/ocrdma_verbs.c
+@@ -212,19 +212,6 @@ int ocrdma_query_port(struct ib_device *ibdev,
+ 	return 0;
+ }
+ 
+-int ocrdma_modify_port(struct ib_device *ibdev, u8 port, int mask,
+-		       struct ib_port_modify *props)
+-{
+-	struct ocrdma_dev *dev;
+-
+-	dev = get_ocrdma_dev(ibdev);
+-	if (port > 1) {
+-		pr_err("%s(%d) invalid_port=0x%x\n", __func__, dev->id, port);
+-		return -EINVAL;
+-	}
+-	return 0;
+-}
+-
+ static int ocrdma_add_mmap(struct ocrdma_ucontext *uctx, u64 phy_addr,
+ 			   unsigned long len)
+ {
+diff --git a/drivers/infiniband/hw/ocrdma/ocrdma_verbs.h b/drivers/infiniband/hw/ocrdma/ocrdma_verbs.h
+index 32488da1b752..3a5010881be5 100644
+--- a/drivers/infiniband/hw/ocrdma/ocrdma_verbs.h
++++ b/drivers/infiniband/hw/ocrdma/ocrdma_verbs.h
+@@ -54,8 +54,6 @@ int ocrdma_arm_cq(struct ib_cq *, enum ib_cq_notify_flags flags);
+ int ocrdma_query_device(struct ib_device *, struct ib_device_attr *props,
+ 			struct ib_udata *uhw);
+ int ocrdma_query_port(struct ib_device *, u8 port, struct ib_port_attr *props);
+-int ocrdma_modify_port(struct ib_device *, u8 port, int mask,
+-		       struct ib_port_modify *props);
+ 
+ enum rdma_protocol_type
+ ocrdma_query_protocol(struct ib_device *device, u8 port_num);
+-- 
+2.26.2
+

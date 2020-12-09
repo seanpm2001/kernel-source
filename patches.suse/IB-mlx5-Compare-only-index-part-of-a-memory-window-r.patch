@@ -1,0 +1,63 @@
+From d623dfd2836114507d647c9793a80d213d8bffe8 Mon Sep 17 00:00:00 2001
+From: Artemy Kovalyov <artemyko@mellanox.com>
+Date: Tue, 19 Mar 2019 11:24:39 +0200
+Subject: [PATCH 1/1] IB/mlx5: Compare only index part of a memory window rkey
+Git-commit: d623dfd2836114507d647c9793a80d213d8bffe8
+Patch-mainline: v5.10-rc1
+References: bsc#1111666
+
+The InfiniBand Architecture Specification section 10.6.7.2.4 TYPE 2 MEMORY
+WINDOWS says that if the CI supports the Base Memory Management Extensions
+defined in this specification, the R_Key format for a Type 2 Memory Window
+must consist of:
+
+* 24 bit index in the most significant bits of the R_Key, which is owned
+  by the CI, and
+* 8 bit key in the least significant bits of the R_Key, which is owned by
+  the Consumer.
+
+This means that the kernel should compare only the index part of a R_Key
+to determine equality with another R_Key.
+
+Fixes: db570d7deafb ("IB/mlx5: Add ODP support to MW")
+Signed-off-by: Artemy Kovalyov <artemyko@mellanox.com>
+Signed-off-by: Moni Shoua <monis@mellanox.com>
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/hw/mlx5/odp.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/infiniband/hw/mlx5/odp.c b/drivers/infiniband/hw/mlx5/odp.c
+index c20bfc41ecf1..2bc4d67b3e42 100644
+--- a/drivers/infiniband/hw/mlx5/odp.c
++++ b/drivers/infiniband/hw/mlx5/odp.c
+@@ -710,6 +710,15 @@ struct pf_frame {
+ 	int depth;
+ };
+ 
++static bool mkey_is_eq(struct mlx5_core_mkey *mmkey, u32 key)
++{
++	if (!mmkey)
++		return false;
++	if (mmkey->type == MLX5_MKEY_MW)
++		return mlx5_base_mkey(mmkey->key) == mlx5_base_mkey(key);
++	return mmkey->key == key;
++}
++
+ /*
+  * Handle a single data segment in a page-fault WQE or RDMA region.
+  *
+@@ -759,7 +768,7 @@ static int pagefault_single_data_segment(struct mlx5_ib_dev *dev,
+ 
+ next_mr:
+ 	mmkey = __mlx5_mr_lookup(dev->mdev, mlx5_base_mkey(key));
+-	if (!mmkey || mmkey->key != key) {
++	if (!mkey_is_eq(mmkey, key)) {
+ 		mlx5_ib_dbg(dev, "failed to find mkey %x\n", key);
+ 		ret = -EFAULT;
+ 		goto srcu_unlock;
+-- 
+2.29.2
+

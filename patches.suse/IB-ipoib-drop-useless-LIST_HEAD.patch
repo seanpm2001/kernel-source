@@ -1,0 +1,48 @@
+From 2fb458953a892020f36a323f386d8c7009f10777 Mon Sep 17 00:00:00 2001
+From: Julia Lawall <Julia.Lawall@lip6.fr>
+Date: Sun, 23 Dec 2018 09:57:01 +0100
+Subject: [PATCH 1/1] IB/ipoib: drop useless LIST_HEAD
+Git-commit: 2fb458953a892020f36a323f386d8c7009f10777
+Patch-mainline: v5.0
+References: bsc#1111666
+
+Drop LIST_HEAD where the variable it declares is never used.
+
+Commit 31c02e215700 ("IPoIB: Avoid using stale last_send counter
+when reaping AHs") removed the uses, but not the declaration.
+
+The semantic patch that fixes this problem is as follows:
+(http://coccinelle.lip6.fr/)
+
+// <smpl>
+@@
+identifier x;
+@@
+- LIST_HEAD(x);
+  ... when != x
+// </smpl>
+
+Fixes: 31c02e215700 ("IPoIB: Avoid using stale last_send counter when reaping AHs")
+Signed-off-by: Julia Lawall <Julia.Lawall@lip6.fr>
+Reviewed-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/ulp/ipoib/ipoib_ib.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ib.c b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
+index 6d35570092d6..78fa777c87b1 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_ib.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
+@@ -669,7 +669,6 @@ static void __ipoib_reap_ah(struct net_device *dev)
+ {
+ 	struct ipoib_dev_priv *priv = ipoib_priv(dev);
+ 	struct ipoib_ah *ah, *tah;
+-	LIST_HEAD(remove_list);
+ 	unsigned long flags;
+ 
+ 	netif_tx_lock_bh(dev);
+-- 
+2.26.2
+

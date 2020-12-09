@@ -1,0 +1,32 @@
+From: NeilBrown <neilb@suse.de>
+Subject: NFS: mark nfsiod as CPU_INTENSIVE
+References: bsc#1177304
+Patch-mainline: never, maintainer wants are more general solution
+
+Very occasionally nfsiod will be called on to call iput_final() on an
+inode.  If that inode has millions of pages it can take a while to fully
+clean up.  This blocks all other wq workers on that CPU, despite the
+fact that cond_resync() is being called.
+
+If we mark the workqueue CPU_INTENSIVE, those workers can run in
+parallel with the iput_final().
+
+This is likely to increase the number of worker threads but as most work
+items complete extremely quickly, it won't increase it much.
+
+Signed-off-by: NeilBrown <neilb@suse.de>
+---
+ fs/nfs/inode.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/fs/nfs/inode.c
++++ b/fs/nfs/inode.c
+@@ -2025,7 +2025,7 @@ static int nfsiod_start(void)
+ {
+ 	struct workqueue_struct *wq;
+ 	dprintk("RPC:       creating workqueue nfsiod\n");
+-	wq = alloc_workqueue("nfsiod", WQ_MEM_RECLAIM, 0);
++	wq = alloc_workqueue("nfsiod", WQ_MEM_RECLAIM | WQ_CPU_INTENSIVE, 0);
+ 	if (wq == NULL)
+ 		return -ENOMEM;
+ 	nfsiod_workqueue = wq;

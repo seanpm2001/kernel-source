@@ -1,0 +1,112 @@
+From d98fc70fc139b72ae098d24fde42ad70c8ff2f81 Mon Sep 17 00:00:00 2001
+From: Christophe Leroy <christophe.leroy@c-s.fr>
+Date: Tue, 14 May 2019 09:05:15 +0000
+Subject: [PATCH] powerpc/32: define helpers to get L1 cache sizes.
+
+References: jsc#SLE-16402 jsc#SLE-16497 bsc#1176109 ltc#187964
+Patch-mainline: v5.3-rc1
+Git-commit: d98fc70fc139b72ae098d24fde42ad70c8ff2f81
+
+This patch defines C helpers to retrieve the size of
+cache blocks and uses them in the cacheflush functions.
+
+Signed-off-by: Christophe Leroy <christophe.leroy@c-s.fr>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/include/asm/cache.h      | 16 ++++++++++++++--
+ arch/powerpc/include/asm/cacheflush.h | 24 +++++++++++++++---------
+ 2 files changed, 29 insertions(+), 11 deletions(-)
+
+diff --git a/arch/powerpc/include/asm/cache.h b/arch/powerpc/include/asm/cache.h
+index df8e4c407366..e84d1622eeb6 100644
+--- a/arch/powerpc/include/asm/cache.h
++++ b/arch/powerpc/include/asm/cache.h
+@@ -33,7 +33,8 @@
+ 
+ #define IFETCH_ALIGN_BYTES	(1 << IFETCH_ALIGN_SHIFT)
+ 
+-#if defined(__powerpc64__) && !defined(__ASSEMBLY__)
++#if !defined(__ASSEMBLY__)
++#ifdef CONFIG_PPC64
+ 
+ struct ppc_cache_info {
+ 	u32 size;
+@@ -53,7 +54,18 @@ struct ppc64_caches {
+ };
+ 
+ extern struct ppc64_caches ppc64_caches;
+-#endif /* __powerpc64__ && ! __ASSEMBLY__ */
++#else
++static inline u32 l1_cache_shift(void)
++{
++	return L1_CACHE_SHIFT;
++}
++
++static inline u32 l1_cache_bytes(void)
++{
++	return L1_CACHE_BYTES;
++}
++#endif
++#endif /* ! __ASSEMBLY__ */
+ 
+ #if defined(__ASSEMBLY__)
+ /*
+diff --git a/arch/powerpc/include/asm/cacheflush.h b/arch/powerpc/include/asm/cacheflush.h
+index 69b6c3d78d6c..217f183aa8c4 100644
+--- a/arch/powerpc/include/asm/cacheflush.h
++++ b/arch/powerpc/include/asm/cacheflush.h
+@@ -67,11 +67,13 @@ static inline void __flush_dcache_icache_phys(unsigned long physaddr)
+  */
+ static inline void flush_dcache_range(unsigned long start, unsigned long stop)
+ {
+-	void *addr = (void *)(start & ~(L1_CACHE_BYTES - 1));
+-	unsigned long size = stop - (unsigned long)addr + (L1_CACHE_BYTES - 1);
++	unsigned long shift = l1_cache_shift();
++	unsigned long bytes = l1_cache_bytes();
++	void *addr = (void *)(start & ~(bytes - 1));
++	unsigned long size = stop - (unsigned long)addr + (bytes - 1);
+ 	unsigned long i;
+ 
+-	for (i = 0; i < size >> L1_CACHE_SHIFT; i++, addr += L1_CACHE_BYTES)
++	for (i = 0; i < size >> shift; i++, addr += bytes)
+ 		dcbf(addr);
+ 	mb();	/* sync */
+ }
+@@ -83,11 +85,13 @@ static inline void flush_dcache_range(unsigned long start, unsigned long stop)
+  */
+ static inline void clean_dcache_range(unsigned long start, unsigned long stop)
+ {
+-	void *addr = (void *)(start & ~(L1_CACHE_BYTES - 1));
+-	unsigned long size = stop - (unsigned long)addr + (L1_CACHE_BYTES - 1);
++	unsigned long shift = l1_cache_shift();
++	unsigned long bytes = l1_cache_bytes();
++	void *addr = (void *)(start & ~(bytes - 1));
++	unsigned long size = stop - (unsigned long)addr + (bytes - 1);
+ 	unsigned long i;
+ 
+-	for (i = 0; i < size >> L1_CACHE_SHIFT; i++, addr += L1_CACHE_BYTES)
++	for (i = 0; i < size >> shift; i++, addr += bytes)
+ 		dcbst(addr);
+ 	mb();	/* sync */
+ }
+@@ -100,11 +104,13 @@ static inline void clean_dcache_range(unsigned long start, unsigned long stop)
+ static inline void invalidate_dcache_range(unsigned long start,
+ 					   unsigned long stop)
+ {
+-	void *addr = (void *)(start & ~(L1_CACHE_BYTES - 1));
+-	unsigned long size = stop - (unsigned long)addr + (L1_CACHE_BYTES - 1);
++	unsigned long shift = l1_cache_shift();
++	unsigned long bytes = l1_cache_bytes();
++	void *addr = (void *)(start & ~(bytes - 1));
++	unsigned long size = stop - (unsigned long)addr + (bytes - 1);
+ 	unsigned long i;
+ 
+-	for (i = 0; i < size >> L1_CACHE_SHIFT; i++, addr += L1_CACHE_BYTES)
++	for (i = 0; i < size >> shift; i++, addr += bytes)
+ 		dcbi(addr);
+ 	mb();	/* sync */
+ }
+-- 
+2.29.1
+

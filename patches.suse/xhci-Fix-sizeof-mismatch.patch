@@ -1,0 +1,43 @@
+From a75e2d604da8219d928be010bde37c3ab0ebd466 Mon Sep 17 00:00:00 2001
+From: Colin Ian King <colin.king@canonical.com>
+Date: Wed, 28 Oct 2020 22:31:22 +0200
+Subject: [PATCH] xhci: Fix sizeof() mismatch
+Git-commit: a75e2d604da8219d928be010bde37c3ab0ebd466
+References: git-fixes
+Patch-mainline: v5.10-rc2
+
+An incorrect sizeof() is being used, sizeof(rhub->ports) is not
+correct, it should be sizeof(*rhub->ports).  This bug did not
+cause any issues because it just so happens the sizes are the same.
+
+Fixes: bcaa9d5c5900 ("xhci: Create new structures to store xhci port information")
+Signed-off-by: Colin Ian King <colin.king@canonical.com>
+Signed-off-by: Mathias Nyman <mathias.nyman@linux.intel.com>
+Link: https://lore.kernel.org/r/20201028203124.375344-2-mathias.nyman@linux.intel.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/usb/host/xhci-mem.c |    5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+--- a/drivers/usb/host/xhci-mem.c
++++ b/drivers/usb/host/xhci-mem.c
+@@ -2269,8 +2269,8 @@ static void xhci_create_rhub_port_array(
+ 
+ 	if (!rhub->num_ports)
+ 		return;
+-	rhub->ports = kcalloc_node(rhub->num_ports, sizeof(rhub->ports), flags,
+-			dev_to_node(dev));
++	rhub->ports = kcalloc_node(rhub->num_ports, sizeof(*rhub->ports),
++			flags, dev_to_node(dev));
+ 	for (i = 0; i < HCS_MAX_PORTS(xhci->hcs_params1); i++) {
+ 		if (xhci->hw_ports[i].rhub != rhub ||
+ 		    xhci->hw_ports[i].hcd_portnum == DUPLICATE_ENTRY)
+@@ -2298,6 +2298,7 @@ static int xhci_setup_port_arrays(struct
+ 	int i, j, port_index;
+ 	int cap_count = 0;
+ 	u32 cap_start;
++	struct device *dev = xhci_to_hcd(xhci)->self.sysdev;
+ 
+ 	num_ports = HCS_MAX_PORTS(xhci->hcs_params1);
+ 	xhci->port_array = kzalloc(sizeof(*xhci->port_array)*num_ports, flags);
