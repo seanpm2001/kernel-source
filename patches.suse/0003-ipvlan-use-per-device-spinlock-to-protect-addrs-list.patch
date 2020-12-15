@@ -1,0 +1,297 @@
+From ec59091544dbd05204de80c359f1f05f8db70027 Mon Sep 17 00:00:00 2001
+From: Denis Kirjanov <denis.kirjanov@suse.com>
+Date: Fri, 4 Dec 2020 11:32:40 +0300
+Subject: [PATCH 3/6] ipvlan: use per device spinlock to protect addrs list
+ updates
+Git-commit: 8230819494b3bf284ca7262ac5f877333147b937
+Patch-mainline: v4.17-rc1
+References: git-fixes
+
+This changeset moves ipvlan address under RCU protection, using
+a per ipvlan device spinlock to protect list mutation and RCU
+read access to protect list traversal.
+
+Also explicitly use RCU read lock to traverse the per port
+ipvlans list, so that we can now perform a full address lookup
+without asserting the RTNL lock.
+
+Overall this allows the ipvlan driver to check fully for duplicate
+addresses - before this commit ipv6 addresses assigned by autoconf
+via prefix delegation where accepted without any check - and avoid
+the following rntl assertion failure still in the same code path:
+
+ RTNL: assertion failed at drivers/net/ipvlan/ipvlan_core.c (124)
+ WARNING: CPU: 15 PID: 0 at drivers/net/ipvlan/ipvlan_core.c:124 ipvlan_addr_busy+0x97/0xa0 [ipvlan]
+ Modules linked in: ipvlan(E) ixgbe
+ CPU: 15 PID: 0 Comm: swapper/15 Tainted: G            E    4.16.0-rc2.ipvlan+ #1782
+ Hardware name: Dell Inc. PowerEdge R730/072T6D, BIOS 2.1.7 06/16/2016
+ RIP: 0010:ipvlan_addr_busy+0x97/0xa0 [ipvlan]
+ RSP: 0018:ffff881ff9e03768 EFLAGS: 00010286
+ RAX: 0000000000000000 RBX: ffff881fdf2a9000 RCX: 0000000000000000
+ RDX: 0000000000000001 RSI: 00000000000000f6 RDI: 0000000000000300
+ RBP: ffff881fdf2a8000 R08: 0000000000000000 R09: 0000000000000000
+ R10: 0000000000000001 R11: ffff881ff9e034c0 R12: ffff881fe07bcc00
+ R13: 0000000000000001 R14: ffffffffa02002b0 R15: 0000000000000001
+ FS:  0000000000000000(0000) GS:ffff881ff9e00000(0000) knlGS:0000000000000000
+ CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+ CR2: 00007fc5c1a4f248 CR3: 000000207e012005 CR4: 00000000001606e0
+ Call Trace:
+  <IRQ>
+  ipvlan_addr6_event+0x6c/0xd0 [ipvlan]
+  notifier_call_chain+0x49/0x90
+  atomic_notifier_call_chain+0x6a/0x100
+  ipv6_add_addr+0x5f9/0x720
+  addrconf_prefix_rcv_add_addr+0x244/0x3c0
+  addrconf_prefix_rcv+0x2f3/0x790
+  ndisc_router_discovery+0x633/0xb70
+  ndisc_rcv+0x155/0x180
+  icmpv6_rcv+0x4ac/0x5f0
+  ip6_input_finish+0x138/0x6a0
+  ip6_input+0x41/0x1f0
+  ipv6_rcv+0x4db/0x8d0
+  __netif_receive_skb_core+0x3d5/0xe40
+  netif_receive_skb_internal+0x89/0x370
+  napi_gro_receive+0x14f/0x1e0
+  ixgbe_clean_rx_irq+0x4ce/0x1020 [ixgbe]
+  ixgbe_poll+0x31a/0x7a0 [ixgbe]
+  net_rx_action+0x296/0x4f0
+  __do_softirq+0xcf/0x4f5
+  irq_exit+0xf5/0x110
+  do_IRQ+0x62/0x110
+  common_interrupt+0x91/0x91
+  </IRQ>
+
+ v1 -> v2: drop unneeded in_softirq check in ipvlan_addr6_validator_event()
+
+Fixes: e9997c2938b2 ("ipvlan: fix check for IP addresses in control path")
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ipvlan/ipvlan.h      |  1 +
+ drivers/net/ipvlan/ipvlan_core.c | 29 +++++++++++--------
+ drivers/net/ipvlan/ipvlan_main.c | 60 ++++++++++++++++++++++++----------------
+ 3 files changed, 55 insertions(+), 35 deletions(-)
+
+diff --git a/drivers/net/ipvlan/ipvlan.h b/drivers/net/ipvlan/ipvlan.h
+index be39801ef264..20cf579e7da6 100644
+--- a/drivers/net/ipvlan/ipvlan.h
++++ b/drivers/net/ipvlan/ipvlan.h
+@@ -74,6 +74,7 @@ struct ipvl_dev {
+ 	DECLARE_BITMAP(mac_filters, IPVLAN_MAC_FILTER_SIZE);
+ 	netdev_features_t	sfeatures;
+ 	u32			msg_enable;
++	spinlock_t              addrs_lock;
+ };
+ 
+ struct ipvl_addr {
+diff --git a/drivers/net/ipvlan/ipvlan_core.c b/drivers/net/ipvlan/ipvlan_core.c
+index 3f88c68d9359..a3f96b27bca0 100644
+--- a/drivers/net/ipvlan/ipvlan_core.c
++++ b/drivers/net/ipvlan/ipvlan_core.c
+@@ -91,29 +91,36 @@ void ipvlan_ht_addr_del(struct ipvl_addr *addr)
+ struct ipvl_addr *ipvlan_find_addr(const struct ipvl_dev *ipvlan,
+ 				   const void *iaddr, bool is_v6)
+ {
+-	struct ipvl_addr *addr;
++	struct ipvl_addr *addr, *ret = NULL;
+ 
+-	list_for_each_entry(addr, &ipvlan->addrs, anode) {
++	rcu_read_lock();
++	list_for_each_entry_rcu(addr, &ipvlan->addrs, anode) {
+ 		if ((is_v6 && addr->atype == IPVL_IPV6 &&
+ 		    ipv6_addr_equal(&addr->ip6addr, iaddr)) ||
+ 		    (!is_v6 && addr->atype == IPVL_IPV4 &&
+-		    addr->ip4addr.s_addr == ((struct in_addr *)iaddr)->s_addr))
+-			return addr;
++		    addr->ip4addr.s_addr == ((struct in_addr *)iaddr)->s_addr)) {
++			ret = addr;
++			break;
++		}
+ 	}
+-	return NULL;
++	rcu_read_unlock();
++	return ret;
+ }
+ 
+ bool ipvlan_addr_busy(struct ipvl_port *port, void *iaddr, bool is_v6)
+ {
+ 	struct ipvl_dev *ipvlan;
++	bool ret = false;
+ 
+-	ASSERT_RTNL();
+-
+-	list_for_each_entry(ipvlan, &port->ipvlans, pnode) {
+-		if (ipvlan_find_addr(ipvlan, iaddr, is_v6))
+-			return true;
++	rcu_read_lock();
++	list_for_each_entry_rcu(ipvlan, &port->ipvlans, pnode) {
++		if (ipvlan_find_addr(ipvlan, iaddr, is_v6)) {
++			ret = true;
++			break;
++		}
+ 	}
+-	return false;
++	rcu_read_unlock();
++	return ret;
+ }
+ 
+ static void *ipvlan_get_L3_hdr(struct sk_buff *skb, int *type)
+diff --git a/drivers/net/ipvlan/ipvlan_main.c b/drivers/net/ipvlan/ipvlan_main.c
+index 99ed13d124de..3b3f8a401e12 100644
+--- a/drivers/net/ipvlan/ipvlan_main.c
++++ b/drivers/net/ipvlan/ipvlan_main.c
+@@ -225,8 +225,10 @@ static int ipvlan_open(struct net_device
+ 	else
+ 		dev->flags &= ~IFF_NOARP;
+ 
+-	list_for_each_entry(addr, &ipvlan->addrs, anode)
++	rcu_read_lock();
++	list_for_each_entry_rcu(addr, &ipvlan->addrs, anode)
+ 		ipvlan_ht_addr_add(ipvlan, addr);
++	rcu_read_unlock();
+ 
+ 	return dev_uc_add(phy_dev, phy_dev->dev_addr);
+ }
+@@ -242,8 +244,10 @@ static int ipvlan_stop(struct net_device
+ 
+ 	dev_uc_del(phy_dev, phy_dev->dev_addr);
+ 
+-	list_for_each_entry(addr, &ipvlan->addrs, anode)
++	rcu_read_lock();
++	list_for_each_entry_rcu(addr, &ipvlan->addrs, anode)
+ 		ipvlan_ht_addr_del(addr);
++	rcu_read_unlock();
+ 
+ 	return 0;
+ }
+@@ -550,6 +554,7 @@ int ipvlan_link_new(struct net *src_net,
+ 	ipvlan->sfeatures = IPVLAN_FEATURES;
+ 	ipvlan_adjust_mtu(ipvlan, phy_dev);
+ 	INIT_LIST_HEAD(&ipvlan->addrs);
++	spin_lock_init(&ipvlan->addrs_lock);
+ 
+ 	/* TODO Probably put random address here to be presented to the
+ 	 * world but keep using the physical-dev address for the outgoing
+@@ -666,11 +671,13 @@ void ipvlan_link_delete(struct net_device *dev, struct list_head *head)
+ 	struct ipvl_dev *ipvlan = netdev_priv(dev);
+ 	struct ipvl_addr *addr, *next;
+ 
++	spin_lock_bh(&ipvlan->addrs_lock);
+ 	list_for_each_entry_safe(addr, next, &ipvlan->addrs, anode) {
+ 		ipvlan_ht_addr_del(addr);
+-		list_del(&addr->anode);
++		list_del_rcu(&addr->anode);
+ 		kfree_rcu(addr, rcu);
+ 	}
++	spin_unlock_bh(&ipvlan->addrs_lock);
+ 
+ 	ida_simple_remove(&ipvlan->port->ida, dev->dev_id);
+ 	list_del_rcu(&ipvlan->pnode);
+@@ -761,8 +768,7 @@ static int ipvlan_device_event(struct notifier_block *unused,
+ 		if (dev->reg_state != NETREG_UNREGISTERING)
+ 			break;
+ 
+-		list_for_each_entry_safe(ipvlan, next, &port->ipvlans,
+-					 pnode)
++		list_for_each_entry_safe(ipvlan, next, &port->ipvlans, pnode)
+ 			ipvlan->dev->rtnl_link_ops->dellink(ipvlan->dev,
+ 							    &lst_kill);
+ 		unregister_netdevice_many(&lst_kill);
+@@ -793,6 +799,7 @@ static int ipvlan_device_event(struct notifier_block *unused,
+ 	return NOTIFY_DONE;
+ }
+ 
++/* the caller must held the addrs lock */
+ static int ipvlan_add_addr(struct ipvl_dev *ipvlan, void *iaddr, bool is_v6)
+ {
+ 	struct ipvl_addr *addr;
+@@ -809,7 +816,8 @@ static int ipvlan_add_addr(struct ipvl_dev *ipvlan, void *iaddr, bool is_v6)
+ 		memcpy(&addr->ip4addr, iaddr, sizeof(struct in_addr));
+ 		addr->atype = IPVL_IPV4;
+ 	}
+-	list_add_tail(&addr->anode, &ipvlan->addrs);
++
++	list_add_tail_rcu(&addr->anode, &ipvlan->addrs);
+ 
+ 	/* If the interface is not up, the address will be added to the hash
+ 	 * list by ipvlan_open.
+@@ -824,27 +832,32 @@ static void ipvlan_del_addr(struct ipvl_dev *ipvlan, void *iaddr, bool is_v6)
+ {
+ 	struct ipvl_addr *addr;
+ 
++	spin_lock_bh(&ipvlan->addrs_lock);
+ 	addr = ipvlan_find_addr(ipvlan, iaddr, is_v6);
+-	if (!addr)
++	if (!addr) {
++		spin_unlock_bh(&ipvlan->addrs_lock);
+ 		return;
++	}
+ 
+ 	ipvlan_ht_addr_del(addr);
+-	list_del(&addr->anode);
++	list_del_rcu(&addr->anode);
++	spin_unlock_bh(&ipvlan->addrs_lock);
+ 	kfree_rcu(addr, rcu);
+-
+-	return;
+ }
+ 
+ static int ipvlan_add_addr6(struct ipvl_dev *ipvlan, struct in6_addr *ip6_addr)
+ {
+-	if (ipvlan_addr_busy(ipvlan->port, ip6_addr, true)) {
++	int ret = -EINVAL;
++
++	spin_lock_bh(&ipvlan->addrs_lock);
++	if (ipvlan_addr_busy(ipvlan->port, ip6_addr, true))
+ 		netif_err(ipvlan, ifup, ipvlan->dev,
+ 			  "Failed to add IPv6=%pI6c addr for %s intf\n",
+ 			  ip6_addr, ipvlan->dev->name);
+-		return -EINVAL;
+-	}
+-
+-	return ipvlan_add_addr(ipvlan, ip6_addr, true);
++	else
++		ret = ipvlan_add_addr(ipvlan, ip6_addr, true);
++	spin_unlock_bh(&ipvlan->addrs_lock);
++	return ret;
+ }
+ 
+ static void ipvlan_del_addr6(struct ipvl_dev *ipvlan, struct in6_addr *ip6_addr)
+@@ -886,10 +899,6 @@ static int ipvlan_addr6_validator_event(struct notifier_block *unused,
+ 	struct net_device *dev = (struct net_device *)i6vi->i6vi_dev->dev;
+ 	struct ipvl_dev *ipvlan = netdev_priv(dev);
+ 
+-	/* FIXME IPv6 autoconf calls us from bh without RTNL */
+-	if (in_softirq())
+-		return NOTIFY_DONE;
+-
+ 	if (!netif_is_ipvlan(dev))
+ 		return NOTIFY_DONE;
+ 
+@@ -911,14 +920,17 @@ static int ipvlan_addr6_validator_event(struct notifier_block *unused,
+ 
+ static int ipvlan_add_addr4(struct ipvl_dev *ipvlan, struct in_addr *ip4_addr)
+ {
+-	if (ipvlan_addr_busy(ipvlan->port, ip4_addr, false)) {
++	int ret = -EINVAL;
++
++	spin_lock_bh(&ipvlan->addrs_lock);
++	if (ipvlan_addr_busy(ipvlan->port, ip4_addr, false))
+ 		netif_err(ipvlan, ifup, ipvlan->dev,
+ 			  "Failed to add IPv4=%pI4 on %s intf.\n",
+ 			  ip4_addr, ipvlan->dev->name);
+-		return -EINVAL;
+-	}
+-
+-	return ipvlan_add_addr(ipvlan, ip4_addr, false);
++	else
++		ret = ipvlan_add_addr(ipvlan, ip4_addr, false);
++	spin_unlock_bh(&ipvlan->addrs_lock);
++	return ret;
+ }
+ 
+ static void ipvlan_del_addr4(struct ipvl_dev *ipvlan, struct in_addr *ip4_addr)
+-- 
+2.16.4
+

@@ -1,0 +1,64 @@
+From bb96c552268e9f31c64c39a245e8e0400e0074dc Mon Sep 17 00:00:00 2001
+From: Ivan Khoronzhuk <ivan.khoronzhuk@linaro.org>
+Date: Fri, 10 Aug 2018 15:47:09 +0300
+Subject: [PATCH 6/6] net: ethernet: ti: cpsw: fix runtime_pm while add/kill
+ vlan
+Git-commit: 803c4f64d79d2fced37a0650b94e6c84296dffd6
+Patch-mainline: v4.18
+References: git-fixes
+
+It's exclusive with normal behaviour but if try to set vlan to one of
+the reserved values is made, the cpsw runtime pm is broken.
+
+Fixes: a6c5d14f5136 ("drivers: net: cpsw: ndev: fix accessing to suspended device")
+Signed-off-by: Ivan Khoronzhuk <ivan.khoronzhuk@linaro.org>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/ti/cpsw.c | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/ethernet/ti/cpsw.c b/drivers/net/ethernet/ti/cpsw.c
+index fbb4beacd66d..1f3a1ed0eb6b 100644
+--- a/drivers/net/ethernet/ti/cpsw.c
++++ b/drivers/net/ethernet/ti/cpsw.c
+@@ -1974,14 +1974,16 @@ static int cpsw_ndo_vlan_rx_add_vid(struct net_device *ndev,
+ 		int i;
+ 
+ 		for (i = 0; i < cpsw->data.slaves; i++) {
+-			if (vid == cpsw->slaves[i].port_vlan)
+-				return -EINVAL;
++			if (vid == cpsw->slaves[i].port_vlan) {
++				ret = -EINVAL;
++				goto err;
++			}
+ 		}
+ 	}
+ 
+ 	dev_info(priv->dev, "Adding vlanid %d to vlan filter\n", vid);
+ 	ret = cpsw_add_vlan_ale_entry(priv, vid);
+-
++err:
+ 	pm_runtime_put(cpsw->dev);
+ 	return ret;
+ }
+@@ -2007,7 +2009,7 @@ static int cpsw_ndo_vlan_rx_kill_vid(struct net_device *ndev,
+ 
+ 		for (i = 0; i < cpsw->data.slaves; i++) {
+ 			if (vid == cpsw->slaves[i].port_vlan)
+-				return -EINVAL;
++				goto err;
+ 		}
+ 	}
+ 
+@@ -2017,6 +2019,7 @@ static int cpsw_ndo_vlan_rx_kill_vid(struct net_device *ndev,
+ 				  HOST_PORT_NUM, ALE_VLAN, vid);
+ 	ret |= cpsw_ale_del_mcast(cpsw->ale, priv->ndev->broadcast,
+ 				  0, ALE_VLAN, vid);
++err:
+ 	pm_runtime_put(cpsw->dev);
+ 	return ret;
+ }
+-- 
+2.16.4
+

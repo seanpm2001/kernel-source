@@ -15,7 +15,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  arch/x86/kvm/lapic.c                  |    4 
  drivers/net/wireless/mac80211_hwsim.c |    8 
  include/linux/hrtimer.h               |   84 +++---
- include/trace/events/timer.h          |   20 +
+ include/trace/events/timer.h          |   19 -
  kernel/events/core.c                  |    4 
  kernel/sched/core.c                   |    2 
  kernel/sched/deadline.c               |    2 
@@ -28,11 +28,13 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  kernel/watchdog.c                     |    2 
  net/can/bcm.c                         |   24 -
  net/xfrm/xfrm_state.c                 |   13 
- 16 files changed, 412 insertions(+), 356 deletions(-)
+ 16 files changed, 411 insertions(+), 356 deletions(-)
 
+diff --git a/arch/x86/kvm/lapic.c b/arch/x86/kvm/lapic.c
+index 66a94b1c7d86..b618eeaa5d49 100644
 --- a/arch/x86/kvm/lapic.c
 +++ b/arch/x86/kvm/lapic.c
-@@ -2177,8 +2177,8 @@ int kvm_create_lapic(struct kvm_vcpu *vc
+@@ -2184,8 +2184,8 @@ int kvm_create_lapic(struct kvm_vcpu *vcpu)
  	}
  	apic->vcpu = vcpu;
  
@@ -43,9 +45,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	apic->lapic_timer.timer.function = apic_timer_fn;
  
  	/*
+diff --git a/drivers/net/wireless/mac80211_hwsim.c b/drivers/net/wireless/mac80211_hwsim.c
+index 7f35e6672d80..0ee9e45b7d2c 100644
 --- a/drivers/net/wireless/mac80211_hwsim.c
 +++ b/drivers/net/wireless/mac80211_hwsim.c
-@@ -1647,7 +1647,7 @@ static int mac80211_hwsim_config(struct
+@@ -1703,7 +1703,7 @@ static int mac80211_hwsim_config(struct ieee80211_hw *hw, u32 changed)
  
  		hrtimer_start(&data->beacon_timer,
  			      ns_to_ktime(until_tbtt * 1000),
@@ -54,7 +58,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	}
  
  	return 0;
-@@ -1720,7 +1720,7 @@ static void mac80211_hwsim_bss_info_chan
+@@ -1776,7 +1776,7 @@ static void mac80211_hwsim_bss_info_changed(struct ieee80211_hw *hw,
  			until_tbtt = bcn_int - do_div(tsf, bcn_int);
  			hrtimer_start(&data->beacon_timer,
  				      ns_to_ktime(until_tbtt * 1000),
@@ -63,7 +67,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		} else if (!info->enable_beacon) {
  			unsigned int count = 0;
  			ieee80211_iterate_active_interfaces_atomic(
-@@ -2694,8 +2694,8 @@ static int mac80211_hwsim_new_radio(stru
+@@ -2874,8 +2874,8 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
  
  	wiphy_ext_feature_set(hw->wiphy, NL80211_EXT_FEATURE_CQM_RSSI_LIST);
  
@@ -74,6 +78,8 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	data->beacon_timer.function = mac80211_hwsim_beacon;
  
  	err = ieee80211_register_hw(hw);
+diff --git a/include/linux/hrtimer.h b/include/linux/hrtimer.h
+index 4a385e58a2e9..f4b867805ff4 100644
 --- a/include/linux/hrtimer.h
 +++ b/include/linux/hrtimer.h
 @@ -24,35 +24,40 @@
@@ -203,7 +209,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	struct hrtimer_clock_base	clock_base[HRTIMER_MAX_CLOCK_BASES];
  } ____cacheline_aligned;
  
-@@ -297,7 +301,8 @@ static inline ktime_t hrtimer_cb_get_tim
+@@ -297,7 +301,8 @@ static inline ktime_t hrtimer_cb_get_time(struct hrtimer *timer)
  
  static inline int hrtimer_is_hres_active(struct hrtimer *timer)
  {
@@ -213,7 +219,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  #ifdef CONFIG_HIGH_RES_TIMERS
-@@ -405,11 +410,12 @@ extern void hrtimer_start_range_ns(struc
+@@ -405,11 +410,12 @@ extern void hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
  				   u64 range_ns, const enum hrtimer_mode mode);
  
  /**
@@ -229,23 +235,24 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
   */
  static inline void hrtimer_start(struct hrtimer *timer, ktime_t tim,
  				 const enum hrtimer_mode mode)
+diff --git a/include/trace/events/timer.h b/include/trace/events/timer.h
+index a3c535c87253..daf10c3a845b 100644
 --- a/include/trace/events/timer.h
 +++ b/include/trace/events/timer.h
-@@ -147,7 +147,12 @@ DEFINE_EVENT(timer_class, timer_cancel,
+@@ -147,7 +147,11 @@ DEFINE_EVENT(timer_class, timer_cancel,
  		{ HRTIMER_MODE_ABS,		"ABS"		},	\
  		{ HRTIMER_MODE_REL,		"REL"		},	\
  		{ HRTIMER_MODE_ABS_PINNED,	"ABS|PINNED"	},	\
 -		{ HRTIMER_MODE_REL_PINNED,	"REL|PINNED"	})
-+		{ HRTIMER_MODE_REL_PINNED,	"rel|pinned"	},	\
-+		{ HRTIMER_MODE_ABS_SOFT,	"abs|soft"	},	\
-+		{ HRTIMER_MODE_REL_SOFT,	"rel|soft"	},	\
-+		{ HRTIMER_MODE_ABS_PINNED_SOFT,	"abs|pinned|soft" },	\
-+		{ HRTIMER_MODE_REL_PINNED_SOFT,	"rel|pinned|soft" })
-+
++		{ HRTIMER_MODE_REL_PINNED,	"REL|PINNED"	},	\
++		{ HRTIMER_MODE_ABS_SOFT,	"ABS|SOFT"	},	\
++		{ HRTIMER_MODE_REL_SOFT,	"REL|SOFT"	},	\
++		{ HRTIMER_MODE_ABS_PINNED_SOFT,	"ABS|PINNED|SOFT" },	\
++		{ HRTIMER_MODE_REL_PINNED_SOFT,	"REL|PINNED|SOFT" })
  
  /**
   * hrtimer_init - called when the hrtimer is initialized
-@@ -185,15 +190,16 @@ TRACE_EVENT(hrtimer_init,
+@@ -185,15 +189,16 @@ TRACE_EVENT(hrtimer_init,
   */
  TRACE_EVENT(hrtimer_start,
  
@@ -264,7 +271,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	),
  
  	TP_fast_assign(
-@@ -201,12 +207,14 @@ TRACE_EVENT(hrtimer_start,
+@@ -201,12 +206,14 @@ TRACE_EVENT(hrtimer_start,
  		__entry->function	= hrtimer->function;
  		__entry->expires	= hrtimer_get_expires(hrtimer);
  		__entry->softexpires	= hrtimer_get_softexpires(hrtimer);
@@ -282,9 +289,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  );
  
  /**
+diff --git a/kernel/events/core.c b/kernel/events/core.c
+index e7067f14de64..2964d9aed108 100644
 --- a/kernel/events/core.c
 +++ b/kernel/events/core.c
-@@ -1045,7 +1045,7 @@ static void __perf_mux_hrtimer_init(stru
+@@ -1084,7 +1084,7 @@ static void __perf_mux_hrtimer_init(struct perf_cpu_context *cpuctx, int cpu)
  	cpuctx->hrtimer_interval = ns_to_ktime(NSEC_PER_MSEC * interval);
  
  	raw_spin_lock_init(&cpuctx->hrtimer_lock);
@@ -293,7 +302,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	timer->function = perf_mux_hrtimer_handler;
  }
  
-@@ -8602,7 +8602,7 @@ static void perf_swevent_init_hrtimer(st
+@@ -9068,7 +9068,7 @@ static void perf_swevent_init_hrtimer(struct perf_event *event)
  	if (!is_sampling_event(event))
  		return;
  
@@ -302,9 +311,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	hwc->hrtimer.function = perf_swevent_hrtimer;
  
  	/*
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 96aaa3a283b1..fc3389bac48c 100644
 --- a/kernel/sched/core.c
 +++ b/kernel/sched/core.c
-@@ -344,7 +344,7 @@ static void init_rq_hrtick(struct rq *rq
+@@ -344,7 +344,7 @@ static void init_rq_hrtick(struct rq *rq)
  	rq->hrtick_csd.info = rq;
  #endif
  
@@ -313,9 +324,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	rq->hrtick_timer.function = hrtick;
  }
  #else	/* CONFIG_SCHED_HRTICK */
+diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
+index b0d6c20a685e..2cf17b471867 100644
 --- a/kernel/sched/deadline.c
 +++ b/kernel/sched/deadline.c
-@@ -689,7 +689,7 @@ void init_dl_task_timer(struct sched_dl_
+@@ -689,7 +689,7 @@ void init_dl_task_timer(struct sched_dl_entity *dl_se)
  {
  	struct hrtimer *timer = &dl_se->dl_timer;
  
@@ -324,9 +337,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	timer->function = dl_task_timer;
  }
  
+diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
+index 404499b6d05e..1eeb03d1f6fb 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
-@@ -46,8 +46,8 @@ void init_rt_bandwidth(struct rt_bandwid
+@@ -46,8 +46,8 @@ void init_rt_bandwidth(struct rt_bandwidth *rt_b, u64 period, u64 runtime)
  
  	raw_spin_lock_init(&rt_b->rt_runtime_lock);
  
@@ -337,6 +352,8 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	rt_b->rt_period_timer.function = sched_rt_period_timer;
  }
  
+diff --git a/kernel/time/hrtimer.c b/kernel/time/hrtimer.c
+index 2e583fc55831..3a165921766f 100644
 --- a/kernel/time/hrtimer.c
 +++ b/kernel/time/hrtimer.c
 @@ -65,6 +65,10 @@
@@ -350,7 +367,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  /*
   * The timer bases:
-@@ -101,53 +105,35 @@ DEFINE_PER_CPU(struct hrtimer_cpu_base,
+@@ -101,53 +105,35 @@ DEFINE_PER_CPU(struct hrtimer_cpu_base, hrtimer_bases) =
  		},
  		{
  			.index = HRTIMER_BASE_MONOTONIC_SOFT,
@@ -414,7 +431,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  };
  
  /*
-@@ -216,23 +202,16 @@ hrtimer_check_target(struct hrtimer *tim
+@@ -216,23 +202,16 @@ hrtimer_check_target(struct hrtimer *timer, struct hrtimer_clock_base *new_base)
  	return expires < new_base->cpu_base->expires_next;
  }
  
@@ -442,7 +459,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  /*
   * We switch the timer base to a power-optimized selected CPU target,
-@@ -434,8 +413,17 @@ static inline void debug_hrtimer_init(st
+@@ -434,8 +413,17 @@ static inline void debug_hrtimer_init(struct hrtimer *timer)
  	debug_object_init(timer, &hrtimer_debug_descr);
  }
  
@@ -461,7 +478,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	debug_object_activate(timer, &hrtimer_debug_descr);
  }
  
-@@ -467,8 +455,11 @@ void destroy_hrtimer_on_stack(struct hrt
+@@ -467,8 +455,11 @@ void destroy_hrtimer_on_stack(struct hrtimer *timer)
  EXPORT_SYMBOL_GPL(destroy_hrtimer_on_stack);
  
  #else
@@ -474,7 +491,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  static inline void debug_hrtimer_deactivate(struct hrtimer *timer) { }
  #endif
  
-@@ -480,10 +471,12 @@ debug_init(struct hrtimer *timer, clocki
+@@ -480,10 +471,12 @@ debug_init(struct hrtimer *timer, clockid_t clockid,
  	trace_hrtimer_init(timer, clockid, mode);
  }
  
@@ -490,7 +507,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  static inline void debug_deactivate(struct hrtimer *timer)
-@@ -492,33 +485,43 @@ static inline void debug_deactivate(stru
+@@ -492,33 +485,43 @@ static inline void debug_deactivate(struct hrtimer *timer)
  	trace_hrtimer_cancel(timer);
  }
  
@@ -544,7 +561,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		}
  	}
  	/*
-@@ -531,27 +534,43 @@ static ktime_t __hrtimer_next_event_base
+@@ -531,27 +534,43 @@ static ktime_t __hrtimer_next_event_base(struct hrtimer_cpu_base *cpu_base,
  	return expires_next;
  }
  
@@ -602,7 +619,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	return expires_next;
  }
-@@ -577,7 +596,8 @@ static inline ktime_t hrtimer_update_bas
+@@ -577,7 +596,8 @@ static inline ktime_t hrtimer_update_base(struct hrtimer_cpu_base *base)
   */
  static inline int __hrtimer_hres_active(struct hrtimer_cpu_base *cpu_base)
  {
@@ -612,7 +629,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  static inline int hrtimer_hres_active(void)
-@@ -585,34 +605,6 @@ static inline int hrtimer_hres_active(vo
+@@ -585,34 +605,6 @@ static inline int hrtimer_hres_active(void)
  	return __hrtimer_hres_active(this_cpu_ptr(&hrtimer_bases));
  }
  
@@ -647,7 +664,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  /*
   * Reprogram the event source with checking both queues for the
   * next event
-@@ -623,10 +615,23 @@ hrtimer_force_reprogram(struct hrtimer_c
+@@ -623,10 +615,23 @@ hrtimer_force_reprogram(struct hrtimer_cpu_base *cpu_base, int skip_equal)
  {
  	ktime_t expires_next;
  
@@ -674,7 +691,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	if (skip_equal && expires_next == cpu_base->expires_next)
  		return;
-@@ -634,6 +639,9 @@ hrtimer_force_reprogram(struct hrtimer_c
+@@ -634,6 +639,9 @@ hrtimer_force_reprogram(struct hrtimer_cpu_base *cpu_base, int skip_equal)
  	cpu_base->expires_next = expires_next;
  
  	/*
@@ -684,7 +701,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	 * If a hang was detected in the last timer interrupt then we
  	 * leave the hang delay active in the hardware. We want the
  	 * system to make progress. That also prevents the following
-@@ -647,12 +655,40 @@ hrtimer_force_reprogram(struct hrtimer_c
+@@ -647,12 +655,40 @@ hrtimer_force_reprogram(struct hrtimer_cpu_base *cpu_base, int skip_equal)
  	 * set. So we'd effectivly block all timers until the T2 event
  	 * fires.
  	 */
@@ -726,7 +743,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  /*
   * Retrigger next event is called after clock was set
   *
-@@ -662,7 +698,7 @@ static void retrigger_next_event(void *a
+@@ -662,7 +698,7 @@ static void retrigger_next_event(void *arg)
  {
  	struct hrtimer_cpu_base *base = this_cpu_ptr(&hrtimer_bases);
  
@@ -744,7 +761,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  static inline void retrigger_next_event(void *arg) { }
  
  #endif /* CONFIG_HIGH_RES_TIMERS */
-@@ -748,7 +782,7 @@ static inline void retrigger_next_event(
+@@ -748,7 +782,7 @@ static inline void retrigger_next_event(void *arg) { }
   *
   * Called with interrupts disabled and base->cpu_base.lock held
   */
@@ -753,10 +770,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	struct hrtimer_cpu_base *cpu_base = this_cpu_ptr(&hrtimer_bases);
  	struct hrtimer_clock_base *base = timer->base;
-@@ -757,6 +791,28 @@ static void hrtimer_reprogram(struct hrt
+@@ -756,6 +790,28 @@ static void hrtimer_reprogram(struct hrtimer *timer)
+ 
  	WARN_ON_ONCE(hrtimer_get_expires_tv64(timer) < 0);
  
- 	/*
++	/*
 +	 * CLOCK_REALTIME timer might be requested with an absolute
 +	 * expiry time which is less than base->offset. Set it to 0.
 +	 */
@@ -778,11 +796,10 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +			return;
 +	}
 +
-+	/*
+ 	/*
  	 * If the timer is not on the current cpu, we cannot reprogram
  	 * the other cpus clock event device.
- 	 */
-@@ -773,18 +829,11 @@ static void hrtimer_reprogram(struct hrt
+@@ -773,18 +829,11 @@ static void hrtimer_reprogram(struct hrtimer *timer)
  	if (cpu_base->in_hrtirq)
  		return;
  
@@ -802,7 +819,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	cpu_base->expires_next = expires;
  
  	/*
-@@ -938,9 +987,11 @@ void hrtimer_wait_for_timer(const struct
+@@ -938,9 +987,11 @@ void hrtimer_wait_for_timer(const struct hrtimer *timer)
   * Returns 1 when the new timer is the leftmost timer in the tree.
   */
  static int enqueue_hrtimer(struct hrtimer *timer,
@@ -816,7 +833,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	base->cpu_base->active_bases |= 1 << base->index;
  
-@@ -973,7 +1024,6 @@ static void __remove_hrtimer(struct hrti
+@@ -975,7 +1026,6 @@ static void __remove_hrtimer(struct hrtimer *timer,
  	if (!timerqueue_del(&base->active, &timer->node))
  		cpu_base->active_bases &= ~(1 << base->index);
  
@@ -824,7 +841,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	/*
  	 * Note: If reprogram is false we do not update
  	 * cpu_base->next_timer. This happens when we remove the first
-@@ -984,7 +1034,6 @@ static void __remove_hrtimer(struct hrti
+@@ -986,7 +1036,6 @@ static void __remove_hrtimer(struct hrtimer *timer,
  	 */
  	if (reprogram && timer == cpu_base->next_timer)
  		hrtimer_force_reprogram(cpu_base, 1);
@@ -832,7 +849,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  /*
-@@ -1033,47 +1082,29 @@ static inline ktime_t hrtimer_update_low
+@@ -1036,47 +1085,29 @@ static inline ktime_t hrtimer_update_lowres(struct hrtimer *timer, ktime_t tim,
  	return tim;
  }
  
@@ -893,7 +910,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  static int __hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
-@@ -1095,16 +1126,16 @@ static int __hrtimer_start_range_ns(stru
+@@ -1098,16 +1129,16 @@ static int __hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
  	/* Switch the timer base, if necessary: */
  	new_base = switch_hrtimer_base(timer, base, mode & HRTIMER_MODE_PINNED);
  
@@ -915,7 +932,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
   */
  void hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
  			    u64 delta_ns, const enum hrtimer_mode mode)
-@@ -1114,12 +1145,9 @@ void hrtimer_start_range_ns(struct hrtim
+@@ -1117,12 +1148,9 @@ void hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
  
  	base = lock_hrtimer_base(timer, &flags);
  
@@ -931,7 +948,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	unlock_hrtimer_base(timer, &flags);
  }
  EXPORT_SYMBOL_GPL(hrtimer_start_range_ns);
-@@ -1217,7 +1245,7 @@ u64 hrtimer_get_next_event(void)
+@@ -1220,7 +1248,7 @@ u64 hrtimer_get_next_event(void)
  	raw_spin_lock_irqsave(&cpu_base->lock, flags);
  
  	if (!__hrtimer_hres_active(cpu_base))
@@ -940,7 +957,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	raw_spin_unlock_irqrestore(&cpu_base->lock, flags);
  
-@@ -1227,45 +1255,44 @@ u64 hrtimer_get_next_event(void)
+@@ -1230,45 +1258,44 @@ u64 hrtimer_get_next_event(void)
  
  static inline int hrtimer_clockid_to_base(clockid_t clock_id)
  {
@@ -1002,7 +1019,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	timer->base = &cpu_base->clock_base[base];
  	timerqueue_init(&timer->node);
  }
-@@ -1274,7 +1301,13 @@ static void __hrtimer_init(struct hrtime
+@@ -1277,7 +1304,13 @@ static void __hrtimer_init(struct hrtimer *timer, clockid_t clock_id,
   * hrtimer_init - initialize a timer to the given clock
   * @timer:	the timer to be initialized
   * @clock_id:	the clock to be used
@@ -1017,7 +1034,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
   */
  void hrtimer_init(struct hrtimer *timer, clockid_t clock_id,
  		  enum hrtimer_mode mode)
-@@ -1332,7 +1365,7 @@ EXPORT_SYMBOL_GPL(hrtimer_active);
+@@ -1335,7 +1368,7 @@ EXPORT_SYMBOL_GPL(hrtimer_active);
  static void __run_hrtimer(struct hrtimer_cpu_base *cpu_base,
  			  struct hrtimer_clock_base *base,
  			  struct hrtimer *timer, ktime_t *now,
@@ -1026,7 +1043,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	enum hrtimer_restart (*fn)(struct hrtimer *);
  	int restart;
-@@ -1367,19 +1400,11 @@ static void __run_hrtimer(struct hrtimer
+@@ -1370,19 +1403,11 @@ static void __run_hrtimer(struct hrtimer_cpu_base *cpu_base,
  	 * protected against migration to a different CPU even if the lock
  	 * is dropped.
  	 */
@@ -1048,7 +1065,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	/*
  	 * Note: We clear the running state after enqueue_hrtimer and
-@@ -1392,7 +1417,8 @@ static void __run_hrtimer(struct hrtimer
+@@ -1395,7 +1420,8 @@ static void __run_hrtimer(struct hrtimer_cpu_base *cpu_base,
  	 */
  	if (restart != HRTIMER_NORESTART &&
  	    !(timer->state & HRTIMER_STATE_ENQUEUED))
@@ -1058,7 +1075,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	/*
  	 * Separate the ->running assignment from the ->state assignment.
-@@ -1408,19 +1434,15 @@ static void __run_hrtimer(struct hrtimer
+@@ -1411,19 +1437,15 @@ static void __run_hrtimer(struct hrtimer_cpu_base *cpu_base,
  }
  
  static void __hrtimer_run_queues(struct hrtimer_cpu_base *cpu_base, ktime_t now,
@@ -1081,7 +1098,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		basenow = ktime_add(now, base->offset);
  
  		while ((node = timerqueue_getnext(&base->active))) {
-@@ -1443,8 +1465,7 @@ static void __hrtimer_run_queues(struct
+@@ -1446,8 +1468,7 @@ static void __hrtimer_run_queues(struct hrtimer_cpu_base *cpu_base, ktime_t now,
  			if (basenow < hrtimer_get_softexpires_tv64(timer))
  				break;
  
@@ -1091,7 +1108,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		}
  	}
  }
-@@ -1452,17 +1473,18 @@ static void __hrtimer_run_queues(struct
+@@ -1455,17 +1476,18 @@ static void __hrtimer_run_queues(struct hrtimer_cpu_base *cpu_base, ktime_t now,
  static __latent_entropy void hrtimer_run_softirq(struct softirq_action *h)
  {
  	struct hrtimer_cpu_base *cpu_base = this_cpu_ptr(&hrtimer_bases);
@@ -1113,7 +1130,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	wake_up_timer_waiters(cpu_base);
  }
  
-@@ -1476,13 +1498,14 @@ void hrtimer_interrupt(struct clock_even
+@@ -1479,13 +1501,14 @@ void hrtimer_interrupt(struct clock_event_device *dev)
  {
  	struct hrtimer_cpu_base *cpu_base = this_cpu_ptr(&hrtimer_bases);
  	ktime_t expires_next, now, entry_time, delta;
@@ -1129,7 +1146,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	entry_time = now = hrtimer_update_base(cpu_base);
  retry:
  	cpu_base->in_hrtirq = 1;
-@@ -1501,17 +1524,17 @@ retry:
+@@ -1504,17 +1527,17 @@ void hrtimer_interrupt(struct clock_event_device *dev)
  		raise_softirq_irqoff(HRTIMER_SOFTIRQ);
  	}
  
@@ -1151,7 +1168,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	/* Reprogramming necessary ? */
  	if (!tick_program_event(expires_next, 0)) {
-@@ -1532,7 +1555,7 @@ retry:
+@@ -1535,7 +1558,7 @@ void hrtimer_interrupt(struct clock_event_device *dev)
  	 * Acquire base lock for updating the offsets and retrieving
  	 * the current time.
  	 */
@@ -1160,7 +1177,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	now = hrtimer_update_base(cpu_base);
  	cpu_base->nr_retries++;
  	if (++retries < 3)
-@@ -1545,7 +1568,8 @@ retry:
+@@ -1548,7 +1571,8 @@ void hrtimer_interrupt(struct clock_event_device *dev)
  	 */
  	cpu_base->nr_hangs++;
  	cpu_base->hang_detected = 1;
@@ -1170,7 +1187,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	delta = ktime_sub(now, entry_time);
  	if ((unsigned int)delta > cpu_base->max_hang_time)
  		cpu_base->max_hang_time = (unsigned int) delta;
-@@ -1587,6 +1611,7 @@ static inline void __hrtimer_peek_ahead_
+@@ -1590,6 +1614,7 @@ static inline void __hrtimer_peek_ahead_timers(void) { }
  void hrtimer_run_queues(void)
  {
  	struct hrtimer_cpu_base *cpu_base = this_cpu_ptr(&hrtimer_bases);
@@ -1178,7 +1195,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	ktime_t now;
  
  	if (__hrtimer_hres_active(cpu_base))
-@@ -1604,7 +1629,7 @@ void hrtimer_run_queues(void)
+@@ -1607,7 +1632,7 @@ void hrtimer_run_queues(void)
  		return;
  	}
  
@@ -1187,7 +1204,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	now = hrtimer_update_base(cpu_base);
  
  	if (!ktime_before(now, cpu_base->softirq_expires_next)) {
-@@ -1613,8 +1638,8 @@ void hrtimer_run_queues(void)
+@@ -1616,8 +1641,8 @@ void hrtimer_run_queues(void)
  		raise_softirq_irqoff(HRTIMER_SOFTIRQ);
  	}
  
@@ -1198,7 +1215,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  /*
-@@ -1652,11 +1677,11 @@ static void __hrtimer_init_sleeper(struc
+@@ -1655,11 +1680,11 @@ static void __hrtimer_init_sleeper(struct hrtimer_sleeper *sl,
  				   struct task_struct *task)
  {
  #ifdef CONFIG_PREEMPT_RT_FULL
@@ -1213,7 +1230,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	}
  #endif
  	__hrtimer_init(&sl->timer, clock_id, mode);
-@@ -1834,7 +1859,7 @@ void cpu_chill(void)
+@@ -1837,7 +1862,7 @@ void cpu_chill(void)
  	unsigned int freeze_flag = current->flags & PF_NOFREEZE;
  
  	current->flags |= PF_NOFREEZE;
@@ -1222,7 +1239,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			    TASK_UNINTERRUPTIBLE);
  	if (!freeze_flag)
  		current->flags &= ~PF_NOFREEZE;
-@@ -1896,7 +1921,8 @@ static void migrate_hrtimer_list(struct
+@@ -1899,7 +1924,8 @@ static void migrate_hrtimer_list(struct hrtimer_clock_base *old_base,
  		 * sort out already expired timers and reprogram the
  		 * event device.
  		 */
@@ -1232,7 +1249,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	}
  }
  
-@@ -1908,7 +1934,6 @@ int hrtimers_dead_cpu(unsigned int scpu)
+@@ -1911,7 +1937,6 @@ int hrtimers_dead_cpu(unsigned int scpu)
  	BUG_ON(cpu_online(scpu));
  	tick_cancel_sched_timer(scpu);
  
@@ -1240,7 +1257,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	local_irq_disable();
  	old_base = &per_cpu(hrtimer_bases, scpu);
  	new_base = this_cpu_ptr(&hrtimer_bases);
-@@ -1936,7 +1961,6 @@ int hrtimers_dead_cpu(unsigned int scpu)
+@@ -1939,7 +1964,6 @@ int hrtimers_dead_cpu(unsigned int scpu)
  	/* Check, if we got expired work to do */
  	__hrtimer_peek_ahead_timers();
  	local_irq_enable();
@@ -1248,7 +1265,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	return 0;
  }
  
-@@ -1944,12 +1968,6 @@ int hrtimers_dead_cpu(unsigned int scpu)
+@@ -1947,12 +1971,6 @@ int hrtimers_dead_cpu(unsigned int scpu)
  
  void __init hrtimers_init(void)
  {
@@ -1261,7 +1278,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	hrtimers_prepare_cpu(smp_processor_id());
  	open_softirq(HRTIMER_SOFTIRQ, hrtimer_run_softirq);
  }
-@@ -2005,7 +2023,7 @@ schedule_hrtimeout_range_clock(ktime_t *
+@@ -2008,7 +2026,7 @@ schedule_hrtimeout_range_clock(ktime_t *expires, u64 delta,
   * schedule_hrtimeout_range - sleep until timeout
   * @expires:	timeout value (ktime_t)
   * @delta:	slack in expires timeout (ktime_t)
@@ -1270,7 +1287,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
   *
   * Make the current task sleep until the given expiry time has
   * elapsed. The routine will return immediately unless
-@@ -2044,7 +2062,7 @@ EXPORT_SYMBOL_GPL(schedule_hrtimeout_ran
+@@ -2047,7 +2065,7 @@ EXPORT_SYMBOL_GPL(schedule_hrtimeout_range);
  /**
   * schedule_hrtimeout - sleep until timeout
   * @expires:	timeout value (ktime_t)
@@ -1279,9 +1296,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
   *
   * Make the current task sleep until the given expiry time has
   * elapsed. The routine will return immediately unless
+diff --git a/kernel/time/tick-broadcast-hrtimer.c b/kernel/time/tick-broadcast-hrtimer.c
+index e0a29ebde36d..6181e60aa9f1 100644
 --- a/kernel/time/tick-broadcast-hrtimer.c
 +++ b/kernel/time/tick-broadcast-hrtimer.c
-@@ -105,7 +105,7 @@ static enum hrtimer_restart bc_handler(s
+@@ -106,7 +106,7 @@ static enum hrtimer_restart bc_handler(struct hrtimer *t)
  
  void tick_setup_hrtimer_broadcast(void)
  {
@@ -1290,9 +1309,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	bctimer.function = bc_handler;
  	clockevents_register_device(&ce_broadcast_hrtimer);
  }
+diff --git a/kernel/time/tick-internal.h b/kernel/time/tick-internal.h
+index be0ac01f2e12..aac76d9801fc 100644
 --- a/kernel/time/tick-internal.h
 +++ b/kernel/time/tick-internal.h
-@@ -149,14 +149,14 @@ static inline void tick_nohz_init(void)
+@@ -149,14 +149,14 @@ static inline void tick_nohz_init(void) { }
  
  #ifdef CONFIG_NO_HZ_COMMON
  extern unsigned long tick_nohz_active;
@@ -1313,9 +1334,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  #endif
  
  DECLARE_PER_CPU(struct hrtimer_cpu_base, hrtimer_bases);
+diff --git a/kernel/time/tick-sched.c b/kernel/time/tick-sched.c
+index abda4e925543..e23cccdb552a 100644
 --- a/kernel/time/tick-sched.c
 +++ b/kernel/time/tick-sched.c
-@@ -1101,7 +1101,7 @@ static inline void tick_nohz_activate(st
+@@ -1101,7 +1101,7 @@ static inline void tick_nohz_activate(struct tick_sched *ts, int mode)
  	ts->nohz_mode = mode;
  	/* One update is enough */
  	if (!test_and_set_bit(0, &tick_nohz_active))
@@ -1333,9 +1356,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	ts->sched_timer.function = tick_sched_timer;
  
  	/* Get the next period (per-CPU) */
+diff --git a/kernel/time/timer.c b/kernel/time/timer.c
+index ff0b98769be4..dee7cb4c0cf3 100644
 --- a/kernel/time/timer.c
 +++ b/kernel/time/timer.c
-@@ -204,8 +204,6 @@ struct timer_base {
+@@ -205,8 +205,6 @@ struct timer_base {
  	unsigned long		clk;
  	unsigned long		next_expiry;
  	unsigned int		cpu;
@@ -1344,7 +1369,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	bool			is_idle;
  	bool			must_forward_clk;
  	DECLARE_BITMAP(pending_map, WHEEL_SIZE);
-@@ -214,45 +212,79 @@ struct timer_base {
+@@ -215,45 +213,79 @@ struct timer_base {
  
  static DEFINE_PER_CPU(struct timer_base, timer_bases[NR_BASES]);
  
@@ -1395,13 +1420,13 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +	timers_update_migration();
 +	static_branch_enable(&timers_nohz_active);
 +	mutex_unlock(&timer_keys_mutex);
-+}
-+
+ }
+ 
 +void timers_update_nohz(void)
 +{
 +	swork_queue(&timer_update_swork);
- }
- 
++}
++
 +static __init int hrtimer_init_thread(void)
 +{
 +	WARN_ON(swork_get());
@@ -1445,7 +1470,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  static unsigned long round_jiffies_common(unsigned long j, int cpu,
  		bool force_up)
-@@ -538,7 +570,7 @@ __internal_add_timer(struct timer_base *
+@@ -539,7 +571,7 @@ __internal_add_timer(struct timer_base *base, struct timer_list *timer)
  static void
  trigger_dyntick_cpu(struct timer_base *base, struct timer_list *timer)
  {
@@ -1454,7 +1479,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		return;
  
  	/*
-@@ -821,7 +853,7 @@ static inline struct timer_base *get_tim
+@@ -830,7 +862,7 @@ static inline struct timer_base *get_timer_cpu_base(u32 tflags, u32 cpu)
  	 * If the timer is deferrable and NO_HZ_COMMON is set then we need
  	 * to use the deferrable base.
  	 */
@@ -1463,7 +1488,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		base = per_cpu_ptr(&timer_bases[BASE_DEF], cpu);
  	return base;
  }
-@@ -834,7 +866,7 @@ static inline struct timer_base *get_tim
+@@ -843,7 +875,7 @@ static inline struct timer_base *get_timer_this_cpu_base(u32 tflags)
  	 * If the timer is deferrable and NO_HZ_COMMON is set then we need
  	 * to use the deferrable base.
  	 */
@@ -1472,7 +1497,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		base = this_cpu_ptr(&timer_bases[BASE_DEF]);
  	return base;
  }
-@@ -844,21 +876,20 @@ static inline struct timer_base *get_tim
+@@ -853,21 +885,20 @@ static inline struct timer_base *get_timer_base(u32 tflags)
  	return get_timer_cpu_base(tflags, tflags & TIMER_CPUMASK);
  }
  
@@ -1500,10 +1525,10 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	unsigned long jnow;
  
  	/*
-@@ -882,16 +913,8 @@ static inline void forward_timer_base(st
- 		base->clk = jnow;
- 	else
+@@ -894,16 +925,8 @@ static inline void forward_timer_base(struct timer_base *base)
+ 			return;
  		base->clk = base->next_expiry;
+ 	}
 -}
 -#else
 -static inline struct timer_base *
@@ -1518,7 +1543,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  
  /*
-@@ -1678,7 +1701,7 @@ static __latent_entropy void run_timer_s
+@@ -1728,7 +1751,7 @@ static __latent_entropy void run_timer_softirq(struct softirq_action *h)
  	irq_work_tick_soft();
  
  	__run_timers(base);
@@ -1527,7 +1552,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		__run_timers(this_cpu_ptr(&timer_bases[BASE_DEF]));
  }
  
-@@ -1692,7 +1715,7 @@ void run_local_timers(void)
+@@ -1742,7 +1765,7 @@ void run_local_timers(void)
  	hrtimer_run_queues();
  	/* Raise the softirq only if required. */
  	if (time_before(jiffies, base->clk)) {
@@ -1536,9 +1561,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			return;
  		/* CPU is awake, so check the deferrable base. */
  		base++;
+diff --git a/kernel/watchdog.c b/kernel/watchdog.c
+index 0ec77b4abccc..c83e621099a4 100644
 --- a/kernel/watchdog.c
 +++ b/kernel/watchdog.c
-@@ -383,7 +383,7 @@ static void watchdog_enable(unsigned int
+@@ -383,7 +383,7 @@ static void watchdog_enable(unsigned int cpu)
  	struct hrtimer *hrtimer = raw_cpu_ptr(&watchdog_hrtimer);
  
  	/* kick off the timer for the hardlockup detector */
@@ -1547,9 +1574,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	hrtimer->function = watchdog_timer_fn;
  
  	/* Enable the perf event */
+diff --git a/net/can/bcm.c b/net/can/bcm.c
+index 112ba0830d72..9d0305a14777 100644
 --- a/net/can/bcm.c
 +++ b/net/can/bcm.c
-@@ -400,7 +400,7 @@ static bool bcm_tx_set_expiry(struct bcm
+@@ -400,7 +400,7 @@ static bool bcm_tx_set_expiry(struct bcm_op *op, struct hrtimer *hrt)
  static void bcm_tx_start_timer(struct bcm_op *op)
  {
  	if (bcm_tx_set_expiry(op, &op->timer))
@@ -1558,7 +1587,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  /* bcm_tx_timeout_handler - performs cyclic CAN frame transmissions */
-@@ -497,7 +497,7 @@ static void bcm_rx_update_and_send(struc
+@@ -497,7 +497,7 @@ static void bcm_rx_update_and_send(struct bcm_op *op,
  		/* do not send the saved data - only start throttle timer */
  		hrtimer_start(&op->thrtimer,
  			      ktime_add(op->kt_lastmsg, op->kt_ival2),
@@ -1567,7 +1596,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		return;
  	}
  
-@@ -556,7 +556,7 @@ static void bcm_rx_starttimer(struct bcm
+@@ -556,7 +556,7 @@ static void bcm_rx_starttimer(struct bcm_op *op)
  		return;
  
  	if (op->kt_ival1)
@@ -1576,7 +1605,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  /* bcm_rx_timeout_handler - when the (cyclic) CAN frame reception timed out */
-@@ -958,13 +958,13 @@ static int bcm_tx_setup(struct bcm_msg_h
+@@ -958,13 +958,13 @@ static int bcm_tx_setup(struct bcm_msg_head *msg_head, struct msghdr *msg,
  		op->ifindex = ifindex;
  
  		/* initialize uninitialized (kzalloc) structure */
@@ -1594,7 +1623,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  		/* add this bcm_op to the list of the tx_ops */
  		list_add(&op->list, &bo->tx_ops);
-@@ -1131,12 +1131,12 @@ static int bcm_rx_setup(struct bcm_msg_h
+@@ -1131,12 +1131,12 @@ static int bcm_rx_setup(struct bcm_msg_head *msg_head, struct msghdr *msg,
  		op->rx_ifindex = ifindex;
  
  		/* initialize uninitialized (kzalloc) structure */
@@ -1611,7 +1640,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		op->thrtimer.function = bcm_rx_thr_handler;
  
  		/* add this bcm_op to the list of the rx_ops */
-@@ -1189,7 +1189,7 @@ static int bcm_rx_setup(struct bcm_msg_h
+@@ -1189,7 +1189,7 @@ static int bcm_rx_setup(struct bcm_msg_head *msg_head, struct msghdr *msg,
  
  		if ((op->flags & STARTTIMER) && op->kt_ival1)
  			hrtimer_start(&op->timer, op->kt_ival1,
@@ -1620,9 +1649,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	}
  
  	/* now we can register for can_ids, if we added a new bcm_op */
+diff --git a/net/xfrm/xfrm_state.c b/net/xfrm/xfrm_state.c
+index b20077e5aa76..0bb48735396e 100644
 --- a/net/xfrm/xfrm_state.c
 +++ b/net/xfrm/xfrm_state.c
-@@ -565,7 +565,7 @@ struct xfrm_state *xfrm_state_alloc(stru
+@@ -576,7 +576,7 @@ struct xfrm_state *xfrm_state_alloc(struct net *net)
  		INIT_HLIST_NODE(&x->bydst);
  		INIT_HLIST_NODE(&x->bysrc);
  		INIT_HLIST_NODE(&x->byspi);
@@ -1631,7 +1662,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		x->mtimer.function = xfrm_timer_handler;
  		setup_timer(&x->rtimer, xfrm_replay_timer_handler,
  				(unsigned long)x);
-@@ -1024,7 +1024,7 @@ found:
+@@ -1035,7 +1035,7 @@ xfrm_state_find(const xfrm_address_t *daddr, const xfrm_address_t *saddr,
  			x->lft.hard_add_expires_seconds = net->xfrm.sysctl_acq_expires;
  			hrtimer_start(&x->mtimer,
  				      ktime_set(net->xfrm.sysctl_acq_expires, 0),
@@ -1640,7 +1671,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			net->xfrm.state_num++;
  			xfrm_hash_grow_check(net, x->bydst.next != NULL);
  			spin_unlock_bh(&net->xfrm.xfrm_state_lock);
-@@ -1135,7 +1135,7 @@ static void __xfrm_state_insert(struct x
+@@ -1146,7 +1146,7 @@ static void __xfrm_state_insert(struct xfrm_state *x)
  		hlist_add_head_rcu(&x->byspi, net->xfrm.state_byspi + h);
  	}
  
@@ -1649,7 +1680,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	if (x->replay_maxage)
  		mod_timer(&x->rtimer, jiffies + x->replay_maxage);
  
-@@ -1241,7 +1241,7 @@ static struct xfrm_state *__find_acq_cor
+@@ -1252,7 +1252,7 @@ static struct xfrm_state *__find_acq_core(struct net *net,
  		xfrm_state_hold(x);
  		hrtimer_start(&x->mtimer,
  			      ktime_set(net->xfrm.sysctl_acq_expires, 0),
@@ -1658,7 +1689,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		list_add(&x->km.all, &net->xfrm.state_all);
  		hlist_add_head_rcu(&x->bydst, net->xfrm.state_bydst + h);
  		h = xfrm_src_hash(net, daddr, saddr, family);
-@@ -1532,7 +1532,8 @@ out:
+@@ -1544,7 +1544,8 @@ int xfrm_state_update(struct xfrm_state *x)
  		memcpy(&x1->lft, &x->lft, sizeof(x1->lft));
  		x1->km.dying = 0;
  
@@ -1668,7 +1699,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		if (x1->curlft.use_time)
  			xfrm_state_check_expire(x1);
  
-@@ -1556,7 +1557,7 @@ int xfrm_state_check_expire(struct xfrm_
+@@ -1568,7 +1569,7 @@ int xfrm_state_check_expire(struct xfrm_state *x)
  	if (x->curlft.bytes >= x->lft.hard_byte_limit ||
  	    x->curlft.packets >= x->lft.hard_packet_limit) {
  		x->km.state = XFRM_STATE_EXPIRED;

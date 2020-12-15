@@ -47,19 +47,18 @@ Cc: Mohammed Gamal <mmorsy@redhat.com>
 Link: https://lkml.kernel.org/r/20180124132337.30138-4-vkuznets@redhat.com
 Acked-by: Olaf Hering <ohering@suse.de>
 ---
- arch/x86/entry/entry_32.S          |  3 ++
- arch/x86/entry/entry_64.S          |  3 ++
- arch/x86/hyperv/hv_init.c          | 89 ++++++++++++++++++++++++++++++++++++++
- arch/x86/include/asm/irq_vectors.h |  7 ++-
- arch/x86/include/asm/mshyperv.h    |  9 ++++
- arch/x86/include/uapi/asm/hyperv.h | 27 ++++++++++++
- arch/x86/kernel/cpu/mshyperv.c     |  6 +++
- 7 files changed, 143 insertions(+), 1 deletion(-)
+ arch/x86/entry/entry_32.S          |    3 +
+ arch/x86/entry/entry_64.S          |    3 +
+ arch/x86/hyperv/hv_init.c          |   89 +++++++++++++++++++++++++++++++++++++
+ arch/x86/include/asm/irq_vectors.h |    7 ++
+ arch/x86/include/asm/mshyperv.h    |   10 ++++
+ arch/x86/include/uapi/asm/hyperv.h |   27 +++++++++++
+ arch/x86/kernel/cpu/mshyperv.c     |    6 ++
+ 7 files changed, 144 insertions(+), 1 deletion(-)
 
-diff --git a/arch/x86/entry/entry_32.S b/arch/x86/entry/entry_32.S
 --- a/arch/x86/entry/entry_32.S
 +++ b/arch/x86/entry/entry_32.S
-@@ -895,6 +895,9 @@ BUILD_INTERRUPT3(xen_hvm_callback_vector, HYPERVISOR_CALLBACK_VECTOR,
+@@ -901,6 +901,9 @@ BUILD_INTERRUPT3(xen_hvm_callback_vector
  BUILD_INTERRUPT3(hyperv_callback_vector, HYPERVISOR_CALLBACK_VECTOR,
  	hyperv_vector_handler)
  
@@ -68,11 +67,10 @@ diff --git a/arch/x86/entry/entry_32.S b/arch/x86/entry/entry_32.S
 +
  #endif /* CONFIG_HYPERV */
  
- #ifdef CONFIG_TRACING
-diff --git a/arch/x86/entry/entry_64.S b/arch/x86/entry/entry_64.S
+ ENTRY(page_fault)
 --- a/arch/x86/entry/entry_64.S
 +++ b/arch/x86/entry/entry_64.S
-@@ -1245,6 +1245,9 @@ apicinterrupt3 HYPERVISOR_CALLBACK_VECTOR \
+@@ -1136,6 +1136,9 @@ apicinterrupt3 HYPERVISOR_CALLBACK_VECTO
  #if IS_ENABLED(CONFIG_HYPERV)
  apicinterrupt3 HYPERVISOR_CALLBACK_VECTOR \
  	hyperv_callback_vector hyperv_vector_handler
@@ -82,7 +80,6 @@ diff --git a/arch/x86/entry/entry_64.S b/arch/x86/entry/entry_64.S
  #endif /* CONFIG_HYPERV */
  
  idtentry debug			do_debug		has_error_code=0	paranoid=1 shift_ist=DEBUG_STACK
-diff --git a/arch/x86/hyperv/hv_init.c b/arch/x86/hyperv/hv_init.c
 --- a/arch/x86/hyperv/hv_init.c
 +++ b/arch/x86/hyperv/hv_init.c
 @@ -18,6 +18,8 @@
@@ -188,10 +185,9 @@ diff --git a/arch/x86/hyperv/hv_init.c b/arch/x86/hyperv/hv_init.c
  /*
   * This function is to be invoked early in the boot sequence after the
   * hypervisor has been detected.
-diff --git a/arch/x86/include/asm/irq_vectors.h b/arch/x86/include/asm/irq_vectors.h
 --- a/arch/x86/include/asm/irq_vectors.h
 +++ b/arch/x86/include/asm/irq_vectors.h
-@@ -103,7 +103,12 @@
+@@ -106,7 +106,12 @@
   * to work around the 'lost local interrupt if more than 2 IRQ
   * sources per level' errata.
   */
@@ -205,10 +201,9 @@ diff --git a/arch/x86/include/asm/irq_vectors.h b/arch/x86/include/asm/irq_vecto
  
  #define NR_VECTORS			 256
  
-diff --git a/arch/x86/include/asm/mshyperv.h b/arch/x86/include/asm/mshyperv.h
 --- a/arch/x86/include/asm/mshyperv.h
 +++ b/arch/x86/include/asm/mshyperv.h
-@@ -160,8 +160,10 @@ static inline void vmbus_signal_eom(struct hv_message *msg, u32 old_msg_type)
+@@ -159,8 +159,10 @@ static inline void vmbus_signal_eom(stru
  #define hv_set_synint_state(int_num, val) wrmsrl(int_num, val)
  
  void hyperv_callback_vector(void);
@@ -219,7 +214,7 @@ diff --git a/arch/x86/include/asm/mshyperv.h b/arch/x86/include/asm/mshyperv.h
  #endif
  void hyperv_vector_handler(struct pt_regs *regs);
  void hv_setup_vmbus_irq(void (*handler)(void));
-@@ -316,11 +317,19 @@ void hyper_alloc_mmu(void);
+@@ -317,11 +319,19 @@ void hyper_alloc_mmu(void);
  void hyperv_report_panic(struct pt_regs *regs, long err);
  bool hv_is_hyperv_initialized(void);
  void hyperv_cleanup(void);
@@ -239,10 +234,9 @@ diff --git a/arch/x86/include/asm/mshyperv.h b/arch/x86/include/asm/mshyperv.h
  #endif /* CONFIG_HYPERV */
  
  #ifdef CONFIG_HYPERV_TSCPAGE
-diff --git a/arch/x86/include/uapi/asm/hyperv.h b/arch/x86/include/uapi/asm/hyperv.h
 --- a/arch/x86/include/uapi/asm/hyperv.h
 +++ b/arch/x86/include/uapi/asm/hyperv.h
-@@ -40,6 +40,9 @@
+@@ -39,6 +39,9 @@
   */
  #define HV_X64_ACCESS_FREQUENCY_MSRS		(1 << 11)
  
@@ -252,7 +246,7 @@ diff --git a/arch/x86/include/uapi/asm/hyperv.h b/arch/x86/include/uapi/asm/hype
  /*
   * Basic SynIC MSRs (HV_X64_MSR_SCONTROL through HV_X64_MSR_EOM
   * and HV_X64_MSR_SINT0 through HV_X64_MSR_SINT15) available
-@@ -234,6 +237,30 @@
+@@ -233,6 +236,30 @@
  #define HV_X64_MSR_CRASH_PARAMS		\
  		(1 + (HV_X64_MSR_CRASH_P4 - HV_X64_MSR_CRASH_P0))
  
@@ -283,10 +277,9 @@ diff --git a/arch/x86/include/uapi/asm/hyperv.h b/arch/x86/include/uapi/asm/hype
  #define HV_X64_MSR_HYPERCALL_ENABLE		0x00000001
  #define HV_X64_MSR_HYPERCALL_PAGE_ADDRESS_SHIFT	12
  #define HV_X64_MSR_HYPERCALL_PAGE_ADDRESS_MASK	\
-diff --git a/arch/x86/kernel/cpu/mshyperv.c b/arch/x86/kernel/cpu/mshyperv.c
 --- a/arch/x86/kernel/cpu/mshyperv.c
 +++ b/arch/x86/kernel/cpu/mshyperv.c
-@@ -251,6 +251,12 @@ static void __init ms_hyperv_init_platform(void)
+@@ -256,6 +256,12 @@ static void __init ms_hyperv_init_platfo
  	if (!test_bit(HYPERVISOR_CALLBACK_VECTOR, used_vectors))
  		alloc_intr_gate(HYPERVISOR_CALLBACK_VECTOR,
  				hyperv_callback_vector);

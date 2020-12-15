@@ -23,22 +23,21 @@ Signed-off-by: K. Y. Srinivasan <kys@microsoft.com>
 Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
 Acked-by: Olaf Hering <ohering@suse.de>
 ---
- arch/x86/entry/entry_32.S          |  3 ++
- arch/x86/entry/entry_64.S          |  3 ++
- arch/x86/include/asm/hardirq.h     |  1 +
- arch/x86/include/asm/irq_vectors.h |  3 +-
- arch/x86/include/asm/mshyperv.h    | 13 +++++++++
- arch/x86/include/uapi/asm/hyperv.h |  3 ++
- arch/x86/kernel/cpu/mshyperv.c     | 40 ++++++++++++++++++++++++++
- arch/x86/kernel/irq.c              |  7 +++++
- drivers/hv/hv.c                    | 59 ++++++++++++++++++++++++++++++++++++--
- drivers/hv/hyperv_vmbus.h          |  4 ++-
- 10 files changed, 131 insertions(+), 5 deletions(-)
+ arch/x86/entry/entry_32.S          |    3 +
+ arch/x86/entry/entry_64.S          |    3 +
+ arch/x86/include/asm/hardirq.h     |    1 
+ arch/x86/include/asm/irq_vectors.h |    3 +
+ arch/x86/include/asm/mshyperv.h    |   16 ++++++++++
+ arch/x86/include/uapi/asm/hyperv.h |    3 +
+ arch/x86/kernel/cpu/mshyperv.c     |   40 +++++++++++++++++++++++++
+ arch/x86/kernel/irq.c              |    7 ++++
+ drivers/hv/hv.c                    |   59 +++++++++++++++++++++++++++++++++++--
+ drivers/hv/hyperv_vmbus.h          |    4 +-
+ 10 files changed, 134 insertions(+), 5 deletions(-)
 
-diff --git a/arch/x86/entry/entry_32.S b/arch/x86/entry/entry_32.S
 --- a/arch/x86/entry/entry_32.S
 +++ b/arch/x86/entry/entry_32.S
-@@ -902,6 +902,9 @@ BUILD_INTERRUPT3(hyperv_callback_vector, HYPERVISOR_CALLBACK_VECTOR,
+@@ -904,6 +904,9 @@ BUILD_INTERRUPT3(hyperv_callback_vector,
  BUILD_INTERRUPT3(hyperv_reenlightenment_vector, HYPERV_REENLIGHTENMENT_VECTOR,
  		 hyperv_reenlightenment_intr)
  
@@ -47,11 +46,10 @@ diff --git a/arch/x86/entry/entry_32.S b/arch/x86/entry/entry_32.S
 +
  #endif /* CONFIG_HYPERV */
  
- #ifdef CONFIG_TRACING
-diff --git a/arch/x86/entry/entry_64.S b/arch/x86/entry/entry_64.S
+ ENTRY(page_fault)
 --- a/arch/x86/entry/entry_64.S
 +++ b/arch/x86/entry/entry_64.S
-@@ -1135,6 +1135,9 @@ apicinterrupt3 HYPERVISOR_CALLBACK_VECTOR \
+@@ -1102,6 +1102,9 @@ apicinterrupt3 HYPERVISOR_CALLBACK_VECTO
  
  apicinterrupt3 HYPERV_REENLIGHTENMENT_VECTOR \
  	hyperv_reenlightenment_vector hyperv_reenlightenment_intr
@@ -61,10 +59,9 @@ diff --git a/arch/x86/entry/entry_64.S b/arch/x86/entry/entry_64.S
  #endif /* CONFIG_HYPERV */
  
  idtentry debug			do_debug		has_error_code=0	paranoid=1 shift_ist=DEBUG_STACK
-diff --git a/arch/x86/include/asm/hardirq.h b/arch/x86/include/asm/hardirq.h
 --- a/arch/x86/include/asm/hardirq.h
 +++ b/arch/x86/include/asm/hardirq.h
-@@ -40,6 +40,7 @@ typedef struct {
+@@ -39,6 +39,7 @@ typedef struct {
  #endif
  #if IS_ENABLED(CONFIG_HYPERV)
  	unsigned int irq_hv_reenlightenment_count;
@@ -72,10 +69,9 @@ diff --git a/arch/x86/include/asm/hardirq.h b/arch/x86/include/asm/hardirq.h
  #endif
  } ____cacheline_aligned irq_cpustat_t;
  
-diff --git a/arch/x86/include/asm/irq_vectors.h b/arch/x86/include/asm/irq_vectors.h
 --- a/arch/x86/include/asm/irq_vectors.h
 +++ b/arch/x86/include/asm/irq_vectors.h
-@@ -106,9 +106,10 @@
+@@ -109,9 +109,10 @@
  
  #if IS_ENABLED(CONFIG_HYPERV)
  #define HYPERV_REENLIGHTENMENT_VECTOR	0xee
@@ -87,7 +83,6 @@ diff --git a/arch/x86/include/asm/irq_vectors.h b/arch/x86/include/asm/irq_vecto
  
  #define NR_VECTORS			 256
  
-diff --git a/arch/x86/include/asm/mshyperv.h b/arch/x86/include/asm/mshyperv.h
 --- a/arch/x86/include/asm/mshyperv.h
 +++ b/arch/x86/include/asm/mshyperv.h
 @@ -173,6 +173,22 @@ void hv_remove_kexec_handler(void);
@@ -113,10 +108,9 @@ diff --git a/arch/x86/include/asm/mshyperv.h b/arch/x86/include/asm/mshyperv.h
  #if IS_ENABLED(CONFIG_HYPERV)
  extern struct clocksource *hyperv_cs;
  extern void *hv_hypercall_pg;
-diff --git a/arch/x86/include/uapi/asm/hyperv.h b/arch/x86/include/uapi/asm/hyperv.h
 --- a/arch/x86/include/uapi/asm/hyperv.h
 +++ b/arch/x86/include/uapi/asm/hyperv.h
-@@ -77,6 +77,9 @@
+@@ -76,6 +76,9 @@
  /* Crash MSR available */
  #define HV_FEATURE_GUEST_CRASH_MSR_AVAILABLE (1 << 10)
  
@@ -126,7 +120,6 @@ diff --git a/arch/x86/include/uapi/asm/hyperv.h b/arch/x86/include/uapi/asm/hype
  /*
   * Feature identification: EBX indicates which flags were specified at
   * partition creation. The format is the same as the partition creation
-diff --git a/arch/x86/kernel/cpu/mshyperv.c b/arch/x86/kernel/cpu/mshyperv.c
 --- a/arch/x86/kernel/cpu/mshyperv.c
 +++ b/arch/x86/kernel/cpu/mshyperv.c
 @@ -37,6 +37,7 @@ EXPORT_SYMBOL_GPL(ms_hyperv);
@@ -179,7 +172,7 @@ diff --git a/arch/x86/kernel/cpu/mshyperv.c b/arch/x86/kernel/cpu/mshyperv.c
  void hv_setup_kexec_handler(void (*handler)(void))
  {
  	hv_kexec_handler = handler;
-@@ -257,6 +293,10 @@ static void __init ms_hyperv_init_platform(void)
+@@ -262,6 +298,10 @@ static void __init ms_hyperv_init_platfo
  		alloc_intr_gate(HYPERV_REENLIGHTENMENT_VECTOR,
  				hyperv_reenlightenment_vector);
  
@@ -190,10 +183,9 @@ diff --git a/arch/x86/kernel/cpu/mshyperv.c b/arch/x86/kernel/cpu/mshyperv.c
  #endif
  }
  
-diff --git a/arch/x86/kernel/irq.c b/arch/x86/kernel/irq.c
 --- a/arch/x86/kernel/irq.c
 +++ b/arch/x86/kernel/irq.c
-@@ -150,6 +150,13 @@ int arch_show_interrupts(struct seq_file *p, int prec)
+@@ -153,6 +153,13 @@ int arch_show_interrupts(struct seq_file
  				   irq_stats(j)->irq_hv_reenlightenment_count);
  		seq_puts(p, "  Hyper-V reenlightenment interrupts\n");
  	}
@@ -207,7 +199,6 @@ diff --git a/arch/x86/kernel/irq.c b/arch/x86/kernel/irq.c
  #endif
  	seq_printf(p, "%*s: %10u\n", prec, "ERR", atomic_read(&irq_err_count));
  #if defined(CONFIG_X86_IO_APIC)
-diff --git a/drivers/hv/hv.c b/drivers/hv/hv.c
 --- a/drivers/hv/hv.c
 +++ b/drivers/hv/hv.c
 @@ -27,7 +27,7 @@
@@ -246,7 +237,7 @@ diff --git a/drivers/hv/hv.c b/drivers/hv/hv.c
  	return 0;
  }
  
-@@ -91,6 +104,21 @@ int hv_post_message(union hv_connection_id connection_id,
+@@ -91,6 +104,21 @@ int hv_post_message(union hv_connection_
  	return status & 0xFFFF;
  }
  
@@ -268,7 +259,7 @@ diff --git a/drivers/hv/hv.c b/drivers/hv/hv.c
  static int hv_ce_set_next_event(unsigned long delta,
  				struct clock_event_device *evt)
  {
-@@ -108,6 +136,8 @@ static int hv_ce_shutdown(struct clock_event_device *evt)
+@@ -108,6 +136,8 @@ static int hv_ce_shutdown(struct clock_e
  {
  	hv_init_timer(HV_X64_MSR_STIMER0_COUNT, 0);
  	hv_init_timer_config(HV_X64_MSR_STIMER0_CONFIG, 0);
@@ -277,7 +268,7 @@ diff --git a/drivers/hv/hv.c b/drivers/hv/hv.c
  
  	return 0;
  }
-@@ -116,11 +146,26 @@ static int hv_ce_set_oneshot(struct clock_event_device *evt)
+@@ -116,11 +146,26 @@ static int hv_ce_set_oneshot(struct cloc
  {
  	union hv_timer_config timer_cfg;
  
@@ -328,7 +319,6 @@ diff --git a/drivers/hv/hv.c b/drivers/hv/hv.c
  	for_each_present_cpu(cpu) {
  		struct hv_per_cpu_context *hv_cpu
  			= per_cpu_ptr(hv_context.cpu_context, cpu);
-diff --git a/drivers/hv/hyperv_vmbus.h b/drivers/hv/hyperv_vmbus.h
 --- a/drivers/hv/hyperv_vmbus.h
 +++ b/drivers/hv/hyperv_vmbus.h
 @@ -57,7 +57,9 @@ union hv_timer_config {
