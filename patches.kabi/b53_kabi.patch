@@ -1,0 +1,74 @@
+From: Denis Kirjanov <denis.kirjanov@suse.com>
+Subject: kABI workaround for dsa/b53 changes
+Patch-mainline: Never, kABI workaround
+References: git-fixes
+
+Since b53_port is an array inside b53_device pvid member is moved to
+b53_device.
+
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+
+---
+--- a/drivers/net/dsa/b53/b53_priv.h
++++ b/drivers/net/dsa/b53/b53_priv.h
+@@ -70,7 +70,6 @@ enum {
+ 
+ struct b53_port {
+ 	u16		vlan_ctl_mask;
+-	u16		pvid;
+ };
+ 
+ struct b53_vlan {
+@@ -116,10 +115,13 @@ struct b53_device {
+ 
+ 	unsigned int num_vlans;
+ 	struct b53_vlan *vlans;
+-	bool vlan_enabled;
+-	bool vlan_filtering_enabled;
+ 	unsigned int num_ports;
+ 	struct b53_port *ports;
++#ifndef __GENKSYMS__
++	bool vlan_enabled;
++	bool vlan_filtering_enabled;
++	u16		*port_pvid;
++#endif
+ };
+ 
+ #define b53_for_each_port(dev, i) \
+--- a/drivers/net/dsa/b53/b53_common.c
++++ b/drivers/net/dsa/b53/b53_common.c
+@@ -712,6 +712,7 @@ static int b53_reset_switch(struct b53_d
+ 
+ 	memset(priv->vlans, 0, sizeof(*priv->vlans) * priv->num_vlans);
+ 	memset(priv->ports, 0, sizeof(*priv->ports) * priv->num_ports);
++	memset(priv->port_pvid, 0, sizeof(u16) * priv->num_ports);
+ 
+ 	return b53_switch_reset(priv);
+ }
+@@ -1005,11 +1006,11 @@ int b53_vlan_filtering(struct dsa_switch
+ 		/* Filtering is currently enabled, use the default PVID since
+ 		 * the bridge does not expect tagging anymore
+ 		 */
+-		dev->ports[port].pvid = pvid;
++		dev->port_pvid[port] = pvid;
+ 		new_pvid = b53_default_pvid(dev);
+ 	} else if (!dev->vlan_filtering_enabled && vlan_filtering) {
+ 		/* Filtering is currently disabled, restore the previous PVID */
+-		new_pvid = dev->ports[port].pvid;
++		new_pvid = dev->port_pvid[port];
+ 	}
+ 
+ 	if (pvid != new_pvid)
+@@ -1940,6 +1941,12 @@ static int b53_switch_init(struct b53_de
+ 	if (!dev->ports)
+ 		return -ENOMEM;
+ 
++	dev->port_pvid = devm_kzalloc(dev->dev,
++				  sizeof(u16) * dev->num_ports,
++				  GFP_KERNEL);
++	if (!dev->port_pvid)
++		return -ENOMEM;
++
+ 	dev->vlans = devm_kzalloc(dev->dev,
+ 				  sizeof(struct b53_vlan) * dev->num_vlans,
+ 				  GFP_KERNEL);
