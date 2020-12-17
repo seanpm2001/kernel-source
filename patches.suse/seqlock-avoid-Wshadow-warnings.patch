@@ -1,0 +1,69 @@
+From: Arnd Bergmann <arnd@arndb.de>
+Date: Mon, 26 Oct 2020 17:50:38 +0100
+Subject: seqlock: avoid -Wshadow warnings
+Patch-mainline: v5.11-rc1
+Git-commit: a07c45312f06e288417049208c344ad76074627d
+References: git-fixes
+
+When building with W=2, there is a flood of warnings about the seqlock
+macros shadowing local variables:
+
+  19806 linux/seqlock.h:331:11: warning: declaration of 'seq' shadows a previous local [-Wshadow]
+     48 linux/seqlock.h:348:11: warning: declaration of 'seq' shadows a previous local [-Wshadow]
+      8 linux/seqlock.h:379:11: warning: declaration of 'seq' shadows a previous local [-Wshadow]
+
+Prefix the local variables to make the warning useful elsewhere again.
+
+Fixes: 52ac39e5db51 ("seqlock: seqcount_t: Implement all read APIs as statement expressions")
+Signed-off-by: Arnd Bergmann <arnd@arndb.de>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20201026165044.3722931-1-arnd@kernel.org
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ include/linux/seqlock.h |   14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+--- a/include/linux/seqlock.h
++++ b/include/linux/seqlock.h
+@@ -313,12 +313,12 @@ SEQCOUNT_LOCKNAME(ww_mutex,     struct w
+  */
+ #define __read_seqcount_begin(s)					\
+ ({									\
+-	unsigned seq;							\
++	unsigned __seq;							\
+ 									\
+-	while ((seq = __seqcount_sequence(s)) & 1)			\
++	while ((__seq = __seqcount_sequence(s)) & 1)			\
+ 		cpu_relax();						\
+ 									\
+-	seq;								\
++	__seq;								\
+ })
+ 
+ /**
+@@ -329,10 +329,10 @@ SEQCOUNT_LOCKNAME(ww_mutex,     struct w
+  */
+ #define raw_read_seqcount_begin(s)					\
+ ({									\
+-	unsigned seq = __read_seqcount_begin(s);			\
++	unsigned __seq = __read_seqcount_begin(s);			\
+ 									\
+ 	smp_rmb();							\
+-	seq;								\
++	__seq;								\
+ })
+ 
+ /**
+@@ -360,10 +360,10 @@ SEQCOUNT_LOCKNAME(ww_mutex,     struct w
+  */
+ #define raw_read_seqcount(s)						\
+ ({									\
+-	unsigned seq = __seqcount_sequence(s);				\
++	unsigned __seq = __seqcount_sequence(s);			\
+ 									\
+ 	smp_rmb();							\
+-	seq;								\
++	__seq;								\
+ })
+ 
+ /**
