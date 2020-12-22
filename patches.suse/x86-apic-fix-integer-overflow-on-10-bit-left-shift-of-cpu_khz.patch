@@ -1,0 +1,37 @@
+From: Colin Ian King <colin.king@canonical.com>
+Date: Wed, 19 Jun 2019 19:14:46 +0100
+Subject: x86/apic: Fix integer overflow on 10 bit left shift of cpu_khz
+Git-commit: ea136a112d89bade596314a1ae49f748902f4727
+Patch-mainline: v5.2-rc7
+References: bsc#1112178
+
+The left shift of unsigned int cpu_khz will overflow for large values of
+cpu_khz, so cast it to a long long before shifting it to avoid overvlow.
+For example, this can happen when cpu_khz is 4194305, i.e. ~4.2 GHz.
+
+Addresses-Coverity: ("Unintentional integer overflow")
+Fixes: 8c3ba8d04924 ("x86, apic: ack all pending irqs when crashed/on kexec")
+Signed-off-by: Colin Ian King <colin.king@canonical.com>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Cc: Borislav Petkov <bp@alien8.de>
+Cc: "H . Peter Anvin" <hpa@zytor.com>
+Cc: kernel-janitors@vger.kernel.org
+Link: https://lkml.kernel.org/r/20190619181446.13635-1-colin.king@canonical.com
+
+Acked-by: Borislav Petkov <bp@suse.de>
+---
+ arch/x86/kernel/apic/apic.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/arch/x86/kernel/apic/apic.c
++++ b/arch/x86/kernel/apic/apic.c
+@@ -1357,7 +1357,8 @@ void setup_local_APIC(void)
+ 		if (queued) {
+ 			if (boot_cpu_has(X86_FEATURE_TSC) && cpu_khz) {
+ 				ntsc = rdtsc();
+-				max_loops = (cpu_khz << 10) - (ntsc - tsc);
++				max_loops = (long long)cpu_khz << 10;
++				max_loops -= ntsc - tsc;
+ 			} else
+ 				max_loops--;
+ 		}
