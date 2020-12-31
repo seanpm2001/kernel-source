@@ -1,0 +1,50 @@
+From 1fcf689181e95f3a289f42806fff38fb15a66b61 Mon Sep 17 00:00:00 2001
+From: "Ahmed S. Darwish" <a.darwish@linutronix.de>
+Date: Mon, 26 Oct 2020 15:03:13 +0100
+Subject: [PATCH] USB: serial: digi_acceleport: remove in_interrupt() usage
+Git-commit: 1fcf689181e95f3a289f42806fff38fb15a66b61
+REferences: git-fixes
+Patch-mainline: v5.11-rc1
+
+The usage of in_interrupt() in drivers is phased out and Linus clearly
+requested that code which changes behaviour depending on context should
+either be separated or the context be conveyed in an argument passed by the
+caller, which usually knows the context.
+
+The debug printk() in digi_write() prints in_interrupt() as context
+information. This information is imprecise as it does not distinguish
+between hard-IRQ or disabled bottom half and it does not consider
+disabled interrupts or preemption. It is not really helpful.
+
+Remove the in_interrupt() printout.
+
+Signed-off-by: Ahmed S. Darwish <a.darwish@linutronix.de>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Link: https://lore.kernel.org/r/20201026140313.dpg3hkhkje2os4hw@linutronix.de
+[ johan: amend commit message ]
+Signed-off-by: Johan Hovold <johan@kernel.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/usb/serial/digi_acceleport.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/usb/serial/digi_acceleport.c b/drivers/usb/serial/digi_acceleport.c
+index 91055a191995..016e7dec3196 100644
+--- a/drivers/usb/serial/digi_acceleport.c
++++ b/drivers/usb/serial/digi_acceleport.c
+@@ -911,9 +911,8 @@ static int digi_write(struct tty_struct *tty, struct usb_serial_port *port,
+ 	unsigned char *data = port->write_urb->transfer_buffer;
+ 	unsigned long flags = 0;
+ 
+-	dev_dbg(&port->dev,
+-		"digi_write: TOP: port=%d, count=%d, in_interrupt=%ld\n",
+-		priv->dp_port_num, count, in_interrupt());
++	dev_dbg(&port->dev, "digi_write: TOP: port=%d, count=%d\n",
++		priv->dp_port_num, count);
+ 
+ 	/* copy user data (which can sleep) before getting spin lock */
+ 	count = min(count, port->bulk_out_size-2);
+-- 
+2.26.2
+

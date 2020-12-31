@@ -1,0 +1,117 @@
+From 74d8139582bd3f367e92c67349db4d97fe3733ee Mon Sep 17 00:00:00 2001
+From: Johan Hovold <johan@kernel.org>
+Date: Thu, 18 Apr 2019 18:20:20 +0200
+Subject: [PATCH] USB: serial: digi_acceleport: clean up set_termios
+Git-commit: 74d8139582bd3f367e92c67349db4d97fe3733ee
+References: git-fixes
+Patch-mainline: v5.2-rc1
+
+Clean up set_termios() by adding missing white space around operators
+and making a couple of continuation lines more readable.
+
+Also drop a couple of redundant braces.
+
+Reviewed-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Johan Hovold <johan@kernel.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/usb/serial/digi_acceleport.c | 33 ++++++++++++++--------------
+ 1 file changed, 16 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/usb/serial/digi_acceleport.c b/drivers/usb/serial/digi_acceleport.c
+index 4699e114f617..578ebdd86520 100644
+--- a/drivers/usb/serial/digi_acceleport.c
++++ b/drivers/usb/serial/digi_acceleport.c
+@@ -740,9 +740,9 @@ static void digi_set_termios(struct tty_struct *tty,
+ 	/* set parity */
+ 	tty->termios.c_cflag &= ~CMSPAR;
+ 
+-	if ((cflag&(PARENB|PARODD)) != (old_cflag&(PARENB|PARODD))) {
+-		if (cflag&PARENB) {
+-			if (cflag&PARODD)
++	if ((cflag & (PARENB | PARODD)) != (old_cflag & (PARENB | PARODD))) {
++		if (cflag & PARENB) {
++			if (cflag & PARODD)
+ 				arg = DIGI_PARITY_ODD;
+ 			else
+ 				arg = DIGI_PARITY_EVEN;
+@@ -755,9 +755,9 @@ static void digi_set_termios(struct tty_struct *tty,
+ 		buf[i++] = 0;
+ 	}
+ 	/* set word size */
+-	if ((cflag&CSIZE) != (old_cflag&CSIZE)) {
++	if ((cflag & CSIZE) != (old_cflag & CSIZE)) {
+ 		arg = -1;
+-		switch (cflag&CSIZE) {
++		switch (cflag & CSIZE) {
+ 		case CS5: arg = DIGI_WORD_SIZE_5; break;
+ 		case CS6: arg = DIGI_WORD_SIZE_6; break;
+ 		case CS7: arg = DIGI_WORD_SIZE_7; break;
+@@ -765,7 +765,7 @@ static void digi_set_termios(struct tty_struct *tty,
+ 		default:
+ 			dev_dbg(dev,
+ 				"digi_set_termios: can't handle word size %d\n",
+-				(cflag&CSIZE));
++				cflag & CSIZE);
+ 			break;
+ 		}
+ 
+@@ -779,9 +779,9 @@ static void digi_set_termios(struct tty_struct *tty,
+ 	}
+ 
+ 	/* set stop bits */
+-	if ((cflag&CSTOPB) != (old_cflag&CSTOPB)) {
++	if ((cflag & CSTOPB) != (old_cflag & CSTOPB)) {
+ 
+-		if ((cflag&CSTOPB))
++		if ((cflag & CSTOPB))
+ 			arg = DIGI_STOP_BITS_2;
+ 		else
+ 			arg = DIGI_STOP_BITS_1;
+@@ -794,15 +794,15 @@ static void digi_set_termios(struct tty_struct *tty,
+ 	}
+ 
+ 	/* set input flow control */
+-	if ((iflag&IXOFF) != (old_iflag&IXOFF)
+-	    || (cflag&CRTSCTS) != (old_cflag&CRTSCTS)) {
++	if ((iflag & IXOFF) != (old_iflag & IXOFF) ||
++			(cflag & CRTSCTS) != (old_cflag & CRTSCTS)) {
+ 		arg = 0;
+-		if (iflag&IXOFF)
++		if (iflag & IXOFF)
+ 			arg |= DIGI_INPUT_FLOW_CONTROL_XON_XOFF;
+ 		else
+ 			arg &= ~DIGI_INPUT_FLOW_CONTROL_XON_XOFF;
+ 
+-		if (cflag&CRTSCTS) {
++		if (cflag & CRTSCTS) {
+ 			arg |= DIGI_INPUT_FLOW_CONTROL_RTS;
+ 
+ 			/* On USB-4 it is necessary to assert RTS prior */
+@@ -822,19 +822,18 @@ static void digi_set_termios(struct tty_struct *tty,
+ 	}
+ 
+ 	/* set output flow control */
+-	if ((iflag & IXON) != (old_iflag & IXON)
+-	    || (cflag & CRTSCTS) != (old_cflag & CRTSCTS)) {
++	if ((iflag & IXON) != (old_iflag & IXON) ||
++			(cflag & CRTSCTS) != (old_cflag & CRTSCTS)) {
+ 		arg = 0;
+ 		if (iflag & IXON)
+ 			arg |= DIGI_OUTPUT_FLOW_CONTROL_XON_XOFF;
+ 		else
+ 			arg &= ~DIGI_OUTPUT_FLOW_CONTROL_XON_XOFF;
+ 
+-		if (cflag & CRTSCTS) {
++		if (cflag & CRTSCTS)
+ 			arg |= DIGI_OUTPUT_FLOW_CONTROL_CTS;
+-		} else {
++		else
+ 			arg &= ~DIGI_OUTPUT_FLOW_CONTROL_CTS;
+-		}
+ 
+ 		buf[i++] = DIGI_CMD_SET_OUTPUT_FLOW_CONTROL;
+ 		buf[i++] = priv->dp_port_num;
+-- 
+2.26.2
+
