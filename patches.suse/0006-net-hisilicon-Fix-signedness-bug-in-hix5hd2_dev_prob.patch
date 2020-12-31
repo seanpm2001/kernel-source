@@ -1,0 +1,36 @@
+From 8fab623579f20e80f554e4aef64930761f83b57a Mon Sep 17 00:00:00 2001
+From: Dan Carpenter <dan.carpenter@oracle.com>
+Date: Wed, 25 Sep 2019 13:55:32 +0300
+Subject: [PATCH 6/6] net: hisilicon: Fix signedness bug in hix5hd2_dev_probe()
+
+References: git-fixes
+Patch-mainline: v5.4-rc1
+Git-commit: 002dfe8085255b7bf1e0758c3d195c5412d35be9
+
+The "priv->phy_mode" variable is an enum and in this context GCC will
+treat it as unsigned to the error handling will never trigger.
+
+Fixes: 57c5bc9ad7d7 ("net: hisilicon: add hix5hd2 mac driver")
+Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/hisilicon/hix5hd2_gmac.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/hisilicon/hix5hd2_gmac.c b/drivers/net/ethernet/hisilicon/hix5hd2_gmac.c
+index 25a6c8722eca..70b0ba8ff57c 100644
+--- a/drivers/net/ethernet/hisilicon/hix5hd2_gmac.c
++++ b/drivers/net/ethernet/hisilicon/hix5hd2_gmac.c
+@@ -1202,7 +1202,7 @@ static int hix5hd2_dev_probe(struct platform_device *pdev)
+ 		goto err_free_mdio;
+ 
+ 	priv->phy_mode = of_get_phy_mode(node);
+-	if (priv->phy_mode < 0) {
++	if ((int)priv->phy_mode < 0) {
+ 		netdev_err(ndev, "not find phy-mode\n");
+ 		ret = -EINVAL;
+ 		goto err_mdiobus;
+-- 
+2.16.4
+
