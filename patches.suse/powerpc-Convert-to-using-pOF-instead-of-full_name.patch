@@ -1,0 +1,2777 @@
+From b7c670d673d1186e9a6aafaad36aace34046bb6b Mon Sep 17 00:00:00 2001
+From: Rob Herring <robh@kernel.org>
+Date: Mon, 21 Aug 2017 10:16:47 -0500
+Subject: [PATCH] powerpc: Convert to using %pOF instead of full_name
+
+References: bsc#1172145 ltc#184630
+Patch-mainline: v4.14-rc1
+Git-commit: b7c670d673d1186e9a6aafaad36aace34046bb6b
+
+Now that we have a custom printf format specifier, convert users of
+full_name to use %pOF instead. This is preparation to remove storing
+of the full path string for each node.
+
+Signed-off-by: Rob Herring <robh@kernel.org>
+Cc: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+Cc: Paul Mackerras <paulus@samba.org>
+Cc: Michael Ellerman <mpe@ellerman.id.au>
+Cc: Anatolij Gustschin <agust@denx.de>
+Cc: Scott Wood <oss@buserror.net>
+Cc: Kumar Gala <galak@kernel.crashing.org>
+Cc: Arnd Bergmann <arnd@arndb.de>
+Cc: linuxppc-dev@lists.ozlabs.org
+Reviewed-by: Tyrel Datwyler <tyreld@linux.vnet.ibm.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+[ drop 4xx hunks ]
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kernel/btext.c                   |   2 +-
+ arch/powerpc/kernel/cacheinfo.c               |  34 +++--
+ arch/powerpc/kernel/io-workarounds.c          |   4 +-
+ arch/powerpc/kernel/isa-bridge.c              |  32 ++---
+ arch/powerpc/kernel/legacy_serial.c           |  12 +-
+ arch/powerpc/kernel/of_platform.c             |   2 +-
+ arch/powerpc/kernel/pci-common.c              |  15 ++-
+ arch/powerpc/kernel/pci_32.c                  |   4 +-
+ arch/powerpc/kernel/pci_64.c                  |   4 +-
+ arch/powerpc/kernel/pci_of_scan.c             |  24 ++--
+ arch/powerpc/kernel/setup-common.c            |   2 +-
+ arch/powerpc/platforms/4xx/cpm.c              |   8 +-
+ arch/powerpc/platforms/4xx/gpio.c             |   3 +-
+ arch/powerpc/platforms/4xx/msi.c              |   3 +-
+ arch/powerpc/platforms/4xx/pci.c              | 116 ++++++++----------
+ arch/powerpc/platforms/4xx/soc.c              |   5 +-
+ arch/powerpc/platforms/4xx/uic.c              |  14 +--
+ arch/powerpc/platforms/512x/mpc512x_shared.c  |  12 +-
+ arch/powerpc/platforms/52xx/efika.c           |   8 +-
+ arch/powerpc/platforms/52xx/media5200.c       |   2 +-
+ arch/powerpc/platforms/52xx/mpc52xx_gpt.c     |   4 +-
+ arch/powerpc/platforms/52xx/mpc52xx_pci.c     |   8 +-
+ .../powerpc/platforms/83xx/mcu_mpc8349emitx.c |   3 +-
+ arch/powerpc/platforms/83xx/mpc832x_rdb.c     |   2 +-
+ arch/powerpc/platforms/85xx/p1022_ds.c        |   8 +-
+ arch/powerpc/platforms/85xx/xes_mpc85xx.c     |   4 +-
+ arch/powerpc/platforms/amigaone/setup.c       |   6 +-
+ arch/powerpc/platforms/cell/axon_msi.c        |  36 +++---
+ arch/powerpc/platforms/cell/interrupt.c       |   4 +-
+ arch/powerpc/platforms/cell/iommu.c           |  24 ++--
+ arch/powerpc/platforms/cell/ras.c             |   4 +-
+ arch/powerpc/platforms/cell/spider-pci.c      |   4 +-
+ arch/powerpc/platforms/cell/spider-pic.c      |   4 +-
+ arch/powerpc/platforms/cell/spu_manage.c      |  26 ++--
+ arch/powerpc/platforms/chrp/pci.c             |  18 +--
+ .../platforms/embedded6xx/linkstation.c       |   6 +-
+ arch/powerpc/platforms/embedded6xx/mvme5100.c |   2 +-
+ .../platforms/embedded6xx/storcenter.c        |   2 +-
+ arch/powerpc/platforms/maple/pci.c            |  10 +-
+ arch/powerpc/platforms/pasemi/pci.c           |   2 +-
+ arch/powerpc/platforms/powermac/feature.c     |  14 +--
+ arch/powerpc/platforms/powermac/low_i2c.c     |  50 ++++----
+ arch/powerpc/platforms/powermac/pci.c         |   6 +-
+ arch/powerpc/platforms/powermac/pfunc_base.c  |  24 ++--
+ arch/powerpc/platforms/powermac/pfunc_core.c  |   6 +-
+ arch/powerpc/platforms/powermac/pic.c         |   8 +-
+ arch/powerpc/platforms/powermac/setup.c       |   2 +-
+ arch/powerpc/platforms/powernv/opal-async.c   |   4 +-
+ arch/powerpc/platforms/powernv/opal-xscom.c   |   8 +-
+ arch/powerpc/platforms/powernv/pci-ioda.c     |  15 ++-
+ arch/powerpc/platforms/powernv/rng.c          |   6 +-
+ arch/powerpc/platforms/pseries/dlpar.c        |   3 +-
+ .../powerpc/platforms/pseries/event_sources.c |   6 +-
+ arch/powerpc/platforms/pseries/hotplug-cpu.c  |   4 +-
+ arch/powerpc/platforms/pseries/ibmebus.c      |   5 +-
+ arch/powerpc/platforms/pseries/iommu.c        |  58 ++++-----
+ arch/powerpc/platforms/pseries/msi.c          |  12 +-
+ arch/powerpc/platforms/pseries/pci_dlpar.c    |   2 +-
+ arch/powerpc/platforms/pseries/vio.c          |   6 +-
+ arch/powerpc/sysdev/axonram.c                 |   4 +-
+ arch/powerpc/sysdev/dcr.c                     |   4 +-
+ arch/powerpc/sysdev/fsl_85xx_cache_sram.c     |  12 +-
+ arch/powerpc/sysdev/fsl_gtm.c                 |  14 +--
+ arch/powerpc/sysdev/fsl_msi.c                 |  16 +--
+ arch/powerpc/sysdev/fsl_pci.c                 |  47 ++++---
+ arch/powerpc/sysdev/fsl_rio.c                 |  36 +++---
+ arch/powerpc/sysdev/fsl_rmu.c                 |  12 +-
+ arch/powerpc/sysdev/mpic.c                    |   4 +-
+ arch/powerpc/sysdev/mpic_msgr.c               |   2 +-
+ arch/powerpc/sysdev/mpic_msi.c                |   2 +-
+ arch/powerpc/sysdev/mpic_timer.c              |  19 ++-
+ arch/powerpc/sysdev/msi_bitmap.c              |   4 +-
+ arch/powerpc/sysdev/mv64x60_dev.c             |  20 +--
+ arch/powerpc/sysdev/mv64x60_pci.c             |   4 +-
+ arch/powerpc/sysdev/of_rtc.c                  |  12 +-
+ arch/powerpc/sysdev/scom.c                    |   5 +-
+ arch/powerpc/sysdev/simple_gpio.c             |   3 +-
+ arch/powerpc/sysdev/tsi108_pci.c              |   4 +-
+ arch/powerpc/sysdev/xive/native.c             |   2 +-
+ 79 files changed, 461 insertions(+), 487 deletions(-)
+
+diff --git a/arch/powerpc/kernel/btext.c b/arch/powerpc/kernel/btext.c
+index 8275858a434d..3f46ca1c59f9 100644
+--- a/arch/powerpc/kernel/btext.c
++++ b/arch/powerpc/kernel/btext.c
+@@ -253,7 +253,7 @@ int __init btext_find_display(int allow_nonstdout)
+ 
+ 	for_each_node_by_type(np, "display") {
+ 		if (of_get_property(np, "linux,opened", NULL)) {
+-			printk("trying %s ...\n", np->full_name);
++			printk("trying %pOF ...\n", np);
+ 			rc = btext_initialize(np);
+ 			printk("result: %d\n", rc);
+ 		}
+diff --git a/arch/powerpc/kernel/cacheinfo.c b/arch/powerpc/kernel/cacheinfo.c
+index c641983bbdd6..a8f20e5928e1 100644
+--- a/arch/powerpc/kernel/cacheinfo.c
++++ b/arch/powerpc/kernel/cacheinfo.c
+@@ -167,10 +167,10 @@ static void release_cache_debugcheck(struct cache *cache)
+ 
+ 	list_for_each_entry(iter, &cache_list, list)
+ 		WARN_ONCE(iter->next_local == cache,
+-			  "cache for %s(%s) refers to cache for %s(%s)\n",
+-			  iter->ofnode->full_name,
++			  "cache for %pOF(%s) refers to cache for %pOF(%s)\n",
++			  iter->ofnode,
+ 			  cache_type_string(iter),
+-			  cache->ofnode->full_name,
++			  cache->ofnode,
+ 			  cache_type_string(cache));
+ }
+ 
+@@ -179,8 +179,8 @@ static void release_cache(struct cache *cache)
+ 	if (!cache)
+ 		return;
+ 
+-	pr_debug("freeing L%d %s cache for %s\n", cache->level,
+-		 cache_type_string(cache), cache->ofnode->full_name);
++	pr_debug("freeing L%d %s cache for %pOF\n", cache->level,
++		 cache_type_string(cache), cache->ofnode);
+ 
+ 	release_cache_debugcheck(cache);
+ 	list_del(&cache->list);
+@@ -194,8 +194,8 @@ static void cache_cpu_set(struct cache *cache, int cpu)
+ 
+ 	while (next) {
+ 		WARN_ONCE(cpumask_test_cpu(cpu, &next->shared_cpu_map),
+-			  "CPU %i already accounted in %s(%s)\n",
+-			  cpu, next->ofnode->full_name,
++			  "CPU %i already accounted in %pOF(%s)\n",
++			  cpu, next->ofnode,
+ 			  cache_type_string(next));
+ 		cpumask_set_cpu(cpu, &next->shared_cpu_map);
+ 		next = next->next_local;
+@@ -355,7 +355,7 @@ static int cache_is_unified_d(const struct device_node *np)
+  */
+ static struct cache *cache_do_one_devnode_unified(struct device_node *node, int level)
+ {
+-	pr_debug("creating L%d ucache for %s\n", level, node->full_name);
++	pr_debug("creating L%d ucache for %pOF\n", level, node);
+ 
+ 	return new_cache(cache_is_unified_d(node), level, node);
+ }
+@@ -365,8 +365,8 @@ static struct cache *cache_do_one_devnode_split(struct device_node *node,
+ {
+ 	struct cache *dcache, *icache;
+ 
+-	pr_debug("creating L%d dcache and icache for %s\n", level,
+-		 node->full_name);
++	pr_debug("creating L%d dcache and icache for %pOF\n", level,
++		 node);
+ 
+ 	dcache = new_cache(CACHE_TYPE_DATA, level, node);
+ 	icache = new_cache(CACHE_TYPE_INSTRUCTION, level, node);
+@@ -679,7 +679,6 @@ static struct kobj_type cache_index_type = {
+ 
+ static void cacheinfo_create_index_opt_attrs(struct cache_index_dir *dir)
+ {
+-	const char *cache_name;
+ 	const char *cache_type;
+ 	struct cache *cache;
+ 	char *buf;
+@@ -690,7 +689,6 @@ static void cacheinfo_create_index_opt_attrs(struct cache_index_dir *dir)
+ 		return;
+ 
+ 	cache = dir->cache;
+-	cache_name = cache->ofnode->full_name;
+ 	cache_type = cache_type_string(cache);
+ 
+ 	/* We don't want to create an attribute that can't provide a
+@@ -707,14 +705,14 @@ static void cacheinfo_create_index_opt_attrs(struct cache_index_dir *dir)
+ 		rc = attr->show(&dir->kobj, attr, buf);
+ 		if (rc <= 0) {
+ 			pr_debug("not creating %s attribute for "
+-				 "%s(%s) (rc = %zd)\n",
+-				 attr->attr.name, cache_name,
++				 "%pOF(%s) (rc = %zd)\n",
++				 attr->attr.name, cache->ofnode,
+ 				 cache_type, rc);
+ 			continue;
+ 		}
+ 		if (sysfs_create_file(&dir->kobj, &attr->attr))
+-			pr_debug("could not create %s attribute for %s(%s)\n",
+-				 attr->attr.name, cache_name, cache_type);
++			pr_debug("could not create %s attribute for %pOF(%s)\n",
++				 attr->attr.name, cache->ofnode, cache_type);
+ 	}
+ 
+ 	kfree(buf);
+@@ -831,8 +829,8 @@ static void cache_cpu_clear(struct cache *cache, int cpu)
+ 		struct cache *next = cache->next_local;
+ 
+ 		WARN_ONCE(!cpumask_test_cpu(cpu, &cache->shared_cpu_map),
+-			  "CPU %i not accounted in %s(%s)\n",
+-			  cpu, cache->ofnode->full_name,
++			  "CPU %i not accounted in %pOF(%s)\n",
++			  cpu, cache->ofnode,
+ 			  cache_type_string(cache));
+ 
+ 		cpumask_clear_cpu(cpu, &cache->shared_cpu_map);
+diff --git a/arch/powerpc/kernel/io-workarounds.c b/arch/powerpc/kernel/io-workarounds.c
+index bbe85f5aea71..aa9f1b8261db 100644
+--- a/arch/powerpc/kernel/io-workarounds.c
++++ b/arch/powerpc/kernel/io-workarounds.c
+@@ -193,7 +193,7 @@ void iowa_register_bus(struct pci_controller *phb, struct ppc_pci_io *ops,
+ 
+ 	if (iowa_bus_count >= IOWA_MAX_BUS) {
+ 		pr_err("IOWA:Too many pci bridges, "
+-		       "workarounds disabled for %s\n", np->full_name);
++		       "workarounds disabled for %pOF\n", np);
+ 		return;
+ 	}
+ 
+@@ -208,6 +208,6 @@ void iowa_register_bus(struct pci_controller *phb, struct ppc_pci_io *ops,
+ 
+ 	iowa_bus_count++;
+ 
+-	pr_debug("IOWA:[%d]Add bus, %s.\n", iowa_bus_count-1, np->full_name);
++	pr_debug("IOWA:[%d]Add bus, %pOF.\n", iowa_bus_count-1, np);
+ }
+ 
+diff --git a/arch/powerpc/kernel/isa-bridge.c b/arch/powerpc/kernel/isa-bridge.c
+index bb6f8993412e..1df6c74aa731 100644
+--- a/arch/powerpc/kernel/isa-bridge.c
++++ b/arch/powerpc/kernel/isa-bridge.c
+@@ -164,7 +164,7 @@ void __init isa_bridge_find_early(struct pci_controller *hose)
+ 	/* Set the global ISA io base to indicate we have an ISA bridge */
+ 	isa_io_base = ISA_IO_BASE;
+ 
+-	pr_debug("ISA bridge (early) is %s\n", np->full_name);
++	pr_debug("ISA bridge (early) is %pOF\n", np);
+ }
+ 
+ /**
+@@ -187,15 +187,15 @@ void __init isa_bridge_init_non_pci(struct device_node *np)
+ 	pna = of_n_addr_cells(np);
+ 	if (of_property_read_u32(np, "#address-cells", &na) ||
+ 	    of_property_read_u32(np, "#size-cells", &ns)) {
+-		pr_warn("ISA: Non-PCI bridge %s is missing address format\n",
+-			np->full_name);
++		pr_warn("ISA: Non-PCI bridge %pOF is missing address format\n",
++			np);
+ 		return;
+ 	}
+ 
+ 	/* Check it's a supported address format */
+ 	if (na != 2 || ns != 1) {
+-		pr_warn("ISA: Non-PCI bridge %s has unsupported address format\n",
+-			np->full_name);
++		pr_warn("ISA: Non-PCI bridge %pOF has unsupported address format\n",
++			np);
+ 		return;
+ 	}
+ 	rs = na + ns + pna;
+@@ -203,8 +203,8 @@ void __init isa_bridge_init_non_pci(struct device_node *np)
+ 	/* Grab the ranges property */
+ 	ranges = of_get_property(np, "ranges", &rlen);
+ 	if (ranges == NULL || rlen < rs) {
+-		pr_warn("ISA: Non-PCI bridge %s has absent or invalid ranges\n",
+-			np->full_name);
++		pr_warn("ISA: Non-PCI bridge %pOF has absent or invalid ranges\n",
++			np);
+ 		return;
+ 	}
+ 
+@@ -220,8 +220,8 @@ void __init isa_bridge_init_non_pci(struct device_node *np)
+ 
+ 	/* Got something ? */
+ 	if (!size || !pbasep) {
+-		pr_warn("ISA: Non-PCI bridge %s has no usable IO range\n",
+-			np->full_name);
++		pr_warn("ISA: Non-PCI bridge %pOF has no usable IO range\n",
++			np);
+ 		return;
+ 	}
+ 
+@@ -233,15 +233,15 @@ void __init isa_bridge_init_non_pci(struct device_node *np)
+ 	/* Map pbase */
+ 	pbase = of_translate_address(np, pbasep);
+ 	if (pbase == OF_BAD_ADDR) {
+-		pr_warn("ISA: Non-PCI bridge %s failed to translate IO base\n",
+-			np->full_name);
++		pr_warn("ISA: Non-PCI bridge %pOF failed to translate IO base\n",
++			np);
+ 		return;
+ 	}
+ 
+ 	/* We need page alignment */
+ 	if ((cbase & ~PAGE_MASK) || (pbase & ~PAGE_MASK)) {
+-		pr_warn("ISA: Non-PCI bridge %s has non aligned IO range\n",
+-			np->full_name);
++		pr_warn("ISA: Non-PCI bridge %pOF has non aligned IO range\n",
++			np);
+ 		return;
+ 	}
+ 
+@@ -255,7 +255,7 @@ void __init isa_bridge_init_non_pci(struct device_node *np)
+ 	__ioremap_at(pbase, (void *)ISA_IO_BASE,
+ 		     size, pgprot_val(pgprot_noncached(__pgprot(0))));
+ 
+-	pr_debug("ISA: Non-PCI bridge is %s\n", np->full_name);
++	pr_debug("ISA: Non-PCI bridge is %pOF\n", np);
+ }
+ 
+ /**
+@@ -277,8 +277,8 @@ static void isa_bridge_find_late(struct pci_dev *pdev,
+ 	/* Set the global ISA io base to indicate we have an ISA bridge */
+ 	isa_io_base = ISA_IO_BASE;
+ 
+-	pr_debug("ISA bridge (late) is %s on %s\n",
+-		 devnode->full_name, pci_name(pdev));
++	pr_debug("ISA bridge (late) is %pOF on %s\n",
++		 devnode, pci_name(pdev));
+ }
+ 
+ /**
+diff --git a/arch/powerpc/kernel/legacy_serial.c b/arch/powerpc/kernel/legacy_serial.c
+index 0694d20f85b6..5e5a64a8b4e4 100644
+--- a/arch/powerpc/kernel/legacy_serial.c
++++ b/arch/powerpc/kernel/legacy_serial.c
+@@ -147,8 +147,8 @@ static int __init add_legacy_port(struct device_node *np, int want_index,
+ 		legacy_serial_ports[index].serial_out = tsi_serial_out;
+ 	}
+ 
+-	printk(KERN_DEBUG "Found legacy serial port %d for %s\n",
+-	       index, np->full_name);
++	printk(KERN_DEBUG "Found legacy serial port %d for %pOF\n",
++	       index, np);
+ 	printk(KERN_DEBUG "  %s=%llx, taddr=%llx, irq=%lx, clk=%d, speed=%d\n",
+ 	       (iotype == UPIO_PORT) ? "port" : "mem",
+ 	       (unsigned long long)base, (unsigned long long)taddr, irq,
+@@ -207,7 +207,7 @@ static int __init add_legacy_isa_port(struct device_node *np,
+ 	int index = -1;
+ 	u64 taddr;
+ 
+-	DBG(" -> add_legacy_isa_port(%s)\n", np->full_name);
++	DBG(" -> add_legacy_isa_port(%pOF)\n", np);
+ 
+ 	/* Get the ISA port number */
+ 	reg = of_get_property(np, "reg", NULL);
+@@ -256,7 +256,7 @@ static int __init add_legacy_pci_port(struct device_node *np,
+ 	unsigned int flags;
+ 	int iotype, index = -1, lindex = 0;
+ 
+-	DBG(" -> add_legacy_pci_port(%s)\n", np->full_name);
++	DBG(" -> add_legacy_pci_port(%pOF)\n", np);
+ 
+ 	/* We only support ports that have a clock frequency properly
+ 	 * encoded in the device-tree (that is have an fcode). Anything
+@@ -374,7 +374,7 @@ void __init find_legacy_serial_ports(void)
+ 	if (path != NULL) {
+ 		stdout = of_find_node_by_path(path);
+ 		if (stdout)
+-			DBG("stdout is %s\n", stdout->full_name);
++			DBG("stdout is %pOF\n", stdout);
+ 	} else {
+ 		DBG(" no linux,stdout-path !\n");
+ 	}
+@@ -603,7 +603,7 @@ static int __init check_legacy_serial_console(void)
+ 		DBG(" can't find stdout package %s !\n", name);
+ 		return -ENODEV;
+ 	}
+-	DBG("stdout is %s\n", prom_stdout->full_name);
++	DBG("stdout is %pOF\n", prom_stdout);
+ 
+ 	name = of_get_property(prom_stdout, "name", NULL);
+ 	if (!name) {
+diff --git a/arch/powerpc/kernel/of_platform.c b/arch/powerpc/kernel/of_platform.c
+index 34aeac54f120..becaec990140 100644
+--- a/arch/powerpc/kernel/of_platform.c
++++ b/arch/powerpc/kernel/of_platform.c
+@@ -45,7 +45,7 @@ static int of_pci_phb_probe(struct platform_device *dev)
+ 	if (ppc_md.pci_setup_phb == NULL)
+ 		return -ENODEV;
+ 
+-	pr_info("Setting up PCI bus %s\n", dev->dev.of_node->full_name);
++	pr_info("Setting up PCI bus %pOF\n", dev->dev.of_node);
+ 
+ 	/* Alloc and setup PHB data structure */
+ 	phb = pcibios_alloc_controller(dev->dev.of_node);
+diff --git a/arch/powerpc/kernel/pci-common.c b/arch/powerpc/kernel/pci-common.c
+index 341a7469cab8..02831a396419 100644
+--- a/arch/powerpc/kernel/pci-common.c
++++ b/arch/powerpc/kernel/pci-common.c
+@@ -373,9 +373,8 @@ static int pci_read_irq_line(struct pci_dev *pci_dev)
+ 		if (virq)
+ 			irq_set_irq_type(virq, IRQ_TYPE_LEVEL_LOW);
+ 	} else {
+-		pr_debug(" Got one, spec %d cells (0x%08x 0x%08x...) on %s\n",
+-			 oirq.args_count, oirq.args[0], oirq.args[1],
+-			 of_node_full_name(oirq.np));
++		pr_debug(" Got one, spec %d cells (0x%08x 0x%08x...) on %pOF\n",
++			 oirq.args_count, oirq.args[0], oirq.args[1], oirq.np);
+ 
+ 		virq = irq_create_of_mapping(&oirq);
+ 	}
+@@ -741,8 +740,8 @@ void pci_process_bridge_OF_ranges(struct pci_controller *hose,
+ 	struct of_pci_range range;
+ 	struct of_pci_range_parser parser;
+ 
+-	printk(KERN_INFO "PCI host bridge %s %s ranges:\n",
+-	       dev->full_name, primary ? "(primary)" : "");
++	printk(KERN_INFO "PCI host bridge %pOF %s ranges:\n",
++	       dev, primary ? "(primary)" : "");
+ 
+ 	/* Check for ranges property */
+ 	if (of_pci_range_parser_init(&parser, dev))
+@@ -1556,8 +1555,8 @@ static void pcibios_setup_phb_resources(struct pci_controller *hose,
+ 
+ 	if (!res->flags) {
+ 		pr_debug("PCI: I/O resource not set for host"
+-			 " bridge %s (domain %d)\n",
+-			 hose->dn->full_name, hose->global_number);
++			 " bridge %pOF (domain %d)\n",
++			 hose->dn, hose->global_number);
+ 	} else {
+ 		offset = pcibios_io_space_offset(hose);
+ 
+@@ -1668,7 +1667,7 @@ void pcibios_scan_phb(struct pci_controller *hose)
+ 	struct device_node *node = hose->dn;
+ 	int mode;
+ 
+-	pr_debug("PCI: Scanning PHB %s\n", of_node_full_name(node));
++	pr_debug("PCI: Scanning PHB %pOF\n", node);
+ 
+ 	/* Get some IO space for the new PHB */
+ 	pcibios_setup_phb_io_space(hose);
+diff --git a/arch/powerpc/kernel/pci_32.c b/arch/powerpc/kernel/pci_32.c
+index 41c86c6b6e4d..1d817f4d97d9 100644
+--- a/arch/powerpc/kernel/pci_32.c
++++ b/arch/powerpc/kernel/pci_32.c
+@@ -79,8 +79,8 @@ make_one_node_map(struct device_node* node, u8 pci_bus)
+ 		return;
+ 	bus_range = of_get_property(node, "bus-range", &len);
+ 	if (bus_range == NULL || len < 2 * sizeof(int)) {
+-		printk(KERN_WARNING "Can't get bus-range for %s, "
+-		       "assuming it starts at 0\n", node->full_name);
++		printk(KERN_WARNING "Can't get bus-range for %pOF, "
++		       "assuming it starts at 0\n", node);
+ 		pci_to_OF_bus_map[pci_bus] = 0;
+ 	} else
+ 		pci_to_OF_bus_map[pci_bus] = bus_range[0];
+diff --git a/arch/powerpc/kernel/pci_64.c b/arch/powerpc/kernel/pci_64.c
+index ed5e9ff61a68..932b9741aa8f 100644
+--- a/arch/powerpc/kernel/pci_64.c
++++ b/arch/powerpc/kernel/pci_64.c
+@@ -111,7 +111,7 @@ int pcibios_unmap_io_space(struct pci_bus *bus)
+ 	if (hose->io_base_alloc == NULL)
+ 		return 0;
+ 
+-	pr_debug("IO unmapping for PHB %s\n", hose->dn->full_name);
++	pr_debug("IO unmapping for PHB %pOF\n", hose->dn);
+ 	pr_debug("  alloc=0x%p\n", hose->io_base_alloc);
+ 
+ 	/* This is a PHB, we fully unmap the IO area */
+@@ -151,7 +151,7 @@ static int pcibios_map_phb_io_space(struct pci_controller *hose)
+ 	hose->io_base_virt = (void __iomem *)(area->addr +
+ 					      hose->io_base_phys - phys_page);
+ 
+-	pr_debug("IO mapping for PHB %s\n", hose->dn->full_name);
++	pr_debug("IO mapping for PHB %pOF\n", hose->dn);
+ 	pr_debug("  phys=0x%016llx, virt=0x%p (alloc=0x%p)\n",
+ 		 hose->io_base_phys, hose->io_base_virt, hose->io_base_alloc);
+ 	pr_debug("  size=0x%016llx (alloc=0x%016lx)\n",
+diff --git a/arch/powerpc/kernel/pci_of_scan.c b/arch/powerpc/kernel/pci_of_scan.c
+index ea3d98115b88..0d790f8432d2 100644
+--- a/arch/powerpc/kernel/pci_of_scan.c
++++ b/arch/powerpc/kernel/pci_of_scan.c
+@@ -211,19 +211,19 @@ void of_scan_pci_bridge(struct pci_dev *dev)
+ 	unsigned int flags;
+ 	u64 size;
+ 
+-	pr_debug("of_scan_pci_bridge(%s)\n", node->full_name);
++	pr_debug("of_scan_pci_bridge(%pOF)\n", node);
+ 
+ 	/* parse bus-range property */
+ 	busrange = of_get_property(node, "bus-range", &len);
+ 	if (busrange == NULL || len != 8) {
+-		printk(KERN_DEBUG "Can't get bus-range for PCI-PCI bridge %s\n",
+-		       node->full_name);
++		printk(KERN_DEBUG "Can't get bus-range for PCI-PCI bridge %pOF\n",
++		       node);
+ 		return;
+ 	}
+ 	ranges = of_get_property(node, "ranges", &len);
+ 	if (ranges == NULL) {
+-		printk(KERN_DEBUG "Can't get ranges for PCI-PCI bridge %s\n",
+-		       node->full_name);
++		printk(KERN_DEBUG "Can't get ranges for PCI-PCI bridge %pOF\n",
++		       node);
+ 		return;
+ 	}
+ 
+@@ -233,8 +233,8 @@ void of_scan_pci_bridge(struct pci_dev *dev)
+ 		bus = pci_add_new_bus(dev->bus, dev,
+ 				      of_read_number(busrange, 1));
+ 		if (!bus) {
+-			printk(KERN_ERR "Failed to create pci bus for %s\n",
+-			       node->full_name);
++			printk(KERN_ERR "Failed to create pci bus for %pOF\n",
++			       node);
+ 			return;
+ 		}
+ 	}
+@@ -262,13 +262,13 @@ void of_scan_pci_bridge(struct pci_dev *dev)
+ 			res = bus->resource[0];
+ 			if (res->flags) {
+ 				printk(KERN_ERR "PCI: ignoring extra I/O range"
+-				       " for bridge %s\n", node->full_name);
++				       " for bridge %pOF\n", node);
+ 				continue;
+ 			}
+ 		} else {
+ 			if (i >= PCI_NUM_RESOURCES - PCI_BRIDGE_RESOURCES) {
+ 				printk(KERN_ERR "PCI: too many memory ranges"
+-				       " for bridge %s\n", node->full_name);
++				       " for bridge %pOF\n", node);
+ 				continue;
+ 			}
+ 			res = bus->resource[i];
+@@ -307,7 +307,7 @@ static struct pci_dev *of_scan_pci_dev(struct pci_bus *bus,
+ 	struct eeh_dev *edev = pdn_to_eeh_dev(PCI_DN(dn));
+ #endif
+ 
+-	pr_debug("  * %s\n", dn->full_name);
++	pr_debug("  * %pOF\n", dn);
+ 	if (!of_device_is_available(dn))
+ 		return NULL;
+ 
+@@ -350,8 +350,8 @@ static void __of_scan_bus(struct device_node *node, struct pci_bus *bus,
+ 	struct device_node *child;
+ 	struct pci_dev *dev;
+ 
+-	pr_debug("of_scan_bus(%s) bus no %d...\n",
+-		 node->full_name, bus->number);
++	pr_debug("of_scan_bus(%pOF) bus no %d...\n",
++		 node, bus->number);
+ 
+ 	/* Scan direct children */
+ 	for_each_child_of_node(node, child) {
+diff --git a/arch/powerpc/kernel/setup-common.c b/arch/powerpc/kernel/setup-common.c
+index 0f896f17d5ab..c8ea5bd28302 100644
+--- a/arch/powerpc/kernel/setup-common.c
++++ b/arch/powerpc/kernel/setup-common.c
+@@ -481,7 +481,7 @@ void __init smp_setup_cpu_maps(void)
+ 		__be32 cpu_be;
+ 		int j, len;
+ 
+-		DBG("  * %s...\n", dn->full_name);
++		DBG("  * %pOF...\n", dn);
+ 
+ 		intserv = of_get_property(dn, "ibm,ppc-interrupt-server#s",
+ 				&len);
+diff --git a/arch/powerpc/platforms/512x/mpc512x_shared.c b/arch/powerpc/platforms/512x/mpc512x_shared.c
+index 6b4f4cb7009a..f99e79ee060e 100644
+--- a/arch/powerpc/platforms/512x/mpc512x_shared.c
++++ b/arch/powerpc/platforms/512x/mpc512x_shared.c
+@@ -387,8 +387,8 @@ static unsigned int __init get_fifo_size(struct device_node *np,
+ 	if (fp)
+ 		return *fp;
+ 
+-	pr_warning("no %s property in %s node, defaulting to %d\n",
+-		   prop_name, np->full_name, DEFAULT_FIFO_SIZE);
++	pr_warning("no %s property in %pOF node, defaulting to %d\n",
++		   prop_name, np, DEFAULT_FIFO_SIZE);
+ 
+ 	return DEFAULT_FIFO_SIZE;
+ }
+@@ -426,15 +426,15 @@ static void __init mpc512x_psc_fifo_init(void)
+ 
+ 		psc = of_iomap(np, 0);
+ 		if (!psc) {
+-			pr_err("%s: Can't map %s device\n",
+-				__func__, np->full_name);
++			pr_err("%s: Can't map %pOF device\n",
++				__func__, np);
+ 			continue;
+ 		}
+ 
+ 		/* FIFO space is 4KiB, check if requested size is available */
+ 		if ((fifobase + tx_fifo_size + rx_fifo_size) > 0x1000) {
+-			pr_err("%s: no fifo space available for %s\n",
+-				__func__, np->full_name);
++			pr_err("%s: no fifo space available for %pOF\n",
++				__func__, np);
+ 			iounmap(psc);
+ 			/*
+ 			 * chances are that another device requests less
+diff --git a/arch/powerpc/platforms/52xx/efika.c b/arch/powerpc/platforms/52xx/efika.c
+index 39b49822ace1..1ecbf176d35a 100644
+--- a/arch/powerpc/platforms/52xx/efika.c
++++ b/arch/powerpc/platforms/52xx/efika.c
+@@ -99,7 +99,7 @@ static void __init efika_pcisetup(void)
+ 	bus_range = of_get_property(pcictrl, "bus-range", &len);
+ 	if (bus_range == NULL || len < 2 * sizeof(int)) {
+ 		printk(KERN_WARNING EFIKA_PLATFORM_NAME
+-		       ": Can't get bus-range for %s\n", pcictrl->full_name);
++		       ": Can't get bus-range for %pOF\n", pcictrl);
+ 		goto out_put;
+ 	}
+ 
+@@ -109,14 +109,14 @@ static void __init efika_pcisetup(void)
+ 	else
+ 		printk(KERN_INFO EFIKA_PLATFORM_NAME ": PCI buses %d..%d",
+ 		       bus_range[0], bus_range[1]);
+-	printk(" controlled by %s\n", pcictrl->full_name);
++	printk(" controlled by %pOF\n", pcictrl);
+ 	printk("\n");
+ 
+ 	hose = pcibios_alloc_controller(pcictrl);
+ 	if (!hose) {
+ 		printk(KERN_WARNING EFIKA_PLATFORM_NAME
+-		       ": Can't allocate PCI controller structure for %s\n",
+-		       pcictrl->full_name);
++		       ": Can't allocate PCI controller structure for %pOF\n",
++		       pcictrl);
+ 		goto out_put;
+ 	}
+ 
+diff --git a/arch/powerpc/platforms/52xx/media5200.c b/arch/powerpc/platforms/52xx/media5200.c
+index a3227040cc86..1fcab233d2f2 100644
+--- a/arch/powerpc/platforms/52xx/media5200.c
++++ b/arch/powerpc/platforms/52xx/media5200.c
+@@ -156,7 +156,7 @@ static void __init media5200_init_irq(void)
+ 	fpga_np = of_find_compatible_node(NULL, NULL, "fsl,media5200-fpga");
+ 	if (!fpga_np)
+ 		goto out;
+-	pr_debug("%s: found fpga node: %s\n", __func__, fpga_np->full_name);
++	pr_debug("%s: found fpga node: %pOF\n", __func__, fpga_np);
+ 
+ 	media5200_irq.regs = of_iomap(fpga_np, 0);
+ 	if (!media5200_irq.regs)
+diff --git a/arch/powerpc/platforms/52xx/mpc52xx_gpt.c b/arch/powerpc/platforms/52xx/mpc52xx_gpt.c
+index 22645a7c6b8a..9e974b1e1697 100644
+--- a/arch/powerpc/platforms/52xx/mpc52xx_gpt.c
++++ b/arch/powerpc/platforms/52xx/mpc52xx_gpt.c
+@@ -226,7 +226,7 @@ static int mpc52xx_gpt_irq_xlate(struct irq_domain *h, struct device_node *ct,
+ 	dev_dbg(gpt->dev, "%s: flags=%i\n", __func__, intspec[0]);
+ 
+ 	if ((intsize < 1) || (intspec[0] > 3)) {
+-		dev_err(gpt->dev, "bad irq specifier in %s\n", ct->full_name);
++		dev_err(gpt->dev, "bad irq specifier in %pOF\n", ct);
+ 		return -EINVAL;
+ 	}
+ 
+@@ -331,7 +331,7 @@ mpc52xx_gpt_gpio_setup(struct mpc52xx_gpt_priv *gpt, struct device_node *node)
+ 	if (!of_find_property(node, "gpio-controller", NULL))
+ 		return;
+ 
+-	gpt->gc.label = kstrdup(node->full_name, GFP_KERNEL);
++	gpt->gc.label = kasprintf(GFP_KERNEL, "%pOF", node);
+ 	if (!gpt->gc.label) {
+ 		dev_err(gpt->dev, "out of memory\n");
+ 		return;
+diff --git a/arch/powerpc/platforms/52xx/mpc52xx_pci.c b/arch/powerpc/platforms/52xx/mpc52xx_pci.c
+index 00282c2b0cae..af0f79995214 100644
+--- a/arch/powerpc/platforms/52xx/mpc52xx_pci.c
++++ b/arch/powerpc/platforms/52xx/mpc52xx_pci.c
+@@ -369,19 +369,19 @@ mpc52xx_add_bridge(struct device_node *node)
+ 	const int *bus_range;
+ 	struct resource rsrc;
+ 
+-	pr_debug("Adding MPC52xx PCI host bridge %s\n", node->full_name);
++	pr_debug("Adding MPC52xx PCI host bridge %pOF\n", node);
+ 
+ 	pci_add_flags(PCI_REASSIGN_ALL_BUS);
+ 
+ 	if (of_address_to_resource(node, 0, &rsrc) != 0) {
+-		printk(KERN_ERR "Can't get %s resources\n", node->full_name);
++		printk(KERN_ERR "Can't get %pOF resources\n", node);
+ 		return -EINVAL;
+ 	}
+ 
+ 	bus_range = of_get_property(node, "bus-range", &len);
+ 	if (bus_range == NULL || len < 2 * sizeof(int)) {
+-		printk(KERN_WARNING "Can't get %s bus-range, assume bus 0\n",
+-		       node->full_name);
++		printk(KERN_WARNING "Can't get %pOF bus-range, assume bus 0\n",
++		       node);
+ 		bus_range = NULL;
+ 	}
+ 
+diff --git a/arch/powerpc/platforms/83xx/mcu_mpc8349emitx.c b/arch/powerpc/platforms/83xx/mcu_mpc8349emitx.c
+index 63c5ab6489c9..96bb55ca61d3 100644
+--- a/arch/powerpc/platforms/83xx/mcu_mpc8349emitx.c
++++ b/arch/powerpc/platforms/83xx/mcu_mpc8349emitx.c
+@@ -128,7 +128,7 @@ static int mcu_gpiochip_add(struct mcu *mcu)
+ 		return -ENODEV;
+ 
+ 	gc->owner = THIS_MODULE;
+-	gc->label = np->full_name;
++	gc->label = kasprintf(GFP_KERNEL, "%pOF", np);
+ 	gc->can_sleep = 1;
+ 	gc->ngpio = MCU_NUM_GPIO;
+ 	gc->base = -1;
+@@ -141,6 +141,7 @@ static int mcu_gpiochip_add(struct mcu *mcu)
+ 
+ static int mcu_gpiochip_remove(struct mcu *mcu)
+ {
++	kfree(mcu->gc.label);
+ 	gpiochip_remove(&mcu->gc);
+ 	return 0;
+ }
+diff --git a/arch/powerpc/platforms/83xx/mpc832x_rdb.c b/arch/powerpc/platforms/83xx/mpc832x_rdb.c
+index 763ffca9628d..a4539c5accb0 100644
+--- a/arch/powerpc/platforms/83xx/mpc832x_rdb.c
++++ b/arch/powerpc/platforms/83xx/mpc832x_rdb.c
+@@ -113,7 +113,7 @@ static int __init of_fsl_spi_probe(char *type, char *compatible, u32 sysclk,
+ unreg:
+ 		platform_device_del(pdev);
+ err:
+-		pr_err("%s: registration failed\n", np->full_name);
++		pr_err("%pOF: registration failed\n", np);
+ next:
+ 		i++;
+ 	}
+diff --git a/arch/powerpc/platforms/85xx/p1022_ds.c b/arch/powerpc/platforms/85xx/p1022_ds.c
+index 0908abd7e36f..9fb57f78cdbe 100644
+--- a/arch/powerpc/platforms/85xx/p1022_ds.c
++++ b/arch/powerpc/platforms/85xx/p1022_ds.c
+@@ -508,8 +508,8 @@ static void __init p1022_ds_setup_arch(void)
+ 				 * allocate one static local variable for each
+ 				 * call to this function.
+ 				 */
+-				pr_info("p1022ds: disabling %s node",
+-					np2->full_name);
++				pr_info("p1022ds: disabling %pOF node",
++					np2);
+ 				of_update_property(np2, &nor_status);
+ 				of_node_put(np2);
+ 			}
+@@ -524,8 +524,8 @@ static void __init p1022_ds_setup_arch(void)
+ 					.length = sizeof("disabled"),
+ 				};
+ 
+-				pr_info("p1022ds: disabling %s node",
+-					np2->full_name);
++				pr_info("p1022ds: disabling %pOF node",
++					np2);
+ 				of_update_property(np2, &nand_status);
+ 				of_node_put(np2);
+ 			}
+diff --git a/arch/powerpc/platforms/85xx/xes_mpc85xx.c b/arch/powerpc/platforms/85xx/xes_mpc85xx.c
+index cd6ce845f398..77e618dce4a8 100644
+--- a/arch/powerpc/platforms/85xx/xes_mpc85xx.c
++++ b/arch/powerpc/platforms/85xx/xes_mpc85xx.c
+@@ -100,8 +100,8 @@ static void xes_mpc85xx_fixups(void)
+ 		err = of_address_to_resource(np, 0, &r[0]);
+ 		if (err) {
+ 			printk(KERN_WARNING "xes_mpc85xx: Could not get "
+-			       "resource for device tree node '%s'",
+-			       np->full_name);
++			       "resource for device tree node '%pOF'",
++			       np);
+ 			continue;
+ 		}
+ 
+diff --git a/arch/powerpc/platforms/amigaone/setup.c b/arch/powerpc/platforms/amigaone/setup.c
+index 45cb9821173c..b9d466cc2b8a 100644
+--- a/arch/powerpc/platforms/amigaone/setup.c
++++ b/arch/powerpc/platforms/amigaone/setup.c
+@@ -40,7 +40,7 @@ static int __init amigaone_add_bridge(struct device_node *dev)
+ 	const int *bus_range;
+ 	struct pci_controller *hose;
+ 
+-	printk(KERN_INFO "Adding PCI host bridge %s\n", dev->full_name);
++	printk(KERN_INFO "Adding PCI host bridge %pOF\n", dev);
+ 
+ 	cfg_addr = of_get_address(dev, 0, NULL, NULL);
+ 	cfg_data = of_get_address(dev, 1, NULL, NULL);
+@@ -49,8 +49,8 @@ static int __init amigaone_add_bridge(struct device_node *dev)
+ 
+ 	bus_range = of_get_property(dev, "bus-range", &len);
+ 	if ((bus_range == NULL) || (len < 2 * sizeof(int)))
+-		printk(KERN_WARNING "Can't get bus-range for %s, assume"
+-		       " bus 0\n", dev->full_name);
++		printk(KERN_WARNING "Can't get bus-range for %pOF, assume"
++		       " bus 0\n", dev);
+ 
+ 	hose = pcibios_alloc_controller(dev);
+ 	if (hose == NULL)
+diff --git a/arch/powerpc/platforms/cell/axon_msi.c b/arch/powerpc/platforms/cell/axon_msi.c
+index 8d3ae2cc52bf..6ea3f248b155 100644
+--- a/arch/powerpc/platforms/cell/axon_msi.c
++++ b/arch/powerpc/platforms/cell/axon_msi.c
+@@ -187,8 +187,8 @@ static struct axon_msic *find_msi_translator(struct pci_dev *dev)
+ 
+ 	irq_domain = irq_find_host(dn);
+ 	if (!irq_domain) {
+-		dev_dbg(&dev->dev, "axon_msi: no irq_domain found for node %s\n",
+-			dn->full_name);
++		dev_dbg(&dev->dev, "axon_msi: no irq_domain found for node %pOF\n",
++			dn);
+ 		goto out_error;
+ 	}
+ 
+@@ -326,8 +326,8 @@ static void axon_msi_shutdown(struct platform_device *device)
+ 	struct axon_msic *msic = dev_get_drvdata(&device->dev);
+ 	u32 tmp;
+ 
+-	pr_devel("axon_msi: disabling %s\n",
+-		 irq_domain_get_of_node(msic->irq_domain)->full_name);
++	pr_devel("axon_msi: disabling %pOF\n",
++		 irq_domain_get_of_node(msic->irq_domain));
+ 	tmp  = dcr_read(msic->dcr_host, MSIC_CTRL_REG);
+ 	tmp &= ~MSIC_CTRL_ENABLE & ~MSIC_CTRL_IRQ_ENABLE;
+ 	msic_dcr_write(msic, MSIC_CTRL_REG, tmp);
+@@ -340,12 +340,12 @@ static int axon_msi_probe(struct platform_device *device)
+ 	unsigned int virq;
+ 	int dcr_base, dcr_len;
+ 
+-	pr_devel("axon_msi: setting up dn %s\n", dn->full_name);
++	pr_devel("axon_msi: setting up dn %pOF\n", dn);
+ 
+ 	msic = kzalloc(sizeof(struct axon_msic), GFP_KERNEL);
+ 	if (!msic) {
+-		printk(KERN_ERR "axon_msi: couldn't allocate msic for %s\n",
+-		       dn->full_name);
++		printk(KERN_ERR "axon_msi: couldn't allocate msic for %pOF\n",
++		       dn);
+ 		goto out;
+ 	}
+ 
+@@ -354,30 +354,30 @@ static int axon_msi_probe(struct platform_device *device)
+ 
+ 	if (dcr_base == 0 || dcr_len == 0) {
+ 		printk(KERN_ERR
+-		       "axon_msi: couldn't parse dcr properties on %s\n",
+-			dn->full_name);
++		       "axon_msi: couldn't parse dcr properties on %pOF\n",
++			dn);
+ 		goto out_free_msic;
+ 	}
+ 
+ 	msic->dcr_host = dcr_map(dn, dcr_base, dcr_len);
+ 	if (!DCR_MAP_OK(msic->dcr_host)) {
+-		printk(KERN_ERR "axon_msi: dcr_map failed for %s\n",
+-		       dn->full_name);
++		printk(KERN_ERR "axon_msi: dcr_map failed for %pOF\n",
++		       dn);
+ 		goto out_free_msic;
+ 	}
+ 
+ 	msic->fifo_virt = dma_alloc_coherent(&device->dev, MSIC_FIFO_SIZE_BYTES,
+ 					     &msic->fifo_phys, GFP_KERNEL);
+ 	if (!msic->fifo_virt) {
+-		printk(KERN_ERR "axon_msi: couldn't allocate fifo for %s\n",
+-		       dn->full_name);
++		printk(KERN_ERR "axon_msi: couldn't allocate fifo for %pOF\n",
++		       dn);
+ 		goto out_free_msic;
+ 	}
+ 
+ 	virq = irq_of_parse_and_map(dn, 0);
+ 	if (!virq) {
+-		printk(KERN_ERR "axon_msi: irq parse and map failed for %s\n",
+-		       dn->full_name);
++		printk(KERN_ERR "axon_msi: irq parse and map failed for %pOF\n",
++		       dn);
+ 		goto out_free_fifo;
+ 	}
+ 	memset(msic->fifo_virt, 0xff, MSIC_FIFO_SIZE_BYTES);
+@@ -385,8 +385,8 @@ static int axon_msi_probe(struct platform_device *device)
+ 	/* We rely on being able to stash a virq in a u16, so limit irqs to < 65536 */
+ 	msic->irq_domain = irq_domain_add_nomap(dn, 65536, &msic_host_ops, msic);
+ 	if (!msic->irq_domain) {
+-		printk(KERN_ERR "axon_msi: couldn't allocate irq_domain for %s\n",
+-		       dn->full_name);
++		printk(KERN_ERR "axon_msi: couldn't allocate irq_domain for %pOF\n",
++		       dn);
+ 		goto out_free_fifo;
+ 	}
+ 
+@@ -412,7 +412,7 @@ static int axon_msi_probe(struct platform_device *device)
+ 
+ 	axon_msi_debug_setup(dn, msic);
+ 
+-	printk(KERN_DEBUG "axon_msi: setup MSIC on %s\n", dn->full_name);
++	printk(KERN_DEBUG "axon_msi: setup MSIC on %pOF\n", dn);
+ 
+ 	return 0;
+ 
+diff --git a/arch/powerpc/platforms/cell/interrupt.c b/arch/powerpc/platforms/cell/interrupt.c
+index 871d38479a25..6fc85e29dc08 100644
+--- a/arch/powerpc/platforms/cell/interrupt.c
++++ b/arch/powerpc/platforms/cell/interrupt.c
+@@ -303,8 +303,8 @@ static void __init init_one_iic(unsigned int hw_cpu, unsigned long addr,
+ 	iic->node = of_node_get(node);
+ 	out_be64(&iic->regs->prio, 0);
+ 
+-	printk(KERN_INFO "IIC for CPU %d target id 0x%x : %s\n",
+-	       hw_cpu, iic->target_id, node->full_name);
++	printk(KERN_INFO "IIC for CPU %d target id 0x%x : %pOF\n",
++	       hw_cpu, iic->target_id, node);
+ }
+ 
+ static int __init setup_iic(void)
+diff --git a/arch/powerpc/platforms/cell/iommu.c b/arch/powerpc/platforms/cell/iommu.c
+index 29d4f96ed33e..4b91ad08eefd 100644
+--- a/arch/powerpc/platforms/cell/iommu.c
++++ b/arch/powerpc/platforms/cell/iommu.c
+@@ -278,8 +278,8 @@ static int cell_iommu_find_ioc(int nid, unsigned long *base)
+ 		if (of_node_to_nid(np) != nid)
+ 			continue;
+ 		if (of_address_to_resource(np, 0, &r)) {
+-			printk(KERN_ERR "iommu: can't get address for %s\n",
+-			       np->full_name);
++			printk(KERN_ERR "iommu: can't get address for %pOF\n",
++			       np);
+ 			continue;
+ 		}
+ 		*base = r.start;
+@@ -458,8 +458,8 @@ static inline u32 cell_iommu_get_ioid(struct device_node *np)
+ 
+ 	ioid = of_get_property(np, "ioid", NULL);
+ 	if (ioid == NULL) {
+-		printk(KERN_WARNING "iommu: missing ioid for %s using 0\n",
+-		       np->full_name);
++		printk(KERN_WARNING "iommu: missing ioid for %pOF using 0\n",
++		       np);
+ 		return 0;
+ 	}
+ 
+@@ -559,8 +559,8 @@ static struct iommu_table *cell_get_iommu_table(struct device *dev)
+ 	 */
+ 	iommu = cell_iommu_for_node(dev_to_node(dev));
+ 	if (iommu == NULL || list_empty(&iommu->windows)) {
+-		dev_err(dev, "iommu: missing iommu for %s (node %d)\n",
+-		       of_node_full_name(dev->of_node), dev_to_node(dev));
++		dev_err(dev, "iommu: missing iommu for %pOF (node %d)\n",
++		       dev->of_node, dev_to_node(dev));
+ 		return NULL;
+ 	}
+ 	window = list_entry(iommu->windows.next, struct iommu_window, list);
+@@ -720,12 +720,12 @@ static struct cbe_iommu * __init cell_iommu_alloc(struct device_node *np)
+ 	/* Get node ID */
+ 	nid = of_node_to_nid(np);
+ 	if (nid < 0) {
+-		printk(KERN_ERR "iommu: failed to get node for %s\n",
+-		       np->full_name);
++		printk(KERN_ERR "iommu: failed to get node for %pOF\n",
++		       np);
+ 		return NULL;
+ 	}
+-	pr_debug("iommu: setting up iommu for node %d (%s)\n",
+-		 nid, np->full_name);
++	pr_debug("iommu: setting up iommu for node %d (%pOF)\n",
++		 nid, np);
+ 
+ 	/* XXX todo: If we can have multiple windows on the same IOMMU, which
+ 	 * isn't the case today, we probably want here to check whether the
+@@ -736,8 +736,8 @@ static struct cbe_iommu * __init cell_iommu_alloc(struct device_node *np)
+ 	 */
+ 
+ 	if (cbe_nr_iommus >= NR_IOMMUS) {
+-		printk(KERN_ERR "iommu: too many IOMMUs detected ! (%s)\n",
+-		       np->full_name);
++		printk(KERN_ERR "iommu: too many IOMMUs detected ! (%pOF)\n",
++		       np);
+ 		return NULL;
+ 	}
+ 
+diff --git a/arch/powerpc/platforms/cell/ras.c b/arch/powerpc/platforms/cell/ras.c
+index 460ab392f0e7..2f704afe9af3 100644
+--- a/arch/powerpc/platforms/cell/ras.c
++++ b/arch/powerpc/platforms/cell/ras.c
+@@ -196,8 +196,8 @@ static int __init cbe_ptcal_enable(void)
+ 	for_each_node_by_type(np, "cpu") {
+ 		const u32 *nid = of_get_property(np, "node-id", NULL);
+ 		if (!nid) {
+-			printk(KERN_ERR "%s: node %s is missing node-id?\n",
+-					__func__, np->full_name);
++			printk(KERN_ERR "%s: node %pOF is missing node-id?\n",
++					__func__, np);
+ 			continue;
+ 		}
+ 		cbe_ptcal_enable_on_node(*nid, order);
+diff --git a/arch/powerpc/platforms/cell/spider-pci.c b/arch/powerpc/platforms/cell/spider-pci.c
+index f1f7878893f3..d1e61e273e64 100644
+--- a/arch/powerpc/platforms/cell/spider-pci.c
++++ b/arch/powerpc/platforms/cell/spider-pci.c
+@@ -130,8 +130,8 @@ int __init spiderpci_iowa_init(struct iowa_bus *bus, void *data)
+ 	struct resource r;
+ 	unsigned long offset = (unsigned long)data;
+ 
+-	pr_debug("SPIDERPCI-IOWA:Bus initialize for spider(%s)\n",
+-		 np->full_name);
++	pr_debug("SPIDERPCI-IOWA:Bus initialize for spider(%pOF)\n",
++		 np);
+ 
+ 	priv = kzalloc(sizeof(struct spiderpci_iowa_private), GFP_KERNEL);
+ 	if (!priv) {
+diff --git a/arch/powerpc/platforms/cell/spider-pic.c b/arch/powerpc/platforms/cell/spider-pic.c
+index ff924af00e78..aa44bfc46467 100644
+--- a/arch/powerpc/platforms/cell/spider-pic.c
++++ b/arch/powerpc/platforms/cell/spider-pic.c
+@@ -323,8 +323,8 @@ static void __init spider_init_one(struct device_node *of_node, int chip,
+ 	irq_set_handler_data(virq, pic);
+ 	irq_set_chained_handler(virq, spider_irq_cascade);
+ 
+-	printk(KERN_INFO "spider_pic: node %d, addr: 0x%lx %s\n",
+-	       pic->node_id, addr, of_node->full_name);
++	printk(KERN_INFO "spider_pic: node %d, addr: 0x%lx %pOF\n",
++	       pic->node_id, addr, of_node);
+ 
+ 	/* Enable the interrupt detection enable bit. Do this last! */
+ 	out_be32(pic->regs + TIR_DEN, in_be32(pic->regs + TIR_DEN) | 0x1);
+diff --git a/arch/powerpc/platforms/cell/spu_manage.c b/arch/powerpc/platforms/cell/spu_manage.c
+index 672d310dcf14..f636ee22b203 100644
+--- a/arch/powerpc/platforms/cell/spu_manage.c
++++ b/arch/powerpc/platforms/cell/spu_manage.c
+@@ -191,8 +191,8 @@ static int __init spu_map_interrupts(struct spu *spu, struct device_node *np)
+ 			goto err;
+ 		}
+ 		ret = -EINVAL;
+-		pr_debug("  irq %d no 0x%x on %s\n", i, oirq.args[0],
+-			 oirq.np->full_name);
++		pr_debug("  irq %d no 0x%x on %pOF\n", i, oirq.args[0],
++			 oirq.np);
+ 		spu->irqs[i] = irq_create_of_mapping(&oirq);
+ 		if (!spu->irqs[i]) {
+ 			pr_debug("spu_new: failed to map it !\n");
+@@ -243,32 +243,32 @@ static int __init spu_map_device(struct spu *spu)
+ 	ret = spu_map_resource(spu, 0, (void __iomem**)&spu->local_store,
+ 			       &spu->local_store_phys);
+ 	if (ret) {
+-		pr_debug("spu_new: failed to map %s resource 0\n",
+-			 np->full_name);
++		pr_debug("spu_new: failed to map %pOF resource 0\n",
++			 np);
+ 		goto out;
+ 	}
+ 	ret = spu_map_resource(spu, 1, (void __iomem**)&spu->problem,
+ 			       &spu->problem_phys);
+ 	if (ret) {
+-		pr_debug("spu_new: failed to map %s resource 1\n",
+-			 np->full_name);
++		pr_debug("spu_new: failed to map %pOF resource 1\n",
++			 np);
+ 		goto out_unmap;
+ 	}
+ 	ret = spu_map_resource(spu, 2, (void __iomem**)&spu->priv2, NULL);
+ 	if (ret) {
+-		pr_debug("spu_new: failed to map %s resource 2\n",
+-			 np->full_name);
++		pr_debug("spu_new: failed to map %pOF resource 2\n",
++			 np);
+ 		goto out_unmap;
+ 	}
+ 	if (!firmware_has_feature(FW_FEATURE_LPAR))
+ 		ret = spu_map_resource(spu, 3,
+ 			       (void __iomem**)&spu->priv1, NULL);
+ 	if (ret) {
+-		pr_debug("spu_new: failed to map %s resource 3\n",
+-			 np->full_name);
++		pr_debug("spu_new: failed to map %pOF resource 3\n",
++			 np);
+ 		goto out_unmap;
+ 	}
+-	pr_debug("spu_new: %s maps:\n", np->full_name);
++	pr_debug("spu_new: %pOF maps:\n", np);
+ 	pr_debug("  local store   : 0x%016lx -> 0x%p\n",
+ 		 spu->local_store_phys, spu->local_store);
+ 	pr_debug("  problem state : 0x%016lx -> 0x%p\n",
+@@ -316,8 +316,8 @@ static int __init of_create_spu(struct spu *spu, void *data)
+ 
+ 	spu->node = of_node_to_nid(spe);
+ 	if (spu->node >= MAX_NUMNODES) {
+-		printk(KERN_WARNING "SPE %s on node %d ignored,"
+-		       " node number too big\n", spe->full_name, spu->node);
++		printk(KERN_WARNING "SPE %pOF on node %d ignored,"
++		       " node number too big\n", spe, spu->node);
+ 		printk(KERN_WARNING "Check if CONFIG_NUMA is enabled.\n");
+ 		ret = -ENODEV;
+ 		goto out;
+diff --git a/arch/powerpc/platforms/chrp/pci.c b/arch/powerpc/platforms/chrp/pci.c
+index 1b87e198faa7..27264794f5c0 100644
+--- a/arch/powerpc/platforms/chrp/pci.c
++++ b/arch/powerpc/platforms/chrp/pci.c
+@@ -235,14 +235,14 @@ chrp_find_bridges(void)
+ 		++index;
+ 		/* The GG2 bridge on the LongTrail doesn't have an address */
+ 		if (of_address_to_resource(dev, 0, &r) && !is_longtrail) {
+-			printk(KERN_WARNING "Can't use %s: no address\n",
+-			       dev->full_name);
++			printk(KERN_WARNING "Can't use %pOF: no address\n",
++			       dev);
+ 			continue;
+ 		}
+ 		bus_range = of_get_property(dev, "bus-range", &len);
+ 		if (bus_range == NULL || len < 2 * sizeof(int)) {
+-			printk(KERN_WARNING "Can't get bus-range for %s\n",
+-				dev->full_name);
++			printk(KERN_WARNING "Can't get bus-range for %pOF\n",
++				dev);
+ 			continue;
+ 		}
+ 		if (bus_range[1] == bus_range[0])
+@@ -250,15 +250,15 @@ chrp_find_bridges(void)
+ 		else
+ 			printk(KERN_INFO "PCI buses %d..%d",
+ 			       bus_range[0], bus_range[1]);
+-		printk(" controlled by %s", dev->full_name);
++		printk(" controlled by %pOF", dev);
+ 		if (!is_longtrail)
+ 			printk(" at %llx", (unsigned long long)r.start);
+ 		printk("\n");
+ 
+ 		hose = pcibios_alloc_controller(dev);
+ 		if (!hose) {
+-			printk("Can't allocate PCI controller structure for %s\n",
+-				dev->full_name);
++			printk("Can't allocate PCI controller structure for %pOF\n",
++				dev);
+ 			continue;
+ 		}
+ 		hose->first_busno = hose->self_busno = bus_range[0];
+@@ -297,8 +297,8 @@ chrp_find_bridges(void)
+ 				}
+ 			}
+ 		} else {
+-			printk("No methods for %s (model %s), using RTAS\n",
+-			       dev->full_name, model);
++			printk("No methods for %pOF (model %s), using RTAS\n",
++			       dev, model);
+ 			hose->ops = &rtas_pci_ops;
+ 		}
+ 
+diff --git a/arch/powerpc/platforms/embedded6xx/linkstation.c b/arch/powerpc/platforms/embedded6xx/linkstation.c
+index f29cf29b11f8..f514d5d28cd4 100644
+--- a/arch/powerpc/platforms/embedded6xx/linkstation.c
++++ b/arch/powerpc/platforms/embedded6xx/linkstation.c
+@@ -41,12 +41,12 @@ static int __init linkstation_add_bridge(struct device_node *dev)
+ 	struct pci_controller *hose;
+ 	const int *bus_range;
+ 
+-	printk("Adding PCI host bridge %s\n", dev->full_name);
++	printk("Adding PCI host bridge %pOF\n", dev);
+ 
+ 	bus_range = of_get_property(dev, "bus-range", &len);
+ 	if (bus_range == NULL || len < 2 * sizeof(int))
+-		printk(KERN_WARNING "Can't get bus-range for %s, assume"
+-				" bus 0\n", dev->full_name);
++		printk(KERN_WARNING "Can't get bus-range for %pOF, assume"
++				" bus 0\n", dev);
+ 
+ 	hose = pcibios_alloc_controller(dev);
+ 	if (hose == NULL)
+diff --git a/arch/powerpc/platforms/embedded6xx/mvme5100.c b/arch/powerpc/platforms/embedded6xx/mvme5100.c
+index 8e3590941960..273dfa3f0252 100644
+--- a/arch/powerpc/platforms/embedded6xx/mvme5100.c
++++ b/arch/powerpc/platforms/embedded6xx/mvme5100.c
+@@ -115,7 +115,7 @@ static int __init mvme5100_add_bridge(struct device_node *dev)
+ 	struct pci_controller	*hose;
+ 	unsigned short		devid;
+ 
+-	pr_info("Adding PCI host bridge %s\n", dev->full_name);
++	pr_info("Adding PCI host bridge %pOF\n", dev);
+ 
+ 	bus_range = of_get_property(dev, "bus-range", &len);
+ 
+diff --git a/arch/powerpc/platforms/embedded6xx/storcenter.c b/arch/powerpc/platforms/embedded6xx/storcenter.c
+index 471a50bcd074..ed1914dd34bb 100644
+--- a/arch/powerpc/platforms/embedded6xx/storcenter.c
++++ b/arch/powerpc/platforms/embedded6xx/storcenter.c
+@@ -44,7 +44,7 @@ static int __init storcenter_add_bridge(struct device_node *dev)
+ 	struct pci_controller *hose;
+ 	const int *bus_range;
+ 
+-	printk("Adding PCI host bridge %s\n", dev->full_name);
++	printk("Adding PCI host bridge %pOF\n", dev);
+ 
+ 	hose = pcibios_alloc_controller(dev);
+ 	if (hose == NULL)
+diff --git a/arch/powerpc/platforms/maple/pci.c b/arch/powerpc/platforms/maple/pci.c
+index 69794d9389c2..e3821379e86f 100644
+--- a/arch/powerpc/platforms/maple/pci.c
++++ b/arch/powerpc/platforms/maple/pci.c
+@@ -73,8 +73,8 @@ static void __init fixup_bus_range(struct device_node *bridge)
+ 	/* Lookup the "bus-range" property for the hose */
+ 	prop = of_find_property(bridge, "bus-range", &len);
+ 	if (prop == NULL  || prop->value == NULL || len < 2 * sizeof(int)) {
+-		printk(KERN_WARNING "Can't get bus-range for %s\n",
+-			       bridge->full_name);
++		printk(KERN_WARNING "Can't get bus-range for %pOF\n",
++			       bridge);
+ 		return;
+ 	}
+ 	bus_range = prop->value;
+@@ -498,12 +498,12 @@ static int __init maple_add_bridge(struct device_node *dev)
+ 	const int *bus_range;
+ 	int primary = 1;
+ 
+-	DBG("Adding PCI host bridge %s\n", dev->full_name);
++	DBG("Adding PCI host bridge %pOF\n", dev);
+ 
+ 	bus_range = of_get_property(dev, "bus-range", &len);
+ 	if (bus_range == NULL || len < 2 * sizeof(int)) {
+-		printk(KERN_WARNING "Can't get bus-range for %s, assume bus 0\n",
+-		dev->full_name);
++		printk(KERN_WARNING "Can't get bus-range for %pOF, assume bus 0\n",
++		dev);
+ 	}
+ 
+ 	hose = pcibios_alloc_controller(dev);
+diff --git a/arch/powerpc/platforms/pasemi/pci.c b/arch/powerpc/platforms/pasemi/pci.c
+index 10c4e8fc6ea9..5ff6108f19e9 100644
+--- a/arch/powerpc/platforms/pasemi/pci.c
++++ b/arch/powerpc/platforms/pasemi/pci.c
+@@ -193,7 +193,7 @@ static int __init pas_add_bridge(struct device_node *dev)
+ {
+ 	struct pci_controller *hose;
+ 
+-	pr_debug("Adding PCI host bridge %s\n", dev->full_name);
++	pr_debug("Adding PCI host bridge %pOF\n", dev);
+ 
+ 	hose = pcibios_alloc_controller(dev);
+ 	if (!hose)
+diff --git a/arch/powerpc/platforms/powermac/feature.c b/arch/powerpc/platforms/powermac/feature.c
+index 1e02328c3f2d..9e3f39d36e88 100644
+--- a/arch/powerpc/platforms/powermac/feature.c
++++ b/arch/powerpc/platforms/powermac/feature.c
+@@ -2658,25 +2658,25 @@ static void __init probe_one_macio(const char *name, const char *compat, int typ
+ 
+ 	if (i >= MAX_MACIO_CHIPS) {
+ 		printk(KERN_ERR "pmac_feature: Please increase MAX_MACIO_CHIPS !\n");
+-		printk(KERN_ERR "pmac_feature: %s skipped\n", node->full_name);
++		printk(KERN_ERR "pmac_feature: %pOF skipped\n", node);
+ 		return;
+ 	}
+ 	addrp = of_get_pci_address(node, 0, &size, NULL);
+ 	if (addrp == NULL) {
+-		printk(KERN_ERR "pmac_feature: %s: can't find base !\n",
+-		       node->full_name);
++		printk(KERN_ERR "pmac_feature: %pOF: can't find base !\n",
++		       node);
+ 		return;
+ 	}
+ 	addr = of_translate_address(node, addrp);
+ 	if (addr == 0) {
+-		printk(KERN_ERR "pmac_feature: %s, can't translate base !\n",
+-		       node->full_name);
++		printk(KERN_ERR "pmac_feature: %pOF, can't translate base !\n",
++		       node);
+ 		return;
+ 	}
+ 	base = ioremap(addr, (unsigned long)size);
+ 	if (!base) {
+-		printk(KERN_ERR "pmac_feature: %s, can't map mac-io chip !\n",
+-		       node->full_name);
++		printk(KERN_ERR "pmac_feature: %pOF, can't map mac-io chip !\n",
++		       node);
+ 		return;
+ 	}
+ 	if (type == macio_keylargo || type == macio_keylargo2) {
+diff --git a/arch/powerpc/platforms/powermac/low_i2c.c b/arch/powerpc/platforms/powermac/low_i2c.c
+index f627c9fd7b48..70183eb3d5c8 100644
+--- a/arch/powerpc/platforms/powermac/low_i2c.c
++++ b/arch/powerpc/platforms/powermac/low_i2c.c
+@@ -494,8 +494,8 @@ static struct pmac_i2c_host_kw *__init kw_i2c_host_init(struct device_node *np)
+ 
+ 	host = kzalloc(sizeof(struct pmac_i2c_host_kw), GFP_KERNEL);
+ 	if (host == NULL) {
+-		printk(KERN_ERR "low_i2c: Can't allocate host for %s\n",
+-		       np->full_name);
++		printk(KERN_ERR "low_i2c: Can't allocate host for %pOF\n",
++		       np);
+ 		return NULL;
+ 	}
+ 
+@@ -505,8 +505,8 @@ static struct pmac_i2c_host_kw *__init kw_i2c_host_init(struct device_node *np)
+ 	 */
+ 	addrp = of_get_property(np, "AAPL,address", NULL);
+ 	if (addrp == NULL) {
+-		printk(KERN_ERR "low_i2c: Can't find address for %s\n",
+-		       np->full_name);
++		printk(KERN_ERR "low_i2c: Can't find address for %pOF\n",
++		       np);
+ 		kfree(host);
+ 		return NULL;
+ 	}
+@@ -538,13 +538,13 @@ static struct pmac_i2c_host_kw *__init kw_i2c_host_init(struct device_node *np)
+ 	host->irq = irq_of_parse_and_map(np, 0);
+ 	if (!host->irq)
+ 		printk(KERN_WARNING
+-		       "low_i2c: Failed to map interrupt for %s\n",
+-		       np->full_name);
++		       "low_i2c: Failed to map interrupt for %pOF\n",
++		       np);
+ 
+ 	host->base = ioremap((*addrp), 0x1000);
+ 	if (host->base == NULL) {
+-		printk(KERN_ERR "low_i2c: Can't map registers for %s\n",
+-		       np->full_name);
++		printk(KERN_ERR "low_i2c: Can't map registers for %pOF\n",
++		       np);
+ 		kfree(host);
+ 		return NULL;
+ 	}
+@@ -560,8 +560,8 @@ static struct pmac_i2c_host_kw *__init kw_i2c_host_init(struct device_node *np)
+ 			"keywest i2c", host))
+ 		host->irq = 0;
+ 
+-	printk(KERN_INFO "KeyWest i2c @0x%08x irq %d %s\n",
+-	       *addrp, host->irq, np->full_name);
++	printk(KERN_INFO "KeyWest i2c @0x%08x irq %d %pOF\n",
++	       *addrp, host->irq, np);
+ 
+ 	return host;
+ }
+@@ -798,7 +798,7 @@ static void __init pmu_i2c_probe(void)
+ 	if (busnode == NULL)
+ 		return;
+ 
+-	printk(KERN_INFO "PMU i2c %s\n", busnode->full_name);
++	printk(KERN_INFO "PMU i2c %pOF\n", busnode);
+ 
+ 	/*
+ 	 * We add bus 1 and 2 only for now, bus 0 is "special"
+@@ -913,7 +913,7 @@ static void __init smu_i2c_probe(void)
+ 	if (controller == NULL)
+ 		return;
+ 
+-	printk(KERN_INFO "SMU i2c %s\n", controller->full_name);
++	printk(KERN_INFO "SMU i2c %pOF\n", controller);
+ 
+ 	/* Look for childs, note that they might not be of the right
+ 	 * type as older device trees mix i2c busses and other things
+@@ -945,8 +945,8 @@ static void __init smu_i2c_probe(void)
+ 		bus->flags = 0;
+ 		list_add(&bus->link, &pmac_i2c_busses);
+ 
+-		printk(KERN_INFO " channel %x bus %s\n",
+-		       bus->channel, busnode->full_name);
++		printk(KERN_INFO " channel %x bus %pOF\n",
++		       bus->channel, busnode);
+ 	}
+ }
+ 
+@@ -1129,7 +1129,7 @@ int pmac_i2c_setmode(struct pmac_i2c_bus *bus, int mode)
+ 	 */
+ 	if (mode < pmac_i2c_mode_dumb || mode > pmac_i2c_mode_combined) {
+ 		printk(KERN_ERR "low_i2c: Invalid mode %d requested on"
+-		       " bus %s !\n", mode, bus->busnode->full_name);
++		       " bus %pOF !\n", mode, bus->busnode);
+ 		return -EINVAL;
+ 	}
+ 	bus->mode = mode;
+@@ -1146,8 +1146,8 @@ int pmac_i2c_xfer(struct pmac_i2c_bus *bus, u8 addrdir, int subsize,
+ 	WARN_ON(!bus->opened);
+ 
+ 	DBG("xfer() chan=%d, addrdir=0x%x, mode=%d, subsize=%d, subaddr=0x%x,"
+-	    " %d bytes, bus %s\n", bus->channel, addrdir, bus->mode, subsize,
+-	    subaddr, len, bus->busnode->full_name);
++	    " %d bytes, bus %pOF\n", bus->channel, addrdir, bus->mode, subsize,
++	    subaddr, len, bus->busnode);
+ 
+ 	rc = bus->xfer(bus, addrdir, subsize, subaddr, data, len);
+ 
+@@ -1241,13 +1241,13 @@ static void* pmac_i2c_do_begin(struct pmf_function *func, struct pmf_args *args)
+ 
+ 	bus = pmac_i2c_find_bus(func->node);
+ 	if (bus == NULL) {
+-		printk(KERN_ERR "low_i2c: Can't find bus for %s (pfunc)\n",
+-		       func->node->full_name);
++		printk(KERN_ERR "low_i2c: Can't find bus for %pOF (pfunc)\n",
++		       func->node);
+ 		return NULL;
+ 	}
+ 	if (pmac_i2c_open(bus, 0)) {
+-		printk(KERN_ERR "low_i2c: Can't open i2c bus for %s (pfunc)\n",
+-		       func->node->full_name);
++		printk(KERN_ERR "low_i2c: Can't open i2c bus for %pOF (pfunc)\n",
++		       func->node);
+ 		return NULL;
+ 	}
+ 
+@@ -1417,7 +1417,7 @@ static struct pmf_handlers pmac_i2c_pfunc_handlers = {
+ 
+ static void __init pmac_i2c_dev_create(struct device_node *np, int quirks)
+ {
+-	DBG("dev_create(%s)\n", np->full_name);
++	DBG("dev_create(%pOF)\n", np);
+ 
+ 	pmf_register_driver(np, &pmac_i2c_pfunc_handlers,
+ 			    (void *)(long)quirks);
+@@ -1425,20 +1425,20 @@ static void __init pmac_i2c_dev_create(struct device_node *np, int quirks)
+ 
+ static void __init pmac_i2c_dev_init(struct device_node *np, int quirks)
+ {
+-	DBG("dev_create(%s)\n", np->full_name);
++	DBG("dev_create(%pOF)\n", np);
+ 
+ 	pmf_do_functions(np, NULL, 0, PMF_FLAGS_ON_INIT, NULL);
+ }
+ 
+ static void pmac_i2c_dev_suspend(struct device_node *np, int quirks)
+ {
+-	DBG("dev_suspend(%s)\n", np->full_name);
++	DBG("dev_suspend(%pOF)\n", np);
+ 	pmf_do_functions(np, NULL, 0, PMF_FLAGS_ON_SLEEP, NULL);
+ }
+ 
+ static void pmac_i2c_dev_resume(struct device_node *np, int quirks)
+ {
+-	DBG("dev_resume(%s)\n", np->full_name);
++	DBG("dev_resume(%pOF)\n", np);
+ 	pmf_do_functions(np, NULL, 0, PMF_FLAGS_ON_WAKE, NULL);
+ }
+ 
+diff --git a/arch/powerpc/platforms/powermac/pci.c b/arch/powerpc/platforms/powermac/pci.c
+index 6e06c3be2e9a..0b8174a79993 100644
+--- a/arch/powerpc/platforms/powermac/pci.c
++++ b/arch/powerpc/platforms/powermac/pci.c
+@@ -783,7 +783,7 @@ static int __init pmac_add_bridge(struct device_node *dev)
+ 	const int *bus_range;
+ 	int primary = 1, has_address = 0;
+ 
+-	DBG("Adding PCI host bridge %s\n", dev->full_name);
++	DBG("Adding PCI host bridge %pOF\n", dev);
+ 
+ 	/* Fetch host bridge registers address */
+ 	has_address = (of_address_to_resource(dev, 0, &rsrc) == 0);
+@@ -791,8 +791,8 @@ static int __init pmac_add_bridge(struct device_node *dev)
+ 	/* Get bus range if any */
+ 	bus_range = of_get_property(dev, "bus-range", &len);
+ 	if (bus_range == NULL || len < 2 * sizeof(int)) {
+-		printk(KERN_WARNING "Can't get bus-range for %s, assume"
+-		       " bus 0\n", dev->full_name);
++		printk(KERN_WARNING "Can't get bus-range for %pOF, assume"
++		       " bus 0\n", dev);
+ 	}
+ 
+ 	hose = pcibios_alloc_controller(dev);
+diff --git a/arch/powerpc/platforms/powermac/pfunc_base.c b/arch/powerpc/platforms/powermac/pfunc_base.c
+index 459138ed4571..860159d46ab8 100644
+--- a/arch/powerpc/platforms/powermac/pfunc_base.c
++++ b/arch/powerpc/platforms/powermac/pfunc_base.c
+@@ -54,8 +54,8 @@ static int macio_do_gpio_write(PMF_STD_ARGS, u8 value, u8 mask)
+ 	raw_spin_lock_irqsave(&feature_lock, flags);
+ 	tmp = readb(addr);
+ 	tmp = (tmp & ~mask) | (value & mask);
+-	DBG("Do write 0x%02x to GPIO %s (%p)\n",
+-	    tmp, func->node->full_name, addr);
++	DBG("Do write 0x%02x to GPIO %pOF (%p)\n",
++	    tmp, func->node, addr);
+ 	writeb(tmp, addr);
+ 	raw_spin_unlock_irqrestore(&feature_lock, flags);
+ 
+@@ -107,8 +107,8 @@ static void macio_gpio_init_one(struct macio_chip *macio)
+ 	if (gparent == NULL)
+ 		return;
+ 
+-	DBG("Installing GPIO functions for macio %s\n",
+-	    macio->of_node->full_name);
++	DBG("Installing GPIO functions for macio %pOF\n",
++	    macio->of_node);
+ 
+ 	/*
+ 	 * Ok, got one, we dont need anything special to track them down, so
+@@ -129,8 +129,8 @@ static void macio_gpio_init_one(struct macio_chip *macio)
+ 		pmf_register_driver(gp, &macio_gpio_handlers, (void *)offset);
+ 	}
+ 
+-	DBG("Calling initial GPIO functions for macio %s\n",
+-	    macio->of_node->full_name);
++	DBG("Calling initial GPIO functions for macio %pOF\n",
++	    macio->of_node);
+ 
+ 	/* And now we run all the init ones */
+ 	for (gp = NULL; (gp = of_get_next_child(gparent, gp)) != NULL;)
+@@ -267,8 +267,8 @@ static struct pmf_handlers macio_mmio_handlers = {
+ 
+ static void macio_mmio_init_one(struct macio_chip *macio)
+ {
+-	DBG("Installing MMIO functions for macio %s\n",
+-	    macio->of_node->full_name);
++	DBG("Installing MMIO functions for macio %pOF\n",
++	    macio->of_node);
+ 
+ 	pmf_register_driver(macio->of_node, &macio_mmio_handlers, macio);
+ }
+@@ -298,8 +298,8 @@ static void uninorth_install_pfunc(void)
+ {
+ 	struct device_node *np;
+ 
+-	DBG("Installing functions for UniN %s\n",
+-	    uninorth_node->full_name);
++	DBG("Installing functions for UniN %pOF\n",
++	    uninorth_node);
+ 
+ 	/*
+ 	 * Install handlers for the bridge itself
+@@ -317,8 +317,8 @@ static void uninorth_install_pfunc(void)
+ 			break;
+ 		}
+ 	if (unin_hwclock) {
+-		DBG("Installing functions for UniN clock %s\n",
+-		    unin_hwclock->full_name);
++		DBG("Installing functions for UniN clock %pOF\n",
++		    unin_hwclock);
+ 		pmf_register_driver(unin_hwclock, &unin_mmio_handlers, NULL);
+ 		pmf_do_functions(unin_hwclock, NULL, 0, PMF_FLAGS_ON_INIT,
+ 				 NULL);
+diff --git a/arch/powerpc/platforms/powermac/pfunc_core.c b/arch/powerpc/platforms/powermac/pfunc_core.c
+index 695e8c4d4224..df3c93bef228 100644
+--- a/arch/powerpc/platforms/powermac/pfunc_core.c
++++ b/arch/powerpc/platforms/powermac/pfunc_core.c
+@@ -708,7 +708,7 @@ int pmf_register_driver(struct device_node *np,
+ 	if (handlers == NULL)
+ 		return -EINVAL;
+ 
+-	DBG("pmf: registering driver for node %s\n", np->full_name);
++	DBG("pmf: registering driver for node %pOF\n", np);
+ 
+ 	spin_lock_irqsave(&pmf_lock, flags);
+ 	dev = pmf_find_device(np);
+@@ -781,7 +781,7 @@ void pmf_unregister_driver(struct device_node *np)
+ 	struct pmf_device *dev;
+ 	unsigned long flags;
+ 
+-	DBG("pmf: unregistering driver for node %s\n", np->full_name);
++	DBG("pmf: unregistering driver for node %pOF\n", np);
+ 
+ 	spin_lock_irqsave(&pmf_lock, flags);
+ 	dev = pmf_find_device(np);
+@@ -940,7 +940,7 @@ int pmf_call_one(struct pmf_function *func, struct pmf_args *args)
+ 	void *instdata = NULL;
+ 	int rc = 0;
+ 
+-	DBG(" ** pmf_call_one(%s/%s) **\n", dev->node->full_name, func->name);
++	DBG(" ** pmf_call_one(%pOF/%s) **\n", dev->node, func->name);
+ 
+ 	if (dev->handlers->begin)
+ 		instdata = dev->handlers->begin(func, args);
+diff --git a/arch/powerpc/platforms/powermac/pic.c b/arch/powerpc/platforms/powermac/pic.c
+index f5f9ad7c3398..5e0719b27294 100644
+--- a/arch/powerpc/platforms/powermac/pic.c
++++ b/arch/powerpc/platforms/powermac/pic.c
+@@ -364,8 +364,8 @@ static void __init pmac_pic_probe_oldstyle(void)
+ 			(addr + 0x10);
+ 	of_node_put(master);
+ 
+-	printk(KERN_INFO "irq: Found primary Apple PIC %s for %d irqs\n",
+-	       master->full_name, max_real_irqs);
++	printk(KERN_INFO "irq: Found primary Apple PIC %pOF for %d irqs\n",
++	       master, max_real_irqs);
+ 
+ 	/* Map interrupts of cascaded controller */
+ 	if (slave && !of_address_to_resource(slave, 0, &r)) {
+@@ -378,8 +378,8 @@ static void __init pmac_pic_probe_oldstyle(void)
+ 				(addr + 0x10);
+ 		pmac_irq_cascade = irq_of_parse_and_map(slave, 0);
+ 
+-		printk(KERN_INFO "irq: Found slave Apple PIC %s for %d irqs"
+-		       " cascade: %d\n", slave->full_name,
++		printk(KERN_INFO "irq: Found slave Apple PIC %pOF for %d irqs"
++		       " cascade: %d\n", slave,
+ 		       max_irqs - max_real_irqs, pmac_irq_cascade);
+ 	}
+ 	of_node_put(slave);
+diff --git a/arch/powerpc/platforms/powermac/setup.c b/arch/powerpc/platforms/powermac/setup.c
+index 6b4e9d181126..ab668cb72263 100644
+--- a/arch/powerpc/platforms/powermac/setup.c
++++ b/arch/powerpc/platforms/powermac/setup.c
+@@ -556,7 +556,7 @@ static int __init check_pmac_serial_console(void)
+ 		pr_debug(" can't find stdout package %s !\n", name);
+ 		return -ENODEV;
+ 	}
+-	pr_debug("stdout is %s\n", prom_stdout->full_name);
++	pr_debug("stdout is %pOF\n", prom_stdout);
+ 
+ 	name = of_get_property(prom_stdout, "name", NULL);
+ 	if (!name) {
+diff --git a/arch/powerpc/platforms/powernv/opal-async.c b/arch/powerpc/platforms/powernv/opal-async.c
+index 83bebeec0fea..cf33769a7b72 100644
+--- a/arch/powerpc/platforms/powernv/opal-async.c
++++ b/arch/powerpc/platforms/powernv/opal-async.c
+@@ -171,8 +171,8 @@ int __init opal_async_comp_init(void)
+ 
+ 	async = of_get_property(opal_node, "opal-msg-async-num", NULL);
+ 	if (!async) {
+-		pr_err("%s: %s has no opal-msg-async-num\n",
+-				__func__, opal_node->full_name);
++		pr_err("%s: %pOF has no opal-msg-async-num\n",
++				__func__, opal_node);
+ 		err = -ENOENT;
+ 		goto out_opal_node;
+ 	}
+diff --git a/arch/powerpc/platforms/powernv/opal-xscom.c b/arch/powerpc/platforms/powernv/opal-xscom.c
+index 28651fb25417..81c0a943dea9 100644
+--- a/arch/powerpc/platforms/powernv/opal-xscom.c
++++ b/arch/powerpc/platforms/powernv/opal-xscom.c
+@@ -36,14 +36,14 @@ static scom_map_t opal_scom_map(struct device_node *dev, u64 reg, u64 count)
+ 	const __be32 *gcid;
+ 
+ 	if (!of_get_property(dev, "scom-controller", NULL)) {
+-		pr_err("%s: device %s is not a SCOM controller\n",
+-			__func__, dev->full_name);
++		pr_err("%s: device %pOF is not a SCOM controller\n",
++			__func__, dev);
+ 		return SCOM_MAP_INVALID;
+ 	}
+ 	gcid = of_get_property(dev, "ibm,chip-id", NULL);
+ 	if (!gcid) {
+-		pr_err("%s: device %s has no ibm,chip-id\n",
+-			__func__, dev->full_name);
++		pr_err("%s: device %pOF has no ibm,chip-id\n",
++			__func__, dev);
+ 		return SCOM_MAP_INVALID;
+ 	}
+ 	m = kmalloc(sizeof(struct opal_scom_map), GFP_KERNEL);
+diff --git a/arch/powerpc/platforms/powernv/pci-ioda.c b/arch/powerpc/platforms/powernv/pci-ioda.c
+index 48de308224d6..57f9e55f4352 100644
+--- a/arch/powerpc/platforms/powernv/pci-ioda.c
++++ b/arch/powerpc/platforms/powernv/pci-ioda.c
+@@ -444,8 +444,8 @@ static void __init pnv_ioda_parse_m64_window(struct pnv_phb *phb)
+ 
+ 	r = of_get_property(dn, "ibm,opal-m64-window", NULL);
+ 	if (!r) {
+-		pr_info("  No <ibm,opal-m64-window> on %s\n",
+-			dn->full_name);
++		pr_info("  No <ibm,opal-m64-window> on %pOF\n",
++			dn);
+ 		return;
+ 	}
+ 
+@@ -3796,8 +3796,7 @@ static void __init pnv_pci_init_ioda_phb(struct device_node *np,
+ 	if (!of_device_is_available(np))
+ 		return;
+ 
+-	pr_info("Initializing %s PHB (%s)\n",
+-		pnv_phb_names[ioda_type], of_node_full_name(np));
++	pr_info("Initializing %s PHB (%pOF)\n",	pnv_phb_names[ioda_type], np);
+ 
+ 	prop64 = of_get_property(np, "ibm,opal-phbid", NULL);
+ 	if (!prop64) {
+@@ -3812,8 +3811,8 @@ static void __init pnv_pci_init_ioda_phb(struct device_node *np,
+ 	/* Allocate PCI controller */
+ 	phb->hose = hose = pcibios_alloc_controller(np);
+ 	if (!phb->hose) {
+-		pr_err("  Can't allocate PCI controller for %s\n",
+-		       np->full_name);
++		pr_err("  Can't allocate PCI controller for %pOF\n",
++		       np);
+ 		memblock_free(__pa(phb), sizeof(struct pnv_phb));
+ 		return;
+ 	}
+@@ -3824,7 +3823,7 @@ static void __init pnv_pci_init_ioda_phb(struct device_node *np,
+ 		hose->first_busno = be32_to_cpu(prop32[0]);
+ 		hose->last_busno = be32_to_cpu(prop32[1]);
+ 	} else {
+-		pr_warn("  Broken <bus-range> on %s\n", np->full_name);
++		pr_warn("  Broken <bus-range> on %pOF\n", np);
+ 		hose->first_busno = 0;
+ 		hose->last_busno = 0xff;
+ 	}
+@@ -4045,7 +4044,7 @@ void __init pnv_pci_init_ioda_hub(struct device_node *np)
+ 	const __be64 *prop64;
+ 	u64 hub_id;
+ 
+-	pr_info("Probing IODA IO-Hub %s\n", np->full_name);
++	pr_info("Probing IODA IO-Hub %pOF\n", np);
+ 
+ 	prop64 = of_get_property(np, "ibm,opal-hubid", NULL);
+ 	if (!prop64) {
+diff --git a/arch/powerpc/platforms/powernv/rng.c b/arch/powerpc/platforms/powernv/rng.c
+index c5ce3a8bd4c9..718f50ed22f1 100644
+--- a/arch/powerpc/platforms/powernv/rng.c
++++ b/arch/powerpc/platforms/powernv/rng.c
+@@ -125,7 +125,7 @@ static __init void rng_init_per_cpu(struct powernv_rng *rng,
+ 
+ 	chip_id = of_get_ibm_chip_id(dn);
+ 	if (chip_id == -1)
+-		pr_warn("No ibm,chip-id found for %s.\n", dn->full_name);
++		pr_warn("No ibm,chip-id found for %pOF.\n", dn);
+ 
+ 	for_each_possible_cpu(cpu) {
+ 		if (per_cpu(powernv_rng, cpu) == NULL ||
+@@ -178,8 +178,8 @@ static __init int rng_init(void)
+ 	for_each_compatible_node(dn, NULL, "ibm,power-rng") {
+ 		rc = rng_create(dn);
+ 		if (rc) {
+-			pr_err("Failed creating rng for %s (%d).\n",
+-				dn->full_name, rc);
++			pr_err("Failed creating rng for %pOF (%d).\n",
++				dn, rc);
+ 			continue;
+ 		}
+ 
+diff --git a/arch/powerpc/platforms/pseries/dlpar.c b/arch/powerpc/platforms/pseries/dlpar.c
+index 39187696ee74..80b84c9c8509 100644
+--- a/arch/powerpc/platforms/pseries/dlpar.c
++++ b/arch/powerpc/platforms/pseries/dlpar.c
+@@ -264,8 +264,7 @@ int dlpar_attach_node(struct device_node *dn)
+ 
+ 	rc = of_attach_node(dn);
+ 	if (rc) {
+-		printk(KERN_ERR "Failed to add device node %s\n",
+-		       dn->full_name);
++		printk(KERN_ERR "Failed to add device node %pOF\n", dn);
+ 		return rc;
+ 	}
+ 
+diff --git a/arch/powerpc/platforms/pseries/event_sources.c b/arch/powerpc/platforms/pseries/event_sources.c
+index 32187dc76730..6eeb0d4bab61 100644
+--- a/arch/powerpc/platforms/pseries/event_sources.c
++++ b/arch/powerpc/platforms/pseries/event_sources.c
+@@ -36,8 +36,8 @@ void request_event_sources_irqs(struct device_node *np,
+ 		virqs[count] = irq_create_of_mapping(&oirq);
+ 		if (!virqs[count]) {
+ 			pr_err("event-sources: Unable to allocate "
+-			       "interrupt number for %s\n",
+-			       np->full_name);
++			       "interrupt number for %pOF\n",
++			       np);
+ 			WARN_ON(1);
+ 		} else {
+ 			count++;
+@@ -48,7 +48,7 @@ void request_event_sources_irqs(struct device_node *np,
+ 	for (i = 0; i < count; i++) {
+ 		if (request_irq(virqs[i], handler, 0, name, NULL)) {
+ 			pr_err("event-sources: Unable to request interrupt "
+-			       "%d for %s\n", virqs[i], np->full_name);
++			       "%d for %pOF\n", virqs[i], np);
+ 			WARN_ON(1);
+ 			return;
+ 		}
+diff --git a/arch/powerpc/platforms/pseries/hotplug-cpu.c b/arch/powerpc/platforms/pseries/hotplug-cpu.c
+index 6afd1efd3633..0a93093fbcef 100644
+--- a/arch/powerpc/platforms/pseries/hotplug-cpu.c
++++ b/arch/powerpc/platforms/pseries/hotplug-cpu.c
+@@ -264,8 +264,8 @@ static int pseries_add_processor(struct device_node *np)
+ 		/* If we get here, it most likely means that NR_CPUS is
+ 		 * less than the partition's max processors setting.
+ 		 */
+-		printk(KERN_ERR "Cannot add cpu %s; this system configuration"
+-		       " supports %d logical cpus.\n", np->full_name,
++		printk(KERN_ERR "Cannot add cpu %pOF; this system configuration"
++		       " supports %d logical cpus.\n", np,
+ 		       num_possible_cpus());
+ 		goto out_unlock;
+ 	}
+diff --git a/arch/powerpc/platforms/pseries/ibmebus.c b/arch/powerpc/platforms/pseries/ibmebus.c
+--- a/arch/powerpc/platforms/pseries/ibmebus.c
++++ b/arch/powerpc/platforms/pseries/ibmebus.c
+@@ -150,8 +150,7 @@ static const struct dma_map_ops ibmebus_dma_ops = {
+ static int ibmebus_match_path(struct device *dev, void *data)
+ {
+ 	struct device_node *dn = to_platform_device(dev)->dev.of_node;
+-	return (dn->full_name &&
+-		(strcasecmp((char *)data, dn->full_name) == 0));
++	return (of_find_node_by_path(data) == dn);
+ }
+ 
+ static int ibmebus_match_node(struct device *dev, void *data)
+@@ -395,7 +394,7 @@ static ssize_t devspec_show(struct device *dev,
+ 	struct platform_device *ofdev;
+ 
+ 	ofdev = to_platform_device(dev);
+-	return sprintf(buf, "%s\n", ofdev->dev.of_node->full_name);
++	return sprintf(buf, "%pOF\n", ofdev->dev.of_node);
+ }
+ 
+ static ssize_t name_show(struct device *dev,
+diff --git a/arch/powerpc/platforms/pseries/iommu.c b/arch/powerpc/platforms/pseries/iommu.c
+index 8374adee27e3..7c181467d0ad 100644
+--- a/arch/powerpc/platforms/pseries/iommu.c
++++ b/arch/powerpc/platforms/pseries/iommu.c
+@@ -511,8 +511,8 @@ static void iommu_table_setparms(struct pci_controller *phb,
+ 	basep = of_get_property(node, "linux,tce-base", NULL);
+ 	sizep = of_get_property(node, "linux,tce-size", NULL);
+ 	if (basep == NULL || sizep == NULL) {
+-		printk(KERN_ERR "PCI_DMA: iommu_table_setparms: %s has "
+-				"missing tce entries !\n", dn->full_name);
++		printk(KERN_ERR "PCI_DMA: iommu_table_setparms: %pOF has "
++				"missing tce entries !\n", dn);
+ 		return;
+ 	}
+ 
+@@ -587,7 +587,7 @@ static void pci_dma_bus_setup_pSeries(struct pci_bus *bus)
+ 
+ 	dn = pci_bus_to_OF_node(bus);
+ 
+-	pr_debug("pci_dma_bus_setup_pSeries: setting up bus %s\n", dn->full_name);
++	pr_debug("pci_dma_bus_setup_pSeries: setting up bus %pOF\n", dn);
+ 
+ 	if (bus->self) {
+ 		/* This is not a root bus, any setup will be done for the
+@@ -701,8 +701,8 @@ static void pci_dma_bus_setup_pSeriesLP(struct pci_bus *bus)
+ 
+ 	dn = pci_bus_to_OF_node(bus);
+ 
+-	pr_debug("pci_dma_bus_setup_pSeriesLP: setting up bus %s\n",
+-		 dn->full_name);
++	pr_debug("pci_dma_bus_setup_pSeriesLP: setting up bus %pOF\n",
++		 dn);
+ 
+ 	/* Find nearest ibm,dma-window, walking up the device tree */
+ 	for (pdn = dn; pdn != NULL; pdn = pdn->parent) {
+@@ -718,8 +718,8 @@ static void pci_dma_bus_setup_pSeriesLP(struct pci_bus *bus)
+ 
+ 	ppci = PCI_DN(pdn);
+ 
+-	pr_debug("  parent is %s, iommu_table: 0x%p\n",
+-		 pdn->full_name, ppci->table_group);
++	pr_debug("  parent is %pOF, iommu_table: 0x%p\n",
++		 pdn, ppci->table_group);
+ 
+ 	if (!ppci->table_group) {
+ 		ppci->table_group = iommu_pseries_alloc_group(ppci->phb->node);
+@@ -817,28 +817,28 @@ static void remove_ddw(struct device_node *np, bool remove_prop)
+ 	ret = tce_clearrange_multi_pSeriesLP(0,
+ 		1ULL << (be32_to_cpu(dwp->window_shift) - PAGE_SHIFT), dwp);
+ 	if (ret)
+-		pr_warning("%s failed to clear tces in window.\n",
+-			 np->full_name);
++		pr_warning("%pOF failed to clear tces in window.\n",
++			 np);
+ 	else
+-		pr_debug("%s successfully cleared tces in window.\n",
+-			 np->full_name);
++		pr_debug("%pOF successfully cleared tces in window.\n",
++			 np);
+ 
+ 	ret = rtas_call(ddw_avail[2], 1, 1, NULL, liobn);
+ 	if (ret)
+-		pr_warning("%s: failed to remove direct window: rtas returned "
++		pr_warning("%pOF: failed to remove direct window: rtas returned "
+ 			"%d to ibm,remove-pe-dma-window(%x) %llx\n",
+-			np->full_name, ret, ddw_avail[2], liobn);
++			np, ret, ddw_avail[2], liobn);
+ 	else
+-		pr_debug("%s: successfully removed direct window: rtas returned "
++		pr_debug("%pOF: successfully removed direct window: rtas returned "
+ 			"%d to ibm,remove-pe-dma-window(%x) %llx\n",
+-			np->full_name, ret, ddw_avail[2], liobn);
++			np, ret, ddw_avail[2], liobn);
+ 
+ delprop:
+ 	if (remove_prop)
+ 		ret = of_remove_property(np, win64);
+ 	if (ret)
+-		pr_warning("%s: failed to remove direct window property: %d\n",
+-			np->full_name, ret);
++		pr_warning("%pOF: failed to remove direct window property: %d\n",
++			np, ret);
+ }
+ 
+ static u64 find_existing_ddw(struct device_node *pdn)
+@@ -1004,7 +1004,7 @@ static u64 enable_ddw(struct pci_dev *dev, struct device_node *pdn)
+ 	 * list.
+ 	 */
+ 	list_for_each_entry(fpdn, &failed_ddw_pdn_list, list) {
+-		if (!strcmp(fpdn->pdn->full_name, pdn->full_name))
++		if (fpdn->pdn == pdn)
+ 			goto out_unlock;
+ 	}
+ 
+@@ -1087,8 +1087,8 @@ static u64 enable_ddw(struct pci_dev *dev, struct device_node *pdn)
+ 	ddwprop->tce_shift = cpu_to_be32(page_shift);
+ 	ddwprop->window_shift = cpu_to_be32(len);
+ 
+-	dev_dbg(&dev->dev, "created tce table LIOBN 0x%x for %s\n",
+-		  create.liobn, dn->full_name);
++	dev_dbg(&dev->dev, "created tce table LIOBN 0x%x for %pOF\n",
++		  create.liobn, dn);
+ 
+ 	window = kzalloc(sizeof(*window), GFP_KERNEL);
+ 	if (!window)
+@@ -1097,15 +1097,15 @@ static u64 enable_ddw(struct pci_dev *dev, struct device_node *pdn)
+ 	ret = walk_system_ram_range(0, memblock_end_of_DRAM() >> PAGE_SHIFT,
+ 			win64->value, tce_setrange_multi_pSeriesLP_walk);
+ 	if (ret) {
+-		dev_info(&dev->dev, "failed to map direct window for %s: %d\n",
+-			 dn->full_name, ret);
++		dev_info(&dev->dev, "failed to map direct window for %pOF: %d\n",
++			 dn, ret);
+ 		goto out_free_window;
+ 	}
+ 
+ 	ret = of_add_property(pdn, win64);
+ 	if (ret) {
+-		dev_err(&dev->dev, "unable to add dma window property for %s: %d",
+-			 pdn->full_name, ret);
++		dev_err(&dev->dev, "unable to add dma window property for %pOF: %d",
++			 pdn, ret);
+ 		goto out_free_window;
+ 	}
+ 
+@@ -1158,7 +1158,7 @@ static void pci_dma_dev_setup_pSeriesLP(struct pci_dev *dev)
+ 	 * already allocated.
+ 	 */
+ 	dn = pci_device_to_OF_node(dev);
+-	pr_debug("  node is %s\n", dn->full_name);
++	pr_debug("  node is %pOF\n", dn);
+ 
+ 	for (pdn = dn; pdn && PCI_DN(pdn) && !PCI_DN(pdn)->table_group;
+ 	     pdn = pdn->parent) {
+@@ -1169,11 +1169,11 @@ static void pci_dma_dev_setup_pSeriesLP(struct pci_dev *dev)
+ 
+ 	if (!pdn || !PCI_DN(pdn)) {
+ 		printk(KERN_WARNING "pci_dma_dev_setup_pSeriesLP: "
+-		       "no DMA window found for pci dev=%s dn=%s\n",
+-				 pci_name(dev), of_node_full_name(dn));
++		       "no DMA window found for pci dev=%s dn=%pOF\n",
++				 pci_name(dev), dn);
+ 		return;
+ 	}
+-	pr_debug("  parent is %s\n", pdn->full_name);
++	pr_debug("  parent is %pOF\n", pdn);
+ 
+ 	pci = PCI_DN(pdn);
+ 	if (!pci->table_group) {
+@@ -1213,7 +1213,7 @@ static int dma_set_mask_pSeriesLP(struct device *dev, u64 dma_mask)
+ 	/* only attempt to use a new window if 64-bit DMA is requested */
+ 	if (!disable_ddw && dma_mask == DMA_BIT_MASK(64)) {
+ 		dn = pci_device_to_OF_node(pdev);
+-		dev_dbg(dev, "node is %s\n", dn->full_name);
++		dev_dbg(dev, "node is %pOF\n", dn);
+ 
+ 		/*
+ 		 * the device tree might contain the dma-window properties
+diff --git a/arch/powerpc/platforms/pseries/msi.c b/arch/powerpc/platforms/pseries/msi.c
+index 326ef0dd6038..353912e700eb 100644
+--- a/arch/powerpc/platforms/pseries/msi.c
++++ b/arch/powerpc/platforms/pseries/msi.c
+@@ -144,7 +144,7 @@ static int check_req(struct pci_dev *pdev, int nvec, char *prop_name)
+ 
+ 	p = of_get_property(dn, prop_name, NULL);
+ 	if (!p) {
+-		pr_debug("rtas_msi: No %s on %s\n", prop_name, dn->full_name);
++		pr_debug("rtas_msi: No %s on %pOF\n", prop_name, dn);
+ 		return -ENOENT;
+ 	}
+ 
+@@ -182,8 +182,8 @@ static struct device_node *find_pe_total_msi(struct pci_dev *dev, int *total)
+ 	while (dn) {
+ 		p = of_get_property(dn, "ibm,pe-total-#msi", NULL);
+ 		if (p) {
+-			pr_debug("rtas_msi: found prop on dn %s\n",
+-				dn->full_name);
++			pr_debug("rtas_msi: found prop on dn %pOF\n",
++				dn);
+ 			*total = be32_to_cpup(p);
+ 			return dn;
+ 		}
+@@ -222,7 +222,7 @@ static struct device_node *find_pe_dn(struct pci_dev *dev, int *total)
+ 
+ 	/* Hardcode of 8 for old firmwares */
+ 	*total = 8;
+-	pr_debug("rtas_msi: using PE dn %s\n", dn->full_name);
++	pr_debug("rtas_msi: using PE dn %pOF\n", dn);
+ 
+ 	return dn;
+ }
+@@ -242,7 +242,7 @@ static void *count_non_bridge_devices(struct device_node *dn, void *data)
+ 	const __be32 *p;
+ 	u32 class;
+ 
+-	pr_debug("rtas_msi: counting %s\n", dn->full_name);
++	pr_debug("rtas_msi: counting %pOF\n", dn);
+ 
+ 	p = of_get_property(dn, "class-code", NULL);
+ 	class = p ? be32_to_cpup(p) : 0;
+@@ -300,7 +300,7 @@ static int msi_quota_for_device(struct pci_dev *dev, int request)
+ 		goto out;
+ 	}
+ 
+-	pr_debug("rtas_msi: found PE %s\n", pe_dn->full_name);
++	pr_debug("rtas_msi: found PE %pOF\n", pe_dn);
+ 
+ 	memset(&counts, 0, sizeof(struct msi_counts));
+ 
+diff --git a/arch/powerpc/platforms/pseries/pci_dlpar.c b/arch/powerpc/platforms/pseries/pci_dlpar.c
+index 547fd13e4f8e..561917fa54a8 100644
+--- a/arch/powerpc/platforms/pseries/pci_dlpar.c
++++ b/arch/powerpc/platforms/pseries/pci_dlpar.c
+@@ -38,7 +38,7 @@ struct pci_controller *init_phb_dynamic(struct device_node *dn)
+ {
+ 	struct pci_controller *phb;
+ 
+-	pr_debug("PCI: Initializing new hotplug PHB %s\n", dn->full_name);
++	pr_debug("PCI: Initializing new hotplug PHB %pOF\n", dn);
+ 
+ 	phb = pcibios_alloc_controller(dn);
+ 	if (!phb)
+diff --git a/arch/powerpc/platforms/pseries/vio.c b/arch/powerpc/platforms/pseries/vio.c
+--- a/arch/powerpc/platforms/pseries/vio.c
++++ b/arch/powerpc/platforms/pseries/vio.c
+@@ -1362,9 +1362,9 @@ struct vio_dev *vio_register_device_node(struct device_node *of_node)
+ 		else if (!strcmp(parent_node->full_name, "/vdevice"))
+ 			family = VDEVICE;
+ 		else {
+-			pr_warn("%s: parent(%s) of %s not recognized.\n",
++			pr_warn("%s: parent(%pOF) of %s not recognized.\n",
+ 					__func__,
+-					parent_node->full_name,
++					parent_node,
+ 					of_node_name);
+ 			of_node_put(parent_node);
+ 			return NULL;
+@@ -1555,7 +1555,7 @@ static ssize_t devspec_show(struct device *dev,
+ {
+ 	struct device_node *of_node = dev->of_node;
+ 
+-	return sprintf(buf, "%s\n", of_node_full_name(of_node));
++	return sprintf(buf, "%pOF\n", of_node);
+ }
+ 
+ static ssize_t modalias_show(struct device *dev, struct device_attribute *attr,
+diff --git a/arch/powerpc/sysdev/axonram.c b/arch/powerpc/sysdev/axonram.c
+index 2799706106c6..072296eba3e7 100644
+--- a/arch/powerpc/sysdev/axonram.c
++++ b/arch/powerpc/sysdev/axonram.c
+@@ -188,8 +188,8 @@ static int axon_ram_probe(struct platform_device *device)
+ 
+ 	axon_ram_bank_id++;
+ 
+-	dev_info(&device->dev, "Found memory controller on %s\n",
+-			device->dev.of_node->full_name);
++	dev_info(&device->dev, "Found memory controller on %pOF\n",
++			device->dev.of_node);
+ 
+ 	bank = kzalloc(sizeof(struct axon_ram_bank), GFP_KERNEL);
+ 	if (bank == NULL) {
+diff --git a/arch/powerpc/sysdev/dcr.c b/arch/powerpc/sysdev/dcr.c
+index 121e26fffd50..d72eda568b7d 100644
+--- a/arch/powerpc/sysdev/dcr.c
++++ b/arch/powerpc/sysdev/dcr.c
+@@ -195,8 +195,8 @@ dcr_host_mmio_t dcr_map_mmio(struct device_node *dev,
+ 	dcr_host_mmio_t ret = { .token = NULL, .stride = 0, .base = dcr_n };
+ 	u64 addr;
+ 
+-	pr_debug("dcr_map(%s, 0x%x, 0x%x)\n",
+-		 dev->full_name, dcr_n, dcr_c);
++	pr_debug("dcr_map(%pOF, 0x%x, 0x%x)\n",
++		 dev, dcr_n, dcr_c);
+ 
+ 	addr = of_translate_dcr_address(dev, dcr_n, &ret.stride);
+ 	pr_debug("translates to addr: 0x%llx, stride: 0x%x\n",
+diff --git a/arch/powerpc/sysdev/fsl_85xx_cache_sram.c b/arch/powerpc/sysdev/fsl_85xx_cache_sram.c
+index 37a69097e022..00ccf3e4fcb4 100644
+--- a/arch/powerpc/sysdev/fsl_85xx_cache_sram.c
++++ b/arch/powerpc/sysdev/fsl_85xx_cache_sram.c
+@@ -101,8 +101,8 @@ int __init instantiate_cache_sram(struct platform_device *dev,
+ 
+ 	if (!request_mem_region(cache_sram->base_phys, cache_sram->size,
+ 						"fsl_85xx_cache_sram")) {
+-		dev_err(&dev->dev, "%s: request memory failed\n",
+-				dev->dev.of_node->full_name);
++		dev_err(&dev->dev, "%pOF: request memory failed\n",
++				dev->dev.of_node);
+ 		ret = -ENXIO;
+ 		goto out_free;
+ 	}
+@@ -110,16 +110,16 @@ int __init instantiate_cache_sram(struct platform_device *dev,
+ 	cache_sram->base_virt = ioremap_prot(cache_sram->base_phys,
+ 				cache_sram->size, _PAGE_COHERENT | PAGE_KERNEL);
+ 	if (!cache_sram->base_virt) {
+-		dev_err(&dev->dev, "%s: ioremap_prot failed\n",
+-				dev->dev.of_node->full_name);
++		dev_err(&dev->dev, "%pOF: ioremap_prot failed\n",
++				dev->dev.of_node);
+ 		ret = -ENOMEM;
+ 		goto out_release;
+ 	}
+ 
+ 	cache_sram->rh = rh_create(sizeof(unsigned int));
+ 	if (IS_ERR(cache_sram->rh)) {
+-		dev_err(&dev->dev, "%s: Unable to create remote heap\n",
+-				dev->dev.of_node->full_name);
++		dev_err(&dev->dev, "%pOF: Unable to create remote heap\n",
++				dev->dev.of_node);
+ 		ret = PTR_ERR(cache_sram->rh);
+ 		goto out_unmap;
+ 	}
+diff --git a/arch/powerpc/sysdev/fsl_gtm.c b/arch/powerpc/sysdev/fsl_gtm.c
+index a6f0b96ce2c9..d902306f4718 100644
+--- a/arch/powerpc/sysdev/fsl_gtm.c
++++ b/arch/powerpc/sysdev/fsl_gtm.c
+@@ -388,8 +388,8 @@ static int __init fsl_gtm_init(void)
+ 
+ 		gtm = kzalloc(sizeof(*gtm), GFP_KERNEL);
+ 		if (!gtm) {
+-			pr_err("%s: unable to allocate memory\n",
+-				np->full_name);
++			pr_err("%pOF: unable to allocate memory\n",
++				np);
+ 			continue;
+ 		}
+ 
+@@ -397,7 +397,7 @@ static int __init fsl_gtm_init(void)
+ 
+ 		clock = of_get_property(np, "clock-frequency", &size);
+ 		if (!clock || size != sizeof(*clock)) {
+-			pr_err("%s: no clock-frequency\n", np->full_name);
++			pr_err("%pOF: no clock-frequency\n", np);
+ 			goto err;
+ 		}
+ 		gtm->clock = *clock;
+@@ -407,8 +407,8 @@ static int __init fsl_gtm_init(void)
+ 
+ 			irq = irq_of_parse_and_map(np, i);
+ 			if (!irq) {
+-				pr_err("%s: not enough interrupts specified\n",
+-				       np->full_name);
++				pr_err("%pOF: not enough interrupts specified\n",
++				       np);
+ 				goto err;
+ 			}
+ 			gtm->timers[i].irq = irq;
+@@ -417,8 +417,8 @@ static int __init fsl_gtm_init(void)
+ 
+ 		gtm->regs = of_iomap(np, 0);
+ 		if (!gtm->regs) {
+-			pr_err("%s: unable to iomap registers\n",
+-			       np->full_name);
++			pr_err("%pOF: unable to iomap registers\n",
++			       np);
+ 			goto err;
+ 		}
+ 
+diff --git a/arch/powerpc/sysdev/fsl_msi.c b/arch/powerpc/sysdev/fsl_msi.c
+index 8a244828782e..44cbf4c12ea1 100644
+--- a/arch/powerpc/sysdev/fsl_msi.c
++++ b/arch/powerpc/sysdev/fsl_msi.c
+@@ -214,8 +214,8 @@ static int fsl_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type)
+ 			phandle = np->phandle;
+ 		else {
+ 			dev_err(&pdev->dev,
+-				"node %s has an invalid fsl,msi phandle %u\n",
+-				hose->dn->full_name, np->phandle);
++				"node %pOF has an invalid fsl,msi phandle %u\n",
++				hose->dn, np->phandle);
+ 			return -EINVAL;
+ 		}
+ 	}
+@@ -438,16 +438,16 @@ static int fsl_of_msi_probe(struct platform_device *dev)
+ 	if ((features->fsl_pic_ip & FSL_PIC_IP_MASK) != FSL_PIC_IP_VMPIC) {
+ 		err = of_address_to_resource(dev->dev.of_node, 0, &res);
+ 		if (err) {
+-			dev_err(&dev->dev, "invalid resource for node %s\n",
+-				dev->dev.of_node->full_name);
++			dev_err(&dev->dev, "invalid resource for node %pOF\n",
++				dev->dev.of_node);
+ 			goto error_out;
+ 		}
+ 
+ 		msi->msi_regs = ioremap(res.start, resource_size(&res));
+ 		if (!msi->msi_regs) {
+ 			err = -ENOMEM;
+-			dev_err(&dev->dev, "could not map node %s\n",
+-				dev->dev.of_node->full_name);
++			dev_err(&dev->dev, "could not map node %pOF\n",
++				dev->dev.of_node);
+ 			goto error_out;
+ 		}
+ 		msi->msiir_offset =
+@@ -522,8 +522,8 @@ static int fsl_of_msi_probe(struct platform_device *dev)
+ 		for (irq_index = 0, i = 0; i < len / (2 * sizeof(u32)); i++) {
+ 			if (p[i * 2] % IRQS_PER_MSI_REG ||
+ 			    p[i * 2 + 1] % IRQS_PER_MSI_REG) {
+-				pr_warn("%s: %s: msi available range of %u at %u is not IRQ-aligned\n",
+-				       __func__, dev->dev.of_node->full_name,
++				pr_warn("%s: %pOF: msi available range of %u at %u is not IRQ-aligned\n",
++				       __func__, dev->dev.of_node,
+ 				       p[i * 2 + 1], p[i * 2]);
+ 				err = -EINVAL;
+ 				goto error_out;
+diff --git a/arch/powerpc/sysdev/fsl_pci.c b/arch/powerpc/sysdev/fsl_pci.c
+index d3a597456b6e..22d98057f773 100644
+--- a/arch/powerpc/sysdev/fsl_pci.c
++++ b/arch/powerpc/sysdev/fsl_pci.c
+@@ -202,7 +202,6 @@ static void setup_pci_atmu(struct pci_controller *hose)
+ 	u32 pcicsrbar = 0, pcicsrbar_sz;
+ 	u32 piwar = PIWAR_EN | PIWAR_PF | PIWAR_TGI_LOCAL |
+ 			PIWAR_READ_SNOOP | PIWAR_WRITE_SNOOP;
+-	const char *name = hose->dn->full_name;
+ 	const u64 *reg;
+ 	int len;
+ 	bool setup_inbound;
+@@ -290,12 +289,12 @@ static void setup_pci_atmu(struct pci_controller *hose)
+ 	paddr_lo -= offset;
+ 
+ 	if (paddr_hi == paddr_lo) {
+-		pr_err("%s: No outbound window space\n", name);
++		pr_err("%pOF: No outbound window space\n", hose->dn);
+ 		return;
+ 	}
+ 
+ 	if (paddr_lo == 0) {
+-		pr_err("%s: No space for inbound window\n", name);
++		pr_err("%pOF: No space for inbound window\n", hose->dn);
+ 		return;
+ 	}
+ 
+@@ -313,7 +312,7 @@ static void setup_pci_atmu(struct pci_controller *hose)
+ 
+ 	paddr_lo = min(paddr_lo, (u64)pcicsrbar);
+ 
+-	pr_info("%s: PCICSRBAR @ 0x%x\n", name, pcicsrbar);
++	pr_info("%pOF: PCICSRBAR @ 0x%x\n", hose->dn, pcicsrbar);
+ 
+ 	/* Setup inbound mem window */
+ 	mem = memblock_end_of_DRAM();
+@@ -336,12 +335,12 @@ static void setup_pci_atmu(struct pci_controller *hose)
+ 		u64 address = be64_to_cpup(reg);
+ 
+ 		if ((address >= mem) && (address < (mem + PAGE_SIZE))) {
+-			pr_info("%s: extending DDR ATMU to cover MSIIR", name);
++			pr_info("%pOF: extending DDR ATMU to cover MSIIR", hose->dn);
+ 			mem += PAGE_SIZE;
+ 		} else {
+ 			/* TODO: Create a new ATMU for MSIIR */
+-			pr_warn("%s: msi-address-64 address of %llx is "
+-				"unsupported\n", name, address);
++			pr_warn("%pOF: msi-address-64 address of %llx is "
++				"unsupported\n", hose->dn, address);
+ 		}
+ 	}
+ 
+@@ -354,8 +353,8 @@ static void setup_pci_atmu(struct pci_controller *hose)
+ 		if ((1ull << mem_log) != mem) {
+ 			mem_log++;
+ 			if ((1ull << mem_log) > mem)
+-				pr_info("%s: Setting PCI inbound window "
+-					"greater than memory size\n", name);
++				pr_info("%pOF: Setting PCI inbound window "
++					"greater than memory size\n", hose->dn);
+ 		}
+ 
+ 		piwar |= ((mem_log - 1) & PIWAR_SZ_MASK);
+@@ -402,7 +401,7 @@ static void setup_pci_atmu(struct pci_controller *hose)
+ 			 */
+ 			ppc_md.dma_set_mask = fsl_pci_dma_set_mask;
+ 
+-			pr_info("%s: Setup 64-bit PCI DMA window\n", name);
++			pr_info("%pOF: Setup 64-bit PCI DMA window\n", hose->dn);
+ 		}
+ 	} else {
+ 		u64 paddr = 0;
+@@ -443,18 +442,18 @@ static void setup_pci_atmu(struct pci_controller *hose)
+ #ifdef CONFIG_SWIOTLB
+ 		ppc_swiotlb_enable = 1;
+ #else
+-		pr_err("%s: ERROR: Memory size exceeds PCI ATMU ability to "
++		pr_err("%pOF: ERROR: Memory size exceeds PCI ATMU ability to "
+ 			"map - enable CONFIG_SWIOTLB to avoid dma errors.\n",
+-			 name);
++			 hose->dn);
+ #endif
+ 		/* adjusting outbound windows could reclaim space in mem map */
+ 		if (paddr_hi < 0xffffffffull)
+-			pr_warning("%s: WARNING: Outbound window cfg leaves "
++			pr_warning("%pOF: WARNING: Outbound window cfg leaves "
+ 				"gaps in memory map. Adjusting the memory map "
+ 				"could reduce unnecessary bounce buffering.\n",
+-				name);
++				hose->dn);
+ 
+-		pr_info("%s: DMA window size is 0x%llx\n", name,
++		pr_info("%pOF: DMA window size is 0x%llx\n", hose->dn,
+ 			(u64)hose->dma_window_size);
+ 	}
+ }
+@@ -532,11 +531,11 @@ int fsl_add_bridge(struct platform_device *pdev, int is_primary)
+ 	dev = pdev->dev.of_node;
+ 
+ 	if (!of_device_is_available(dev)) {
+-		pr_warning("%s: disabled\n", dev->full_name);
++		pr_warning("%pOF: disabled\n", dev);
+ 		return -ENODEV;
+ 	}
+ 
+-	pr_debug("Adding PCI host bridge %s\n", dev->full_name);
++	pr_debug("Adding PCI host bridge %pOF\n", dev);
+ 
+ 	/* Fetch host bridge registers address */
+ 	if (of_address_to_resource(dev, 0, &rsrc)) {
+@@ -547,8 +546,8 @@ int fsl_add_bridge(struct platform_device *pdev, int is_primary)
+ 	/* Get bus range if any */
+ 	bus_range = of_get_property(dev, "bus-range", &len);
+ 	if (bus_range == NULL || len < 2 * sizeof(int))
+-		printk(KERN_WARNING "Can't get bus-range for %s, assume"
+-			" bus 0\n", dev->full_name);
++		printk(KERN_WARNING "Can't get bus-range for %pOF, assume"
++			" bus 0\n", dev);
+ 
+ 	pci_add_flags(PCI_REASSIGN_ALL_BUS);
+ 	hose = pcibios_alloc_controller(dev);
+@@ -809,11 +808,11 @@ int __init mpc83xx_add_bridge(struct device_node *dev)
+ 	is_mpc83xx_pci = 1;
+ 
+ 	if (!of_device_is_available(dev)) {
+-		pr_warning("%s: disabled by the firmware.\n",
+-			   dev->full_name);
++		pr_warning("%pOF: disabled by the firmware.\n",
++			   dev);
+ 		return -ENODEV;
+ 	}
+-	pr_debug("Adding PCI host bridge %s\n", dev->full_name);
++	pr_debug("Adding PCI host bridge %pOF\n", dev);
+ 
+ 	/* Fetch host bridge registers address */
+ 	if (of_address_to_resource(dev, 0, &rsrc_reg)) {
+@@ -848,8 +847,8 @@ int __init mpc83xx_add_bridge(struct device_node *dev)
+ 	/* Get bus range if any */
+ 	bus_range = of_get_property(dev, "bus-range", &len);
+ 	if (bus_range == NULL || len < 2 * sizeof(int)) {
+-		printk(KERN_WARNING "Can't get bus-range for %s, assume"
+-		       " bus 0\n", dev->full_name);
++		printk(KERN_WARNING "Can't get bus-range for %pOF, assume"
++		       " bus 0\n", dev);
+ 	}
+ 
+ 	pci_add_flags(PCI_REASSIGN_ALL_BUS);
+diff --git a/arch/powerpc/sysdev/fsl_rio.c b/arch/powerpc/sysdev/fsl_rio.c
+index 1c41c51f22cb..9234be1e66f5 100644
+--- a/arch/powerpc/sysdev/fsl_rio.c
++++ b/arch/powerpc/sysdev/fsl_rio.c
+@@ -450,12 +450,12 @@ int fsl_rio_setup(struct platform_device *dev)
+ 
+ 	rc = of_address_to_resource(dev->dev.of_node, 0, &regs);
+ 	if (rc) {
+-		dev_err(&dev->dev, "Can't get %s property 'reg'\n",
+-				dev->dev.of_node->full_name);
++		dev_err(&dev->dev, "Can't get %pOF property 'reg'\n",
++				dev->dev.of_node);
+ 		return -EFAULT;
+ 	}
+-	dev_info(&dev->dev, "Of-device full name %s\n",
+-			dev->dev.of_node->full_name);
++	dev_info(&dev->dev, "Of-device full name %pOF\n",
++			dev->dev.of_node);
+ 	dev_info(&dev->dev, "Regs: %pR\n", &regs);
+ 
+ 	rio_regs_win = ioremap(regs.start, resource_size(&regs));
+@@ -494,8 +494,8 @@ int fsl_rio_setup(struct platform_device *dev)
+ 	}
+ 	rc = of_address_to_resource(rmu_node, 0, &rmu_regs);
+ 	if (rc) {
+-		dev_err(&dev->dev, "Can't get %s property 'reg'\n",
+-				rmu_node->full_name);
++		dev_err(&dev->dev, "Can't get %pOF property 'reg'\n",
++				rmu_node);
+ 		goto err_rmu;
+ 	}
+ 	rmu_regs_win = ioremap(rmu_regs.start, resource_size(&rmu_regs));
+@@ -529,8 +529,8 @@ int fsl_rio_setup(struct platform_device *dev)
+ 	aw = of_n_addr_cells(np);
+ 	dt_range = of_get_property(np, "reg", &rlen);
+ 	if (!dt_range) {
+-		pr_err("%s: unable to find 'reg' property\n",
+-			np->full_name);
++		pr_err("%pOF: unable to find 'reg' property\n",
++			np);
+ 		rc = -ENOMEM;
+ 		goto err_pw;
+ 	}
+@@ -557,8 +557,8 @@ int fsl_rio_setup(struct platform_device *dev)
+ 	aw = of_n_addr_cells(np);
+ 	dt_range = of_get_property(np, "reg", &rlen);
+ 	if (!dt_range) {
+-		pr_err("%s: unable to find 'reg' property\n",
+-			np->full_name);
++		pr_err("%pOF: unable to find 'reg' property\n",
++			np);
+ 		rc = -ENOMEM;
+ 		goto err;
+ 	}
+@@ -569,15 +569,15 @@ int fsl_rio_setup(struct platform_device *dev)
+ 	for_each_child_of_node(dev->dev.of_node, np) {
+ 		port_index = of_get_property(np, "cell-index", NULL);
+ 		if (!port_index) {
+-			dev_err(&dev->dev, "Can't get %s property 'cell-index'\n",
+-					np->full_name);
++			dev_err(&dev->dev, "Can't get %pOF property 'cell-index'\n",
++					np);
+ 			continue;
+ 		}
+ 
+ 		dt_range = of_get_property(np, "ranges", &rlen);
+ 		if (!dt_range) {
+-			dev_err(&dev->dev, "Can't get %s property 'ranges'\n",
+-					np->full_name);
++			dev_err(&dev->dev, "Can't get %pOF property 'ranges'\n",
++					np);
+ 			continue;
+ 		}
+ 
+@@ -598,8 +598,8 @@ int fsl_rio_setup(struct platform_device *dev)
+ 		range_start = of_read_number(dt_range + aw, paw);
+ 		range_size = of_read_number(dt_range + aw + paw, sw);
+ 
+-		dev_info(&dev->dev, "%s: LAW start 0x%016llx, size 0x%016llx.\n",
+-				np->full_name, range_start, range_size);
++		dev_info(&dev->dev, "%pOF: LAW start 0x%016llx, size 0x%016llx.\n",
++				np, range_start, range_size);
+ 
+ 		port = kzalloc(sizeof(struct rio_mport), GFP_KERNEL);
+ 		if (!port)
+@@ -757,8 +757,8 @@ int fsl_rio_setup(struct platform_device *dev)
+  */
+ static int fsl_of_rio_rpn_probe(struct platform_device *dev)
+ {
+-	printk(KERN_INFO "Setting up RapidIO peer-to-peer network %s\n",
+-			dev->dev.of_node->full_name);
++	printk(KERN_INFO "Setting up RapidIO peer-to-peer network %pOF\n",
++			dev->dev.of_node);
+ 
+ 	return fsl_rio_setup(dev);
+ };
+diff --git a/arch/powerpc/sysdev/fsl_rmu.c b/arch/powerpc/sysdev/fsl_rmu.c
+index c1826de4e749..ab7a74c75be8 100644
+--- a/arch/powerpc/sysdev/fsl_rmu.c
++++ b/arch/powerpc/sysdev/fsl_rmu.c
+@@ -1074,8 +1074,8 @@ int fsl_rio_setup_rmu(struct rio_mport *mport, struct device_node *node)
+ 	priv = mport->priv;
+ 
+ 	if (!node) {
+-		dev_warn(priv->dev, "Can't get %s property 'fsl,rmu'\n",
+-			priv->dev->of_node->full_name);
++		dev_warn(priv->dev, "Can't get %pOF property 'fsl,rmu'\n",
++			priv->dev->of_node);
+ 		return -EINVAL;
+ 	}
+ 
+@@ -1086,8 +1086,8 @@ int fsl_rio_setup_rmu(struct rio_mport *mport, struct device_node *node)
+ 	aw = of_n_addr_cells(node);
+ 	msg_addr = of_get_property(node, "reg", &mlen);
+ 	if (!msg_addr) {
+-		pr_err("%s: unable to find 'reg' property of message-unit\n",
+-			node->full_name);
++		pr_err("%pOF: unable to find 'reg' property of message-unit\n",
++			node);
+ 		kfree(rmu);
+ 		return -ENOMEM;
+ 	}
+@@ -1098,8 +1098,8 @@ int fsl_rio_setup_rmu(struct rio_mport *mport, struct device_node *node)
+ 
+ 	rmu->txirq = irq_of_parse_and_map(node, 0);
+ 	rmu->rxirq = irq_of_parse_and_map(node, 1);
+-	printk(KERN_INFO "%s: txirq: %d, rxirq %d\n",
+-		node->full_name, rmu->txirq, rmu->rxirq);
++	printk(KERN_INFO "%pOF: txirq: %d, rxirq %d\n",
++		node, rmu->txirq, rmu->rxirq);
+ 
+ 	priv->rmm_handle = rmu;
+ 
+diff --git a/arch/powerpc/sysdev/mpic.c b/arch/powerpc/sysdev/mpic.c
+index b9aac951a90f..ead3e2549ebf 100644
+--- a/arch/powerpc/sysdev/mpic.c
++++ b/arch/powerpc/sysdev/mpic.c
+@@ -1650,8 +1650,8 @@ void __init mpic_init(struct mpic *mpic)
+ 	if (mpic->flags & MPIC_SECONDARY) {
+ 		int virq = irq_of_parse_and_map(mpic->node, 0);
+ 		if (virq) {
+-			printk(KERN_INFO "%s: hooking up to IRQ %d\n",
+-					mpic->node->full_name, virq);
++			printk(KERN_INFO "%pOF: hooking up to IRQ %d\n",
++					mpic->node, virq);
+ 			irq_set_handler_data(virq, mpic);
+ 			irq_set_chained_handler(virq, &mpic_cascade);
+ 		}
+diff --git a/arch/powerpc/sysdev/mpic_msgr.c b/arch/powerpc/sysdev/mpic_msgr.c
+index db2286be5d9a..eb69a5186243 100644
+--- a/arch/powerpc/sysdev/mpic_msgr.c
++++ b/arch/powerpc/sysdev/mpic_msgr.c
+@@ -192,7 +192,7 @@ static int mpic_msgr_probe(struct platform_device *dev)
+ 			return -ENOMEM;
+ 		}
+ 	}
+-	dev_info(&dev->dev, "Of-device full name %s\n", np->full_name);
++	dev_info(&dev->dev, "Of-device full name %pOF\n", np);
+ 
+ 	/* IO map the message register block. */
+ 	of_address_to_resource(np, 0, &rsrc);
+diff --git a/arch/powerpc/sysdev/mpic_msi.c b/arch/powerpc/sysdev/mpic_msi.c
+index 1d48a5385905..9ed860aee9c3 100644
+--- a/arch/powerpc/sysdev/mpic_msi.c
++++ b/arch/powerpc/sysdev/mpic_msi.c
+@@ -60,7 +60,7 @@ static int mpic_msi_reserve_u3_hwirqs(struct mpic *mpic)
+ 
+ 	np = NULL;
+ 	while ((np = of_find_all_nodes(np))) {
+-		pr_debug("mpic: mapping hwirqs for %s\n", np->full_name);
++		pr_debug("mpic: mapping hwirqs for %pOF\n", np);
+ 
+ 		index = 0;
+ 		while (of_irq_parse_one(np, index++, &oirq) == 0) {
+diff --git a/arch/powerpc/sysdev/mpic_timer.c b/arch/powerpc/sysdev/mpic_timer.c
+index 9d9b06217f8b..a418579591be 100644
+--- a/arch/powerpc/sysdev/mpic_timer.c
++++ b/arch/powerpc/sysdev/mpic_timer.c
+@@ -466,8 +466,7 @@ static int timer_group_get_irq(struct device_node *np,
+ 
+ 	p = of_get_property(np, "fsl,available-ranges", &len);
+ 	if (p && len % (2 * sizeof(u32)) != 0) {
+-		pr_err("%s: malformed available-ranges property.\n",
+-				np->full_name);
++		pr_err("%pOF: malformed available-ranges property.\n", np);
+ 		return -EINVAL;
+ 	}
+ 
+@@ -484,8 +483,7 @@ static int timer_group_get_irq(struct device_node *np,
+ 		for (j = 0; j < count; j++) {
+ 			irq = irq_of_parse_and_map(np, irq_index);
+ 			if (!irq) {
+-				pr_err("%s: irq parse and map failed.\n",
+-						np->full_name);
++				pr_err("%pOF: irq parse and map failed.\n", np);
+ 				return -EINVAL;
+ 			}
+ 
+@@ -508,8 +506,7 @@ static void timer_group_init(struct device_node *np)
+ 
+ 	priv = kzalloc(sizeof(struct timer_group_priv), GFP_KERNEL);
+ 	if (!priv) {
+-		pr_err("%s: cannot allocate memory for group.\n",
+-				np->full_name);
++		pr_err("%pOF: cannot allocate memory for group.\n", np);
+ 		return;
+ 	}
+ 
+@@ -518,29 +515,27 @@ static void timer_group_init(struct device_node *np)
+ 
+ 	priv->regs = of_iomap(np, i++);
+ 	if (!priv->regs) {
+-		pr_err("%s: cannot ioremap timer register address.\n",
+-				np->full_name);
++		pr_err("%pOF: cannot ioremap timer register address.\n", np);
+ 		goto out;
+ 	}
+ 
+ 	if (priv->flags & FSL_GLOBAL_TIMER) {
+ 		priv->group_tcr = of_iomap(np, i++);
+ 		if (!priv->group_tcr) {
+-			pr_err("%s: cannot ioremap tcr address.\n",
+-					np->full_name);
++			pr_err("%pOF: cannot ioremap tcr address.\n", np);
+ 			goto out;
+ 		}
+ 	}
+ 
+ 	ret = timer_group_get_freq(np, priv);
+ 	if (ret < 0) {
+-		pr_err("%s: cannot get timer frequency.\n", np->full_name);
++		pr_err("%pOF: cannot get timer frequency.\n", np);
+ 		goto out;
+ 	}
+ 
+ 	ret = timer_group_get_irq(np, priv);
+ 	if (ret < 0) {
+-		pr_err("%s: cannot get timer irqs.\n", np->full_name);
++		pr_err("%pOF: cannot get timer irqs.\n", np);
+ 		goto out;
+ 	}
+ 
+diff --git a/arch/powerpc/sysdev/msi_bitmap.c b/arch/powerpc/sysdev/msi_bitmap.c
+index 5ebd3f018295..c4dae27172b3 100644
+--- a/arch/powerpc/sysdev/msi_bitmap.c
++++ b/arch/powerpc/sysdev/msi_bitmap.c
+@@ -86,13 +86,13 @@ int msi_bitmap_reserve_dt_hwirqs(struct msi_bitmap *bmp)
+ 	p = of_get_property(bmp->of_node, "msi-available-ranges", &len);
+ 	if (!p) {
+ 		pr_debug("msi_bitmap: no msi-available-ranges property " \
+-			 "found on %s\n", bmp->of_node->full_name);
++			 "found on %pOF\n", bmp->of_node);
+ 		return 1;
+ 	}
+ 
+ 	if (len % (2 * sizeof(u32)) != 0) {
+ 		printk(KERN_WARNING "msi_bitmap: Malformed msi-available-ranges"
+-		       " property on %s\n", bmp->of_node->full_name);
++		       " property on %pOF\n", bmp->of_node);
+ 		return -EINVAL;
+ 	}
+ 
+diff --git a/arch/powerpc/sysdev/mv64x60_dev.c b/arch/powerpc/sysdev/mv64x60_dev.c
+index 026bbc3b2c47..185a67e742a6 100644
+--- a/arch/powerpc/sysdev/mv64x60_dev.c
++++ b/arch/powerpc/sysdev/mv64x60_dev.c
+@@ -452,8 +452,8 @@ static int __init mv64x60_device_setup(void)
+ 		err = mv64x60_mpsc_device_setup(np, id++);
+ 		if (err)
+ 			printk(KERN_ERR "Failed to initialize MV64x60 "
+-					"serial device %s: error %d.\n",
+-					np->full_name, err);
++					"serial device %pOF: error %d.\n",
++					np, err);
+ 	}
+ 
+ 	id = 0;
+@@ -463,8 +463,8 @@ static int __init mv64x60_device_setup(void)
+ 		if (IS_ERR(pdev)) {
+ 			err = PTR_ERR(pdev);
+ 			printk(KERN_ERR "Failed to initialize MV64x60 "
+-					"network block %s: error %d.\n",
+-					np->full_name, err);
++					"network block %pOF: error %d.\n",
++					np, err);
+ 			continue;
+ 		}
+ 		for_each_child_of_node(np, np2) {
+@@ -474,9 +474,9 @@ static int __init mv64x60_device_setup(void)
+ 			err = mv64x60_eth_device_setup(np2, id2++, pdev);
+ 			if (err)
+ 				printk(KERN_ERR "Failed to initialize "
+-						"MV64x60 network device %s: "
++						"MV64x60 network device %pOF: "
+ 						"error %d.\n",
+-						np2->full_name, err);
++						np2, err);
+ 		}
+ 	}
+ 
+@@ -485,8 +485,8 @@ static int __init mv64x60_device_setup(void)
+ 		err = mv64x60_i2c_device_setup(np, id++);
+ 		if (err)
+ 			printk(KERN_ERR "Failed to initialize MV64x60 I2C "
+-					"bus %s: error %d.\n",
+-					np->full_name, err);
++					"bus %pOF: error %d.\n",
++					np, err);
+ 	}
+ 
+ 	/* support up to one watchdog timer */
+@@ -494,8 +494,8 @@ static int __init mv64x60_device_setup(void)
+ 	if (np) {
+ 		if ((err = mv64x60_wdt_device_setup(np, id)))
+ 			printk(KERN_ERR "Failed to initialize MV64x60 "
+-					"Watchdog %s: error %d.\n",
+-					np->full_name, err);
++					"Watchdog %pOF: error %d.\n",
++					np, err);
+ 		of_node_put(np);
+ 	}
+ 
+diff --git a/arch/powerpc/sysdev/mv64x60_pci.c b/arch/powerpc/sysdev/mv64x60_pci.c
+index f1fe17265981..d52b3b81e05f 100644
+--- a/arch/powerpc/sysdev/mv64x60_pci.c
++++ b/arch/powerpc/sysdev/mv64x60_pci.c
+@@ -136,8 +136,8 @@ static int __init mv64x60_add_bridge(struct device_node *dev)
+ 	/* Get bus range if any */
+ 	bus_range = of_get_property(dev, "bus-range", &len);
+ 	if (bus_range == NULL || len < 2 * sizeof(int))
+-		printk(KERN_WARNING "Can't get bus-range for %s, assume"
+-		       " bus 0\n", dev->full_name);
++		printk(KERN_WARNING "Can't get bus-range for %pOF, assume"
++		       " bus 0\n", dev);
+ 
+ 	hose = pcibios_alloc_controller(dev);
+ 	if (!hose)
+diff --git a/arch/powerpc/sysdev/of_rtc.c b/arch/powerpc/sysdev/of_rtc.c
+index 6f54b54b1328..153fdac4720f 100644
+--- a/arch/powerpc/sysdev/of_rtc.c
++++ b/arch/powerpc/sysdev/of_rtc.c
+@@ -38,21 +38,21 @@ void __init of_instantiate_rtc(void)
+ 			res = kmalloc(sizeof(*res), GFP_KERNEL);
+ 			if (!res) {
+ 				printk(KERN_ERR "OF RTC: Out of memory "
+-				       "allocating resource structure for %s\n",
+-				       node->full_name);
++				       "allocating resource structure for %pOF\n",
++				       node);
+ 				continue;
+ 			}
+ 
+ 			err = of_address_to_resource(node, 0, res);
+ 			if (err) {
+ 				printk(KERN_ERR "OF RTC: Error "
+-				       "translating resources for %s\n",
+-				       node->full_name);
++				       "translating resources for %pOF\n",
++				       node);
+ 				continue;
+ 			}
+ 
+-			printk(KERN_INFO "OF_RTC: %s is a %s @ 0x%llx-0x%llx\n",
+-			       node->full_name, plat_name,
++			printk(KERN_INFO "OF_RTC: %pOF is a %s @ 0x%llx-0x%llx\n",
++			       node, plat_name,
+ 			       (unsigned long long)res->start,
+ 			       (unsigned long long)res->end);
+ 			platform_device_register_simple(plat_name, -1, res, 1);
+diff --git a/arch/powerpc/sysdev/scom.c b/arch/powerpc/sysdev/scom.c
+index 76ea32c1b664..0f6fd5d04d33 100644
+--- a/arch/powerpc/sysdev/scom.c
++++ b/arch/powerpc/sysdev/scom.c
+@@ -194,12 +194,13 @@ static int scom_debug_init_one(struct dentry *root, struct device_node *dn,
+ 
+ 	ent->dn = of_node_get(dn);
+ 	snprintf(ent->name, 16, "%08x", i);
+-	ent->path.data = (void*) dn->full_name;
+-	ent->path.size = strlen(dn->full_name);
++	ent->path.data = (void*)kasprintf(GFP_KERNEL, "%pOF", dn);
++	ent->path.size = strlen((char *)ent->path.data);
+ 
+ 	dir = debugfs_create_dir(ent->name, root);
+ 	if (!dir) {
+ 		of_node_put(dn);
++		kfree(ent->path.data);
+ 		kfree(ent);
+ 		return -1;
+ 	}
+diff --git a/arch/powerpc/sysdev/simple_gpio.c b/arch/powerpc/sysdev/simple_gpio.c
+index 6afddae2fb47..f02d4576138c 100644
+--- a/arch/powerpc/sysdev/simple_gpio.c
++++ b/arch/powerpc/sysdev/simple_gpio.c
+@@ -142,7 +142,6 @@ void __init simple_gpiochip_init(const char *compatible)
+ 		}
+ 		continue;
+ err:
+-		pr_err("%s: registration failed, status %d\n",
+-		       np->full_name, ret);
++		pr_err("%pOF: registration failed, status %d\n", np, ret);
+ 	}
+ }
+diff --git a/arch/powerpc/sysdev/tsi108_pci.c b/arch/powerpc/sysdev/tsi108_pci.c
+index 5692dd569b9b..28ff1f53cefc 100644
+--- a/arch/powerpc/sysdev/tsi108_pci.c
++++ b/arch/powerpc/sysdev/tsi108_pci.c
+@@ -213,8 +213,8 @@ int __init tsi108_setup_pci(struct device_node *dev, u32 cfg_phys, int primary)
+ 	/* Get bus range if any */
+ 	bus_range = of_get_property(dev, "bus-range", &len);
+ 	if (bus_range == NULL || len < 2 * sizeof(int)) {
+-		printk(KERN_WARNING "Can't get bus-range for %s, assume"
+-		       " bus 0\n", dev->full_name);
++		printk(KERN_WARNING "Can't get bus-range for %pOF, assume"
++		       " bus 0\n", dev);
+ 	}
+ 
+ 	hose = pcibios_alloc_controller(dev);
+diff --git a/arch/powerpc/sysdev/xive/native.c b/arch/powerpc/sysdev/xive/native.c
+index 1dbf782c9239..edc2e81b7280 100644
+--- a/arch/powerpc/sysdev/xive/native.c
++++ b/arch/powerpc/sysdev/xive/native.c
+@@ -551,7 +551,7 @@ bool __init xive_native_init(void)
+ 		pr_devel("not found !\n");
+ 		return false;
+ 	}
+-	pr_devel("Found %s\n", np->full_name);
++	pr_devel("Found %pOF\n", np);
+ 
+ 	/* Resource 1 is HV window */
+ 	if (of_address_to_resource(np, 1, &r)) {
+-- 
+2.26.2
+
