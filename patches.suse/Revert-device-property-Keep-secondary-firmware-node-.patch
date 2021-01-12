@@ -1,0 +1,44 @@
+From 47f4469970d8861bc06d2d4d45ac8200ff07c693 Mon Sep 17 00:00:00 2001
+From: Bard Liao <yung-chuan.liao@linux.intel.com>
+Date: Tue, 5 Jan 2021 17:11:45 +0800
+Subject: [PATCH] Revert "device property: Keep secondary firmware node secondary by type"
+Git-commit: 47f4469970d8861bc06d2d4d45ac8200ff07c693
+Patch-mainline: v5.11-rc3
+References: git-fixes
+
+While commit d5dcce0c414f ("device property: Keep secondary firmware
+node secondary by type") describes everything correct in its commit
+message, the change it made does the opposite and original commit
+c15e1bdda436 ("device property: Fix the secondary firmware node handling
+in set_primary_fwnode()") was fully correct.
+
+Revert the former one here and improve documentation in the next patch.
+
+Fixes: d5dcce0c414f ("device property: Keep secondary firmware node secondary by type")
+Signed-off-by: Bard Liao <yung-chuan.liao@linux.intel.com>
+Reviewed-by: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+Reviewed-by: Heikki Krogerus <heikki.krogerus@linux.intel.com>
+Cc: 5.10+ <stable@vger.kernel.org> # 5.10+
+Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/base/core.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/base/core.c b/drivers/base/core.c
+index 25e08e5f40bd..51b9545a050b 100644
+--- a/drivers/base/core.c
++++ b/drivers/base/core.c
+@@ -4433,7 +4433,7 @@ void set_primary_fwnode(struct device *dev, struct fwnode_handle *fwnode)
+ 		if (fwnode_is_primary(fn)) {
+ 			dev->fwnode = fn->secondary;
+ 			if (!(parent && fn == parent->fwnode))
+-				fn->secondary = ERR_PTR(-ENODEV);
++				fn->secondary = NULL;
+ 		} else {
+ 			dev->fwnode = NULL;
+ 		}
+-- 
+2.26.2
+
