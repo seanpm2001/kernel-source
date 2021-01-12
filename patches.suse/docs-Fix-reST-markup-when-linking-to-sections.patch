@@ -1,0 +1,109 @@
+From 4f8af077a02eed4831885048a10e04daa4e61a72 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?N=C3=ADcolas=20F=2E=20R=2E=20A=2E=20Prado?=
+ <nfraprado@protonmail.com>
+Date: Mon, 28 Dec 2020 14:46:07 +0000
+Subject: [PATCH] docs: Fix reST markup when linking to sections
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Git-commit: 4f8af077a02eed4831885048a10e04daa4e61a72
+References: git-fixes
+Patch-mainline: v5.11-rc3
+
+During the process of converting the documentation to reST, some links
+were converted using the following wrong syntax (and sometimes using %20
+instead of spaces):
+
+   `Display text <#section-name-in-html>`__
+
+This syntax isn't valid according to the docutils' spec [1], but more
+importantly, it is specific to HTML, since it uses '#' to link to an
+HTML anchor.
+
+The right syntax would instead use a docutils hyperlink reference as the
+embedded URI to point to the section [2], that is:
+
+   `Display text <Section Name_>`__
+
+This syntax works in both HTML and PDF.
+
+The LaTeX toolchain doesn't mind the HTML anchor syntax when generating
+the pdf documentation (make pdfdocs), that is, the build succeeds but
+the links don't work, but that syntax causes errors when trying to build
+using the not-yet-merged rst2pdf:
+
+   ValueError: format not resolved, probably missing URL scheme or undefined destination target for 'Forcing%20Quiescent%20States'
+
+So, use the correct syntax in order to have it work in all different
+output formats.
+
+[1]: https://docutils.sourceforge.io/docs/ref/rst/restructuredtext.html#reference-names
+[2]: https://docutils.sourceforge.io/docs/ref/rst/restructuredtext.html#embedded-uris-and-aliases
+
+Fixes: ccc9971e2147 ("docs: rcu: convert some articles from html to ReST")
+Fixes: c8cce10a62aa ("docs: Fix the reference labels in Locking.rst")
+Fixes: e548cdeffcd8 ("docs-rst: convert kernel-locking to ReST")
+Fixes: 7ddedebb03b7 ("ALSA: doc: ReSTize writing-an-alsa-driver document")
+Signed-off-by: Nícolas F. R. A. Prado <nfraprado@protonmail.com>
+Reviewed-by: Takashi Iwai <tiwai@suse.de>
+Reviewed-by: Mauro Carvalho Chehab <mchehab+huawei@kernel.org>
+Link: https://lore.kernel.org/r/20201228144537.135353-1-nfraprado@protonmail.com
+Signed-off-by: Jonathan Corbet <corbet@lwn.net>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ Documentation/sound/kernel-api/writing-an-alsa-driver.rst |   16 +++++++-------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+--- a/Documentation/sound/kernel-api/writing-an-alsa-driver.rst
++++ b/Documentation/sound/kernel-api/writing-an-alsa-driver.rst
+@@ -97,7 +97,7 @@ core/oss
+ The codes for PCM and mixer OSS emulation modules are stored in this
+ directory. The rawmidi OSS emulation is included in the ALSA rawmidi
+ code since it's quite small. The sequencer code is stored in
+-``core/seq/oss`` directory (see `below <#core-seq-oss>`__).
++``core/seq/oss`` directory (see `below <core/seq/oss_>`__).
+ 
+ core/ioctl32
+ ~~~~~~~~~~~~
+@@ -418,7 +418,7 @@ where ``enable[dev]`` is the module opti
+ Each time the ``probe`` callback is called, check the availability of
+ the device. If not available, simply increment the device index and
+ returns. dev will be incremented also later (`step 7
+-<#set-the-pci-driver-data-and-return-zero>`__).
++<7) Set the PCI driver data and return zero._>`__).
+ 
+ 2) Create a card instance
+ ~~~~~~~~~~~~~~~~~~~~~~~~~
+@@ -474,10 +474,10 @@ field contains the information shown in
+ 5) Create other components, such as mixer, MIDI, etc.
+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 
+-Here you define the basic components such as `PCM <#PCM-Interface>`__,
+-mixer (e.g. `AC97 <#API-for-AC97-Codec>`__), MIDI (e.g.
+-`MPU-401 <#MIDI-MPU401-UART-Interface>`__), and other interfaces.
+-Also, if you want a `proc file <#Proc-Interface>`__, define it here,
++Here you define the basic components such as `PCM <PCM Interface_>`__,
++mixer (e.g. `AC97 <API for AC97 Codec_>`__), MIDI (e.g.
++`MPU-401 <MIDI (MPU401-UART) Interface_>`__), and other interfaces.
++Also, if you want a `proc file <Proc Interface_>`__, define it here,
+ too.
+ 
+ 6) Register the card instance.
+@@ -963,7 +963,7 @@ The allocation of an interrupt source is
+   chip->irq = pci->irq;
+ 
+ where :c:func:`snd_mychip_interrupt()` is the interrupt handler
+-defined `later <#pcm-interface-interrupt-handler>`__. Note that
++defined `later <PCM Interrupt Handler_>`__. Note that
+ ``chip->irq`` should be defined only when :c:func:`request_irq()`
+ succeeded.
+ 
+@@ -3042,7 +3042,7 @@ processing the output stream in the irq
+ 
+ If the MPU-401 interface shares its interrupt with the other logical
+ devices on the card, set ``MPU401_INFO_IRQ_HOOK`` (see
+-`below <#MIDI-Interrupt-Handler>`__).
++`below <MIDI Interrupt Handler_>`__).
+ 
+ Usually, the port address corresponds to the command port and port + 1
+ corresponds to the data port. If not, you may change the ``cport``
