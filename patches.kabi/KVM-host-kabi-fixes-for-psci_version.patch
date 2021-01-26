@@ -1,0 +1,59 @@
+From: Matthias Brugger <mbrugger@suse.com>
+Subject: KVM host: kabi fixes for psci_version
+Patch-mainline: Never, kABI workaround
+References: bsc#1174726
+
+The recent patch
+  patches.suse/arm-arm64-KVM-Add-PSCI-version-selection-API.patch
+add a new member to kvm_arch, which breaks kABI. Ignore the member in
+the kABI checkker.
+
+Signed-off-by: Matthias Brugger <mbrugger@suse.com>
+
+---
+ arch/arm/include/asm/kvm_host.h   |    8 +++++---
+ arch/arm64/include/asm/kvm_host.h |    6 ++++--
+ 2 files changed, 9 insertions(+), 5 deletions(-)
+
+--- a/arch/arm/include/asm/kvm_host.h
++++ b/arch/arm/include/asm/kvm_host.h
+@@ -61,6 +61,11 @@ struct kvm_arch {
+ 	/* The last vcpu id that ran on each physical CPU */
+ 	int __percpu *last_vcpu_ran;
+ 
++#ifndef __GENKSYMS__
++	/* Mandated version of PSCI */
++	u32 psci_version;
++#endif
++
+ 	/*
+ 	 * Anything that is not used directly from assembly code goes
+ 	 * here.
+@@ -76,9 +81,6 @@ struct kvm_arch {
+ 	/* Interrupt controller */
+ 	struct vgic_dist	vgic;
+ 	int max_vcpus;
+-
+-	/* Mandated version of PSCI */
+-	u32 psci_version;
+ };
+ 
+ #define KVM_NR_MEM_OBJS     40
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -71,11 +71,13 @@ struct kvm_arch {
+ 	/* The maximum number of vCPUs depends on the used GIC model */
+ 	int max_vcpus;
+ 
++#ifndef __GENKSYMS__
++	/* Mandated version of PSCI */
++	u32 psci_version;
++#endif
+ 	/* Interrupt controller */
+ 	struct vgic_dist	vgic;
+ 
+-	/* Mandated version of PSCI */
+-	u32 psci_version;
+ };
+ 
+ #define KVM_NR_MEM_OBJS     40

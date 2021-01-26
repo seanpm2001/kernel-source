@@ -36,10 +36,10 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	struct btrfs_space_info *sinfo = cache->space_info;
  	u64 num_bytes;
 -	u64 sinfo_used;
- 	u64 min_allocable_bytes;
  	int ret = -ENOSPC;
  
-@@ -1199,16 +1198,35 @@ static int inc_block_group_ro(struct btr
+ 	spin_lock(&sinfo->lock);
+@@ -1186,19 +1185,38 @@ static int inc_block_group_ro(struct btr
  
  	num_bytes = cache->key.offset - cache->reserved - cache->pinned -
  		    cache->bytes_super - btrfs_block_group_used(&cache->item);
@@ -49,12 +49,11 @@ Signed-off-by: David Sterba <dsterba@suse.com>
 -	 * sinfo_used + num_bytes should always <= sinfo->total_bytes.
 -	 *
 -	 * Here we make sure if we mark this bg RO, we still have enough
--	 * free space as buffer (if min_allocable_bytes is not 0).
+-	 * free space as buffer.
 +	 * Data never overcommits, even in mixed mode, so do just the straight
 +	 * check of left over space in how much we have allocated.
  	 */
--	if (sinfo_used + num_bytes + min_allocable_bytes <=
--	    sinfo->total_bytes) {
+-	if (force || (sinfo_used + num_bytes <= sinfo->total_bytes)) {
 +	if (force) {
 +		ret = 0;
 +	} else if (sinfo->flags & BTRFS_BLOCK_GROUP_DATA) {
@@ -82,13 +81,17 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  		sinfo->bytes_readonly += num_bytes;
  		cache->ro++;
  		list_add_tail(&cache->ro_list, &sinfo->ro_bgs);
-@@ -1221,9 +1239,6 @@ out:
+-		ret = 0;
+ 	}
+ out:
+ 	spin_unlock(&cache->lock);
+@@ -1207,9 +1225,6 @@ out:
  		btrfs_info(cache->fs_info,
  			"unable to make block group %llu ro",
  			cache->key.objectid);
 -		btrfs_info(cache->fs_info,
--			"sinfo_used=%llu bg_num_bytes=%llu min_allocable=%llu",
--			sinfo_used, num_bytes, min_allocable_bytes);
+-			"sinfo_used=%llu bg_num_bytes=%llu",
+-			sinfo_used, num_bytes);
  		btrfs_dump_space_info(cache->fs_info, cache->space_info, 0, 0);
  	}
  	return ret;

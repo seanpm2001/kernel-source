@@ -1,0 +1,73 @@
+From a2930e5c44951902b63f61aa3d65f4312744de39 Mon Sep 17 00:00:00 2001
+From: Kees Cook <keescook@chromium.org>
+Date: Mon, 16 Oct 2017 15:51:13 -0700
+Subject: [PATCH 1/1] IB/rdmavt: Convert timers to use timer_setup()
+Git-commit: a2930e5c44951902b63f61aa3d65f4312744de39
+Patch-mainline: v4.15
+References: bsc#1111666
+
+In preparation for unconditionally passing the struct timer_list pointer to
+all timer callbacks, switch to using the new timer_setup() and from_timer()
+to pass the timer pointer explicitly.
+
+setup_timer() was already being called before the open-coded init_timer()
+and .data assignment. These are removed as well.
+
+Cc: Dennis Dalessandro <dennis.dalessandro@intel.com>
+Cc: Doug Ledford <dledford@redhat.com>
+Cc: Sean Hefty <sean.hefty@intel.com>
+Cc: Hal Rosenstock <hal.rosenstock@gmail.com>
+Cc: linux-rdma@vger.kernel.org
+Signed-off-by: Kees Cook <keescook@chromium.org>
+Signed-off-by: Doug Ledford <dledford@redhat.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/sw/rdmavt/qp.c | 10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/infiniband/sw/rdmavt/qp.c b/drivers/infiniband/sw/rdmavt/qp.c
+index 22df09ae809e..74f85194db31 100644
+--- a/drivers/infiniband/sw/rdmavt/qp.c
++++ b/drivers/infiniband/sw/rdmavt/qp.c
+@@ -57,7 +57,7 @@
+ #include "vt.h"
+ #include "trace.h"
+ 
+-static void rvt_rc_timeout(unsigned long arg);
++static void rvt_rc_timeout(struct timer_list *t);
+ 
+ /*
+  * Convert the AETH RNR timeout code into the number of microseconds.
+@@ -845,7 +845,7 @@ struct ib_qp *rvt_create_qp(struct ib_pd *ibpd,
+ 				goto bail_qp;
+ 		}
+ 		/* initialize timers needed for rc qp */
+-		setup_timer(&qp->s_timer, rvt_rc_timeout, (unsigned long)qp);
++		timer_setup(&qp->s_timer, rvt_rc_timeout, 0);
+ 		hrtimer_init(&qp->s_rnr_timer, CLOCK_MONOTONIC,
+ 			     HRTIMER_MODE_REL);
+ 		qp->s_rnr_timer.function = rvt_rc_rnr_retry;
+@@ -894,8 +894,6 @@ struct ib_qp *rvt_create_qp(struct ib_pd *ibpd,
+ 		atomic_set(&qp->refcount, 0);
+ 		atomic_set(&qp->local_ops_pending, 0);
+ 		init_waitqueue_head(&qp->wait);
+-		init_timer(&qp->s_timer);
+-		qp->s_timer.data = (unsigned long)qp;
+ 		INIT_LIST_HEAD(&qp->rspwait);
+ 		qp->state = IB_QPS_RESET;
+ 		qp->s_wq = swq;
+@@ -2132,9 +2130,9 @@ EXPORT_SYMBOL(rvt_del_timers_sync);
+ /**
+  * This is called from s_timer for missing responses.
+  */
+-static void rvt_rc_timeout(unsigned long arg)
++static void rvt_rc_timeout(struct timer_list *t)
+ {
+-	struct rvt_qp *qp = (struct rvt_qp *)arg;
++	struct rvt_qp *qp = from_timer(qp, t, s_timer);
+ 	struct rvt_dev_info *rdi = ib_to_rvt(qp->ibqp.device);
+ 	unsigned long flags;
+ 
+-- 
+2.29.2
+

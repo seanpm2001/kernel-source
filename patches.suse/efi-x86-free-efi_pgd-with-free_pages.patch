@@ -1,0 +1,72 @@
+From: Arvind Sankar <nivedita@alum.mit.edu>
+Date: Tue, 10 Nov 2020 11:39:19 -0500
+Subject: efi/x86: Free efi_pgd with free_pages()
+Git-commit: c2fe61d8be491ff8188edaf22e838f819999146b
+Patch-mainline: v5.10-rc5
+References: bsc#1112178
+
+Commit
+
+  d9e9a6418065 ("x86/mm/pti: Allocate a separate user PGD")
+
+changed the PGD allocation to allocate PGD_ALLOCATION_ORDER pages, so in
+the error path it should be freed using free_pages() rather than
+free_page().
+
+Commit
+
+    06ace26f4e6f ("x86/efi: Free efi_pgd with free_pages()")
+
+fixed one instance of this, but missed another.
+
+Move the freeing out-of-line to avoid code duplication and fix this bug.
+
+Fixes: d9e9a6418065 ("x86/mm/pti: Allocate a separate user PGD")
+Link: https://lore.kernel.org/r/20201110163919.1134431-1-nivedita@alum.mit.edu
+Signed-off-by: Arvind Sankar <nivedita@alum.mit.edu>
+Signed-off-by: Ard Biesheuvel <ardb@kernel.org>
+Acked-by: Borislav Petkov <bp@suse.de>
+---
+ arch/x86/platform/efi/efi_64.c |   24 +++++++++++++-----------
+ 1 file changed, 13 insertions(+), 11 deletions(-)
+
+--- a/arch/x86/platform/efi/efi_64.c
++++ b/arch/x86/platform/efi/efi_64.c
+@@ -220,24 +220,26 @@ int __init efi_alloc_page_tables(void)
+ 	gfp_mask = GFP_KERNEL | __GFP_NOTRACK | __GFP_ZERO;
+ 	efi_pgd = (pgd_t *)__get_free_pages(gfp_mask, PGD_ALLOCATION_ORDER);
+ 	if (!efi_pgd)
+-		return -ENOMEM;
++		goto fail;
+ 
+ 	pgd = efi_pgd + pgd_index(EFI_VA_END);
+ 	p4d = p4d_alloc(&init_mm, pgd, EFI_VA_END);
+-	if (!p4d) {
+-		free_page((unsigned long)efi_pgd);
+-		return -ENOMEM;
+-	}
++	if (!p4d)
++		goto free_pgd;
+ 
+ 	pud = pud_alloc(&init_mm, p4d, EFI_VA_END);
+-	if (!pud) {
+-		if (CONFIG_PGTABLE_LEVELS > 4)
+-			free_page((unsigned long) pgd_page_vaddr(*pgd));
+-		free_pages((unsigned long)efi_pgd, PGD_ALLOCATION_ORDER);
+-		return -ENOMEM;
+-	}
++	if (!pud)
++		goto free_p4d;
+ 
+ 	return 0;
++
++free_p4d:
++	if (CONFIG_PGTABLE_LEVELS > 4)
++		free_page((unsigned long)pgd_page_vaddr(*pgd));
++free_pgd:
++	free_pages((unsigned long)efi_pgd, PGD_ALLOCATION_ORDER);
++fail:
++	return -ENOMEM;
+ }
+ 
+ /*

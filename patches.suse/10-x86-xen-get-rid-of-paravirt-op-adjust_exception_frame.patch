@@ -38,19 +38,9 @@ Acked-by: Borislav Petkov <bp@suse.de>
  arch/x86/xen/xen-ops.h                |    1 
  12 files changed, 133 insertions(+), 77 deletions(-)
 
---- a/arch/x86/entry/entry_64_compat.S
-+++ b/arch/x86/entry/entry_64_compat.S
-@@ -294,7 +294,6 @@ ENTRY(entry_INT80_compat)
- 	/*
- 	 * Interrupts are off on entry.
- 	 */
--	PARAVIRT_ADJUST_EXCEPTION_FRAME
- 	ASM_CLAC			/* Do this early to minimize exposure */
- 	SWAPGS
- 
 --- a/arch/x86/entry/entry_64.S
 +++ b/arch/x86/entry/entry_64.S
-@@ -857,7 +857,6 @@ ENTRY(\sym)
+@@ -828,7 +828,6 @@ ENTRY(\sym)
  	.endif
  
  	ASM_CLAC
@@ -58,7 +48,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  
  	.ifeq \has_error_code
  	pushq	$-1				/* ORIG_RAX: no syscall to restart */
-@@ -1014,7 +1013,7 @@ ENTRY(do_softirq_own_stack)
+@@ -974,7 +973,7 @@ ENTRY(do_softirq_own_stack)
  ENDPROC(do_softirq_own_stack)
  
  #ifdef CONFIG_XEN
@@ -67,7 +57,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  
  /*
   * A note on the "critical region" in our callback handler.
-@@ -1081,8 +1080,6 @@ ENTRY(xen_failsafe_callback)
+@@ -1041,8 +1040,6 @@ ENTRY(xen_failsafe_callback)
  	movq	8(%rsp), %r11
  	addq	$0x30, %rsp
  	pushq	$0				/* RIP */
@@ -76,7 +66,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  	UNWIND_HINT_IRET_REGS offset=8
  	jmp	general_protection
  1:	/* Segment mismatch => Category 1 (Bad segment). Retry the IRET. */
-@@ -1113,9 +1110,8 @@ idtentry int3			do_int3			has_error_code
+@@ -1073,9 +1070,8 @@ idtentry int3			do_int3			has_error_code
  idtentry stack_segment		do_stack_segment	has_error_code=1
  
  #ifdef CONFIG_XEN
@@ -88,7 +78,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  #endif
  
  idtentry general_protection	do_general_protection	has_error_code=1
-@@ -1276,21 +1272,10 @@ ENTRY(error_exit)
+@@ -1239,21 +1235,10 @@ ENTRY(error_exit)
  END(error_exit)
  
  /* Runs on exception stack */
@@ -111,9 +101,19 @@ Acked-by: Borislav Petkov <bp@suse.de>
  	 * We allow breakpoints in NMIs. If a breakpoint occurs, then
  	 * the iretq it performs will take us out of NMI context.
  	 * This means that we can have nested NMIs where the next
+--- a/arch/x86/entry/entry_64_compat.S
++++ b/arch/x86/entry/entry_64_compat.S
+@@ -293,7 +293,6 @@ ENTRY(entry_INT80_compat)
+ 	/*
+ 	 * Interrupts are off on entry.
+ 	 */
+-	PARAVIRT_ADJUST_EXCEPTION_FRAME
+ 	ASM_CLAC			/* Do this early to minimize exposure */
+ 	SWAPGS
+ 
 --- a/arch/x86/include/asm/paravirt.h
 +++ b/arch/x86/include/asm/paravirt.h
-@@ -962,11 +962,6 @@ extern void default_banner(void);
+@@ -960,11 +960,6 @@ extern void default_banner(void);
  #define GET_CR2_INTO_RAX				\
  	call PARA_INDIRECT(pv_mmu_ops+PV_MMU_read_cr2)
  
@@ -127,7 +127,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  		  CLBR_NONE,						\
 --- a/arch/x86/include/asm/paravirt_types.h
 +++ b/arch/x86/include/asm/paravirt_types.h
-@@ -195,9 +195,6 @@ struct pv_irq_ops {
+@@ -196,9 +196,6 @@ struct pv_irq_ops {
  	void (*safe_halt)(void);
  	void (*halt)(void);
  
@@ -161,8 +161,8 @@ Acked-by: Borislav Petkov <bp@suse.de>
  asmlinkage void overflow(void);
  asmlinkage void bounds(void);
  asmlinkage void invalid_op(void);
-@@ -56,6 +53,31 @@ asmlinkage void trace_page_fault(void);
- #define trace_async_page_fault async_page_fault
+@@ -56,6 +53,31 @@ asmlinkage void simd_coprocessor_error(v
+ #define trace_page_fault page_fault
  #endif
  
 +#if defined(CONFIG_X86_64) && defined(CONFIG_XEN_PV)
@@ -217,7 +217,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  __visible struct pv_cpu_ops pv_cpu_ops = {
 --- a/arch/x86/xen/enlighten_pv.c
 +++ b/arch/x86/xen/enlighten_pv.c
-@@ -611,6 +611,70 @@ static void xen_write_ldt_entry(struct d
+@@ -586,6 +586,70 @@ static void xen_write_ldt_entry(struct d
  	preempt_enable();
  }
  
@@ -288,7 +288,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  static int cvt_gate_to_trap(int vector, const gate_desc *val,
  			    struct trap_info *info)
  {
-@@ -623,40 +687,8 @@ static int cvt_gate_to_trap(int vector,
+@@ -598,40 +662,8 @@ static int cvt_gate_to_trap(int vector,
  
  	addr = gate_offset(*val);
  #ifdef CONFIG_X86_64
@@ -394,7 +394,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  /*
 --- a/arch/x86/xen/xen-ops.h
 +++ b/arch/x86/xen/xen-ops.h
-@@ -144,7 +144,6 @@ DECL_ASM(void, xen_restore_fl_direct, un
+@@ -145,7 +145,6 @@ DECL_ASM(void, xen_restore_fl_direct, un
  __visible void xen_iret(void);
  __visible void xen_sysret32(void);
  __visible void xen_sysret64(void);

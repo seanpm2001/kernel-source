@@ -1,0 +1,40 @@
+From 2dd8e44cb4f3893f26ca29e9593450f289a0b48a Mon Sep 17 00:00:00 2001
+From: Yuval Shaia <yuval.shaia@oracle.com>
+Date: Tue, 11 Dec 2018 12:26:35 +0200
+Subject: [PATCH 1/1] IB/mlx4: Remove unneeded NULL check
+Git-commit: 2dd8e44cb4f3893f26ca29e9593450f289a0b48a
+Patch-mainline: v5.0
+References: bsc#1111666
+
+NULL check for kfree is unnecessary, remove it.
+
+Fixes: b42dde478bca ("IB/mlx4: Rework special QP creation error path")
+Signed-off-by: Yuval Shaia <yuval.shaia@oracle.com>
+Reviewed-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/hw/mlx4/qp.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/infiniband/hw/mlx4/qp.c b/drivers/infiniband/hw/mlx4/qp.c
+index 0711ca1dfb8f..74ef7a0ec0b7 100644
+--- a/drivers/infiniband/hw/mlx4/qp.c
++++ b/drivers/infiniband/hw/mlx4/qp.c
+@@ -1211,10 +1211,10 @@ err_db:
+ 		mlx4_db_free(dev->dev, &qp->db);
+ 
+ err:
+-	if (sqp)
+-		kfree(sqp);
+-	else if (!*caller_qp)
++	if (!sqp && !*caller_qp)
+ 		kfree(qp);
++	kfree(sqp);
++
+ 	return err;
+ }
+ 
+-- 
+2.26.2
+

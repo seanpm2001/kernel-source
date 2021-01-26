@@ -40,16 +40,14 @@ Reviewed-by: David Sterba <dsterba@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 Signed-off-by: Filipe Manana <fdmanana@suse.com>
 ---
- fs/btrfs/dev-replace.c | 31 +++++++++++++++++++++----------
- fs/btrfs/volumes.c     |  2 ++
- fs/btrfs/volumes.h     |  7 +++++++
- 3 files changed, 30 insertions(+), 10 deletions(-)
+ fs/btrfs/dev-replace.c |   32 +++++++++++++++++++++-----------
+ fs/btrfs/volumes.c     |    2 ++
+ fs/btrfs/volumes.h     |    7 +++++++
+ 3 files changed, 30 insertions(+), 11 deletions(-)
 
-diff --git a/fs/btrfs/dev-replace.c b/fs/btrfs/dev-replace.c
-index 75d4097..5b11f6e 100644
 --- a/fs/btrfs/dev-replace.c
 +++ b/fs/btrfs/dev-replace.c
-@@ -507,18 +507,29 @@ static int btrfs_dev_replace_finishing(struct btrfs_fs_info *fs_info,
+@@ -507,18 +507,28 @@ static int btrfs_dev_replace_finishing(s
  	}
  	btrfs_wait_ordered_roots(fs_info, U64_MAX, 0, (u64)-1);
  
@@ -57,6 +55,9 @@ index 75d4097..5b11f6e 100644
 -	if (IS_ERR(trans)) {
 -		mutex_unlock(&dev_replace->lock_finishing_cancel_unmount);
 -		return PTR_ERR(trans);
+-	}
+-	ret = btrfs_commit_transaction(trans);
+-	WARN_ON(ret);
 +	while (1) {
 +		trans = btrfs_start_transaction(root, 0);
 +		if (IS_ERR(trans)) {
@@ -65,7 +66,11 @@ index 75d4097..5b11f6e 100644
 +		}
 +		ret = btrfs_commit_transaction(trans);
 +		WARN_ON(ret);
-+
+ 
+-	mutex_lock(&uuid_mutex);
+-	/* keep away write_all_supers() during the finishing procedure */
+-	mutex_lock(&fs_info->fs_devices->device_list_mutex);
+-	mutex_lock(&fs_info->chunk_mutex);
 +		mutex_lock(&uuid_mutex);
 +		/* keep away write_all_supers() during the finishing procedure */
 +		mutex_lock(&fs_info->fs_devices->device_list_mutex);
@@ -78,22 +83,13 @@ index 75d4097..5b11f6e 100644
 +		} else {
 +			break;
 +		}
- 	}
--	ret = btrfs_commit_transaction(trans);
--	WARN_ON(ret);
- 
--	mutex_lock(&uuid_mutex);
--	/* keep away write_all_supers() during the finishing procedure */
--	mutex_lock(&fs_info->fs_devices->device_list_mutex);
--	mutex_lock(&fs_info->chunk_mutex);
- 	btrfs_dev_replace_lock(dev_replace, 1);
++	}
+ 	btrfs_dev_replace_write_lock(dev_replace);
  	dev_replace->replace_state =
  		scrub_ret ? BTRFS_IOCTL_DEV_REPLACE_STATE_CANCELED
-diff --git a/fs/btrfs/volumes.c b/fs/btrfs/volumes.c
-index 405b078..cd85ec2 100644
 --- a/fs/btrfs/volumes.c
 +++ b/fs/btrfs/volumes.c
-@@ -4974,6 +4974,7 @@ static int __btrfs_alloc_chunk(struct btrfs_trans_handle *trans,
+@@ -4963,6 +4963,7 @@ static int __btrfs_alloc_chunk(struct bt
  	for (i = 0; i < map->num_stripes; i++) {
  		num_bytes = map->stripes[i].dev->bytes_used + stripe_size;
  		btrfs_device_set_bytes_used(map->stripes[i].dev, num_bytes);
@@ -101,7 +97,7 @@ index 405b078..cd85ec2 100644
  	}
  
  	spin_lock(&info->free_chunk_lock);
-@@ -7336,6 +7337,7 @@ void btrfs_update_commit_device_bytes_used(struct btrfs_fs_info *fs_info,
+@@ -7265,6 +7266,7 @@ void btrfs_update_commit_device_bytes_us
  		for (i = 0; i < map->num_stripes; i++) {
  			dev = map->stripes[i].dev;
  			dev->commit_bytes_used = dev->bytes_used;
@@ -109,8 +105,6 @@ index 405b078..cd85ec2 100644
  		}
  	}
  	mutex_unlock(&fs_info->chunk_mutex);
-diff --git a/fs/btrfs/volumes.h b/fs/btrfs/volumes.h
-index 46b080b..acbb9a6 100644
 --- a/fs/btrfs/volumes.h
 +++ b/fs/btrfs/volumes.h
 @@ -61,6 +61,13 @@ struct btrfs_device {
@@ -127,6 +121,3 @@ index 46b080b..acbb9a6 100644
  	/* regular prio bios */
  	struct btrfs_pending_bios pending_bios;
  	/* sync bios */
--- 
-2.16.4
-

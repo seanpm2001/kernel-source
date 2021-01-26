@@ -1,0 +1,61 @@
+From dd4eddc4ba31fbf4554fc5fa12d3a553b50e1469 Mon Sep 17 00:00:00 2001
+From: Dan Carpenter <dan.carpenter@oracle.com>
+Date: Wed, 22 Jul 2020 14:39:14 +0200
+Subject: [PATCH] media: mtk-mdp: Fix a refcounting bug on error in init
+Git-commit: dd4eddc4ba31fbf4554fc5fa12d3a553b50e1469
+References: git-fixes
+Patch-mainline: v5.9-rc1
+
+We need to call of_node_put(comp->dev_node); on the error paths in this
+function.
+
+Fixes: c8eb2d7e8202 ("[media] media: Add Mediatek MDP Driver")
+Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: Hans Verkuil <hverkuil-cisco@xs4all.nl>
+Signed-off-by: Mauro Carvalho Chehab <mchehab+huawei@kernel.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/media/platform/mtk-mdp/mtk_mdp_comp.c |   12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+--- a/drivers/media/platform/mtk-mdp/mtk_mdp_comp.c
++++ b/drivers/media/platform/mtk-mdp/mtk_mdp_comp.c
+@@ -104,6 +104,7 @@ int mtk_mdp_comp_init(struct device *dev
+ {
+ 	struct device_node *larb_node;
+ 	struct platform_device *larb_pdev;
++	int ret;
+ 	int i;
+ 
+ 	if (comp_id < 0 || comp_id >= MTK_MDP_COMP_ID_MAX) {
+@@ -136,7 +137,8 @@ int mtk_mdp_comp_init(struct device *dev
+ 		dev_err(dev,
+ 			"Missing mediadek,larb phandle in %s node\n",
+ 			node->full_name);
+-		return -EINVAL;
++		ret = -EINVAL;
++		goto put_dev;
+ 	}
+ 
+ 	larb_pdev = of_find_device_by_node(larb_node);
+@@ -144,13 +146,19 @@ int mtk_mdp_comp_init(struct device *dev
+ 		dev_warn(dev, "Waiting for larb device %s\n",
+ 			 larb_node->full_name);
+ 		of_node_put(larb_node);
+-		return -EPROBE_DEFER;
++		ret = -EPROBE_DEFER;
++		goto put_dev;
+ 	}
+ 	of_node_put(larb_node);
+ 
+ 	comp->larb_dev = &larb_pdev->dev;
+ 
+ 	return 0;
++
++put_dev:
++	of_node_put(comp->dev_node);
++
++	return ret;
+ }
+ 
+ void mtk_mdp_comp_deinit(struct device *dev, struct mtk_mdp_comp *comp)

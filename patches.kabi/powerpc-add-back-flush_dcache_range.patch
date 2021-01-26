@@ -1,0 +1,45 @@
+From b3e1563b79f24276d6442ede80a7679f1431dbe2 Mon Sep 17 00:00:00 2001
+From: Michal Suchanek <msuchanek@suse.de>
+Date: Tue, 27 Oct 2020 19:32:26 +0100
+Subject: [PATCH] kABI: add back flush_dcache_range.
+
+Patch-mainline: never, kabi
+References: jsc#SLE-16402 jsc#SLE-16497 bsc#1176109 ltc#187964
+
+Signed-off-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/include/asm/cacheflush.h | 1 +
+ arch/powerpc/kernel/cputable.c        | 8 ++++++++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/arch/powerpc/include/asm/cacheflush.h b/arch/powerpc/include/asm/cacheflush.h
+index a385c7bc3e82..9b320e71b2e3 100644
+--- a/arch/powerpc/include/asm/cacheflush.h
++++ b/arch/powerpc/include/asm/cacheflush.h
+@@ -46,6 +46,7 @@ static inline void __flush_dcache_icache_phys(unsigned long physaddr)
+ }
+ #endif
+ 
++#define flush_dcache_range flush_dcache_range_inline
+ /*
+  * Write any modified data cache blocks out to memory and invalidate them.
+  * Does not invalidate the corresponding instruction cache blocks.
+diff --git a/arch/powerpc/kernel/cputable.c b/arch/powerpc/kernel/cputable.c
+index c52c8d998dcd..689e212b540b 100644
+--- a/arch/powerpc/kernel/cputable.c
++++ b/arch/powerpc/kernel/cputable.c
+@@ -2309,3 +2309,11 @@ void __init mmu_feature_keys_init(void)
+ 	}
+ }
+ #endif
++
++#include <asm/cacheflush.h>
++#undef flush_dcache_range
++void flush_dcache_range(unsigned long start, unsigned long stop)
++{
++	flush_dcache_range_inline(start, stop);
++}
++EXPORT_SYMBOL(flush_dcache_range);
+-- 
+2.29.1
+

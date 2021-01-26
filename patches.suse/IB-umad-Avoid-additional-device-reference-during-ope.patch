@@ -1,0 +1,102 @@
+From ee848721f60d87c5fd27f0a29d5fc570ff0780be Mon Sep 17 00:00:00 2001
+From: Parav Pandit <parav@mellanox.com>
+Date: Tue, 22 Jan 2019 08:33:00 +0200
+Subject: [PATCH 1/1] IB/umad: Avoid additional device reference during
+Git-commit: ee848721f60d87c5fd27f0a29d5fc570ff0780be
+Patch-mainline: v5.1
+References: bsc#1111666
+ open()/close()
+
+ib_umad_init_port_dev() holds the reference of a ib_umad_device instance.
+ib_umad_device contains standard core device and cdev.  cdev holds the
+reference of its parent core device.  file ops holds the reference to cdev
+using core kernel.
+
+Therefore, there is no need to hold additional reference while opening
+umad related char devices.
+
+While at it, add comments to bring clarity on releasing references to
+ib_umd_device.
+
+Signed-off-by: Parav Pandit <parav@mellanox.com>
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/core/user_mad.c | 9 ++++-----
+ 1 file changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/infiniband/core/user_mad.c b/drivers/infiniband/core/user_mad.c
+index de8d31ab8945..097f153f0f22 100644
+--- a/drivers/infiniband/core/user_mad.c
++++ b/drivers/infiniband/core/user_mad.c
+@@ -989,7 +989,6 @@ static int ib_umad_open(struct inode *inode, struct file *filp)
+ 		goto out;
+ 	}
+ 
+-	ib_umad_dev_get(port->umad_dev);
+ out:
+ 	mutex_unlock(&port->file_mutex);
+ 	return ret;
+@@ -998,7 +997,6 @@ out:
+ static int ib_umad_close(struct inode *inode, struct file *filp)
+ {
+ 	struct ib_umad_file *file = filp->private_data;
+-	struct ib_umad_device *dev = file->port->umad_dev;
+ 	struct ib_umad_packet *packet, *tmp;
+ 	int already_dead;
+ 	int i;
+@@ -1027,7 +1025,6 @@ static int ib_umad_close(struct inode *inode, struct file *filp)
+ 	mutex_unlock(&file->port->file_mutex);
+ 
+ 	kfree(file);
+-	ib_umad_dev_put(dev);
+ 	return 0;
+ }
+ 
+@@ -1077,7 +1074,6 @@ static int ib_umad_sm_open(struct inode *inode, struct file *filp)
+ 	if (ret)
+ 		goto err_clr_sm_cap;
+ 
+-	ib_umad_dev_get(port->umad_dev);
+ 	return 0;
+ 
+ err_clr_sm_cap:
+@@ -1106,7 +1102,6 @@ static int ib_umad_sm_close(struct inode *inode, struct file *filp)
+ 
+ 	up(&port->sm_sem);
+ 
+-	ib_umad_dev_put(port->umad_dev);
+ 	return ret;
+ }
+ 
+@@ -1283,8 +1278,10 @@ static void ib_umad_kill_port(struct ib_umad_port *port)
+ 	mutex_unlock(&port->file_mutex);
+ 
+ 	cdev_device_del(&port->sm_cdev, &port->sm_dev);
++	/* balances device_initialize() */
+ 	put_device(&port->sm_dev);
+ 	cdev_device_del(&port->cdev, &port->dev);
++	/* balances device_initialize() */
+ 	put_device(&port->dev);
+ 	ida_free(&umad_ida, port->dev_num);
+ }
+@@ -1329,6 +1326,7 @@ err:
+ 		ib_umad_kill_port(&umad_dev->ports[i - s]);
+ 	}
+ free:
++	/* balances kref_init */
+ 	ib_umad_dev_put(umad_dev);
+ }
+ 
+@@ -1344,6 +1342,7 @@ static void ib_umad_remove_one(struct ib_device *device, void *client_data)
+ 		if (rdma_cap_ib_mad(device, i + rdma_start_port(device)))
+ 			ib_umad_kill_port(&umad_dev->ports[i]);
+ 	}
++	/* balances kref_init() */
+ 	ib_umad_dev_put(umad_dev);
+ }
+ 
+-- 
+2.26.2
+
