@@ -3,7 +3,7 @@ Date: Mon, 20 Jul 2020 17:55:13 +0200
 Subject: lockdep: Add preemption enabled/disabled assertion APIs
 Patch-mainline: v5.9-rc1
 Git-commit: 8fd8ad5c5dfcb09cf62abadd4043eaf1afbbd0ce
-References: bsc#1176564 bsc#1162702
+References: bsc#1176564 bsc#1162702 bsc#1180277
 
 Asserting that preemption is enabled or disabled is a critical sanity
 check.  Developers are usually reluctant to add such a check in a
@@ -18,14 +18,19 @@ Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
 Link: https://lkml.kernel.org/r/20200720155530.1173732-8-a.darwish@linutronix.de
 [dwagner: update context]
 Acked-by: Daniel Wagner <dwagner@suse.de>
+[dbueso: Fixed lockdep build failures, SLERT will still use task_struct]
+Signed-off-by: Davidlohr Bueso <dbueso@suse.de>
 ---
- include/linux/lockdep.h |   19 +++++++++++++++++++
- lib/Kconfig.debug       |    1 +
- 2 files changed, 20 insertions(+)
+ include/linux/lockdep.h  | 12 ++++++++++++
+ kernel/locking/lockdep.c |  8 ++++++++
+ lib/Kconfig.debug        |  1 +
+ 3 files changed, 21 insertions(+)
 
+diff --git a/include/linux/lockdep.h b/include/linux/lockdep.h
+index 981ed65f84f5..82dc9d9f5f55 100644
 --- a/include/linux/lockdep.h
 +++ b/include/linux/lockdep.h
-@@ -649,12 +649,31 @@ do {									\
+@@ -493,12 +493,24 @@ do {									\
  			  "Not in hardirq as expected\n");		\
  	} while (0)
  
@@ -34,17 +39,10 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
 +	WARN_ON_ONCE(IS_ENABLED(CONFIG_PREEMPT_COUNT)	&&		\
 +		     debug_locks			&&		\
 +		     (preempt_count() != 0		||		\
-+		      !this_cpu_read(hardirqs_enabled)));		\
++		      !current->hardirqs_enabled));			\
 +} while (0)
 +
-+#define lockdep_assert_preemption_disabled()				\
-+do {									\
-+	WARN_ON_ONCE(IS_ENABLED(CONFIG_PREEMPT_COUNT)	&&		\
-+		     debug_locks			&&		\
-+		     (preempt_count() == 0		&&		\
-+		      this_cpu_read(hardirqs_enabled)));		\
-+} while (0)
-+
++extern void lockdep_assert_preemption_disabled(void);
  #else
  # define might_lock(lock) do { } while (0)
  # define might_lock_read(lock) do { } while (0)
@@ -57,6 +55,24 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  #endif
  
  #ifdef CONFIG_LOCKDEP
+diff --git a/kernel/locking/lockdep.c b/kernel/locking/lockdep.c
+index b62a9bf360f6..4d6a5115661d 100644
+--- a/kernel/locking/lockdep.c
++++ b/kernel/locking/lockdep.c
+@@ -5356,3 +5356,11 @@ void lockdep_rcu_suspicious(const char *file, const int line, const char *s)
+ 	dump_stack();
+ }
+ EXPORT_SYMBOL_GPL(lockdep_rcu_suspicious);
++
++void lockdep_assert_preemption_disabled(void)
++{	WARN_ON_ONCE(IS_ENABLED(CONFIG_PREEMPT_COUNT)	&&
++		     debug_locks			&&
++		     (preempt_count() == 0		&&
++		      current->hardirqs_enabled));
++}
++EXPORT_SYMBOL_GPL(lockdep_assert_preemption_disabled);
+diff --git a/lib/Kconfig.debug b/lib/Kconfig.debug
+index 846ede969c8b..12c8b5dbeb5a 100644
 --- a/lib/Kconfig.debug
 +++ b/lib/Kconfig.debug
 @@ -1098,6 +1098,7 @@ config PROVE_LOCKING
@@ -67,3 +83,6 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  	select TRACE_IRQFLAGS
  	default n
  	help
+-- 
+2.26.2
+
