@@ -1,0 +1,30 @@
+From: Yixian Liu <liuyixian@huawei.com>
+Date: Thu, 26 Nov 2020 18:26:12 +0800
+Subject: RDMA/hns: Bugfix for memory window mtpt configuration
+Patch-mainline: v5.10-rc6
+Git-commit: 17475e104dcb74217c282781817f8f52b46130d3
+References: bsc#1104427 FATE#326416
+
+When a memory window is bound to a memory region, the local write access
+should be set for its mtpt table.
+
+Fixes: c7c28191408b ("RDMA/hns: Add MW support for hip08")
+Link: https://lore.kernel.org/r/1606386372-21094-1-git-send-email-liweihang@huawei.com
+Signed-off-by: Yixian Liu <liuyixian@huawei.com>
+Signed-off-by: Weihang Li <liweihang@huawei.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/infiniband/hw/hns/hns_roce_hw_v2.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/drivers/infiniband/hw/hns/hns_roce_hw_v2.c
++++ b/drivers/infiniband/hw/hns/hns_roce_hw_v2.c
+@@ -2427,6 +2427,7 @@ static int hns_roce_v2_mw_write_mtpt(voi
+ 
+ 	roce_set_bit(mpt_entry->byte_8_mw_cnt_en, V2_MPT_BYTE_8_R_INV_EN_S, 1);
+ 	roce_set_bit(mpt_entry->byte_8_mw_cnt_en, V2_MPT_BYTE_8_L_INV_EN_S, 1);
++	roce_set_bit(mpt_entry->byte_8_mw_cnt_en, V2_MPT_BYTE_8_LW_EN_S, 1);
+ 
+ 	roce_set_bit(mpt_entry->byte_12_mw_pa, V2_MPT_BYTE_12_PA_S, 0);
+ 	roce_set_bit(mpt_entry->byte_12_mw_pa, V2_MPT_BYTE_12_MR_MW_S, 1);
