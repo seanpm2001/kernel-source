@@ -1,0 +1,108 @@
+From 9df88ab06e406698422aa434f0eb0b5092e70115 Mon Sep 17 00:00:00 2001
+From: Leon Romanovsky <leonro@mellanox.com>
+Date: Sun, 1 Mar 2020 16:44:37 +0200
+Subject: [PATCH 12/16] net/liquidio: Delete driver version assignment
+Git-commit: b6334be64d6f72d70add879a70a43c326a02df6d
+Patch-mainline: v5.7-rc1
+References: git-fixes
+
+Drop driver version in favor of global to linux kernel version.
+
+Signed-off-by: Leon Romanovsky <leonro@mellanox.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/cavium/liquidio/lio_ethtool.c     | 2 --
+ drivers/net/ethernet/cavium/liquidio/lio_main.c        | 8 --------
+ drivers/net/ethernet/cavium/liquidio/lio_vf_main.c     | 5 ++---
+ drivers/net/ethernet/cavium/liquidio/liquidio_common.h | 5 -----
+ 4 files changed, 2 insertions(+), 18 deletions(-)
+
+diff --git a/drivers/net/ethernet/cavium/liquidio/lio_ethtool.c b/drivers/net/ethernet/cavium/liquidio/lio_ethtool.c
+index abe5d0dac851..2b27e3aad9db 100644
+--- a/drivers/net/ethernet/cavium/liquidio/lio_ethtool.c
++++ b/drivers/net/ethernet/cavium/liquidio/lio_ethtool.c
+@@ -442,7 +442,6 @@ lio_get_drvinfo(struct net_device *netdev, struct ethtool_drvinfo *drvinfo)
+ 
+ 	memset(drvinfo, 0, sizeof(struct ethtool_drvinfo));
+ 	strcpy(drvinfo->driver, "liquidio");
+-	strcpy(drvinfo->version, LIQUIDIO_VERSION);
+ 	strncpy(drvinfo->fw_version, oct->fw_info.liquidio_firmware_version,
+ 		ETHTOOL_FWVERS_LEN);
+ 	strncpy(drvinfo->bus_info, pci_name(oct->pci_dev), 32);
+@@ -459,7 +458,6 @@ lio_get_vf_drvinfo(struct net_device *netdev, struct ethtool_drvinfo *drvinfo)
+ 
+ 	memset(drvinfo, 0, sizeof(struct ethtool_drvinfo));
+ 	strcpy(drvinfo->driver, "liquidio_vf");
+-	strcpy(drvinfo->version, LIQUIDIO_VERSION);
+ 	strncpy(drvinfo->fw_version, oct->fw_info.liquidio_firmware_version,
+ 		ETHTOOL_FWVERS_LEN);
+ 	strncpy(drvinfo->bus_info, pci_name(oct->pci_dev), 32);
+diff --git a/drivers/net/ethernet/cavium/liquidio/lio_main.c b/drivers/net/ethernet/cavium/liquidio/lio_main.c
+index 4224d1607bee..93c61ccbae7a 100644
+--- a/drivers/net/ethernet/cavium/liquidio/lio_main.c
++++ b/drivers/net/ethernet/cavium/liquidio/lio_main.c
+@@ -40,7 +40,6 @@
+ MODULE_AUTHOR("Cavium Networks, <support@cavium.com>");
+ MODULE_DESCRIPTION("Cavium LiquidIO Intelligent Server Adapter Driver");
+ MODULE_LICENSE("GPL");
+-MODULE_VERSION(LIQUIDIO_VERSION);
+ MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_210SV_NAME
+ 		"_" LIO_FW_NAME_TYPE_NIC LIO_FW_NAME_SUFFIX);
+ MODULE_FIRMWARE(LIO_FW_DIR LIO_FW_BASE_NAME LIO_210NV_NAME
+@@ -1410,13 +1409,6 @@ static int octeon_chip_specific_setup(struct octeon_device *oct)
+ 			dev_id);
+ 	}
+ 
+-	if (!ret)
+-		dev_info(&oct->pci_dev->dev, "%s PASS%d.%d %s Version: %s\n", s,
+-			 OCTEON_MAJOR_REV(oct),
+-			 OCTEON_MINOR_REV(oct),
+-			 octeon_get_conf(oct)->card_name,
+-			 LIQUIDIO_VERSION);
+-
+ 	return ret;
+ }
+ 
+diff --git a/drivers/net/ethernet/cavium/liquidio/lio_vf_main.c b/drivers/net/ethernet/cavium/liquidio/lio_vf_main.c
+index 54b245797d2e..e0d77b81711e 100644
+--- a/drivers/net/ethernet/cavium/liquidio/lio_vf_main.c
++++ b/drivers/net/ethernet/cavium/liquidio/lio_vf_main.c
+@@ -32,7 +32,6 @@
+ MODULE_AUTHOR("Cavium Networks, <support@cavium.com>");
+ MODULE_DESCRIPTION("Cavium LiquidIO Intelligent Server Adapter Virtual Function Driver");
+ MODULE_LICENSE("GPL");
+-MODULE_VERSION(LIQUIDIO_VERSION);
+ 
+ static int debug = -1;
+ module_param(debug, int, 0644);
+@@ -2353,8 +2352,8 @@ static int octeon_device_init(struct octeon_device *oct)
+ 	}
+ 	atomic_set(&oct->status, OCT_DEV_MSIX_ALLOC_VECTOR_DONE);
+ 
+-	dev_info(&oct->pci_dev->dev, "OCTEON_CN23XX VF Version: %s, %d ioqs\n",
+-		 LIQUIDIO_VERSION, oct->sriov_info.rings_per_vf);
++	dev_info(&oct->pci_dev->dev, "OCTEON_CN23XX VF: %d ioqs\n",
++		 oct->sriov_info.rings_per_vf);
+ 
+ 	/* Setup the interrupt handler and record the INT SUM register address*/
+ 	if (octeon_setup_interrupt(oct, oct->sriov_info.rings_per_vf))
+diff --git a/drivers/net/ethernet/cavium/liquidio/liquidio_common.h b/drivers/net/ethernet/cavium/liquidio/liquidio_common.h
+index a5e0e9f17959..2d61790c2e51 100644
+--- a/drivers/net/ethernet/cavium/liquidio/liquidio_common.h
++++ b/drivers/net/ethernet/cavium/liquidio/liquidio_common.h
+@@ -31,11 +31,6 @@
+ #define LIQUIDIO_BASE_MICRO_VERSION 2
+ #define LIQUIDIO_BASE_VERSION   __stringify(LIQUIDIO_BASE_MAJOR_VERSION) "." \
+ 				__stringify(LIQUIDIO_BASE_MINOR_VERSION)
+-#define LIQUIDIO_MICRO_VERSION  "." __stringify(LIQUIDIO_BASE_MICRO_VERSION)
+-#define LIQUIDIO_VERSION        LIQUIDIO_PACKAGE \
+-				__stringify(LIQUIDIO_BASE_MAJOR_VERSION) "." \
+-				__stringify(LIQUIDIO_BASE_MINOR_VERSION) \
+-				"." __stringify(LIQUIDIO_BASE_MICRO_VERSION)
+ 
+ struct lio_version {
+ 	u16  major;
+-- 
+2.16.4
+
