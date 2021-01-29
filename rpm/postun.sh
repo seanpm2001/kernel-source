@@ -26,6 +26,9 @@ if [ -x $wm2 ]; then
     /bin/sh -${-/e/} $wm2 --remove-kernel @KERNELRELEASE@-@FLAVOR@
 fi
 
+# EB branch has no bootloader
+exit 0
+
 # remove fstab check once perl-Bootloader can cope with it
 if [ -f /etc/fstab ]; then
 	if [ -x /usr/lib/bootloader/bootloader_entry ]; then

@@ -19,6 +19,8 @@ message_install_bl () {
 }
 
 run_bootloader () {
+    # EB branch
+    return 0
     if [ -f /etc/sysconfig/bootloader ] &&
 	    [ -f /boot/grub/menu.lst -o \
 	      -f /etc/lilo.conf      -o \
