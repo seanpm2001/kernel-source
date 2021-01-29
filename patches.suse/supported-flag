@@ -29,7 +29,7 @@ Signed-off-by: Andreas Gruenbacher <agruen@suse.de>
 
 --- a/Documentation/admin-guide/kernel-parameters.txt
 +++ b/Documentation/admin-guide/kernel-parameters.txt
-@@ -4213,6 +4213,14 @@
+@@ -4651,6 +4651,14 @@
  	unknown_nmi_panic
  			[X86] Cause panic on unknown NMI.
  
@@ -46,7 +46,7 @@ Signed-off-by: Andreas Gruenbacher <agruen@suse.de>
  			(default -1 = authorized except for wireless USB,
 --- a/Documentation/sysctl/kernel.txt
 +++ b/Documentation/sysctl/kernel.txt
-@@ -963,6 +963,18 @@ can be ORed together:
+@@ -974,6 +974,18 @@ can be ORed together:
         signature.
  16384 - A soft lockup has previously occurred on the system.
  32768 - The kernel has been live patched.
@@ -81,7 +81,7 @@ Signed-off-by: Andreas Gruenbacher <agruen@suse.de>
  KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)
 --- a/include/linux/kernel.h
 +++ b/include/linux/kernel.h
-@@ -457,6 +457,9 @@ extern int panic_on_unrecovered_nmi;
+@@ -461,6 +461,9 @@ extern int panic_on_unrecovered_nmi;
  extern int panic_on_io_nmi;
  extern int panic_on_warn;
  extern int sysctl_panic_on_rcu_stall;
@@ -91,7 +91,7 @@ Signed-off-by: Andreas Gruenbacher <agruen@suse.de>
  extern int sysctl_panic_on_stackoverflow;
  
  extern bool crash_kexec_post_notifiers;
-@@ -515,7 +518,19 @@ extern enum system_states {
+@@ -519,7 +522,19 @@ extern enum system_states {
  #define TAINT_UNSIGNED_MODULE		13
  #define TAINT_SOFTLOCKUP		14
  #define TAINT_LIVEPATCH			15
@@ -214,7 +214,7 @@ Signed-off-by: Andreas Gruenbacher <agruen@suse.de>
  /*
   * Mutex protects:
   * 1) List of modules (also safely readable with preempt_disable),
-@@ -1171,6 +1187,12 @@ static size_t module_flags_taint(struct
+@@ -1156,6 +1172,12 @@ static size_t module_flags_taint(struct
  			buf[l++] = taint_flags[i].c_true;
  	}
  
@@ -227,7 +227,7 @@ Signed-off-by: Andreas Gruenbacher <agruen@suse.de>
  	return l;
  }
  
-@@ -1243,6 +1265,33 @@ static ssize_t show_taint(struct module_
+@@ -1228,6 +1250,33 @@ static ssize_t show_taint(struct module_
  static struct module_attribute modinfo_taint =
  	__ATTR(taint, 0444, show_taint, NULL);
  
@@ -261,7 +261,7 @@ Signed-off-by: Andreas Gruenbacher <agruen@suse.de>
  static struct module_attribute *modinfo_attrs[] = {
  	&module_uevent,
  	&modinfo_version,
-@@ -1251,6 +1300,9 @@ static struct module_attribute *modinfo_
+@@ -1236,6 +1285,9 @@ static struct module_attribute *modinfo_
  	&modinfo_coresize,
  	&modinfo_initsize,
  	&modinfo_taint,
@@ -271,7 +271,7 @@ Signed-off-by: Andreas Gruenbacher <agruen@suse.de>
  #ifdef CONFIG_MODULE_UNLOAD
  	&modinfo_refcnt,
  #endif
-@@ -1806,9 +1858,37 @@ static int mod_sysfs_setup(struct module
+@@ -1790,8 +1842,36 @@ static int mod_sysfs_setup(struct module
  	add_sect_attrs(mod, info);
  	add_notes_attrs(mod, info);
  
@@ -296,7 +296,6 @@ Signed-off-by: Andreas Gruenbacher <agruen@suse.de>
 +	}
 +#endif
 +
- 	kobject_uevent(&mod->mkobj.kobj, KOBJ_ADD);
  	return 0;
  
 +#ifdef CONFIG_SUSE_KERNEL_SUPPORTED
@@ -309,7 +308,7 @@ Signed-off-by: Andreas Gruenbacher <agruen@suse.de>
  out_unreg_param:
  	module_param_sysfs_remove(mod);
  out_unreg_holders:
-@@ -4325,6 +4405,9 @@ void print_modules(void)
+@@ -4344,6 +4424,9 @@ void print_modules(void)
  	if (last_unloaded_module[0])
  		pr_cont(" [last unloaded: %s]", last_unloaded_module);
  	pr_cont("\n");
@@ -321,7 +320,7 @@ Signed-off-by: Andreas Gruenbacher <agruen@suse.de>
  #ifdef CONFIG_MODVERSIONS
 --- a/kernel/panic.c
 +++ b/kernel/panic.c
-@@ -321,6 +321,10 @@ const struct taint_flag taint_flags[TAIN
+@@ -325,6 +325,10 @@ const struct taint_flag taint_flags[TAIN
  	{ 'E', ' ', true },	/* TAINT_UNSIGNED_MODULE */
  	{ 'L', ' ', false },	/* TAINT_SOFTLOCKUP */
  	{ 'K', ' ', true },	/* TAINT_LIVEPATCH */
@@ -332,7 +331,7 @@ Signed-off-by: Andreas Gruenbacher <agruen@suse.de>
  };
  
  /**
-@@ -342,6 +346,8 @@ const struct taint_flag taint_flags[TAIN
+@@ -346,6 +350,8 @@ const struct taint_flag taint_flags[TAIN
   *  'E' - Unsigned module has been loaded.
   *  'L' - A soft lockup has previously occurred.
   *  'K' - Kernel has been live patched.
@@ -343,7 +342,7 @@ Signed-off-by: Andreas Gruenbacher <agruen@suse.de>
   */
 --- a/kernel/sysctl.c
 +++ b/kernel/sysctl.c
-@@ -790,6 +790,15 @@ static struct ctl_table kern_table[] = {
+@@ -795,6 +795,15 @@ static struct ctl_table kern_table[] = {
  		.extra1		= &pid_max_min,
  		.extra2		= &pid_max_max,
  	},
