@@ -47,12 +47,14 @@ Link: https://lore.kernel.org/r/87sg9pkvf7.fsf@nanos.tec.linutronix.de
 Signed-off-by: Davidlohr Bueso <dbueso@suse.de>
 
 ---
- kernel/futex.c |   14 ++++++++++++--
- 1 file changed, 12 insertions(+), 2 deletions(-)
+ kernel/futex.c | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
 
+diff --git a/kernel/futex.c b/kernel/futex.c
+index f8614ef4ff31..ac328874f6e5 100644
 --- a/kernel/futex.c
 +++ b/kernel/futex.c
-@@ -2399,10 +2399,20 @@ retry:
+@@ -2380,10 +2380,22 @@ static int fixup_pi_state_owner(u32 __user *uaddr, struct futex_q *q,
  		}
  
  		/*
@@ -70,8 +72,10 @@ Signed-off-by: Davidlohr Bueso <dbueso@suse.de>
 +		 * situation and not any different from the other retry
 +		 * conditions.
 +		 */
-+		if (unlikely(!newowner))
++		if (unlikely(!newowner)) {
++			err = -EAGAIN;
 +			goto handle_err;
++		}
  	} else {
  		WARN_ON_ONCE(argowner != current);
  		if (oldowner == current) {
