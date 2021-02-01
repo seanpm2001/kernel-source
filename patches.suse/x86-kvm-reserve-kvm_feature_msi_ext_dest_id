@@ -1,0 +1,48 @@
+From: David Woodhouse <dwmw@amazon.co.uk>
+Date: Mon, 19 Oct 2020 15:55:56 +0100
+Subject: x86/kvm: Reserve KVM_FEATURE_MSI_EXT_DEST_ID
+Git-commit: 5a169bf04cd2bfdbac967d12eb5b70915b29d7ee
+Patch-mainline: v5.10-rc2
+References: bsc#1181001, jsc#ECO-3191
+
+No functional change; just reserve the feature bit for now so that VMMs
+can start to implement it.
+
+This will allow the host to indicate that MSI emulation supports 15-bit
+destination IDs, allowing up to 32768 CPUs without interrupt remapping.
+
+cf. https://patchwork.kernel.org/patch/11816693/ for qemu
+
+Signed-off-by: David Woodhouse <dwmw@amazon.co.uk>
+Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+Message-Id: <4cd59bed05f4b7410d3d1ffd1e997ab53683874d.camel@infradead.org>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Joerg Roedel <jroedel@suse.de>
+---
+ Documentation/virtual/kvm/cpuid.txt  |    4 ++++
+ arch/x86/include/uapi/asm/kvm_para.h |    1 +
+ 2 files changed, 5 insertions(+)
+
+--- a/Documentation/virtual/kvm/cpuid.txt
++++ b/Documentation/virtual/kvm/cpuid.txt
+@@ -58,6 +58,10 @@ KVM_FEATURE_ASYNC_PF_VMEXIT        ||
+                                    ||       || can be enabled by setting bit 2
+                                    ||       || when writing to msr 0x4b564d02
+ ------------------------------------------------------------------------------
++KVM_FEATURE_MSI_EXT_DEST_ID        ||    15 || guest checks this feature bit
++                                   ||       || before using extended destination
++                                   ||       || ID bits in MSI address bits 11-5.
++------------------------------------------------------------------------------
+ KVM_FEATURE_CLOCKSOURCE_STABLE_BIT ||    24 || host will warn if no guest-side
+                                    ||       || per-cpu warps are expected in
+                                    ||       || kvmclock.
+--- a/arch/x86/include/uapi/asm/kvm_para.h
++++ b/arch/x86/include/uapi/asm/kvm_para.h
+@@ -24,6 +24,7 @@
+ #define KVM_FEATURE_PV_EOI		6
+ #define KVM_FEATURE_PV_UNHALT		7
+ #define KVM_FEATURE_ASYNC_PF_VMEXIT	10
++#define KVM_FEATURE_MSI_EXT_DEST_ID	15
+ 
+ /* The last 8 bits are used to indicate how to interpret the flags field
+  * in pvclock structure. If no bits are set, all flags are ignored.
