@@ -1,0 +1,64 @@
+From: Bartosz Golaszewski <bgolaszewski@baylibre.com>
+Date: Tue, 13 Oct 2020 09:30:55 +0200
+Subject: iommu/vt-d: Don't dereference iommu_device if IOMMU_API is not built
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Git-commit: 9def3b1a07c41e21c68a0eb353e3e569fdd1d2b1
+Patch-mainline: v5.10-rc1
+References: bsc#1181001, jsc#ECO-3191
+
+Since commit c40aaaac1018 ("iommu/vt-d: Gracefully handle DMAR units
+with no supported address widths") dmar.c needs struct iommu_device to
+be selected. We can drop this dependency by not dereferencing struct
+iommu_device if IOMMU_API is not selected and by reusing the information
+stored in iommu->drhd->ignored instead.
+
+This fixes the following build error when IOMMU_API is not selected:
+
+drivers/iommu/dmar.c: In function ‘free_iommu’:
+drivers/iommu/dmar.c:1139:41: error: ‘struct iommu_device’ has no member named ‘ops’
+ 1139 |  if (intel_iommu_enabled && iommu->iommu.ops) {
+                                                ^
+
+Fixes: c40aaaac1018 ("iommu/vt-d: Gracefully handle DMAR units with no supported address widths")
+Signed-off-by: Bartosz Golaszewski <bgolaszewski@baylibre.com>
+Acked-by: Lu Baolu <baolu.lu@linux.intel.com>
+Acked-by: David Woodhouse <dwmw@amazon.co.uk>
+Link: https://lore.kernel.org/r/20201013073055.11262-1-brgl@bgdev.pl
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+---
+ drivers/iommu/dmar.c        |    3 ++-
+ include/linux/intel-iommu.h |    2 ++
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+--- a/drivers/iommu/dmar.c
++++ b/drivers/iommu/dmar.c
+@@ -1125,6 +1125,7 @@ static int alloc_iommu(struct dmar_drhd_
+ 	}
+ 
+ 	drhd->iommu = iommu;
++	iommu->drhd = drhd;
+ 
+ 	return 0;
+ 
+@@ -1139,7 +1140,7 @@ error:
+ 
+ static void free_iommu(struct intel_iommu *iommu)
+ {
+-	if (intel_iommu_enabled && iommu->iommu.ops) {
++	if (intel_iommu_enabled && !iommu->drhd->ignored) {
+ 		iommu_device_unregister(&iommu->iommu);
+ 		iommu_device_sysfs_remove(&iommu->iommu);
+ 	}
+--- a/include/linux/intel-iommu.h
++++ b/include/linux/intel-iommu.h
+@@ -435,6 +435,8 @@ struct intel_iommu {
+ 	struct iommu_device iommu;  /* IOMMU core code handle */
+ 	int		node;
+ 	u32		flags;      /* Software defined flags */
++
++	struct dmar_drhd_unit *drhd;
+ };
+ 
+ static inline void __iommu_flush_cache(
