@@ -1,0 +1,134 @@
+From d4a05370c58a329771939b7a40b7496800492b4c Mon Sep 17 00:00:00 2001
+From: Doug Berger <opendmb@gmail.com>
+Date: Wed, 24 Jun 2020 18:14:53 -0700
+Subject: [PATCH 3/4] net: bcmgenet: re-remove bcmgenet_hfb_add_filter
+Patch-mainline: v5.8-rc3
+Git-commit: 673bafd5b8b0ec9b1e2eedca2a2be6b44ee5ba9c
+References: git-fixes
+
+This function was originally removed by Baoyou Xie in
+commit e2072600a241 ("net: bcmgenet: remove unused function in
+bcmgenet.c") to prevent a build warning.
+
+Some of the functions removed by Baoyou Xie are now used for
+WAKE_FILTER support so his commit was reverted, but this function
+is still unused and the kbuild test robot dutifully reported the
+warning.
+
+This commit once again removes the remaining unused hfb functions.
+
+Fixes: 14da1510fedc ("Revert "net: bcmgenet: remove unused function in bcmgenet.c"")
+Reported-by: kbuild test robot <lkp@intel.com>
+Signed-off-by: Doug Berger <opendmb@gmail.com>
+Acked-by: Florian Fainelli <f.fainelli@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/broadcom/genet/bcmgenet.c | 77 --------------------------
+ 1 file changed, 77 deletions(-)
+
+diff --git a/drivers/net/ethernet/broadcom/genet/bcmgenet.c b/drivers/net/ethernet/broadcom/genet/bcmgenet.c
+index 33ff30a3debe..6f5e8b794f55 100644
+--- a/drivers/net/ethernet/broadcom/genet/bcmgenet.c
++++ b/drivers/net/ethernet/broadcom/genet/bcmgenet.c
+@@ -472,17 +472,6 @@ static inline void bcmgenet_rdma_ring_writel(struct bcmgenet_priv *priv,
+ 			genet_dma_ring_regs[r]);
+ }
+ 
+-static bool bcmgenet_hfb_is_filter_enabled(struct bcmgenet_priv *priv,
+-					   u32 f_index)
+-{
+-	u32 offset;
+-	u32 reg;
+-
+-	offset = HFB_FLT_ENABLE_V3PLUS + (f_index < 32) * sizeof(u32);
+-	reg = bcmgenet_hfb_reg_readl(priv, offset);
+-	return !!(reg & (1 << (f_index % 32)));
+-}
+-
+ static void bcmgenet_hfb_enable_filter(struct bcmgenet_priv *priv, u32 f_index)
+ {
+ 	u32 offset;
+@@ -546,19 +535,6 @@ static void bcmgenet_hfb_set_filter_length(struct bcmgenet_priv *priv,
+ 	bcmgenet_hfb_reg_writel(priv, reg, offset);
+ }
+ 
+-static int bcmgenet_hfb_find_unused_filter(struct bcmgenet_priv *priv)
+-{
+-	u32 f_index;
+-
+-	/* First MAX_NUM_OF_FS_RULES are reserved for Rx NFC filters */
+-	for (f_index = MAX_NUM_OF_FS_RULES;
+-	     f_index < priv->hw_params->hfb_filter_cnt; f_index++)
+-		if (!bcmgenet_hfb_is_filter_enabled(priv, f_index))
+-			return f_index;
+-
+-	return -ENOMEM;
+-}
+-
+ static int bcmgenet_hfb_validate_mask(void *mask, size_t size)
+ {
+ 	while (size) {
+@@ -757,59 +733,6 @@ static int bcmgenet_hfb_create_rxnfc_filter(struct bcmgenet_priv *priv,
+ 	return err;
+ }
+ 
+-/* bcmgenet_hfb_add_filter
+- *
+- * Add new filter to Hardware Filter Block to match and direct Rx traffic to
+- * desired Rx queue.
+- *
+- * f_data is an array of unsigned 32-bit integers where each 32-bit integer
+- * provides filter data for 2 bytes (4 nibbles) of Rx frame:
+- *
+- * bits 31:20 - unused
+- * bit  19    - nibble 0 match enable
+- * bit  18    - nibble 1 match enable
+- * bit  17    - nibble 2 match enable
+- * bit  16    - nibble 3 match enable
+- * bits 15:12 - nibble 0 data
+- * bits 11:8  - nibble 1 data
+- * bits 7:4   - nibble 2 data
+- * bits 3:0   - nibble 3 data
+- *
+- * Example:
+- * In order to match:
+- * - Ethernet frame type = 0x0800 (IP)
+- * - IP version field = 4
+- * - IP protocol field = 0x11 (UDP)
+- *
+- * The following filter is needed:
+- * u32 hfb_filter_ipv4_udp[] = {
+- *   Rx frame offset 0x00: 0x00000000, 0x00000000, 0x00000000, 0x00000000,
+- *   Rx frame offset 0x08: 0x00000000, 0x00000000, 0x000F0800, 0x00084000,
+- *   Rx frame offset 0x10: 0x00000000, 0x00000000, 0x00000000, 0x00030011,
+- * };
+- *
+- * To add the filter to HFB and direct the traffic to Rx queue 0, call:
+- * bcmgenet_hfb_add_filter(priv, hfb_filter_ipv4_udp,
+- *                         ARRAY_SIZE(hfb_filter_ipv4_udp), 0);
+- */
+-int bcmgenet_hfb_add_filter(struct bcmgenet_priv *priv, u32 *f_data,
+-			    u32 f_length, u32 rx_queue)
+-{
+-	int f_index;
+-
+-	f_index = bcmgenet_hfb_find_unused_filter(priv);
+-	if (f_index < 0)
+-		return -ENOMEM;
+-
+-	if (f_length > priv->hw_params->hfb_filter_size)
+-		return -EINVAL;
+-
+-	bcmgenet_hfb_set_filter(priv, f_data, f_length, rx_queue, f_index);
+-	bcmgenet_hfb_enable_filter(priv, f_index);
+-
+-	return 0;
+-}
+-
+ /* bcmgenet_hfb_clear
+  *
+  * Clear Hardware Filter Block and disable all filtering.
+-- 
+2.16.4
+
