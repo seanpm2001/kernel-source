@@ -6,8 +6,6 @@ Git-commit: c1f6e3c818dd734c30f6a7eeebf232ba2cf3181d
 Patch-mainline: v5.7-rc6
 References: CVE-2020-27786 bsc#1179601
 
-[ backport note: kvfree() is replaced with kfree() -- tiwai ]
-
 The rawmidi core allows user to resize the runtime buffer via ioctl,
 and this may lead to UAF when performed during concurrent reads or
 Writes: the read/write functions unlock the runtime lock temporarily
@@ -48,7 +46,7 @@ Signed-off-by: Takashi Iwai <tiwai@suse.de>
  	wait_queue_head_t sleep;
 --- a/sound/core/rawmidi.c
 +++ b/sound/core/rawmidi.c
-@@ -108,6 +108,17 @@ static void snd_rawmidi_input_event_work
+@@ -112,6 +112,17 @@ static void snd_rawmidi_input_event_work
  		runtime->event(runtime->substream);
  }
  
@@ -66,19 +64,19 @@ Signed-off-by: Takashi Iwai <tiwai@suse.de>
  static int snd_rawmidi_runtime_create(struct snd_rawmidi_substream *substream)
  {
  	struct snd_rawmidi_runtime *runtime;
-@@ -654,6 +665,11 @@ int snd_rawmidi_output_params(struct snd
+@@ -661,6 +672,11 @@ static int resize_runtime_buffer(struct
  		if (!newbuf)
  			return -ENOMEM;
  		spin_lock_irq(&runtime->lock);
 +		if (runtime->buffer_ref) {
 +			spin_unlock_irq(&runtime->lock);
-+			kfree(newbuf);
++			kvfree(newbuf);
 +			return -EBUSY;
 +		}
  		oldbuf = runtime->buffer;
  		runtime->buffer = newbuf;
  		runtime->buffer_size = params->buffer_size;
-@@ -962,8 +978,10 @@ static long snd_rawmidi_kernel_read1(str
+@@ -960,8 +976,10 @@ static long snd_rawmidi_kernel_read1(str
  	long result = 0, count1;
  	struct snd_rawmidi_runtime *runtime = substream->runtime;
  	unsigned long appl_ptr;
@@ -89,7 +87,7 @@ Signed-off-by: Takashi Iwai <tiwai@suse.de>
  	while (count > 0 && runtime->avail) {
  		count1 = runtime->buffer_size - runtime->appl_ptr;
  		if (count1 > count)
-@@ -982,16 +1000,19 @@ static long snd_rawmidi_kernel_read1(str
+@@ -980,16 +998,19 @@ static long snd_rawmidi_kernel_read1(str
  		if (userbuf) {
  			spin_unlock_irqrestore(&runtime->lock, flags);
  			if (copy_to_user(userbuf + result,
@@ -113,7 +111,7 @@ Signed-off-by: Takashi Iwai <tiwai@suse.de>
  }
  
  long snd_rawmidi_kernel_read(struct snd_rawmidi_substream *substream,
-@@ -1262,6 +1283,7 @@ static long snd_rawmidi_kernel_write1(st
+@@ -1283,6 +1304,7 @@ static long snd_rawmidi_kernel_write1(st
  			return -EAGAIN;
  		}
  	}
@@ -121,7 +119,7 @@ Signed-off-by: Takashi Iwai <tiwai@suse.de>
  	while (count > 0 && runtime->avail > 0) {
  		count1 = runtime->buffer_size - runtime->appl_ptr;
  		if (count1 > count)
-@@ -1293,6 +1315,7 @@ static long snd_rawmidi_kernel_write1(st
+@@ -1314,6 +1336,7 @@ static long snd_rawmidi_kernel_write1(st
  	}
        __end:
  	count1 = runtime->avail < runtime->buffer_size;

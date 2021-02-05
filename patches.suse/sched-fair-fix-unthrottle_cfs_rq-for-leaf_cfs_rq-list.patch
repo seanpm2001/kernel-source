@@ -1,0 +1,94 @@
+From: Vincent Guittot <vincent.guittot@linaro.org>
+Date: Wed, 13 May 2020 15:55:28 +0200
+Subject: sched/fair: Fix unthrottle_cfs_rq() for leaf_cfs_rq list
+Patch-mainline: v5.7-rc7
+Git-commit: 39f23ce07b9355d05a64ae303ce20d1c4b92b957
+References: bsc#1179093
+
+Although not exactly identical, unthrottle_cfs_rq() and enqueue_task_fair()
+are quite close and follow the same sequence for enqueuing an entity in the
+cfs hierarchy. Modify unthrottle_cfs_rq() to use the same pattern as
+enqueue_task_fair(). This fixes a problem already faced with the latter and
+add an optimization in the last for_each_sched_entity loop.
+
+Fixes: fe61468b2cb (sched/fair: Fix enqueue_task_fair warning)
+Reported-by Tao Zhou <zohooouoto@zoho.com.cn>
+Signed-off-by: Vincent Guittot <vincent.guittot@linaro.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Phil Auld <pauld@redhat.com>
+Reviewed-by: Ben Segall <bsegall@google.com>
+Link: https://lkml.kernel.org/r/20200513135528.4742-1-vincent.guittot@linaro.org
+
+[mkoutny: Adjust for missing idle_h_nr_running and no update_load_avg in
+unthrottle_cfs_rq (fixed only in 6212437f0f604 ("sched/fair: Fix runnable_avg
+for throttled cfs") v5.7-rc1~179^2~20 ]
+Acked-by: Michal Koutný <mkoutny@suse.com>
+---
+ kernel/sched/fair.c |   34 ++++++++++++++++++++++++++--------
+ 1 file changed, 26 insertions(+), 8 deletions(-)
+
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -4772,7 +4772,6 @@ void unthrottle_cfs_rq(struct cfs_rq *cf
+ 	struct rq *rq = rq_of(cfs_rq);
+ 	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
+ 	struct sched_entity *se;
+-	int enqueue = 1;
+ 	long task_delta;
+ 
+ 	se = cfs_rq->tg->se[cpu_of(rq)];
+@@ -4795,20 +4794,38 @@ void unthrottle_cfs_rq(struct cfs_rq *cf
+ 	task_delta = cfs_rq->h_nr_running;
+ 	for_each_sched_entity(se) {
+ 		if (se->on_rq)
+-			enqueue = 0;
++			break;
++		cfs_rq = cfs_rq_of(se);
++		enqueue_entity(cfs_rq, se, ENQUEUE_WAKEUP);
++
++		cfs_rq->h_nr_running += task_delta;
++
++		/* end evaluation on encountering a throttled cfs_rq */
++		if (cfs_rq_throttled(cfs_rq))
++			goto unthrottle_throttle;
++	}
+ 
++	for_each_sched_entity(se) {
+ 		cfs_rq = cfs_rq_of(se);
+-		if (enqueue)
+-			enqueue_entity(cfs_rq, se, ENQUEUE_WAKEUP);
++
+ 		cfs_rq->h_nr_running += task_delta;
+ 
++		/* end evaluation on encountering a throttled cfs_rq */
+ 		if (cfs_rq_throttled(cfs_rq))
+-			break;
++			goto unthrottle_throttle;
++
++		/*
++		 * One parent has been throttled and cfs_rq removed from the
++		 * list. Add it back to not break the leaf list.
++		 */
++		if (throttled_hierarchy(cfs_rq))
++			list_add_leaf_cfs_rq(cfs_rq);
+ 	}
+ 
+-	if (!se)
+-		add_nr_running(rq, task_delta);
++	/* At this point se is NULL and we are at root level*/
++	add_nr_running(rq, task_delta);
+ 
++unthrottle_throttle:
+ 	/*
+ 	 * The cfs_rq_throttled() breaks in the above iteration can result in
+ 	 * incomplete leaf list maintenance, resulting in triggering the
+@@ -4817,7 +4834,8 @@ void unthrottle_cfs_rq(struct cfs_rq *cf
+ 	for_each_sched_entity(se) {
+ 		cfs_rq = cfs_rq_of(se);
+ 
+-		list_add_leaf_cfs_rq(cfs_rq);
++		if (list_add_leaf_cfs_rq(cfs_rq))
++			break;
+ 	}
+ 
+ 	assert_list_leaf_cfs_rq(rq);

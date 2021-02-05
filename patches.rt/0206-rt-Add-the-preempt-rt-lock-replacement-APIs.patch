@@ -1001,7 +1001,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +#endif
 --- a/kernel/futex.c
 +++ b/kernel/futex.c
-@@ -1430,6 +1430,7 @@ static int wake_futex_pi(u32 __user *uad
+@@ -1494,6 +1494,7 @@ static int wake_futex_pi(u32 __user *uad
  	struct task_struct *new_owner;
  	bool postunlock = false;
  	DEFINE_WAKE_Q(wake_q);
@@ -1009,14 +1009,15 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	int ret = 0;
  
  	new_owner = rt_mutex_next_owner(&pi_state->pi_mutex);
-@@ -1491,13 +1492,13 @@ static int wake_futex_pi(u32 __user *uad
- 	pi_state->owner = new_owner;
- 	raw_spin_unlock(&new_owner->pi_lock);
+@@ -1543,14 +1544,15 @@ static int wake_futex_pi(u32 __user *uad
+ 		 * not fail.
+ 		 */
+ 		pi_state_update_owner(pi_state, new_owner);
+-		postunlock = __rt_mutex_futex_unlock(&pi_state->pi_mutex, &wake_q);
++		postunlock = __rt_mutex_futex_unlock(&pi_state->pi_mutex, &wake_q,
++						     &wake_sleeper_q);
+ 	}
  
--	postunlock = __rt_mutex_futex_unlock(&pi_state->pi_mutex, &wake_q);
--
-+	postunlock = __rt_mutex_futex_unlock(&pi_state->pi_mutex, &wake_q,
-+					     &wake_sleeper_q);
  out_unlock:
  	raw_spin_unlock_irq(&pi_state->pi_mutex.wait_lock);
  
@@ -1026,7 +1027,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	return ret;
  }
-@@ -2799,7 +2800,7 @@ retry_private:
+@@ -2866,7 +2868,7 @@ retry_private:
  		goto no_block;
  	}
  
@@ -1035,7 +1036,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	/*
  	 * On PREEMPT_RT_FULL, when hb->lock becomes an rt_mutex, we must not
-@@ -3166,7 +3167,7 @@ static int futex_wait_requeue_pi(u32 __u
+@@ -3239,7 +3241,7 @@ static int futex_wait_requeue_pi(u32 __u
  	 * The waiter is allocated on our stack, manipulated by the requeue
  	 * code while we sleep on uaddr.
  	 */
@@ -2371,7 +2372,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	debug_rt_mutex_proxy_lock(lock, proxy_owner);
  	rt_mutex_set_owner(lock, proxy_owner);
  }
-@@ -1952,3 +2376,25 @@ bool rt_mutex_cleanup_proxy_lock(struct
+@@ -1978,3 +2402,25 @@ bool rt_mutex_cleanup_proxy_lock(struct
  
  	return cleanup;
  }
@@ -2415,16 +2416,16 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  #ifdef CONFIG_DEBUG_RT_MUTEXES
  	unsigned long		ip;
  	struct pid		*deadlock_task_pid;
-@@ -107,7 +109,7 @@ extern void rt_mutex_init_proxy_locked(s
+@@ -106,7 +108,7 @@ extern struct task_struct *rt_mutex_next
+ extern void rt_mutex_init_proxy_locked(struct rt_mutex *lock,
  				       struct task_struct *proxy_owner);
- extern void rt_mutex_proxy_unlock(struct rt_mutex *lock,
- 				  struct task_struct *proxy_owner);
+ extern void rt_mutex_proxy_unlock(struct rt_mutex *lock);
 -extern void rt_mutex_init_waiter(struct rt_mutex_waiter *waiter);
 +extern void rt_mutex_init_waiter(struct rt_mutex_waiter *waiter, bool savetate);
  extern int __rt_mutex_start_proxy_lock(struct rt_mutex *lock,
  				     struct rt_mutex_waiter *waiter,
  				     struct task_struct *task);
-@@ -125,9 +127,11 @@ extern int __rt_mutex_futex_trylock(stru
+@@ -124,9 +126,11 @@ extern int __rt_mutex_futex_trylock(stru
  
  extern void rt_mutex_futex_unlock(struct rt_mutex *lock);
  extern bool __rt_mutex_futex_unlock(struct rt_mutex *lock,
