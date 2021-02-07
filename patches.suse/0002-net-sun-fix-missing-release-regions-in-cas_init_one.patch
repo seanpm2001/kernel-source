@@ -1,0 +1,45 @@
+From 8b6b821ed0e903daa1c8a3d0409d9eecf12b8a3a Mon Sep 17 00:00:00 2001
+From: Qiushi Wu <wu000273@umn.edu>
+Date: Fri, 22 May 2020 16:50:27 -0500
+Subject: [PATCH 2/8] net: sun: fix missing release regions in cas_init_one().
+Patch-mainline: v5.7-rc7
+Git-commit: 5a730153984dd13f82ffae93d7170d76eba204e9
+References: git-fixes
+
+In cas_init_one(), "pdev" is requested by "pci_request_regions", but it
+was not released after a call of the function “pci_write_config_byte”
+failed. Thus replace the jump target “err_write_cacheline” by
+"err_out_free_res".
+
+Fixes: 1f26dac32057 ("[NET]: Add Sun Cassini driver.")
+Signed-off-by: Qiushi Wu <wu000273@umn.edu>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/sun/cassini.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/sun/cassini.c b/drivers/net/ethernet/sun/cassini.c
+index 382993c1561c..7e5c0f182770 100644
+--- a/drivers/net/ethernet/sun/cassini.c
++++ b/drivers/net/ethernet/sun/cassini.c
+@@ -4983,7 +4983,7 @@ static int cas_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 					  cas_cacheline_size)) {
+ 			dev_err(&pdev->dev, "Could not set PCI cache "
+ 			       "line size\n");
+-			goto err_write_cacheline;
++			goto err_out_free_res;
+ 		}
+ 	}
+ #endif
+@@ -5158,7 +5158,6 @@ static int cas_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ err_out_free_res:
+ 	pci_release_regions(pdev);
+ 
+-err_write_cacheline:
+ 	/* Try to restore it in case the error occurred after we
+ 	 * set it.
+ 	 */
+-- 
+2.16.4
+
