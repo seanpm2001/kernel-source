@@ -41,8 +41,8 @@ Signed-off-by: Josef Bacik <josef@toxicpanda.com>
 Acked-by: Nikolay Borisov <nborisov@suse.com>
 ---
  fs/btrfs/block-rsv.c   |    3 +++
- fs/btrfs/transaction.c |   18 ++++++++++++++++++
- 2 files changed, 21 insertions(+)
+ fs/btrfs/transaction.c |   17 +++++++++++++++++
+ 2 files changed, 20 insertions(+)
 
 --- a/fs/btrfs/block-rsv.c
 +++ b/fs/btrfs/block-rsv.c
@@ -51,13 +51,13 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  #include "math.h"
  #include "transaction.h"
 +#include "block-group.h"
-
+ 
  static u64 block_rsv_release_bytes(struct btrfs_fs_info *fs_info,
  				    struct btrfs_block_rsv *block_rsv,
 @@ -313,6 +314,8 @@ void btrfs_update_global_block_rsv(struc
  	else
  		block_rsv->full = 0;
-
+ 
 +	if (block_rsv->size >= sinfo->total_bytes)
 +		sinfo->force_alloc = CHUNK_ALLOC_FORCE;
  	spin_unlock(&block_rsv->lock);
@@ -70,18 +70,18 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  #include "qgroup.h"
  #include "block-group.h"
 +#include "space-info.h"
-
+ 
  #define BTRFS_ROOT_TRANS_TAG 0
-
-@@ -504,6 +505,7 @@ start_transaction(struct btrfs_root *roo
+ 
+@@ -475,6 +476,7 @@ start_transaction(struct btrfs_root *roo
  	u64 num_bytes = 0;
  	u64 qgroup_reserved = 0;
  	bool reloc_reserved = false;
 +	bool do_chunk_alloc = false;
  	int ret;
-
+ 
  	/* Send isn't supposed to start transactions. */
-@@ -566,6 +568,9 @@ start_transaction(struct btrfs_root *roo
+@@ -537,6 +539,9 @@ start_transaction(struct btrfs_root *roo
  							  delayed_refs_bytes);
  			num_bytes -= delayed_refs_bytes;
  		}
@@ -91,12 +91,10 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	} else if (num_items == 0 && flush == BTRFS_RESERVE_FLUSH_ALL &&
  		   !delayed_refs_rsv->full) {
  		/*
-@@ -647,6 +652,19 @@ got_it:
-
- 	if (!current->journal_info && type != TRANS_USERSPACE)
+@@ -618,6 +623,18 @@ got_it:
  		current->journal_info = h;
-+
-+	/*
+ 
+ 	/*
 +	 * If the space_info is marked ALLOC_FORCE then we'll get upgraded to
 +	 * ALLOC_FORCE the first run through, and then we won't allocate for
 +	 * anybody else who races in later.  We don't care about the return
@@ -108,6 +106,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 +				  CHUNK_ALLOC_NO_FORCE);
 +	}
 +
- 	return h;
-
- join_fail:
++	/*
+ 	 * btrfs_record_root_in_trans() needs to alloc new extents, and may
+ 	 * call btrfs_join_transaction() while we're also starting a
+ 	 * transaction.
