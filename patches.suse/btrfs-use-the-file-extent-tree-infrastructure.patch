@@ -115,7 +115,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 +			}
  		}
  
- 		if (clone_info) {
+ 		if (clone_info && drop_end > clone_info->file_offset) {
 @@ -2673,6 +2696,15 @@ int btrfs_punch_hole_range(struct inode
  			btrfs_abort_transaction(trans, ret);
  			goto out_trans;
@@ -162,7 +162,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	/*
  	 * Release the reserved range from inode dirty range map, as it is
  	 * already moved into delayed_ref_head
-@@ -4391,6 +4405,8 @@ search_again:
+@@ -4390,6 +4404,8 @@ search_again:
  	}
  
  	while (1) {
@@ -171,7 +171,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		fi = NULL;
  		leaf = path->nodes[0];
  		btrfs_item_key_to_cpu(leaf, &found_key, path->slots[0]);
-@@ -4441,6 +4457,8 @@ search_again:
+@@ -4440,6 +4456,8 @@ search_again:
  
  		if (extent_type != BTRFS_FILE_EXTENT_INLINE) {
  			u64 num_dec;
@@ -180,7 +180,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  			extent_start = btrfs_file_extent_disk_bytenr(leaf, fi);
  			if (!del_item) {
  				u64 orig_num_bytes =
-@@ -4448,6 +4466,7 @@ search_again:
+@@ -4447,6 +4465,7 @@ search_again:
  				extent_num_bytes = ALIGN(new_size -
  						found_key.offset,
  						fs_info->sectorsize);
@@ -188,7 +188,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  				btrfs_set_file_extent_num_bytes(leaf, fi,
  							 extent_num_bytes);
  				num_dec = (orig_num_bytes -
-@@ -4473,6 +4492,7 @@ search_again:
+@@ -4472,6 +4491,7 @@ search_again:
  						inode_sub_bytes(inode, num_dec);
  				}
  			}
@@ -196,7 +196,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		} else if (extent_type == BTRFS_FILE_EXTENT_INLINE) {
  			/*
  			 * we can't truncate inline items that have had
-@@ -4494,12 +4514,33 @@ search_again:
+@@ -4493,12 +4513,33 @@ search_again:
  				 */
  				ret = NEED_TRUNCATE_BLOCK;
  				break;
@@ -230,7 +230,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		if (del_item)
  			last_size = found_key.offset;
  		else
-@@ -4822,14 +4863,21 @@ int btrfs_cont_expand(struct inode *inod
+@@ -4820,14 +4861,21 @@ int btrfs_cont_expand(struct inode *inod
  		}
  		last_byte = min(extent_map_end(em), block_end);
  		last_byte = ALIGN(last_byte, fs_info->sectorsize);
@@ -253,7 +253,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  			btrfs_drop_extent_cache(BTRFS_I(inode), cur_offset,
  						cur_offset + hole_size - 1, 0);
  			hole_em = alloc_extent_map();
-@@ -4862,6 +4910,11 @@ int btrfs_cont_expand(struct inode *inod
+@@ -4860,6 +4908,11 @@ int btrfs_cont_expand(struct inode *inod
  							hole_size - 1, 0);
  			}
  			free_extent_map(hole_em);
