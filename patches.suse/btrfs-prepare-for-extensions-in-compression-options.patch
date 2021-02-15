@@ -1,0 +1,66 @@
+From: David Sterba <dsterba@suse.com>
+Date: Mon, 17 Jul 2017 18:11:10 +0200
+Subject: btrfs: prepare for extensions in compression options
+Git-commit: a7164fa4e055daf6368cb68ed946aa5a362a1a75
+Patch-mainline: v4.14-rc1
+References: bsc#1182269
+
+This is a minimal patch intended to be backported to older kernels.
+We're going to extend the string specifying the compression method and
+this would fail on kernels before that change (the string is compared
+exactly).
+
+Relax the string matching only to the prefix, ie. ignoring anything that
+goes after "zlib" or "lzo", regardless of th format extension we decide
+to use. This applies to the mount options and properties.
+
+That way, patched old kernels could be booted on systems already
+utilizing the new compression spec.
+
+Applicable since commit 63541927c8d11, v3.14.
+
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/props.c | 4 ++--
+ fs/btrfs/super.c | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/fs/btrfs/props.c b/fs/btrfs/props.c
+index 916f5cf9b292..09c0266f248d 100644
+--- a/fs/btrfs/props.c
++++ b/fs/btrfs/props.c
+@@ -408,9 +408,9 @@ static int prop_compression_apply(struct inode *inode,
+ 		return 0;
+ 	}
+ 
+-	if (!strncmp("lzo", value, len))
++	if (!strncmp("lzo", value, 3))
+ 		type = BTRFS_COMPRESS_LZO;
+-	else if (!strncmp("zlib", value, len))
++	else if (!strncmp("zlib", value, 4))
+ 		type = BTRFS_COMPRESS_ZLIB;
+ 	else
+ 		return -EINVAL;
+diff --git a/fs/btrfs/super.c b/fs/btrfs/super.c
+index 64981fc8e39e..8a9bcad3b06a 100644
+--- a/fs/btrfs/super.c
++++ b/fs/btrfs/super.c
+@@ -499,14 +499,14 @@ int btrfs_parse_options(struct btrfs_fs_info *info, char *options,
+ 				btrfs_test_opt(info, FORCE_COMPRESS);
+ 			if (token == Opt_compress ||
+ 			    token == Opt_compress_force ||
+-			    strcmp(args[0].from, "zlib") == 0) {
++			    strncmp(args[0].from, "zlib", 4) == 0) {
+ 				compress_type = "zlib";
+ 				info->compress_type = BTRFS_COMPRESS_ZLIB;
+ 				btrfs_set_opt(info->mount_opt, COMPRESS);
+ 				btrfs_clear_opt(info->mount_opt, NODATACOW);
+ 				btrfs_clear_opt(info->mount_opt, NODATASUM);
+ 				no_compress = 0;
+-			} else if (strcmp(args[0].from, "lzo") == 0) {
++			} else if (strncmp(args[0].from, "lzo", 3) == 0) {
+ 				compress_type = "lzo";
+ 				info->compress_type = BTRFS_COMPRESS_LZO;
+ 				btrfs_set_opt(info->mount_opt, COMPRESS);
+
