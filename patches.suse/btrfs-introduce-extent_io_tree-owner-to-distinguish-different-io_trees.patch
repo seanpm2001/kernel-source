@@ -1,0 +1,196 @@
+From: Qu Wenruo <wqu@suse.com>
+Date: Fri, 1 Mar 2019 10:47:59 +0800
+Subject: btrfs: Introduce extent_io_tree::owner to distinguish different
+ io_trees
+Git-commit: 43eb5f2975848743e5b14c5bef20f40d404a7a04
+Patch-mainline: v5.2-rc1
+References: bsc#1181998
+
+Btrfs has the following different extent_io_trees used:
+
+- fs_info::free_extents[2]
+- btrfs_inode::io_tree - for both normal inodes and the btree inode
+- btrfs_inode::io_failure_tree
+- btrfs_transaction::dirty_pages
+- btrfs_root::dirty_log_pages
+
+If we want to trace changes in those trees, it will be pretty hard to
+distinguish them.
+
+Instead of using hard-to-read pointer address, this patch will introduce
+a new member extent_io_tree::owner to track the owner.
+
+This modification needs all the callers of extent_io_tree_init() to
+accept a new parameter @owner.
+
+This patch provides the basis for later trace events.
+
+Signed-off-by: Qu Wenruo <wqu@suse.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/disk-io.c               |   12 ++++++++----
+ fs/btrfs/extent_io.c             |    3 ++-
+ fs/btrfs/extent_io.h             |   15 ++++++++++++++-
+ fs/btrfs/inode.c                 |    5 +++--
+ fs/btrfs/relocation.c            |    3 ++-
+ fs/btrfs/tests/btrfs-tests.c     |    6 ++++--
+ fs/btrfs/tests/extent-io-tests.c |    2 +-
+ fs/btrfs/transaction.c           |    3 ++-
+ 8 files changed, 36 insertions(+), 13 deletions(-)
+
+--- a/fs/btrfs/disk-io.c
++++ b/fs/btrfs/disk-io.c
+@@ -1260,7 +1260,8 @@ static void __setup_root(struct btrfs_ro
+ 	root->last_log_commit = 0;
+ 	if (!dummy)
+ 		extent_io_tree_init(&root->dirty_log_pages,
+-				     fs_info->btree_inode->i_mapping);
++				    fs_info->btree_inode->i_mapping,
++				    IO_TREE_ROOT_DIRTY_LOG_PAGES);
+
+ 	memset(&root->root_key, 0, sizeof(root->root_key));
+ 	memset(&root->root_item, 0, sizeof(root->root_item));
+@@ -2205,7 +2206,8 @@ static void btrfs_init_btree_inode(struc
+ 	inode->i_mapping->a_ops = &btree_aops;
+
+ 	RB_CLEAR_NODE(&BTRFS_I(inode)->rb_node);
+-	extent_io_tree_init(&BTRFS_I(inode)->io_tree, inode->i_mapping);
++	extent_io_tree_init(&BTRFS_I(inode)->io_tree, inode->i_mapping,
++			    IO_TREE_INODE_IO);
+ 	BTRFS_I(inode)->io_tree.track_uptodate = 0;
+ 	extent_map_tree_init(&BTRFS_I(inode)->extent_tree);
+
+@@ -2606,9 +2608,11 @@ int open_ctree(struct super_block *sb,
+ 	fs_info->first_logical_byte = (u64)-1;
+
+ 	extent_io_tree_init(&fs_info->freed_extents[0],
+-			     fs_info->btree_inode->i_mapping);
++			     fs_info->btree_inode->i_mapping,
++			     IO_TREE_FS_INFO_FREED_EXTENTS0);
+ 	extent_io_tree_init(&fs_info->freed_extents[1],
+-			     fs_info->btree_inode->i_mapping);
++			     fs_info->btree_inode->i_mapping,
++			     IO_TREE_FS_INFO_FREED_EXTENTS1);
+ 	fs_info->pinned_extents = &fs_info->freed_extents[0];
+ 	set_bit(BTRFS_FS_BARRIER, &fs_info->flags);
+
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -244,13 +244,14 @@ void extent_io_exit(void)
+ }
+
+ void extent_io_tree_init(struct extent_io_tree *tree,
+-			 struct address_space *mapping)
++			 struct address_space *mapping, unsigned int owner)
+ {
+ 	tree->state = RB_ROOT;
+ 	tree->ops = NULL;
+ 	tree->dirty_bytes = 0;
+ 	spin_lock_init(&tree->lock);
+ 	tree->mapping = mapping;
++	tree->owner = owner;
+ }
+
+ static struct extent_state *alloc_extent_state(gfp_t mask)
+--- a/fs/btrfs/extent_io.h
++++ b/fs/btrfs/extent_io.h
+@@ -130,11 +130,24 @@ struct extent_io_ops {
+ 				  struct extent_state *orig, u64 split);
+ };
+
++enum {
++	IO_TREE_FS_INFO_FREED_EXTENTS0,
++	IO_TREE_FS_INFO_FREED_EXTENTS1,
++	IO_TREE_INODE_IO,
++	IO_TREE_INODE_IO_FAILURE,
++	IO_TREE_RELOC_BLOCKS,
++	IO_TREE_TRANS_DIRTY_PAGES,
++	IO_TREE_ROOT_DIRTY_LOG_PAGES,
++	IO_TREE_SELFTEST,
++};
++
+ struct extent_io_tree {
+ 	struct rb_root state;
+ 	struct address_space *mapping;
+ 	u64 dirty_bytes;
+ 	int track_uptodate;
++	/* Who owns this io tree, should be one of IO_TREE_* */
++	u8 owner;
+ 	spinlock_t lock;
+ 	const struct extent_io_ops *ops;
+ };
+@@ -264,7 +277,7 @@ typedef struct extent_map *(get_extent_t
+ 					  int create);
+
+ void extent_io_tree_init(struct extent_io_tree *tree,
+-			 struct address_space *mapping);
++			 struct address_space *mapping, unsigned int owner);
+ int try_release_extent_mapping(struct extent_map_tree *map,
+ 			       struct extent_io_tree *tree, struct page *page,
+ 			       gfp_t mask);
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -9204,8 +9204,9 @@ struct inode *btrfs_alloc_inode(struct s
+
+ 	inode = &ei->vfs_inode;
+ 	extent_map_tree_init(&ei->extent_tree);
+-	extent_io_tree_init(&ei->io_tree, &inode->i_data);
+-	extent_io_tree_init(&ei->io_failure_tree, &inode->i_data);
++	extent_io_tree_init(&ei->io_tree, &inode->i_data, IO_TREE_INODE_IO);
++	extent_io_tree_init(&ei->io_failure_tree, &inode->i_data,
++			    IO_TREE_INODE_IO_FAILURE);
+ 	ei->io_tree.track_uptodate = 1;
+ 	ei->io_failure_tree.track_uptodate = 1;
+ 	atomic_set(&ei->sync_writers, 0);
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -4356,7 +4356,8 @@ static struct reloc_control *alloc_reloc
+ 	backref_cache_init(&rc->backref_cache);
+ 	mapping_tree_init(&rc->reloc_root_tree);
+ 	extent_io_tree_init(&rc->processed_blocks,
+-			    fs_info->btree_inode->i_mapping);
++			    fs_info->btree_inode->i_mapping,
++			    IO_TREE_RELOC_BLOCKS);
+ 	return rc;
+ }
+
+--- a/fs/btrfs/tests/btrfs-tests.c
++++ b/fs/btrfs/tests/btrfs-tests.c
+@@ -128,8 +128,10 @@ struct btrfs_fs_info *btrfs_alloc_dummy_
+ 	INIT_LIST_HEAD(&fs_info->tree_mod_seq_list);
+ 	INIT_RADIX_TREE(&fs_info->buffer_radix, GFP_ATOMIC);
+ 	INIT_RADIX_TREE(&fs_info->fs_roots_radix, GFP_ATOMIC);
+-	extent_io_tree_init(&fs_info->freed_extents[0], NULL);
+-	extent_io_tree_init(&fs_info->freed_extents[1], NULL);
++	extent_io_tree_init(&fs_info->freed_extents[0], NULL,
++			    IO_TREE_FS_INFO_FREED_EXTENTS0);
++	extent_io_tree_init(&fs_info->freed_extents[1], NULL,
++			    IO_TREE_FS_INFO_FREED_EXTENTS1);
+ 	fs_info->pinned_extents = &fs_info->freed_extents[0];
+ 	set_bit(BTRFS_FS_STATE_DUMMY_FS_INFO, &fs_info->fs_state);
+
+--- a/fs/btrfs/tests/extent-io-tests.c
++++ b/fs/btrfs/tests/extent-io-tests.c
+@@ -87,7 +87,7 @@ static int test_find_delalloc(u32 sector
+ 		return -ENOMEM;
+ 	}
+
+-	extent_io_tree_init(&tmp, &inode->i_data);
++	extent_io_tree_init(&tmp, &inode->i_data, IO_TREE_SELFTEST);
+
+ 	/*
+ 	 * First go through and create and mark all of our pages dirty, we pin
+--- a/fs/btrfs/transaction.c
++++ b/fs/btrfs/transaction.c
+@@ -295,7 +295,8 @@ loop:
+ 	spin_lock_init(&cur_trans->dropped_roots_lock);
+ 	list_add_tail(&cur_trans->list, &fs_info->trans_list);
+ 	extent_io_tree_init(&cur_trans->dirty_pages,
+-			     fs_info->btree_inode->i_mapping);
++			    fs_info->btree_inode->i_mapping,
++			    IO_TREE_TRANS_DIRTY_PAGES );
+ 	fs_info->generation++;
+ 	cur_trans->transid = fs_info->generation;
+ 	fs_info->running_transaction = cur_trans;
