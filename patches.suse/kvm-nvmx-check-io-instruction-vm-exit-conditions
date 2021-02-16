@@ -12,15 +12,16 @@ bitmaps to determine if the instruction causes a VM-exit.
 
 Signed-off-by: Oliver Upton <oupton@google.com>
 Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
-Acked-by: Joerg Roedel <jroedel@suse.de>
+Signed-off-by: Juergen Gross <jgross@suse.com>
 ---
- arch/x86/kvm/vmx/nested.c |  2 +-
- arch/x86/kvm/vmx/vmx.c    | 57 ++++++++++++++++++++++++++++++++++++++++++-----
- 2 files changed, 52 insertions(+), 7 deletions(-)
+ arch/x86/kvm/vmx.c    | 59 ++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 52 insertions(+), 7 deletions(-)
 
+diff --git a/arch/x86/kvm/vmx.c b/arch/x86/kvm/vmx.c
+index f979832c394d..e920d7834d73 100644
 --- a/arch/x86/kvm/vmx.c
 +++ b/arch/x86/kvm/vmx.c
-@@ -8570,7 +8570,7 @@ static bool nested_vmx_exit_handled_io(s
+@@ -8610,7 +8610,7 @@ static bool nested_vmx_exit_handled_io(struct kvm_vcpu *vcpu,
  				       struct vmcs12 *vmcs12)
  {
  	unsigned long exit_qualification;
@@ -29,7 +30,11 @@ Acked-by: Joerg Roedel <jroedel@suse.de>
  	int size;
  
  	if (!nested_cpu_has(vmcs12, CPU_BASED_USE_IO_BITMAPS))
-@@ -12386,10 +12386,55 @@ static void nested_vmx_entry_failure(str
+diff --git a/arch/x86/kvm/vmx.c b/arch/x86/kvm/vmx.c
+index 5801a86f9c24..63aaf44edd1f 100644
+--- a/arch/x86/kvm/vmx.c
++++ b/arch/x86/kvm/vmx.c
+@@ -12425,6 +12425,39 @@ static void nested_vmx_entry_failure(struct kvm_vcpu *vcpu)
  		to_vmx(vcpu)->nested.sync_shadow_vmcs = true;
  }
  
@@ -69,15 +74,36 @@ Acked-by: Joerg Roedel <jroedel@suse.de>
  static int vmx_check_intercept(struct kvm_vcpu *vcpu,
  			       struct x86_instruction_info *info,
  			       enum x86_intercept_stage stage)
- {
+@@ -12432,18 +12465,30 @@ static int vmx_check_intercept(struct kvm_vcpu *vcpu,
+ 	struct vmcs12 *vmcs12 = get_vmcs12(vcpu);
+ 	struct x86_emulate_ctxt *ctxt = &vcpu->arch.emulate_ctxt;
+ 
 +	switch (info->intercept) {
+ 	/*
+ 	 * RDPID causes #UD if disabled through secondary execution controls.
+ 	 * Because it is marked as EmulateOnUD, we need to intercept it here.
+ 	 */
+-	if (info->intercept == x86_intercept_rdtscp &&
+-	    !nested_cpu_has2(vmcs12, SECONDARY_EXEC_RDTSCP)) {
+-		ctxt->exception.vector = UD_VECTOR;
+-		ctxt->exception.error_code_valid = false;
+-		return X86EMUL_PROPAGATE_FAULT;
+-	}
++	case x86_intercept_rdtscp:
++		if (!nested_cpu_has2(vmcs12, SECONDARY_EXEC_RDTSCP)) {
++			ctxt->exception.vector = UD_VECTOR;
++			ctxt->exception.error_code_valid = false;
++			return X86EMUL_PROPAGATE_FAULT;
++		}
++		break;
++
 +	case x86_intercept_in:
 +	case x86_intercept_ins:
 +	case x86_intercept_out:
 +	case x86_intercept_outs:
 +		return vmx_check_intercept_io(vcpu, info);
-+
-+	/* TODO: check more intercepts... */
+ 
+ 	/* TODO: check more intercepts... */
 +	default:
 +		break;
 +	}
@@ -85,3 +111,6 @@ Acked-by: Joerg Roedel <jroedel@suse.de>
  	return X86EMUL_UNHANDLEABLE;
  }
  
+-- 
+2.26.2
+
