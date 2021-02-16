@@ -37,7 +37,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 
 --- a/fs/btrfs/block-group.c
 +++ b/fs/btrfs/block-group.c
-@@ -3045,8 +3045,8 @@ void check_system_chunk(struct btrfs_tra
+@@ -3031,8 +3031,8 @@ void check_system_chunk(struct btrfs_tra
  	num_devs = get_profile_num_devs(fs_info, type);
  
  	/* num_devs device items to update and 1 chunk item to add or remove */
@@ -50,7 +50,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		btrfs_info(fs_info, "left=%llu, need=%llu, flags=%llu",
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -2440,17 +2440,21 @@ u64 hash_extent_data_ref(u64 root_object
+@@ -2452,17 +2452,21 @@ u64 hash_extent_data_ref(u64 root_object
  
  u64 btrfs_csum_bytes_to_leaves(struct btrfs_fs_info *fs_info, u64 csum_bytes);
  
@@ -157,18 +157,18 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
 --- a/fs/btrfs/file.c
 +++ b/fs/btrfs/file.c
-@@ -2523,7 +2523,7 @@ static int btrfs_punch_hole(struct inode
- 	u64 tail_len;
- 	u64 orig_start = offset;
- 	u64 cur_offset;
+@@ -2505,7 +2505,7 @@ int btrfs_punch_hole_range(struct inode
+ 			   struct btrfs_trans_handle **trans_out)
+ {
+ 	struct btrfs_fs_info *fs_info = btrfs_sb(inode->i_sb);
 -	u64 min_size = btrfs_calc_trans_metadata_size(fs_info, 1);
 +	u64 min_size = btrfs_calc_insert_metadata_size(fs_info, 1);
- 	u64 drop_end;
- 	int ret = 0;
- 	int err = 0;
-@@ -2641,7 +2641,7 @@ static int btrfs_punch_hole(struct inode
+ 	u64 ino_size = round_up(inode->i_size, fs_info->sectorsize);
+ 	struct btrfs_root *root = BTRFS_I(inode)->root;
+ 	struct btrfs_trans_handle *trans = NULL;
+@@ -2524,7 +2524,7 @@ int btrfs_punch_hole_range(struct inode
  		ret = -ENOMEM;
- 		goto out_free;
+ 		goto out;
  	}
 -	rsv->size = btrfs_calc_trans_metadata_size(fs_info, 1);
 +	rsv->size = btrfs_calc_insert_metadata_size(fs_info, 1);
@@ -201,7 +201,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  				  BTRFS_RESERVE_NO_FLUSH);
 --- a/fs/btrfs/inode.c
 +++ b/fs/btrfs/inode.c
-@@ -5087,7 +5087,7 @@ static struct btrfs_trans_handle *evict_
+@@ -5083,7 +5083,7 @@ static struct btrfs_trans_handle *evict_
  	struct btrfs_fs_info *fs_info = root->fs_info;
  	struct btrfs_block_rsv *global_rsv = &fs_info->global_block_rsv;
  	struct btrfs_trans_handle *trans;
@@ -210,7 +210,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	int ret;
  
  	/*
-@@ -5179,7 +5179,7 @@ void btrfs_evict_inode(struct inode *ino
+@@ -5175,7 +5175,7 @@ void btrfs_evict_inode(struct inode *ino
  	rsv = btrfs_alloc_block_rsv(fs_info, BTRFS_BLOCK_RSV_TEMP);
  	if (!rsv)
  		goto no_delete;
@@ -219,7 +219,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	rsv->failfast = 1;
  
  	btrfs_i_size_write(BTRFS_I(inode), 0);
-@@ -9028,7 +9028,7 @@ static int btrfs_truncate(struct inode *
+@@ -9023,7 +9023,7 @@ static int btrfs_truncate(struct inode *
  	int ret;
  	struct btrfs_trans_handle *trans;
  	u64 mask = fs_info->sectorsize - 1;
@@ -252,7 +252,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	ret = btrfs_block_rsv_add(root, rsv, num_bytes,
 --- a/fs/btrfs/space-info.c
 +++ b/fs/btrfs/space-info.c
-@@ -437,7 +437,7 @@ static inline u64 calc_reclaim_items_nr(
+@@ -435,7 +435,7 @@ static inline u64 calc_reclaim_items_nr(
  	u64 bytes;
  	u64 nr;
  
@@ -263,7 +263,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		nr = 1;
 --- a/fs/btrfs/transaction.c
 +++ b/fs/btrfs/transaction.c
-@@ -543,7 +543,7 @@ start_transaction(struct btrfs_root *roo
+@@ -515,7 +515,7 @@ start_transaction(struct btrfs_root *roo
  		 * worth of delayed refs updates in this trans handle, and
  		 * refill that amount for whatever is missing in the reserve.
  		 */
@@ -272,7 +272,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		if (delayed_refs_rsv->full == 0) {
  			delayed_refs_bytes = num_bytes;
  			num_bytes <<= 1;
-@@ -693,7 +693,7 @@ struct btrfs_trans_handle *btrfs_start_t
+@@ -665,7 +665,7 @@ struct btrfs_trans_handle *btrfs_start_t
  	if (IS_ERR(trans))
  		return trans;
  

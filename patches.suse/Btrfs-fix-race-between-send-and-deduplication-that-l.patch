@@ -118,16 +118,14 @@ Signed-off-by: Filipe Manana <fdmanana@suse.com>
 Reviewed-by: David Sterba <dsterba@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 ---
- fs/btrfs/ctree.h |  6 ++++++
- fs/btrfs/ioctl.c | 17 +++++++++++++++++
- fs/btrfs/send.c  | 26 ++++++++++++++++++++++++++
+ fs/btrfs/ctree.h |    6 ++++++
+ fs/btrfs/ioctl.c |   17 +++++++++++++++++
+ fs/btrfs/send.c  |   26 ++++++++++++++++++++++++++
  3 files changed, 49 insertions(+)
 
-diff --git a/fs/btrfs/ctree.h b/fs/btrfs/ctree.h
-index cabd87614a39..670372003915 100644
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -1321,6 +1321,12 @@ struct btrfs_root {
+@@ -1336,6 +1336,12 @@ struct btrfs_root {
  	 * manipulation with the read-only status via SUBVOL_SETFLAGS
  	 */
  	int send_in_progress;
@@ -139,12 +137,10 @@ index cabd87614a39..670372003915 100644
 +	int dedupe_in_progress;
  	struct btrfs_subvolume_writers *subv_writers;
  	atomic_t will_be_snapshoted;
- 
-diff --git a/fs/btrfs/ioctl.c b/fs/btrfs/ioctl.c
-index 24040eefc41c..0ec8da43835d 100644
+ 	atomic_t snapshot_force_cow;
 --- a/fs/btrfs/ioctl.c
 +++ b/fs/btrfs/ioctl.c
-@@ -3237,10 +3237,23 @@ static int btrfs_extent_same(struct inode *src, u64 loff, u64 olen,
+@@ -3257,10 +3257,23 @@ static int btrfs_extent_same(struct inod
  	int num_pages = PAGE_ALIGN(BTRFS_MAX_DEDUPE_LEN) >> PAGE_SHIFT;
  	bool same_inode = (src == dst);
  	u64 i, tail_len, chunk_count;
@@ -168,7 +164,7 @@ index 24040eefc41c..0ec8da43835d 100644
  	if (same_inode)
  		inode_lock(src);
  	else
-@@ -3304,6 +3317,10 @@ static int btrfs_extent_same(struct inode *src, u64 loff, u64 olen,
+@@ -3324,6 +3337,10 @@ out_unlock:
  	else
  		unlock_two_nondirectories(src, dst);
  
@@ -179,11 +175,9 @@ index 24040eefc41c..0ec8da43835d 100644
  	return ret;
  }
  
-diff --git a/fs/btrfs/send.c b/fs/btrfs/send.c
-index 0cfad0b15c4e..20e1db78dff0 100644
 --- a/fs/btrfs/send.c
 +++ b/fs/btrfs/send.c
-@@ -6621,6 +6621,13 @@ static void btrfs_root_dec_send_in_progress(struct btrfs_root* root)
+@@ -6621,6 +6621,13 @@ static void btrfs_root_dec_send_in_progr
  	spin_unlock(&root->root_item_lock);
  }
  
@@ -197,7 +191,7 @@ index 0cfad0b15c4e..20e1db78dff0 100644
  long btrfs_ioctl_send(struct file *mnt_file, void __user *arg_)
  {
  	int ret = 0;
-@@ -6645,6 +6652,11 @@ long btrfs_ioctl_send(struct file *mnt_file, void __user *arg_)
+@@ -6645,6 +6652,11 @@ long btrfs_ioctl_send(struct file *mnt_f
  	 * making it RW. This also protects against deletion.
  	 */
  	spin_lock(&send_root->root_item_lock);
@@ -209,7 +203,7 @@ index 0cfad0b15c4e..20e1db78dff0 100644
  	send_root->send_in_progress++;
  	spin_unlock(&send_root->root_item_lock);
  
-@@ -6789,6 +6801,13 @@ long btrfs_ioctl_send(struct file *mnt_file, void __user *arg_)
+@@ -6789,6 +6801,13 @@ long btrfs_ioctl_send(struct file *mnt_f
  				ret = -EPERM;
  				goto out;
  			}
@@ -223,7 +217,7 @@ index 0cfad0b15c4e..20e1db78dff0 100644
  			clone_root->send_in_progress++;
  			spin_unlock(&clone_root->root_item_lock);
  			srcu_read_unlock(&fs_info->subvol_srcu, index);
-@@ -6823,6 +6842,13 @@ long btrfs_ioctl_send(struct file *mnt_file, void __user *arg_)
+@@ -6823,6 +6842,13 @@ long btrfs_ioctl_send(struct file *mnt_f
  			ret = -EPERM;
  			goto out;
  		}
@@ -237,6 +231,3 @@ index 0cfad0b15c4e..20e1db78dff0 100644
  		spin_unlock(&sctx->parent_root->root_item_lock);
  
  		srcu_read_unlock(&fs_info->subvol_srcu, index);
--- 
-2.16.4
-
