@@ -1,0 +1,57 @@
+Patch-mainline: v4.19-rc7
+Git-commit: 2cf7ea9f40fabee0f8b40db4eb2d1e85cc6c0a95
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Wed, 3 Oct 2018 10:34:00 +0200
+Subject: [PATCH] KVM: VMX: hide flexpriority from guest when disabled at the
+ module level
+References: bsc#1182448
+
+As of commit 8d860bbeedef ("kvm: vmx: Basic APIC virtualization controls
+have three settings"), KVM will disable VIRTUALIZE_APIC_ACCESSES when
+a nested guest writes APIC_BASE MSR and kvm-intel.flexpriority=0,
+whereas previously KVM would allow a nested guest to enable
+VIRTUALIZE_APIC_ACCESSES so long as it's supported in hardware.  That is,
+KVM now advertises VIRTUALIZE_APIC_ACCESSES to a guest but doesn't
+(always) allow setting it when kvm-intel.flexpriority=0, and may even
+initially allow the control and then clear it when the nested guest
+writes APIC_BASE MSR, which is decidedly odd even if it doesn't cause
+functional issues.
+
+Hide the control completely when the module parameter is cleared.
+
+reported-by: Sean Christopherson <sean.j.christopherson@intel.com>
+Fixes: 8d860bbeedef ("kvm: vmx: Basic APIC virtualization controls have three settings")
+Cc: Jim Mattson <jmattson@google.com>
+Cc: stable@vger.kernel.org
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+---
+ arch/x86/kvm/vmx.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/vmx.c b/arch/x86/kvm/vmx.c
+index 764ae031054f..55b62760b694 100644
+--- a/arch/x86/kvm/vmx.c
++++ b/arch/x86/kvm/vmx.c
+@@ -3020,7 +3020,6 @@ static void nested_vmx_setup_ctls_msrs(struct nested_vmx_msrs *msrs, bool apicv)
+ 		vmx->nested.nested_vmx_secondary_ctls_high);
+ 	vmx->nested.nested_vmx_secondary_ctls_low = 0;
+ 	vmx->nested.nested_vmx_secondary_ctls_high &=
+-		SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES |
+ 		SECONDARY_EXEC_DESC |
+ 		SECONDARY_EXEC_VIRTUALIZE_X2APIC_MODE |
+ 		SECONDARY_EXEC_APIC_REGISTER_VIRT |
+@@ -3076,6 +3075,10 @@ static void nested_vmx_setup_ctls_msrs(struct nested_vmx_msrs *msrs, bool apicv)
+ 		vmx->nested.nested_vmx_secondary_ctls_high |=
+ 			SECONDARY_EXEC_UNRESTRICTED_GUEST;
+ 
++	if (flexpriority_enabled)
++		vmx->nested.nested_vmx_secondary_ctls_high |=
++			SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES;
++
+ 	/* miscellaneous data */
+ 	rdmsr(MSR_IA32_VMX_MISC,
+ 		vmx->nested.nested_vmx_misc_low,
+-- 
+2.26.2
+
