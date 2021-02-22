@@ -1,0 +1,42 @@
+From 70f327f97c45d991c3038b57cb652395efd9089f Mon Sep 17 00:00:00 2001
+From: Stefan Haberland <sth@linux.ibm.com>
+Date: Wed, 25 Jul 2018 14:00:47 +0200
+Subject: [PATCH 1/1] s390/dasd: fix hanging offline processing due to canceled
+ worker
+
+Git-commit: 669f3765b755fd8739ab46ce3a9c6292ce8b3d2a
+Patch-mainline: v4.19-rc1
+References: bsc#1175165
+
+During offline processing two worker threads are canceled without
+freeing the device reference which leads to a hanging offline process.
+
+Reviewed-by: Jan Hoeppner <hoeppner@linux.ibm.com>
+Signed-off-by: Stefan Haberland <sth@linux.ibm.com>
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Signed-off-by: Firo Yang <firo.yang@suse.com>
+---
+ drivers/s390/block/dasd_eckd.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/s390/block/dasd_eckd.c b/drivers/s390/block/dasd_eckd.c
+index 532a6a82bcfb..cae78a818263 100644
+--- a/drivers/s390/block/dasd_eckd.c
++++ b/drivers/s390/block/dasd_eckd.c
+@@ -2036,8 +2036,11 @@ static int dasd_eckd_basic_to_ready(struct dasd_device *device)
+ 
+ static int dasd_eckd_online_to_ready(struct dasd_device *device)
+ {
+-	cancel_work_sync(&device->reload_device);
+-	cancel_work_sync(&device->kick_validate);
++	if (cancel_work_sync(&device->reload_device))
++		dasd_put_device(device);
++	if (cancel_work_sync(&device->kick_validate))
++		dasd_put_device(device);
++
+ 	return 0;
+ };
+ 
+-- 
+2.26.2
+
