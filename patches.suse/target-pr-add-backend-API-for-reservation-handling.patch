@@ -23,6 +23,8 @@ offering hooks for:
 - reservation conflict checks
 
 Signed-off-by: David Disseldorp <ddiss@suse.de>
+[ddiss: rebase atop 63ce3c384db2 ("scsi: target: Fix truncated PR-in
+ ReadKeys response")]
 ---
  drivers/target/target_core_pr.c      |  483 +++++++++++++++++++++++++++--------
  drivers/target/target_core_tmr.c     |   23 +
@@ -458,12 +460,12 @@ Signed-off-by: David Disseldorp <ddiss@suse.de>
  		 * Check for overflow of 8byte PRI READ_KEYS payload and
  		 * next reservation key list descriptor.
  		 */
--		if ((add_len + 8) > (cmd->data_length - 8))
-+		if ((add_len + 8) > (buf_len - 8))
- 			break;
- 
- 		put_unaligned_be64(pr_reg->pr_res_key, &buf[off]);
-@@ -3739,27 +3876,23 @@ core_scsi3_pri_read_keys(struct se_cmd *
+-		if (off + 8 <= cmd->data_length) {
++		if (off + 8 <= buf_len) {
+ 			put_unaligned_be64(pr_reg->pr_res_key, &buf[off]);
+ 			off += 8;
+ 		}
+@@ -3744,27 +3881,23 @@ core_scsi3_pri_read_keys(struct se_cmd *
  
  	put_unaligned_be32(add_len, &buf[4]);
  
@@ -497,7 +499,7 @@ Signed-off-by: David Disseldorp <ddiss@suse.de>
  			" too small\n", cmd->data_length);
  		return TCM_INVALID_CDB_FIELD;
  	}
-@@ -3768,6 +3901,33 @@ core_scsi3_pri_read_reservation(struct s
+@@ -3773,6 +3906,33 @@ core_scsi3_pri_read_reservation(struct s
  	if (!buf)
  		return TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
  
@@ -531,7 +533,7 @@ Signed-off-by: David Disseldorp <ddiss@suse.de>
  	put_unaligned_be32(dev->t10_pr.pr_generation, &buf[0]);
  
  	spin_lock(&dev->dev_reservation_lock);
-@@ -3778,7 +3938,7 @@ core_scsi3_pri_read_reservation(struct s
+@@ -3783,7 +3943,7 @@ core_scsi3_pri_read_reservation(struct s
  		 */
  		put_unaligned_be32(add_len, &buf[4]);
  
@@ -540,7 +542,7 @@ Signed-off-by: David Disseldorp <ddiss@suse.de>
  			goto err;
  
  		/*
-@@ -3813,27 +3973,25 @@ core_scsi3_pri_read_reservation(struct s
+@@ -3818,27 +3978,25 @@ core_scsi3_pri_read_reservation(struct s
  
  err:
  	spin_unlock(&dev->dev_reservation_lock);
@@ -575,7 +577,7 @@ Signed-off-by: David Disseldorp <ddiss@suse.de>
  		return TCM_INVALID_CDB_FIELD;
  	}
  
-@@ -3841,8 +3999,34 @@ core_scsi3_pri_report_capabilities(struc
+@@ -3846,8 +4004,34 @@ core_scsi3_pri_report_capabilities(struc
  	if (!buf)
  		return TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
  
@@ -611,7 +613,7 @@ Signed-off-by: David Disseldorp <ddiss@suse.de>
  	buf[2] |= 0x08; /* SIP_C: Specify Initiator Ports Capable bit */
  	buf[2] |= 0x04; /* ATP_C: All Target Ports Capable bit */
  	buf[2] |= 0x01; /* PTPL_C: Persistence across Target Power Loss bit */
-@@ -3852,9 +4036,9 @@ core_scsi3_pri_report_capabilities(struc
+@@ -3857,9 +4041,9 @@ core_scsi3_pri_report_capabilities(struc
  	 */
  	buf[3] |= 0x80;
  	/*
@@ -623,7 +625,7 @@ Signed-off-by: David Disseldorp <ddiss@suse.de>
  	/*
  	 * PTPL_A: Persistence across Target Power Loss Active bit
  	 */
-@@ -3870,9 +4054,47 @@ core_scsi3_pri_report_capabilities(struc
+@@ -3875,9 +4059,47 @@ core_scsi3_pri_report_capabilities(struc
  	buf[4] |= 0x02; /* PR_TYPE_WRITE_EXCLUSIVE */
  	buf[5] |= 0x01; /* PR_TYPE_EXCLUSIVE_ACCESS_ALLREG */
  
@@ -672,7 +674,7 @@ Signed-off-by: David Disseldorp <ddiss@suse.de>
  }
  
  /*
-@@ -3881,29 +4103,21 @@ core_scsi3_pri_report_capabilities(struc
+@@ -3886,29 +4108,21 @@ core_scsi3_pri_report_capabilities(struc
   * See spc4r17 section 6.13.5 Table 168 and 169
   */
  static sense_reason_t
@@ -705,7 +707,7 @@ Signed-off-by: David Disseldorp <ddiss@suse.de>
  
  	put_unaligned_be32(dev->t10_pr.pr_generation, &buf[0]);
  
-@@ -3937,9 +4151,9 @@ core_scsi3_pri_read_full_status(struct s
+@@ -3942,9 +4156,9 @@ core_scsi3_pri_read_full_status(struct s
  		exp_desc_len = target_get_pr_transport_id_len(se_nacl, pr_reg,
  					&format_code);
  		if (exp_desc_len < 0 ||
@@ -717,7 +719,7 @@ Signed-off-by: David Disseldorp <ddiss@suse.de>
  			spin_lock(&pr_tmpl->registration_lock);
  			atomic_dec_mb(&pr_reg->pr_res_holders);
  			break;
-@@ -4031,14 +4245,48 @@ core_scsi3_pri_read_full_status(struct s
+@@ -4036,14 +4250,48 @@ core_scsi3_pri_read_full_status(struct s
  	 */
  	put_unaligned_be32(add_len, &buf[4]);
  
@@ -767,7 +769,7 @@ Signed-off-by: David Disseldorp <ddiss@suse.de>
  	sense_reason_t ret;
  
  	/*
-@@ -4050,7 +4298,13 @@ target_scsi3_emulate_pr_in(struct se_cmd
+@@ -4055,7 +4303,13 @@ target_scsi3_emulate_pr_in(struct se_cmd
  	 * initiator or service action and shall terminate with a RESERVATION
  	 * CONFLICT status.
  	 */
@@ -782,7 +784,7 @@ Signed-off-by: David Disseldorp <ddiss@suse.de>
  		pr_err("Received PERSISTENT_RESERVE CDB while legacy"
  			" SPC-2 reservation is held, returning"
  			" RESERVATION_CONFLICT\n");
-@@ -4081,6 +4335,22 @@ target_scsi3_emulate_pr_in(struct se_cmd
+@@ -4086,6 +4340,22 @@ target_scsi3_emulate_pr_in(struct se_cmd
  	return ret;
  }
  
@@ -805,7 +807,7 @@ Signed-off-by: David Disseldorp <ddiss@suse.de>
  sense_reason_t
  target_check_reservation(struct se_cmd *cmd)
  {
-@@ -4096,12 +4366,11 @@ target_check_reservation(struct se_cmd *
+@@ -4101,12 +4371,11 @@ target_check_reservation(struct se_cmd *
  	if (dev->transport->transport_flags & TRANSPORT_FLAG_PASSTHROUGH_PGR)
  		return 0;
  
