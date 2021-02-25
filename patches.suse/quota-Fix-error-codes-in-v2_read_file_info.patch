@@ -1,0 +1,44 @@
+From cb8d01b4f624bbf34fd82cbca19e34a22d1eeef6 Mon Sep 17 00:00:00 2001
+From: Jan Kara <jack@suse.cz>
+Date: Fri, 9 Jun 2017 09:04:47 +0200
+Subject: [PATCH] quota: Fix error codes in v2_read_file_info()
+Git-commit: cb8d01b4f624bbf34fd82cbca19e34a22d1eeef6
+Patch-mainline: v4.14-rc1
+References: bsc#1182652
+
+v2_read_file_info() returned -1 instead of proper error codes on error.
+Luckily this is not easily visible from userspace as we have called
+->check_quota_file shortly before and thus already verified the quota
+file is sane. Still set the error codes to proper values.
+
+Reviewed-by: Andreas Dilger <adilger@dilger.ca>
+Signed-off-by: Jan Kara <jack@suse.cz>
+Acked-by: Jan Kara <jack@suse.cz>
+
+---
+ fs/quota/quota_v2.c |    6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+--- a/fs/quota/quota_v2.c
++++ b/fs/quota/quota_v2.c
+@@ -96,17 +96,17 @@ static int v2_read_file_info(struct supe
+ 	unsigned int version;
+ 
+ 	if (!v2_read_header(sb, type, &dqhead))
+-		return -1;
++		return -EIO;
+ 	version = le32_to_cpu(dqhead.dqh_version);
+ 	if ((info->dqi_fmt_id == QFMT_VFS_V0 && version != 0) ||
+ 	    (info->dqi_fmt_id == QFMT_VFS_V1 && version != 1))
+-		return -1;
++		return -EINVAL;
+ 
+ 	size = sb->s_op->quota_read(sb, type, (char *)&dinfo,
+ 	       sizeof(struct v2_disk_dqinfo), V2_DQINFOOFF);
+ 	if (size != sizeof(struct v2_disk_dqinfo)) {
+ 		quota_error(sb, "Can't read info structure");
+-		return -1;
++		return -EIO;
+ 	}
+ 	info->dqi_priv = kmalloc(sizeof(struct qtree_mem_dqinfo), GFP_NOFS);
+ 	if (!info->dqi_priv) {
