@@ -67,22 +67,20 @@ Signed-off-by: Nick Terrell <terrelln@fb.com>
 Signed-off-by: Chris Mason <clm@fb.com>
 Acked-by: Johannes Thumshirn <jthumshirn@suse.de>
 ---
- fs/btrfs/Kconfig           |   2 +
- fs/btrfs/Makefile          |   2 +-
- fs/btrfs/compression.c     |   1 +
- fs/btrfs/compression.h     |   6 +-
- fs/btrfs/ctree.h           |   1 +
- fs/btrfs/disk-io.c         |   2 +
- fs/btrfs/ioctl.c           |   6 +-
- fs/btrfs/props.c           |   6 +
- fs/btrfs/super.c           |  12 +-
- fs/btrfs/sysfs.c           |   2 +
- fs/btrfs/zstd.c            | 432 +++++++++++++++++++++++++++++++++++++++++++++
- include/uapi/linux/btrfs.h |   8 +-
+ fs/btrfs/Kconfig           |    2 
+ fs/btrfs/Makefile          |    2 
+ fs/btrfs/compression.c     |    1 
+ fs/btrfs/compression.h     |    6 
+ fs/btrfs/ctree.h           |    1 
+ fs/btrfs/disk-io.c         |    2 
+ fs/btrfs/ioctl.c           |    6 
+ fs/btrfs/props.c           |    6 
+ fs/btrfs/super.c           |   12 +
+ fs/btrfs/sysfs.c           |    2 
+ fs/btrfs/zstd.c            |  432 +++++++++++++++++++++++++++++++++++++++++++++
+ include/uapi/linux/btrfs.h |    8 
  12 files changed, 468 insertions(+), 12 deletions(-)
 
-diff --git a/fs/btrfs/Kconfig b/fs/btrfs/Kconfig
-index 80e9c18ea64f..a26c63b4ad68 100644
 --- a/fs/btrfs/Kconfig
 +++ b/fs/btrfs/Kconfig
 @@ -6,6 +6,8 @@ config BTRFS_FS
@@ -94,11 +92,9 @@ index 80e9c18ea64f..a26c63b4ad68 100644
  	select RAID6_PQ
  	select XOR_BLOCKS
  	select SRCU
-diff --git a/fs/btrfs/Makefile b/fs/btrfs/Makefile
-index 128ce17a80b0..962a95aefb81 100644
 --- a/fs/btrfs/Makefile
 +++ b/fs/btrfs/Makefile
-@@ -6,7 +6,7 @@ btrfs-y += super.o ctree.o extent-tree.o print-tree.o root-tree.o dir-item.o \
+@@ -6,7 +6,7 @@ btrfs-y += super.o ctree.o extent-tree.o
  	   transaction.o inode.o file.o tree-defrag.o \
  	   extent_map.o sysfs.o struct-funcs.o xattr.o ordered-data.o \
  	   extent_io.o volumes.o async-thread.o ioctl.o locking.o orphan.o \
@@ -107,11 +103,9 @@ index 128ce17a80b0..962a95aefb81 100644
  	   compression.o delayed-ref.o relocation.o delayed-inode.o scrub.o \
  	   reada.o backref.o ulist.o qgroup.o send.o dev-replace.o raid56.o \
  	   uuid-tree.o props.o hash.o free-space-tree.o
-diff --git a/fs/btrfs/compression.c b/fs/btrfs/compression.c
-index d2ef9ac2a630..4ff42d18a64d 100644
 --- a/fs/btrfs/compression.c
 +++ b/fs/btrfs/compression.c
-@@ -704,6 +704,7 @@ static struct {
+@@ -717,6 +717,7 @@ static struct {
  static const struct btrfs_compress_op * const btrfs_compress_op[] = {
  	&btrfs_zlib_compress,
  	&btrfs_lzo_compress,
@@ -119,8 +113,6 @@ index d2ef9ac2a630..4ff42d18a64d 100644
  };
  
  void __init btrfs_init_compress(void)
-diff --git a/fs/btrfs/compression.h b/fs/btrfs/compression.h
-index 87f6d3332163..2269e00854d8 100644
 --- a/fs/btrfs/compression.h
 +++ b/fs/btrfs/compression.h
 @@ -99,8 +99,9 @@ enum btrfs_compression_type {
@@ -142,11 +134,9 @@ index 87f6d3332163..2269e00854d8 100644
 +extern const struct btrfs_compress_op btrfs_zstd_compress;
  
  #endif
-diff --git a/fs/btrfs/ctree.h b/fs/btrfs/ctree.h
-index 3f3eb7b17cac..845d77c097d6 100644
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -270,6 +270,7 @@ struct btrfs_super_block {
+@@ -271,6 +271,7 @@ struct btrfs_super_block {
  	 BTRFS_FEATURE_INCOMPAT_MIXED_GROUPS |		\
  	 BTRFS_FEATURE_INCOMPAT_BIG_METADATA |		\
  	 BTRFS_FEATURE_INCOMPAT_COMPRESS_LZO |		\
@@ -154,11 +144,9 @@ index 3f3eb7b17cac..845d77c097d6 100644
  	 BTRFS_FEATURE_INCOMPAT_RAID56 |		\
  	 BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF |		\
  	 BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA |	\
-diff --git a/fs/btrfs/disk-io.c b/fs/btrfs/disk-io.c
-index 080e2ebb8aa0..04632f4de933 100644
 --- a/fs/btrfs/disk-io.c
 +++ b/fs/btrfs/disk-io.c
-@@ -2828,6 +2828,8 @@ int open_ctree(struct super_block *sb,
+@@ -2830,6 +2830,8 @@ int open_ctree(struct super_block *sb,
  	features |= BTRFS_FEATURE_INCOMPAT_MIXED_BACKREF;
  	if (fs_info->compress_type == BTRFS_COMPRESS_LZO)
  		features |= BTRFS_FEATURE_INCOMPAT_COMPRESS_LZO;
@@ -167,11 +155,9 @@ index 080e2ebb8aa0..04632f4de933 100644
  
  	if (features & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA)
  		btrfs_info(fs_info, "has skinny extents");
-diff --git a/fs/btrfs/ioctl.c b/fs/btrfs/ioctl.c
-index fa1b78cf25f6..b9963d94d727 100644
 --- a/fs/btrfs/ioctl.c
 +++ b/fs/btrfs/ioctl.c
-@@ -327,8 +327,10 @@ static int btrfs_ioctl_setflags(struct file *file, void __user *arg)
+@@ -327,8 +327,10 @@ static int btrfs_ioctl_setflags(struct f
  
  		if (fs_info->compress_type == BTRFS_COMPRESS_LZO)
  			comp = "lzo";
@@ -183,7 +169,7 @@ index fa1b78cf25f6..b9963d94d727 100644
  		ret = btrfs_set_prop(inode, "btrfs.compression",
  				     comp, strlen(comp), 0);
  		if (ret)
-@@ -1466,6 +1468,8 @@ int btrfs_defrag_file(struct inode *inode, struct file *file,
+@@ -1466,6 +1468,8 @@ int btrfs_defrag_file(struct inode *inod
  
  	if (range->compress_type == BTRFS_COMPRESS_LZO) {
  		btrfs_set_fs_incompat(fs_info, COMPRESS_LZO);
@@ -192,11 +178,9 @@ index fa1b78cf25f6..b9963d94d727 100644
  	}
  
  	ret = defrag_count;
-diff --git a/fs/btrfs/props.c b/fs/btrfs/props.c
-index 4b23ae5d0e5c..20631e9273a0 100644
 --- a/fs/btrfs/props.c
 +++ b/fs/btrfs/props.c
-@@ -390,6 +390,8 @@ static int prop_compression_validate(const char *value, size_t len)
+@@ -383,6 +383,8 @@ static int prop_compression_validate(con
  		return 0;
  	else if (!strncmp("zlib", value, len))
  		return 0;
@@ -205,16 +189,16 @@ index 4b23ae5d0e5c..20631e9273a0 100644
  
  	return -EINVAL;
  }
-@@ -412,6 +414,8 @@ static int prop_compression_apply(struct inode *inode,
+@@ -405,6 +407,8 @@ static int prop_compression_apply(struct
  		type = BTRFS_COMPRESS_LZO;
- 	else if (!strncmp("zlib", value, len))
+ 	else if (!strncmp("zlib", value, 4))
  		type = BTRFS_COMPRESS_ZLIB;
 +	else if (!strncmp("zstd", value, len))
 +		type = BTRFS_COMPRESS_ZSTD;
  	else
  		return -EINVAL;
  
-@@ -429,6 +433,8 @@ static const char *prop_compression_extract(struct inode *inode)
+@@ -422,6 +426,8 @@ static const char *prop_compression_extr
  		return "zlib";
  	case BTRFS_COMPRESS_LZO:
  		return "lzo";
@@ -223,11 +207,9 @@ index 4b23ae5d0e5c..20631e9273a0 100644
  	}
  
  	return NULL;
-diff --git a/fs/btrfs/super.c b/fs/btrfs/super.c
-index 12540b6104b5..c370deadb790 100644
 --- a/fs/btrfs/super.c
 +++ b/fs/btrfs/super.c
-@@ -513,6 +513,14 @@ int btrfs_parse_options(struct btrfs_fs_info *info, char *options,
+@@ -514,6 +514,14 @@ int btrfs_parse_options(struct btrfs_fs_
  				btrfs_clear_opt(info->mount_opt, NODATASUM);
  				btrfs_set_fs_incompat(info, COMPRESS_LZO);
  				no_compress = 0;
@@ -242,7 +224,7 @@ index 12540b6104b5..c370deadb790 100644
  			} else if (strncmp(args[0].from, "no", 2) == 0) {
  				compress_type = "no";
  				btrfs_clear_opt(info->mount_opt, COMPRESS);
-@@ -1227,8 +1235,10 @@ static int btrfs_show_options(struct seq_file *seq, struct dentry *dentry)
+@@ -1241,8 +1249,10 @@ static int btrfs_show_options(struct seq
  	if (btrfs_test_opt(info, COMPRESS)) {
  		if (info->compress_type == BTRFS_COMPRESS_ZLIB)
  			compress_type = "zlib";
@@ -254,11 +236,9 @@ index 12540b6104b5..c370deadb790 100644
  		if (btrfs_test_opt(info, FORCE_COMPRESS))
  			seq_printf(seq, ",compress-force=%s", compress_type);
  		else
-diff --git a/fs/btrfs/sysfs.c b/fs/btrfs/sysfs.c
-index c2d5f3580b4c..2b6d37c09a81 100644
 --- a/fs/btrfs/sysfs.c
 +++ b/fs/btrfs/sysfs.c
-@@ -200,6 +200,7 @@ BTRFS_FEAT_ATTR_INCOMPAT(mixed_backref, MIXED_BACKREF);
+@@ -200,6 +200,7 @@ BTRFS_FEAT_ATTR_INCOMPAT(mixed_backref,
  BTRFS_FEAT_ATTR_INCOMPAT(default_subvol, DEFAULT_SUBVOL);
  BTRFS_FEAT_ATTR_INCOMPAT(mixed_groups, MIXED_GROUPS);
  BTRFS_FEAT_ATTR_INCOMPAT(compress_lzo, COMPRESS_LZO);
@@ -266,7 +246,7 @@ index c2d5f3580b4c..2b6d37c09a81 100644
  BTRFS_FEAT_ATTR_INCOMPAT(big_metadata, BIG_METADATA);
  BTRFS_FEAT_ATTR_INCOMPAT(extended_iref, EXTENDED_IREF);
  BTRFS_FEAT_ATTR_INCOMPAT(raid56, RAID56);
-@@ -212,6 +213,7 @@ static struct attribute *btrfs_supported_feature_attrs[] = {
+@@ -212,6 +213,7 @@ static struct attribute *btrfs_supported
  	BTRFS_FEAT_ATTR_PTR(default_subvol),
  	BTRFS_FEAT_ATTR_PTR(mixed_groups),
  	BTRFS_FEAT_ATTR_PTR(compress_lzo),
@@ -274,9 +254,6 @@ index c2d5f3580b4c..2b6d37c09a81 100644
  	BTRFS_FEAT_ATTR_PTR(big_metadata),
  	BTRFS_FEAT_ATTR_PTR(extended_iref),
  	BTRFS_FEAT_ATTR_PTR(raid56),
-diff --git a/fs/btrfs/zstd.c b/fs/btrfs/zstd.c
-new file mode 100644
-index 000000000000..607ce47b483a
 --- /dev/null
 +++ b/fs/btrfs/zstd.c
 @@ -0,0 +1,432 @@
@@ -712,8 +689,6 @@ index 000000000000..607ce47b483a
 +	.decompress_bio = zstd_decompress_bio,
 +	.decompress = zstd_decompress,
 +};
-diff --git a/include/uapi/linux/btrfs.h b/include/uapi/linux/btrfs.h
-index 9aa74f317747..378230c163d5 100644
 --- a/include/uapi/linux/btrfs.h
 +++ b/include/uapi/linux/btrfs.h
 @@ -255,13 +255,7 @@ struct btrfs_ioctl_fs_info_args {
@@ -731,4 +706,3 @@ index 9aa74f317747..378230c163d5 100644
  
  /*
   * older kernels tried to do bigger metadata blocks, but the
-
