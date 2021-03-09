@@ -1,0 +1,43 @@
+From ba236455ee750270f33998df57f982433cea4d8e Mon Sep 17 00:00:00 2001
+From: Yang Yingliang <yangyingliang@huawei.com>
+Date: Tue, 17 Nov 2020 14:13:50 +0800
+Subject: video: fbdev: atmel_lcdfb: fix return error code in
+ atmel_lcdfb_of_init()
+Git-commit: ba236455ee750270f33998df57f982433cea4d8e
+Patch-mainline: v5.11-rc1
+References: bsc#1129770
+
+If devm_kzalloc() failed after the first time, atmel_lcdfb_of_init()
+can't return -ENOMEM, fix this by putting the error code in loop.
+
+Fixes: b985172b328a ("video: atmel_lcdfb: add device tree suport")
+Reported-by: Hulk Robot <hulkci@huawei.com>
+Signed-off-by: Yang Yingliang <yangyingliang@huawei.com>
+Signed-off-by: Thomas Zimmermann <tzimmermann@suse.de>
+Link: https://patchwork.freedesktop.org/patch/msgid/20201117061350.3453742-1-yangyingliang@huawei.com
+Acked-by: Thomas Zimmermann <tzimmermann@suse.de>
+---
+ drivers/video/fbdev/atmel_lcdfb.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/drivers/video/fbdev/atmel_lcdfb.c
++++ b/drivers/video/fbdev/atmel_lcdfb.c
+@@ -419,7 +419,7 @@ static inline void atmel_lcdfb_free_vide
+ /**
+  *	atmel_lcdfb_alloc_video_memory - Allocate framebuffer memory
+  *	@sinfo: the frame buffer to allocate memory for
+- * 	
++ *
+  * 	This function is called only from the atmel_lcdfb_probe()
+  * 	so no locking by fb_info->mm_lock around smem_len setting is needed.
+  */
+@@ -1071,8 +1071,8 @@ static int atmel_lcdfb_of_init(struct at
+ 	}
+ 
+ 	INIT_LIST_HEAD(&pdata->pwr_gpios);
+-	ret = -ENOMEM;
+ 	for (i = 0; i < of_gpio_named_count(display_np, "atmel,power-control-gpio"); i++) {
++		ret = -ENOMEM;
+ 		gpio = of_get_named_gpio_flags(display_np, "atmel,power-control-gpio",
+ 					       i, &flags);
+ 		if (gpio < 0)
