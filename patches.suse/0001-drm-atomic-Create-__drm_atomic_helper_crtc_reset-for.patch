@@ -1,0 +1,122 @@
+From 7d26097b4beb802fb6ce7cd6389ac4bf12b1a6ae Mon Sep 17 00:00:00 2001
+From: Maarten Lankhorst <maarten.lankhorst@linux.intel.com>
+Date: Fri, 1 Mar 2019 13:56:12 +0100
+Subject: drm/atomic: Create __drm_atomic_helper_crtc_reset() for subclassing
+ crtc_state.
+Git-commit: 7d26097b4beb802fb6ce7cd6389ac4bf12b1a6ae
+Patch-mainline: v5.3-rc1
+References: bsc#1142635
+
+We already have __drm_atomic_helper_connector_reset() and
+__drm_atomic_helper_plane_reset(), extend this to crtc as well.
+
+This will allow us to set default values in the crtc_state, without
+having to do it in each driver separately.
+
+Of all drivers that need conversion, only nouveau is done in this
+commit, because it wrote its own __drm_atomic_helper_crtc_reset(),
+clashing with the drm core.
+
+Signed-off-by: Maarten Lankhorst <maarten.lankhorst@linux.intel.com>
+Cc: Ben Skeggs <bskeggs@redhat.com>
+Reviewed-by: Daniel Vetter <daniel.vetter@ffwll.ch>
+Link: https://patchwork.freedesktop.org/patch/msgid/20190301125627.7285-3-maarten.lankhorst@linux.intel.com
+Acked-by: Thomas Zimmermann <tzimmermann@suse.de>
+---
+ drivers/gpu/drm/drm_atomic_helper.c     |   34 ++++++++++++++++++++++++++------
+ drivers/gpu/drm/nouveau/dispnv50/head.c |   13 ++----------
+ include/drm/drm_atomic_helper.h         |    2 +
+ 3 files changed, 33 insertions(+), 16 deletions(-)
+
+--- a/drivers/gpu/drm/drm_atomic_helper.c
++++ b/drivers/gpu/drm/drm_atomic_helper.c
+@@ -3461,6 +3461,29 @@ EXPORT_SYMBOL(drm_atomic_helper_best_enc
+  */
+ 
+ /**
++ * __drm_atomic_helper_crtc_reset - reset state on CRTC
++ * @crtc: drm CRTC
++ * @crtc_state: CRTC state to assign
++ *
++ * Initializes the newly allocated @crtc_state and assigns it to
++ * the &drm_crtc->state pointer of @crtc, usually required when
++ * initializing the drivers or when called from the &drm_crtc_funcs.reset
++ * hook.
++ *
++ * This is useful for drivers that subclass the CRTC state.
++ */
++void
++__drm_atomic_helper_crtc_reset(struct drm_crtc *crtc,
++			       struct drm_crtc_state *crtc_state)
++{
++	if (crtc_state)
++		crtc_state->crtc = crtc;
++
++	crtc->state = crtc_state;
++}
++EXPORT_SYMBOL(__drm_atomic_helper_crtc_reset);
++
++/**
+  * drm_atomic_helper_crtc_reset - default &drm_crtc_funcs.reset hook for CRTCs
+  * @crtc: drm CRTC
+  *
+@@ -3469,14 +3492,13 @@ EXPORT_SYMBOL(drm_atomic_helper_best_enc
+  */
+ void drm_atomic_helper_crtc_reset(struct drm_crtc *crtc)
+ {
+-	if (crtc->state)
+-		__drm_atomic_helper_crtc_destroy_state(crtc->state);
+-
+-	kfree(crtc->state);
+-	crtc->state = kzalloc(sizeof(*crtc->state), GFP_KERNEL);
++	struct drm_crtc_state *crtc_state =
++		kzalloc(sizeof(*crtc->state), GFP_KERNEL);
+ 
+ 	if (crtc->state)
+-		crtc->state->crtc = crtc;
++		crtc->funcs->atomic_destroy_state(crtc, crtc->state);
++
++	__drm_atomic_helper_crtc_reset(crtc, crtc_state);
+ }
+ EXPORT_SYMBOL(drm_atomic_helper_crtc_reset);
+ 
+--- a/drivers/gpu/drm/nouveau/dispnv50/head.c
++++ b/drivers/gpu/drm/nouveau/dispnv50/head.c
+@@ -419,16 +419,6 @@ nv50_head_atomic_duplicate_state(struct
+ }
+ 
+ static void
+-__drm_atomic_helper_crtc_reset(struct drm_crtc *crtc,
+-			       struct drm_crtc_state *state)
+-{
+-	if (crtc->state)
+-		crtc->funcs->atomic_destroy_state(crtc, crtc->state);
+-	crtc->state = state;
+-	crtc->state->crtc = crtc;
+-}
+-
+-static void
+ nv50_head_reset(struct drm_crtc *crtc)
+ {
+ 	struct nv50_head_atom *asyh;
+@@ -436,6 +426,9 @@ nv50_head_reset(struct drm_crtc *crtc)
+ 	if (WARN_ON(!(asyh = kzalloc(sizeof(*asyh), GFP_KERNEL))))
+ 		return;
+ 
++	if (crtc->state)
++		nv50_head_atomic_destroy_state(crtc, crtc->state);
++
+ 	__drm_atomic_helper_crtc_reset(crtc, &asyh->state);
+ }
+ 
+--- a/include/drm/drm_atomic_helper.h
++++ b/include/drm/drm_atomic_helper.h
+@@ -147,6 +147,8 @@ struct drm_encoder *
+ drm_atomic_helper_best_encoder(struct drm_connector *connector);
+ 
+ /* default implementations for state handling */
++void __drm_atomic_helper_crtc_reset(struct drm_crtc *crtc,
++				    struct drm_crtc_state *state);
+ void drm_atomic_helper_crtc_reset(struct drm_crtc *crtc);
+ void __drm_atomic_helper_crtc_duplicate_state(struct drm_crtc *crtc,
+ 					      struct drm_crtc_state *state);
