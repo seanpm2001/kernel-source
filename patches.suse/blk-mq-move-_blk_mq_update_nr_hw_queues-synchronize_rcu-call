@@ -1,0 +1,56 @@
+From: Giuliano Procida <gprocida@google.com>
+Date: Thu Jun 18 19:32:23 2020 +0100
+Subject: blk-mq: move _blk_mq_update_nr_hw_queues synchronize_rcu call
+Patch-mainline: never, not needed upstream, android only
+References: CVE-2020-0433 bsc#1176720
+
+This fixes the
+4.14 backport commit 574eb136ec7f315c3ef2ca68fa9b3e16c56baa24
+which was
+upstream commit f5bbbbe4d63577026f908a809f22f5fd5a90ea1f.
+
+The upstream commit added a call to synchronize_rcu to
+_blk_mq_update_nr_hw_queues, just after freezing queues.
+
+In the backport this landed just after unfreezeing queues.
+
+This commit moves the call to its intended place.
+
+[lduncan: this commit didn't make it upstream since the commit
+ it fixes was changed there. But it's needed for this backport.
+ See: https://android.googlesource.com/kernel/common/+/b609c7cecb71%5E%21/#F0 ]
+
+Fixes: 574eb136ec7f ("blk-mq: sync the update nr_hw_queues with blk_mq_queue_tag_busy_iter")
+Signed-off-by: Giuliano Procida <gprocida@google.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+---
+ block/blk-mq.c |    9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+--- a/block/blk-mq.c
++++ b/block/blk-mq.c
+@@ -2777,10 +2777,6 @@ static void __blk_mq_update_nr_hw_queues
+ 	list_for_each_entry(q, &set->tag_list, tag_set_list)
+ 		blk_mq_freeze_queue(q);
+ 	/*
+-	 * Sync with blk_mq_queue_tag_busy_iter.
+-	 */
+-	synchronize_rcu();
+-	/*
+ 	 * Switch IO scheduler to 'none', cleaning up the data associated
+ 	 * with the previous scheduler. We will switch back once we are done
+ 	 * updating the new sw to hw queue mappings.
+@@ -2821,6 +2817,11 @@ switch_back:
+ 
+ 	list_for_each_entry(q, &set->tag_list, tag_set_list)
+ 		blk_mq_unfreeze_queue(q);
++
++	/*
++	 * Sync with blk_mq_queue_tag_busy_iter.
++	 */
++	synchronize_rcu();
+ }
+ 
+ void blk_mq_update_nr_hw_queues(struct blk_mq_tag_set *set, int nr_hw_queues)
