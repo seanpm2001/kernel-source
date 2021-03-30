@@ -1,0 +1,61 @@
+From afe0b1c86458f121b085271e4f3034017a90d4a3 Mon Sep 17 00:00:00 2001
+From: Claire Chang <tientzu@chromium.org>
+Date: Mon, 14 Dec 2020 15:29:21 +0800
+Subject: [PATCH] Bluetooth: hci_uart: Fix a race for write_work scheduling
+Git-commit: afe0b1c86458f121b085271e4f3034017a90d4a3
+Patch-mainline: v5.12-rc1
+References: git-fixes
+
+In hci_uart_write_work, there is a loop/goto checking the value of
+HCI_UART_TX_WAKEUP. If HCI_UART_TX_WAKEUP is set again, it keeps trying
+hci_uart_dequeue; otherwise, it clears HCI_UART_SENDING and returns.
+
+In hci_uart_tx_wakeup, if HCI_UART_SENDING is already set, it sets
+HCI_UART_TX_WAKEUP, skips schedule_work and assumes the running/pending
+hci_uart_write_work worker will do hci_uart_dequeue properly.
+
+However, if the HCI_UART_SENDING check in hci_uart_tx_wakeup is done after
+the loop breaks, but before HCI_UART_SENDING is cleared in
+hci_uart_write_work, the schedule_work is skipped incorrectly.
+
+Fix this race by changing the order of HCI_UART_SENDING and
+HCI_UART_TX_WAKEUP modification.
+
+Fixes: 1da177e4c3f4 ("Linux-2.6.12-rc2")
+Fixes: 82f5169bf3d3 ("Bluetooth: hci_uart: add serdev driver support library")
+Signed-off-by: Claire Chang <tientzu@chromium.org>
+Signed-off-by: Marcel Holtmann <marcel@holtmann.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/bluetooth/hci_ldisc.c  |    5 ++---
+ drivers/bluetooth/hci_serdev.c |    3 +--
+ 2 files changed, 3 insertions(+), 5 deletions(-)
+
+--- a/drivers/bluetooth/hci_ldisc.c
++++ b/drivers/bluetooth/hci_ldisc.c
+@@ -135,10 +135,9 @@ int hci_uart_tx_wakeup(struct hci_uart *
+ 	if (!test_bit(HCI_UART_PROTO_READY, &hu->flags))
+ 		goto no_schedule;
+ 
+-	if (test_and_set_bit(HCI_UART_SENDING, &hu->tx_state)) {
+-		set_bit(HCI_UART_TX_WAKEUP, &hu->tx_state);
++	set_bit(HCI_UART_TX_WAKEUP, &hu->tx_state);
++	if (test_and_set_bit(HCI_UART_SENDING, &hu->tx_state))
+ 		goto no_schedule;
+-	}
+ 
+ 	BT_DBG("");
+ 
+--- a/drivers/bluetooth/hci_serdev.c
++++ b/drivers/bluetooth/hci_serdev.c
+@@ -94,9 +94,8 @@ static void hci_uart_write_work(struct w
+ 			hci_uart_tx_complete(hu, hci_skb_pkt_type(skb));
+ 			kfree_skb(skb);
+ 		}
++		clear_bit(HCI_UART_SENDING, &hu->tx_state);
+ 	} while(test_bit(HCI_UART_TX_WAKEUP, &hu->tx_state));
+-
+-	clear_bit(HCI_UART_SENDING, &hu->tx_state);
+ }
+ 
+ /* ------- Interface to HCI layer ------ */
