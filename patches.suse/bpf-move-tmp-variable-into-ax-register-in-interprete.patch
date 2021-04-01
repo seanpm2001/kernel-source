@@ -51,18 +51,16 @@ Acked-by: Gary Lin <glin@suse.com>
  	static const void *jumptable[256] = {
  		[0 ... 255] = &&default_label,
  		/* Now overwrite non-defaults ... */
-@@ -945,22 +945,22 @@ select_insn:
+@@ -943,36 +943,36 @@ select_insn:
+ 		(*(s64 *) &DST) >>= IMM;
+ 		CONT;
  	ALU64_MOD_X:
- 		if (unlikely(SRC == 0))
- 			return 0;
 -		div64_u64_rem(DST, SRC, &tmp);
 -		DST = tmp;
 +		div64_u64_rem(DST, SRC, &AX);
 +		DST = AX;
  		CONT;
  	ALU_MOD_X:
- 		if (unlikely((u32)SRC == 0))
- 			return 0;
 -		tmp = (u32) DST;
 -		DST = do_div(tmp, (u32) SRC);
 +		AX = (u32) DST;
@@ -81,11 +79,9 @@ Acked-by: Gary Lin <glin@suse.com>
 +		DST = do_div(AX, (u32) IMM);
  		CONT;
  	ALU64_DIV_X:
- 		if (unlikely(SRC == 0))
-@@ -970,17 +970,17 @@ select_insn:
+ 		DST = div64_u64(DST, SRC);
+ 		CONT;
  	ALU_DIV_X:
- 		if (unlikely((u32)SRC == 0))
- 			return 0;
 -		tmp = (u32) DST;
 -		do_div(tmp, (u32) SRC);
 -		DST = (u32) tmp;
@@ -106,7 +102,7 @@ Acked-by: Gary Lin <glin@suse.com>
  		CONT;
  	ALU_END_TO_BE:
  		switch (IMM) {
-@@ -1235,7 +1235,7 @@ load_word:
+@@ -1227,7 +1227,7 @@ load_word:
  		 *   BPF_R0 - 8/16/32-bit skb data converted to cpu endianness
  		 */
  
@@ -115,7 +111,7 @@ Acked-by: Gary Lin <glin@suse.com>
  		if (likely(ptr != NULL)) {
  			BPF_R0 = get_unaligned_be32(ptr);
  			CONT;
-@@ -1245,7 +1245,7 @@ load_word:
+@@ -1237,7 +1237,7 @@ load_word:
  	LD_ABS_H: /* BPF_R0 = ntohs(*(u16 *) (skb->data + imm32)) */
  		off = IMM;
  load_half:
@@ -124,7 +120,7 @@ Acked-by: Gary Lin <glin@suse.com>
  		if (likely(ptr != NULL)) {
  			BPF_R0 = get_unaligned_be16(ptr);
  			CONT;
-@@ -1255,7 +1255,7 @@ load_half:
+@@ -1247,7 +1247,7 @@ load_half:
  	LD_ABS_B: /* BPF_R0 = *(u8 *) (skb->data + imm32) */
  		off = IMM;
  load_byte:
@@ -133,7 +129,7 @@ Acked-by: Gary Lin <glin@suse.com>
  		if (likely(ptr != NULL)) {
  			BPF_R0 = *(u8 *)ptr;
  			CONT;
-@@ -1284,7 +1284,7 @@ STACK_FRAME_NON_STANDARD(___bpf_prog_run
+@@ -1276,7 +1276,7 @@ STACK_FRAME_NON_STANDARD(___bpf_prog_run
  static unsigned int PROG_NAME(stack_size)(const void *ctx, const struct bpf_insn *insn) \
  { \
  	u64 stack[stack_size / sizeof(u64)]; \
