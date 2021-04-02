@@ -1,0 +1,95 @@
+From ef34e0efa22a867f8db16feb79fba9964cfbe253 Mon Sep 17 00:00:00 2001
+From: "Naveen N. Rao" <naveen.n.rao@linux.vnet.ibm.com>
+Date: Wed, 3 Jul 2019 22:33:58 +0530
+Subject: [PATCH] powerpc/pseries: Generalize hcall_vphn()
+
+References: bsc#1181674 ltc#189159
+Patch-mainline: v5.3-rc1
+Git-commit: ef34e0efa22a867f8db16feb79fba9964cfbe253
+
+H_HOME_NODE_ASSOCIATIVITY hcall can take two different flags and return
+different associativity information in each case. Generalize the
+existing hcall_vphn() function to take flags as an argument and to
+return the result. Update the only existing user to pass the proper
+arguments.
+
+Signed-off-by: Naveen N. Rao <naveen.n.rao@linux.vnet.ibm.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/mm/vphn.h |  8 ++++++++
+ arch/powerpc/mm/numa.c          | 27 +++++++++++++--------------
+ 2 files changed, 21 insertions(+), 14 deletions(-)
+
+diff --git a/arch/powerpc/mm/vphn.h b/arch/powerpc/mm/book3s64/vphn.h
+index f0b93c2dd578..f7ff1e0c3801 100644
+--- a/arch/powerpc/mm/vphn.h
++++ b/arch/powerpc/mm/vphn.h
+@@ -11,6 +11,14 @@
+  */
+ #define VPHN_ASSOC_BUFSIZE (VPHN_REGISTER_COUNT*sizeof(u64)/sizeof(u16) + 1)
+ 
++/*
++ * The H_HOME_NODE_ASSOCIATIVITY hcall takes two values for flags:
++ * 1 for retrieving associativity information for a guest cpu
++ * 2 for retrieving associativity information for a host/hypervisor cpu
++ */
++#define VPHN_FLAG_VCPU	1
++#define VPHN_FLAG_PCPU	2
++
+ extern int vphn_unpack_associativity(const long *packed, __be32 *unpacked);
+ 
+ #endif
+diff --git a/arch/powerpc/mm/numa.c b/arch/powerpc/mm/numa.c
+index 57e64273cb33..57f006b6214b 100644
+--- a/arch/powerpc/mm/numa.c
++++ b/arch/powerpc/mm/numa.c
+@@ -1087,6 +1087,17 @@ static void reset_topology_timer(void);
+ static int topology_timer_secs = 1;
+ static int topology_inited;
+ 
++static long hcall_vphn(unsigned long cpu, u64 flags, __be32 *associativity)
++{
++	long rc;
++	long retbuf[PLPAR_HCALL9_BUFSIZE] = {0};
++
++	rc = plpar_hcall9(H_HOME_NODE_ASSOCIATIVITY, retbuf, flags, cpu);
++	vphn_unpack_associativity(retbuf, associativity);
++
++	return rc;
++}
++
+ /*
+  * Change polling interval for associativity changes.
+  */
+@@ -1165,25 +1176,13 @@ static int update_cpu_associativity_changes_mask(void)
+  * Retrieve the new associativity information for a virtual processor's
+  * home node.
+  */
+-static long hcall_vphn(unsigned long cpu, __be32 *associativity)
+-{
+-	long rc;
+-	long retbuf[PLPAR_HCALL9_BUFSIZE] = {0};
+-	u64 flags = 1;
+-	int hwcpu = get_hard_smp_processor_id(cpu);
+-
+-	rc = plpar_hcall9(H_HOME_NODE_ASSOCIATIVITY, retbuf, flags, hwcpu);
+-	vphn_unpack_associativity(retbuf, associativity);
+-
+-	return rc;
+-}
+-
+ static long vphn_get_associativity(unsigned long cpu,
+ 					__be32 *associativity)
+ {
+ 	long rc;
+ 
+-	rc = hcall_vphn(cpu, associativity);
++	rc = hcall_vphn(get_hard_smp_processor_id(cpu),
++				VPHN_FLAG_VCPU, associativity);
+ 
+ 	switch (rc) {
+ 	case H_FUNCTION:
+-- 
+2.26.2
+
