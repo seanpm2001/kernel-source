@@ -60,45 +60,36 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
 diff --git a/arch/powerpc/platforms/pseries/hotplug-memory.c b/arch/powerpc/platforms/pseries/hotplug-memory.c
 --- a/arch/powerpc/platforms/pseries/hotplug-memory.c
 +++ b/arch/powerpc/platforms/pseries/hotplug-memory.c
-@@ -393,6 +393,9 @@ static int dlpar_remove_lmb(struct drmem_lmb *lmb)
+@@ -393,6 +393,7 @@ static int dlpar_remove_lmb(struct drmem_lmb *lmb)
  
  	invalidate_lmb_associativity_index(lmb);
  	lmb->flags &= ~DRCONF_MEM_ASSIGNED;
-+	rtas_hp_event = true;
 +	drmem_update_dt();
-+	rtas_hp_event = false;
  
  	remove_memory(nid, base_addr, block_sz);
  
-@@ -627,6 +628,9 @@ static int dlpar_add_lmb(struct drmem_lmb *lmb)
+@@ -627,6 +628,7 @@ static int dlpar_add_lmb(struct drmem_lmb *lmb)
  	}
  
  	lmb->flags |= DRCONF_MEM_ASSIGNED;
-+	rtas_hp_event = true;
 +	drmem_update_dt();
-+	rtas_hp_event = false;
  
  	block_sz = memory_block_size_bytes();
  
-@@ -648,6 +650,9 @@ static int dlpar_add_lmb(struct drmem_lmb *lmb)
+@@ -648,6 +650,7 @@ static int dlpar_add_lmb(struct drmem_lmb *lmb)
  
  		invalidate_lmb_associativity_index(lmb);
  		lmb->flags &= ~DRCONF_MEM_ASSIGNED;
-+		rtas_hp_event = true;
 +		drmem_update_dt();
-+		rtas_hp_event = false;
  
  		remove_memory(nid, base_addr, block_sz);
  	}
-@@ -900,12 +903,6 @@ int dlpar_memory(struct pseries_hp_errorlog *hp_elog)
+@@ -900,9 +903,6 @@ int dlpar_memory(struct pseries_hp_errorlog *hp_elog)
  		break;
  	}
  
--	if (!rc) {
--		rtas_hp_event = true;
+-	if (!rc)
 -		rc = drmem_update_dt();
--		rtas_hp_event = false;
--	}
 -
  	unlock_device_hotplug();
  	return rc;
