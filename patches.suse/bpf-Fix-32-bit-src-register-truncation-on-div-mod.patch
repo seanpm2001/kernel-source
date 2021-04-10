@@ -76,22 +76,21 @@ Acked-by: Alexei Starovoitov <ast@kernel.org>
 Acked-by: Gary Lin <glin@suse.com>
 
 NOTE from Gary:
-  * 'BPF_JMP32' in the original commit is removed since the instruction is
-    not defined in this branch.
-  * 'is64' is removed since there is no user of the variable after removing
-    the diff for 'BPF_JMP32'.
+  * 'BPF_JMP32' is not defined in this branch. To emulate the instruction,
+    before 'BPF_JNE', 'src_reg' is copied to BPF_REG_AX with BPF_MOV32 to
+    make sure 'BPF_JNE' really compare the lower 32bit of 'src_reg'.
+    (Thanks for the suggestion from Nicolai Stange)
 
 ---
- kernel/bpf/verifier.c |   29 +++++++++++++----------------
- 1 file changed, 13 insertions(+), 16 deletions(-)
+ kernel/bpf/verifier.c |   32 +++++++++++++++++---------------
+ 1 file changed, 17 insertions(+), 15 deletions(-)
 
 --- a/kernel/bpf/verifier.c
 +++ b/kernel/bpf/verifier.c
-@@ -4628,31 +4628,28 @@ static int fixup_bpf_calls(struct bpf_ve
- 		    insn->code == (BPF_ALU64 | BPF_DIV | BPF_X) ||
+@@ -4629,30 +4629,32 @@ static int fixup_bpf_calls(struct bpf_ve
  		    insn->code == (BPF_ALU | BPF_MOD | BPF_X) ||
  		    insn->code == (BPF_ALU | BPF_DIV | BPF_X)) {
--			bool is64 = BPF_CLASS(insn->code) == BPF_ALU64;
+ 			bool is64 = BPF_CLASS(insn->code) == BPF_ALU64;
 -			struct bpf_insn mask_and_div[] = {
 -				BPF_MOV32_REG(insn->src_reg, insn->src_reg),
 +			bool isdiv = BPF_OP(insn->code) == BPF_DIV;
@@ -99,9 +98,11 @@ NOTE from Gary:
 +			struct bpf_insn chk_and_div[] = {
  				/* Rx div 0 -> 0 */
 -				BPF_JMP_IMM(BPF_JNE, insn->src_reg, 0, 2),
-+				BPF_RAW_INSN(BPF_JMP |
-+					     BPF_JNE | BPF_K, insn->src_reg,
-+					     0, 2, 0),
++				BPF_RAW_INSN((is64 ? BPF_ALU64 : BPF_ALU) |
++					     BPF_MOV | BPF_X,
++					     BPF_REG_AX, insn->src_reg,
++					     0, 0),
++				BPF_JMP_IMM(BPF_JNE, BPF_REG_AX, 0, 2),
  				BPF_ALU32_REG(BPF_XOR, insn->dst_reg, insn->dst_reg),
  				BPF_JMP_IMM(BPF_JA, 0, 0, 1),
  				*insn,
@@ -111,9 +112,11 @@ NOTE from Gary:
 +			struct bpf_insn chk_and_mod[] = {
  				/* Rx mod 0 -> Rx */
 -				BPF_JMP_IMM(BPF_JEQ, insn->src_reg, 0, 1),
-+				BPF_RAW_INSN(BPF_JMP |
-+					     BPF_JEQ | BPF_K, insn->src_reg,
-+					     0, 1, 0),
++				BPF_RAW_INSN((is64 ? BPF_ALU64 : BPF_ALU) |
++					     BPF_MOV | BPF_X,
++					     BPF_REG_AX, insn->src_reg,
++					     0, 0),
++				BPF_JMP_IMM(BPF_JNE, BPF_REG_AX, 0, 1),
  				*insn,
  			};
 -			struct bpf_insn *patchlet;
