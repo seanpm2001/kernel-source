@@ -1,5 +1,6 @@
 # Flag to trigger /etc/init.d/purge-kernels on next reboot (fate#312018)
-touch /boot/do_purge_kernels
+# ... but avoid the first installion (bsc#1180058)
+test $1 -gt 1 && touch /boot/do_purge_kernels
 
 suffix=
 if test "@FLAVOR@" = "vanilla"; then
@@ -12,6 +13,7 @@ done
 
 # Add symlinks of compatible modules to /lib/modules/$krel/weak-updates/,
 # run depmod and mkinitrd
+wm2_rc=0
 wm2=/usr/lib/module-init-tools/weak-modules2
 if [ -x $wm2 ]; then
     if [ @BASE_PACKAGE@ = 1 ]; then
@@ -20,8 +22,10 @@ if [ -x $wm2 ]; then
         nvr=@SUBPACKAGE@-@RPM_VERSION_RELEASE@
         rpm -ql $nvr | /bin/bash -${-/e/} $wm2 --add-kernel-modules @KERNELRELEASE@-@FLAVOR@
     fi
+    wm2_rc=$?
 else
     echo "$wm2 does not exist, please run depmod and mkinitrd manually" >&2
+    wm2_rc=-1
 fi
 
 message_install_bl () {
@@ -43,9 +47,11 @@ run_bootloader () {
     fi
 }
 
+rc=0
 if [ -f /etc/fstab -a ! -e /.buildenv ] ; then
     # only run the bootloader if the usual bootloader configuration
     # files are there -- this is different on every architecture
+    rc=-1
     initrd=initrd-@KERNELRELEASE@-@FLAVOR@
     if [ @FLAVOR@ = rt ]; then
 	    default=force-default
@@ -61,6 +67,7 @@ if [ -f /etc/fstab -a ! -e /.buildenv ] ; then
 		@IMAGE@-@KERNELRELEASE@-@FLAVOR@ \
 		$initrd \
 		$default
+	    rc=$?
 	else
 	    message_install_bl
 	fi
@@ -68,5 +75,9 @@ if [ -f /etc/fstab -a ! -e /.buildenv ] ; then
 else
     message_install_bl
 fi
+
+# check if something failed
+[ $wm2_rc != 0 ] && exit $wm2_rc
+exit $rc
 
 # vim: set sts=4 sw=4 ts=8 noet:
