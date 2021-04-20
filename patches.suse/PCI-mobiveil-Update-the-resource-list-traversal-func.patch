@@ -1,0 +1,49 @@
+From: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Date: Fri, 5 Jul 2019 17:56:32 +0800
+Subject: PCI: mobiveil: Update the resource list traversal function
+
+Git-commit: 9815d3288ed0540efc5f261ea1736f4327c4c9b5
+Patch-mainline: v5.3-rc1
+References: fate#326572
+
+Code that executes the resource list traversal does not need to
+delete any node therefore using the *_safe() API version is
+useless.
+
+Replace function resource_list_for_each_entry_safe() with the
+resource_list_for_each_entry() counterpart.
+
+Signed-off-by: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Signed-off-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
+Reviewed-by: Minghuan Lian <Minghuan.Lian@nxp.com>
+Reviewed-by: Subrahmanya Lingappa <l.subrahmanya@mobiveil.co.in>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ drivers/pci/host/pcie-mobiveil.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/pci/host/pcie-mobiveil.c b/drivers/pci/host/pcie-mobiveil.c
+index 53df31700551..c359654abc30 100644
+--- a/drivers/pci/host/pcie-mobiveil.c
++++ b/drivers/pci/host/pcie-mobiveil.c
+@@ -562,7 +562,7 @@ static int mobiveil_host_init(struct mobiveil_pcie *pcie)
+ {
+ 	u32 value, pab_ctrl, type = 0;
+ 	int err;
+-	struct resource_entry *win, *tmp;
++	struct resource_entry *win;
+ 
+ 	err = mobiveil_bringup_link(pcie);
+ 	if (err) {
+@@ -612,7 +612,7 @@ static int mobiveil_host_init(struct mobiveil_pcie *pcie)
+ 	program_ib_windows(pcie, WIN_NUM_1, 0, MEM_WINDOW_TYPE, IB_WIN_SIZE);
+ 
+ 	/* Get the I/O and memory ranges from DT */
+-	resource_list_for_each_entry_safe(win, tmp, &pcie->resources) {
++	resource_list_for_each_entry(win, &pcie->resources) {
+ 		type = 0;
+ 		if (resource_type(win->res) == IORESOURCE_MEM)
+ 			type = MEM_WINDOW_TYPE;
+-- 
+2.26.2
+
