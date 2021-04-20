@@ -1,0 +1,47 @@
+From: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Date: Fri, 5 Jul 2019 17:56:37 +0800
+Subject: PCI: mobiveil: Move IRQ chained handler setup out of DT parse
+
+Git-commit: 284441a9662cd3352396cf7d74edd9270f641916
+Patch-mainline: v5.3-rc1
+References: fate#326572
+
+The irq_set_chained_handler_and_data() call is not dependent on device
+tree firmware so it should be moved out of the DT parsing function for
+clarity.
+
+Signed-off-by: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+[lorenzo.pieralisi@arm.com: rewritten commit log]
+Signed-off-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
+Reviewed-by: Minghuan Lian <Minghuan.Lian@nxp.com>
+Reviewed-by: Subrahmanya Lingappa <l.subrahmanya@mobiveil.co.in>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ drivers/pci/host/pcie-mobiveil.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/pci/host/pcie-mobiveil.c b/drivers/pci/host/pcie-mobiveil.c
+index 8f92f05c9211..cdf15cca526e 100644
+--- a/drivers/pci/host/pcie-mobiveil.c
++++ b/drivers/pci/host/pcie-mobiveil.c
+@@ -446,8 +446,6 @@ static int mobiveil_pcie_parse_dt(struct mobiveil_pcie *pcie)
+ 		return -ENODEV;
+ 	}
+ 
+-	irq_set_chained_handler_and_data(pcie->irq, mobiveil_pcie_isr, pcie);
+-
+ 	return 0;
+ }
+ 
+@@ -872,6 +870,8 @@ static int mobiveil_pcie_probe(struct platform_device *pdev)
+ 		goto error;
+ 	}
+ 
++	irq_set_chained_handler_and_data(pcie->irq, mobiveil_pcie_isr, pcie);
++
+ 	ret = devm_request_pci_bus_resources(dev, &pcie->resources);
+ 	if (ret)
+ 		goto error;
+-- 
+2.26.2
+
