@@ -1,0 +1,41 @@
+From: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Date: Fri, 5 Jul 2019 17:56:33 +0800
+Subject: PCI: mobiveil: Use WIN_NUM_0 explicitly for CFG outbound window
+
+Git-commit: f39ed3d09b34f733bb12178712019050bd8bd38d
+Patch-mainline: v5.3-rc1
+References: fate#326572
+
+As the .map_bus() use the WIN_NUM_0 for CFG transactions,
+it is appropriate to pass WIN_NUM_0 explicitly when initializing
+the CFG outbound window rather than implicitly relying on the
+ob_wins_configure counter.
+
+Signed-off-by: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Signed-off-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
+Reviewed-by: Minghuan Lian <Minghuan.Lian@nxp.com>
+Reviewed-by: Subrahmanya Lingappa <l.subrahmanya@mobiveil.co.in>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ drivers/pci/host/pcie-mobiveil.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/pci/host/pcie-mobiveil.c b/drivers/pci/host/pcie-mobiveil.c
+index c359654abc30..0f41c238fa18 100644
+--- a/drivers/pci/host/pcie-mobiveil.c
++++ b/drivers/pci/host/pcie-mobiveil.c
+@@ -604,9 +604,8 @@ static int mobiveil_host_init(struct mobiveil_pcie *pcie)
+ 	 */
+ 
+ 	/* config outbound translation window */
+-	program_ob_windows(pcie, pcie->ob_wins_configured,
+-			pcie->ob_io_res->start, 0, CFG_WINDOW_TYPE,
+-			resource_size(pcie->ob_io_res));
++	program_ob_windows(pcie, WIN_NUM_0, pcie->ob_io_res->start, 0,
++			   CFG_WINDOW_TYPE, resource_size(pcie->ob_io_res));
+ 
+ 	/* memory inbound translation window */
+ 	program_ib_windows(pcie, WIN_NUM_1, 0, MEM_WINDOW_TYPE, IB_WIN_SIZE);
+-- 
+2.26.2
+
