@@ -1,0 +1,40 @@
+From: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Date: Fri, 5 Jul 2019 17:56:39 +0800
+Subject: PCI: mobiveil: Fix devfn check in mobiveil_pcie_valid_device()
+
+Git-commit: cbd50b3ca3964c79dac65fda277637577e029e8c
+Patch-mainline: v5.3-rc1
+References: fate#326572
+
+Current check for devfn number in mobiveil_pci_valid_device() is
+wrong in that it flags as invalid functions present in PCI device 0
+in the root bus while it is perfectly valid to access all functions
+in PCI device 0 in the root bus.
+
+Update the check in mobiveil_pci_valid_device() to fix the issue.
+
+Fixes: 9af6bcb11e12 ("PCI: mobiveil: Add Mobiveil PCIe Host Bridge IP driver")
+Signed-off-by: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Signed-off-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
+Reviewed-by: Minghuan Lian <Minghuan.Lian@nxp.com>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ drivers/pci/host/pcie-mobiveil.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/pci/host/pcie-mobiveil.c b/drivers/pci/host/pcie-mobiveil.c
+index 8f561300a88e..c9bf5658c4e7 100644
+--- a/drivers/pci/host/pcie-mobiveil.c
++++ b/drivers/pci/host/pcie-mobiveil.c
+@@ -283,7 +283,7 @@ static bool mobiveil_pcie_valid_device(struct pci_bus *bus, unsigned int devfn)
+ 	 * Do not read more than one device on the bus directly
+ 	 * attached to RC
+ 	 */
+-	if ((bus->primary == pcie->root_bus_nr) && (devfn > 0))
++	if ((bus->primary == pcie->root_bus_nr) && (PCI_SLOT(devfn) > 0))
+ 		return false;
+ 
+ 	return true;
+-- 
+2.26.2
+
