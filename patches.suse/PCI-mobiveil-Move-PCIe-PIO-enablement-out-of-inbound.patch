@@ -1,0 +1,49 @@
+From: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Date: Fri, 5 Jul 2019 17:56:54 +0800
+Subject: PCI: mobiveil: Move PCIe PIO enablement out of inbound window routine
+
+Git-commit: fe83fa7e7eac505c40b269eeb892240d83c6b279
+Patch-mainline: v5.3-rc1
+References: fate#326572
+
+Move the PCIe PIO master enablement to function mobiveil_host_init().
+
+Signed-off-by: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Signed-off-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
+Reviewed-by: Minghuan Lian <Minghuan.Lian@nxp.com>
+Reviewed-by: Subrahmanya Lingappa <l.subrahmanya@mobiveil.co.in>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ drivers/pci/host/pcie-mobiveil.c | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/pci/host/pcie-mobiveil.c b/drivers/pci/host/pcie-mobiveil.c
+index 8ba15c6cb51e..f57d2d83dbd8 100644
+--- a/drivers/pci/host/pcie-mobiveil.c
++++ b/drivers/pci/host/pcie-mobiveil.c
+@@ -468,10 +468,6 @@ static void program_ib_windows(struct mobiveil_pcie *pcie, int win_num,
+ 		return;
+ 	}
+ 
+-	value = csr_readl(pcie, PAB_PEX_PIO_CTRL);
+-	value |= 1 << PIO_ENABLE_SHIFT;
+-	csr_writel(pcie, value, PAB_PEX_PIO_CTRL);
+-
+ 	value = csr_readl(pcie, PAB_PEX_AMAP_CTRL(win_num));
+ 	value &= ~(AMAP_CTRL_TYPE_MASK << AMAP_CTRL_TYPE_SHIFT | WIN_SIZE_MASK);
+ 	value |= type << AMAP_CTRL_TYPE_SHIFT | 1 << AMAP_CTRL_EN_SHIFT |
+@@ -606,6 +602,11 @@ static int mobiveil_host_init(struct mobiveil_pcie *pcie)
+ 	value |= APIO_EN_MASK;
+ 	csr_writel(pcie, value, PAB_AXI_PIO_CTRL);
+ 
++	/* Enable PCIe PIO master */
++	value = csr_readl(pcie, PAB_PEX_PIO_CTRL);
++	value |= 1 << PIO_ENABLE_SHIFT;
++	csr_writel(pcie, value, PAB_PEX_PIO_CTRL);
++
+ 	/*
+ 	 * we'll program one outbound window for config reads and
+ 	 * another default inbound window for all the upstream traffic
+-- 
+2.26.2
+
