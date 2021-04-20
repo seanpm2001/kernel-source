@@ -1,0 +1,47 @@
+From: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Date: Fri, 5 Jul 2019 17:56:47 +0800
+Subject: PCI: mobiveil: Fix the valid check for inbound and outbound windows
+
+Git-commit: ccd34dac2ed596b1f26079912bdf638e002a3979
+Patch-mainline: v5.3-rc1
+References: fate#326572
+
+In program_ib/ob_windows() check the window index from the function
+parameter instead of the total number of initialized windows to
+determine if the specified window is valid.
+
+Fixes: 9af6bcb11e12 ("PCI: mobiveil: Add Mobiveil PCIe Host Bridge IP driver")
+Signed-off-by: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Signed-off-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
+Reviewed-by: Minghuan Lian <Minghuan.Lian@nxp.com>
+Reviewed-by: Subrahmanya Lingappa <l.subrahmanya@mobiveil.co.in>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ drivers/pci/host/pcie-mobiveil.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/pci/host/pcie-mobiveil.c b/drivers/pci/host/pcie-mobiveil.c
+index ccf9bb1008e1..76653d946486 100644
+--- a/drivers/pci/host/pcie-mobiveil.c
++++ b/drivers/pci/host/pcie-mobiveil.c
+@@ -458,7 +458,7 @@ static void program_ib_windows(struct mobiveil_pcie *pcie, int win_num,
+ 	u32 value;
+ 	u64 size64 = ~(size - 1);
+ 
+-	if ((pcie->ib_wins_configured + 1) > pcie->ppio_wins) {
++	if (win_num >= pcie->ppio_wins) {
+ 		dev_err(&pcie->pdev->dev,
+ 			"ERROR: max inbound windows reached !\n");
+ 		return;
+@@ -491,7 +491,7 @@ static void program_ob_windows(struct mobiveil_pcie *pcie, int win_num,
+ {
+ 	u64 size64 = ~(size - 1);
+ 
+-	if ((pcie->ob_wins_configured + 1) > pcie->apio_wins) {
++	if (win_num >= pcie->apio_wins) {
+ 		dev_err(&pcie->pdev->dev,
+ 			"ERROR: max outbound windows reached !\n");
+ 		return;
+-- 
+2.26.2
+
