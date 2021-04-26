@@ -1,0 +1,64 @@
+From: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Date: Fri, 5 Jul 2019 17:56:43 +0800
+Subject: PCI: mobiveil: Refactor the MEM/IO outbound window initialization
+
+Git-commit: f97441f4c398b4ae29a4eb8439f9a09fcf26225a
+Patch-mainline: v5.3-rc1
+References: fate#326572
+
+Move the resource type check into an if/else block and only
+set-up the outbound window for MEM and IO resource. No functional
+change intended.
+
+Signed-off-by: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Signed-off-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
+Reviewed-by: Minghuan Lian <Minghuan.Lian@nxp.com>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ drivers/pci/host/pcie-mobiveil.c | 20 ++++++++++----------
+ 1 file changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/pci/host/pcie-mobiveil.c b/drivers/pci/host/pcie-mobiveil.c
+index 906299b0d10e..965f89ae73d7 100644
+--- a/drivers/pci/host/pcie-mobiveil.c
++++ b/drivers/pci/host/pcie-mobiveil.c
+@@ -565,7 +565,7 @@ static void mobiveil_pcie_enable_msi(struct mobiveil_pcie *pcie)
+ 
+ static int mobiveil_host_init(struct mobiveil_pcie *pcie)
+ {
+-	u32 value, pab_ctrl, type = 0;
++	u32 value, pab_ctrl, type;
+ 	struct resource_entry *win;
+ 
+ 	/* setup bus numbers */
+@@ -617,18 +617,18 @@ static int mobiveil_host_init(struct mobiveil_pcie *pcie)
+ 
+ 	/* Get the I/O and memory ranges from DT */
+ 	resource_list_for_each_entry(win, &pcie->resources) {
+-		type = 0;
+ 		if (resource_type(win->res) == IORESOURCE_MEM)
+ 			type = MEM_WINDOW_TYPE;
+-		if (resource_type(win->res) == IORESOURCE_IO)
++		else if (resource_type(win->res) == IORESOURCE_IO)
+ 			type = IO_WINDOW_TYPE;
+-		if (type) {
+-			/* configure outbound translation window */
+-			program_ob_windows(pcie, pcie->ob_wins_configured,
+-					   win->res->start,
+-					   win->res->start - win->offset,
+-					   type, resource_size(win->res));
+-		}
++		else
++			continue;
++
++		/* configure outbound translation window */
++		program_ob_windows(pcie, pcie->ob_wins_configured,
++				   win->res->start,
++				   win->res->start - win->offset,
++				   type, resource_size(win->res));
+ 	}
+ 
+ 	/* fixup for PCIe class register */
+-- 
+2.26.2
+
