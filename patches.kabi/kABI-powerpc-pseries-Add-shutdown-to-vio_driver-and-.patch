@@ -1,0 +1,58 @@
+From 4ebbf5c53566372d882e63ae0c9783ec39f4cf07 Mon Sep 17 00:00:00 2001
+From: Michal Suchanek <msuchanek@suse.de>
+Date: Thu, 22 Apr 2021 16:37:14 +0200
+Subject: [PATCH] kABI: powerpc/pseries: Add shutdown() to vio_driver and
+ vio_bus
+
+References: bsc#1184209 ltc#190917
+Patch-mainline: never, kABI
+
+Drop the shutdown() callback again and keep the remove() fallback only.
+shutdown() is not implemented by any current driver anyway.
+
+Signed-off-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/include/asm/vio.h       | 1 -
+ arch/powerpc/platforms/pseries/vio.c | 6 +++---
+ 2 files changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/arch/powerpc/include/asm/vio.h b/arch/powerpc/include/asm/vio.h
+index 4998c9a08100..0cf52746531b 100644
+--- a/arch/powerpc/include/asm/vio.h
++++ b/arch/powerpc/include/asm/vio.h
+@@ -114,7 +114,6 @@ struct vio_driver {
+ 	const struct vio_device_id *id_table;
+ 	int (*probe)(struct vio_dev *dev, const struct vio_device_id *id);
+ 	int (*remove)(struct vio_dev *dev);
+-	void (*shutdown)(struct vio_dev *dev);
+ 	/* A driver must have a get_desired_dma() function to
+ 	 * be loaded in a CMO environment if it uses DMA.
+ 	 */
+diff --git a/arch/powerpc/platforms/pseries/vio.c b/arch/powerpc/platforms/pseries/vio.c
+index 05de2f7351d4..cd5e127e6e87 100644
+--- a/arch/powerpc/platforms/pseries/vio.c
++++ b/arch/powerpc/platforms/pseries/vio.c
+@@ -22,7 +22,9 @@
+ #include <linux/mm.h>
+ #include <linux/dma-mapping.h>
+ #include <linux/kobject.h>
++#ifndef __GENKSYMS__
+ #include <linux/kexec.h>
++#endif
+ 
+ #include <asm/iommu.h>
+ #include <asm/dma.h>
+@@ -1284,9 +1286,7 @@ static void vio_bus_shutdown(struct device *dev)
+ 
+ 	if (dev->driver) {
+ 		viodrv = to_vio_driver(dev->driver);
+-		if (viodrv->shutdown)
+-			viodrv->shutdown(viodev);
+-		else if (kexec_in_progress)
++		if (kexec_in_progress)
+ 			vio_bus_remove(dev);
+ 	}
+ }
+-- 
+2.26.2
+
