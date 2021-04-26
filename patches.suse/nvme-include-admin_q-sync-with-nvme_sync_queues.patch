@@ -1,0 +1,31 @@
+From: Edmund Nadolski <edmund.nadolski@intel.com>
+Date: Tue, 3 Sep 2019 14:08:47 -0600
+Subject: [PATCH] nvme: include admin_q sync with nvme_sync_queues
+Patch-mainline: v5.4-rc1
+Git-commit: 03894b7a896dc6eb3870e197bd7414ab0c947cbf
+References: bsc#1181161
+
+nvme_sync_queues currently syncs all namespace queues, but should
+also sync the admin queue, if present.
+
+Signed-off-by: Edmund Nadolski <edmund.nadolski@intel.com>
+Reviewed-by: Keith Busch <kbusch@kernel.org>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Sagi Grimberg <sagi@grimberg.me>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ drivers/nvme/host/core.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/drivers/nvme/host/core.c
++++ b/drivers/nvme/host/core.c
+@@ -3686,6 +3686,9 @@ void nvme_sync_queues(struct nvme_ctrl *
+ 	list_for_each_entry(ns, &ctrl->namespaces, list)
+ 		blk_sync_queue(ns->queue);
+ 	up_read(&ctrl->namespaces_rwsem);
++
++	if (ctrl->admin_q)
++		blk_sync_queue(ctrl->admin_q);
+ }
+ EXPORT_SYMBOL_GPL(nvme_sync_queues);
+ 
