@@ -30,27 +30,39 @@ patches.suse/nvme-fabrics-reject-I-O-to-offline-device.patch
  /*
 --- a/drivers/nvme/host/nvme.h
 +++ b/drivers/nvme/host/nvme.h
-@@ -220,7 +220,9 @@ struct nvme_ctrl {
+@@ -165,9 +165,6 @@ struct nvme_ctrl {
+ 	const struct nvme_ctrl_ops *ops;
+ 	struct request_queue *admin_q;
+ 	struct request_queue *connect_q;
+-#ifndef __GENKSYMS__
+-	struct request_queue *fabrics_q;
+-#endif
+ 	struct device *dev;
+ 	int instance;
+ 	int numa_node;
+@@ -222,7 +219,6 @@ struct nvme_ctrl {
  	struct work_struct scan_work;
  	struct work_struct async_event_work;
  	struct delayed_work ka_work;
-+#ifndef __GENKSYMS__
- 	struct delayed_work failfast_work;
-+#endif
+-	struct delayed_work failfast_work;
  	struct nvme_command ka_cmd;
  	struct work_struct fw_act_work;
  	unsigned long events;
-@@ -255,8 +257,10 @@ struct nvme_ctrl {
+@@ -257,9 +253,13 @@ struct nvme_ctrl {
  	u16 icdoff;
  	u16 maxcmd;
  	int nr_reconnects;
++	struct nvmf_ctrl_options *opts;
 +#ifndef __GENKSYMS__
++	struct request_queue *fabrics_q;
++	struct delayed_work failfast_work;
  	unsigned long flags;
  #define NVME_CTRL_FAILFAST_EXPIRED	0
+-	struct nvmf_ctrl_options *opts;
 +#endif
- 	struct nvmf_ctrl_options *opts;
  };
  
+ enum nvme_iopolicy {
 --- a/drivers/nvme/host/multipath.c
 +++ b/drivers/nvme/host/multipath.c
 @@ -298,8 +298,10 @@ static bool nvme_available_path(struct n
@@ -135,7 +147,7 @@ patches.suse/nvme-fabrics-reject-I-O-to-offline-device.patch
  
 --- a/drivers/nvme/host/fabrics.c
 +++ b/drivers/nvme/host/fabrics.c
-@@ -556,9 +556,11 @@ blk_status_t nvmf_fail_nonready_command(
+@@ -577,9 +577,11 @@ blk_status_t nvmf_fail_nonready_command(
  {
  	if (ctrl->state != NVME_CTRL_DELETING &&
  	    ctrl->state != NVME_CTRL_DEAD &&
@@ -149,7 +161,7 @@ patches.suse/nvme-fabrics-reject-I-O-to-offline-device.patch
  
  	nvme_req(rq)->status = NVME_SC_HOST_PATH_ERROR;
  	blk_mq_start_request(rq);
-@@ -620,7 +622,9 @@ static const match_table_t opt_tokens =
+@@ -641,7 +643,9 @@ static const match_table_t opt_tokens =
  	{ NVMF_OPT_DISABLE_SQFLOW,	"disable_sqflow"	},
  	{ NVMF_OPT_HDR_DIGEST,		"hdr_digest"		},
  	{ NVMF_OPT_DATA_DIGEST,		"data_digest"		},
@@ -159,7 +171,7 @@ patches.suse/nvme-fabrics-reject-I-O-to-offline-device.patch
  	{ NVMF_OPT_ERR,			NULL			}
  };
  
-@@ -640,7 +644,9 @@ static int nvmf_parse_options(struct nvm
+@@ -661,7 +665,9 @@ static int nvmf_parse_options(struct nvm
  	opts->reconnect_delay = NVMF_DEF_RECONNECT_DELAY;
  	opts->kato = NVME_DEFAULT_KATO;
  	opts->duplicate_connect = false;
@@ -169,7 +181,7 @@ patches.suse/nvme-fabrics-reject-I-O-to-offline-device.patch
  	opts->hdr_digest = false;
  	opts->data_digest = false;
  
-@@ -767,6 +773,7 @@ static int nvmf_parse_options(struct nvm
+@@ -788,6 +794,7 @@ static int nvmf_parse_options(struct nvm
  				pr_warn("ctrl_loss_tmo < 0 will reconnect forever\n");
  			ctrl_loss_tmo = token;
  			break;
@@ -177,7 +189,7 @@ patches.suse/nvme-fabrics-reject-I-O-to-offline-device.patch
  		case NVMF_OPT_FAIL_FAST_TMO:
  			if (match_int(args, &token)) {
  				ret = -EINVAL;
-@@ -778,6 +785,7 @@ static int nvmf_parse_options(struct nvm
+@@ -799,6 +806,7 @@ static int nvmf_parse_options(struct nvm
  					token);
  			opts->fast_io_fail_tmo = token;
  			break;
@@ -185,7 +197,7 @@ patches.suse/nvme-fabrics-reject-I-O-to-offline-device.patch
  		case NVMF_OPT_HOSTNQN:
  			if (opts->host) {
  				pr_err("hostnqn already user-assigned: %s\n",
-@@ -872,9 +880,11 @@ static int nvmf_parse_options(struct nvm
+@@ -893,9 +901,11 @@ static int nvmf_parse_options(struct nvm
  	} else {
  		opts->max_reconnects = DIV_ROUND_UP(ctrl_loss_tmo,
  						opts->reconnect_delay);
@@ -197,7 +209,7 @@ patches.suse/nvme-fabrics-reject-I-O-to-offline-device.patch
  	}
  
  	if (!opts->host) {
-@@ -972,11 +982,18 @@ void nvmf_free_options(struct nvmf_ctrl_
+@@ -993,11 +1003,18 @@ void nvmf_free_options(struct nvmf_ctrl_
  EXPORT_SYMBOL_GPL(nvmf_free_options);
  
  #define NVMF_REQUIRED_OPTS	(NVMF_OPT_TRANSPORT | NVMF_OPT_NQN)
