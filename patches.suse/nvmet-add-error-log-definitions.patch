@@ -1,0 +1,73 @@
+From e4a976254ec5ebdcdb3e1e1b40e795b3db6b6dab Mon Sep 17 00:00:00 2001
+From: Chaitanya Kulkarni <chaitanya.kulkarni@wdc.com>
+Date: Wed, 12 Dec 2018 15:11:39 -0800
+Patch-mainline: v5.0-rc1
+Git-commit: e4a976254ec5ebdcdb3e1e1b40e795b3db6b6dab
+Subject: [PATCH] nvmet: add error-log definitions
+References: bsc#1181161
+
+This patch adds necessary fields in the target data structures to
+support error log page. For a target controller, we add a new error log
+field to maintain the error log, at any given point we maintain error
+entries equal to NVMET_ERROR_LOG_SLOTS for each controller. In the
+following patch, we also update the error log page entry in the I/O
+completion path so we introduce a spinlock for synchronization of the
+log.
+
+For nvmet_req, we add a new field error_loc to hold the location of
+the error in the command when the actual error occurs for each request
+and a starting LBA if applicable.
+
+Signed-off-by: Chaitanya Kulkarni <chaitanya.kulkarni@wdc.com>
+Reviewed-by: Sagi Grimberg <sagi@grimberg.me>
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ drivers/nvme/target/core.c  | 5 +++++
+ drivers/nvme/target/nvmet.h | 6 ++++++
+ 2 files changed, 11 insertions(+)
+
+--- a/drivers/nvme/target/core.c
++++ b/drivers/nvme/target/core.c
+@@ -668,6 +668,8 @@ bool nvmet_req_init(struct nvmet_req *re
+ 	req->rsp->status = 0;
+ 	req->rsp->sq_head = 0;
+ 	req->ns = NULL;
++	req->error_loc = -1;
++	req->error_slba = 0;
+ 
+ 	/* no support for fused commands yet */
+ 	if (unlikely(flags & (NVME_CMD_FUSE_FIRST | NVME_CMD_FUSE_SECOND))) {
+@@ -996,6 +998,9 @@ u16 nvmet_alloc_ctrl(const char *subsysn
+ 	/* keep-alive timeout in seconds */
+ 	ctrl->kato = DIV_ROUND_UP(kato, 1000);
+ 
++	ctrl->err_counter = 0;
++	spin_lock_init(&ctrl->error_lock);
++
+ 	nvmet_start_keep_alive_timer(ctrl);
+ 
+ 	mutex_lock(&subsys->lock);
+--- a/drivers/nvme/target/nvmet.h
++++ b/drivers/nvme/target/nvmet.h
+@@ -190,6 +190,10 @@ struct nvmet_ctrl {
+ 
+ 	char			subsysnqn[NVMF_NQN_FIELD_LEN];
+ 	char			hostnqn[NVMF_NQN_FIELD_LEN];
++
++	spinlock_t		error_lock;
++	u64			err_counter;
++	struct nvme_error_slot	slots[NVMET_ERROR_LOG_SLOTS];
+ };
+ 
+ struct nvmet_subsys {
+@@ -302,6 +306,9 @@ struct nvmet_req {
+ 
+ 	void (*execute)(struct nvmet_req *req);
+ 	const struct nvmet_fabrics_ops *ops;
++
++	u16			error_loc;
++	u64			error_slba;
+ };
+ 
+ extern struct workqueue_struct *buffered_io_wq;

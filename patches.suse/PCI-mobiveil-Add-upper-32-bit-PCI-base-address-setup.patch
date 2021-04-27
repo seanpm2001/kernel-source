@@ -1,0 +1,53 @@
+From: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Date: Fri, 5 Jul 2019 17:56:52 +0800
+Subject: PCI: mobiveil: Add upper 32-bit PCI base address setup in inbound
+ window
+
+Git-commit: 4e00aca3ba0b54d496c224888b468207c601463c
+Patch-mainline: v5.3-rc1
+References: fate#326572
+
+Current code erroneously sets-up the lower 32-bit PCI base address in
+the inbound window, which results in inbound transactions not working in
+64-bit platforms.
+
+Fixes: 9af6bcb11e12 ("PCI: mobiveil: Add Mobiveil PCIe Host Bridge IP driver")
+Signed-off-by: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Signed-off-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
+Reviewed-by: Minghuan Lian <Minghuan.Lian@nxp.com>
+Reviewed-by: Subrahmanya Lingappa <l.subrahmanya@mobiveil.co.in>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ drivers/pci/host/pcie-mobiveil.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/pci/host/pcie-mobiveil.c b/drivers/pci/host/pcie-mobiveil.c
+index a09fc6cafb46..8ba15c6cb51e 100644
+--- a/drivers/pci/host/pcie-mobiveil.c
++++ b/drivers/pci/host/pcie-mobiveil.c
+@@ -457,7 +457,7 @@ static int mobiveil_pcie_parse_dt(struct mobiveil_pcie *pcie)
+ }
+ 
+ static void program_ib_windows(struct mobiveil_pcie *pcie, int win_num,
+-			       int pci_addr, u32 type, u64 size)
++			       u64 pci_addr, u32 type, u64 size)
+ {
+ 	u32 value;
+ 	u64 size64 = ~(size - 1);
+@@ -483,8 +483,11 @@ static void program_ib_windows(struct mobiveil_pcie *pcie, int win_num,
+ 
+ 	csr_writel(pcie, pci_addr, PAB_PEX_AMAP_AXI_WIN(win_num));
+ 
+-	csr_writel(pcie, pci_addr, PAB_PEX_AMAP_PEX_WIN_L(win_num));
+-	csr_writel(pcie, 0, PAB_PEX_AMAP_PEX_WIN_H(win_num));
++	csr_writel(pcie, lower_32_bits(pci_addr),
++		   PAB_PEX_AMAP_PEX_WIN_L(win_num));
++	csr_writel(pcie, upper_32_bits(pci_addr),
++		   PAB_PEX_AMAP_PEX_WIN_H(win_num));
++
+ 	pcie->ib_wins_configured++;
+ }
+ 
+-- 
+2.26.2
+
