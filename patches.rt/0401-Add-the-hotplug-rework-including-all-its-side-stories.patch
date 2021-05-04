@@ -313,7 +313,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  } arch_spinlock_t;
 --- a/arch/powerpc/kvm/book3s_hv.c
 +++ b/arch/powerpc/kvm/book3s_hv.c
-@@ -3856,7 +3856,7 @@ void kvmppc_alloc_host_rm_ops(void)
+@@ -3871,7 +3871,7 @@ void kvmppc_alloc_host_rm_ops(void)
  		return;
  	}
  
@@ -322,7 +322,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	for (cpu = 0; cpu < nr_cpu_ids; cpu += threads_per_core) {
  		if (!cpu_online(cpu))
-@@ -3878,17 +3878,17 @@ void kvmppc_alloc_host_rm_ops(void)
+@@ -3893,17 +3893,17 @@ void kvmppc_alloc_host_rm_ops(void)
  	l_ops = (unsigned long) ops;
  
  	if (cmpxchg64((unsigned long *)&kvmppc_host_rm_ops_hv, 0, l_ops)) {
@@ -405,7 +405,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
 --- a/arch/s390/kernel/time.c
 +++ b/arch/s390/kernel/time.c
-@@ -636,10 +636,10 @@ static void stp_work_fn(struct work_stru
+@@ -677,10 +677,10 @@ static void stp_work_fn(struct work_stru
  		goto out_unlock;
  
  	memset(&stp_sync, 0, sizeof(stp_sync));
@@ -460,7 +460,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  /* Low 15 bits are "next"; high 15 bits are "current". */
 --- a/arch/x86/events/core.c
 +++ b/arch/x86/events/core.c
-@@ -2249,7 +2249,6 @@ void perf_check_microcode(void)
+@@ -2302,7 +2302,6 @@ void perf_check_microcode(void)
  	if (x86_pmu.check_microcode)
  		x86_pmu.check_microcode();
  }
@@ -470,7 +470,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	.pmu_enable		= x86_pmu_enable,
 --- a/arch/x86/events/intel/core.c
 +++ b/arch/x86/events/intel/core.c
-@@ -3902,12 +3902,10 @@ static void intel_snb_check_microcode(vo
+@@ -3889,12 +3889,10 @@ static void intel_snb_check_microcode(vo
  	int pebs_broken = 0;
  	int cpu;
  
@@ -483,7 +483,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	if (pebs_broken == x86_pmu.pebs_broken)
  		return;
-@@ -3980,7 +3978,9 @@ static bool check_msr(unsigned long msr,
+@@ -3967,7 +3965,9 @@ static bool check_msr(unsigned long msr,
  static __init void intel_sandybridge_quirk(void)
  {
  	x86_pmu.check_microcode = intel_snb_check_microcode;
@@ -493,7 +493,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  static const struct { int id; char *name; } intel_arch_events_map[] __initconst = {
-@@ -4847,13 +4847,12 @@ static __init int fixup_ht_bug(void)
+@@ -4834,13 +4834,12 @@ static __init int fixup_ht_bug(void)
  
  	lockup_detector_resume();
  
@@ -609,7 +609,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	return ret;
  }
-@@ -2521,7 +2521,7 @@ int cpufreq_register_driver(struct cpufr
+@@ -2531,7 +2531,7 @@ int cpufreq_register_driver(struct cpufr
  	pr_debug("trying to register driver %s\n", driver_data->name);
  
  	/* Protect against concurrent CPU online/offline. */
@@ -618,7 +618,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	write_lock_irqsave(&cpufreq_driver_lock, flags);
  	if (cpufreq_driver) {
-@@ -2554,9 +2554,10 @@ int cpufreq_register_driver(struct cpufr
+@@ -2564,9 +2564,10 @@ int cpufreq_register_driver(struct cpufr
  		goto err_if_unreg;
  	}
  
@@ -632,7 +632,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	if (ret < 0)
  		goto err_if_unreg;
  	hp_online = ret;
-@@ -2574,7 +2575,7 @@ err_null_driver:
+@@ -2584,7 +2585,7 @@ err_null_driver:
  	cpufreq_driver = NULL;
  	write_unlock_irqrestore(&cpufreq_driver_lock, flags);
  out:
@@ -641,7 +641,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	return ret;
  }
  EXPORT_SYMBOL_GPL(cpufreq_register_driver);
-@@ -2597,17 +2598,17 @@ int cpufreq_unregister_driver(struct cpu
+@@ -2607,17 +2608,17 @@ int cpufreq_unregister_driver(struct cpu
  	pr_debug("unregistering driver %s\n", driver->name);
  
  	/* Protect against concurrent cpu hotplug */
@@ -773,7 +773,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		ret = -EINVAL;
 --- a/drivers/pci/pci-driver.c
 +++ b/drivers/pci/pci-driver.c
-@@ -322,10 +322,19 @@ static long local_pci_probe(void *_ddi)
+@@ -323,10 +323,19 @@ static long local_pci_probe(void *_ddi)
  	return 0;
  }
  
@@ -794,7 +794,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	struct drv_dev_and_id ddi = { drv, dev, id };
  
  	/*
-@@ -334,33 +343,27 @@ static int pci_call_probe(struct pci_dri
+@@ -335,33 +344,27 @@ static int pci_call_probe(struct pci_dri
  	 * on the right node.
  	 */
  	node = dev_to_node(&dev->dev);
@@ -845,7 +845,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
 --- a/include/linux/cpu.h
 +++ b/include/linux/cpu.h
-@@ -112,12 +112,11 @@ static inline void cpu_maps_update_done(
+@@ -117,12 +117,11 @@ static inline void cpu_maps_update_done(
  extern struct bus_type cpu_subsys;
  
  #ifdef CONFIG_HOTPLUG_CPU
@@ -863,7 +863,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  extern void cpu_hotplug_disable(void);
  extern void cpu_hotplug_enable(void);
  void clear_tasks_mm_cpumask(int cpu);
-@@ -125,18 +124,25 @@ int cpu_down(unsigned int cpu);
+@@ -130,18 +129,25 @@ int cpu_down(unsigned int cpu);
  extern void pin_current_cpu(void);
  extern void unpin_current_cpu(void);
  
@@ -1033,7 +1033,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  #define local_unlock(lvar)					\
 --- a/include/linux/padata.h
 +++ b/include/linux/padata.h
-@@ -166,9 +166,6 @@ struct padata_instance {
+@@ -170,9 +170,6 @@ struct padata_instance {
  
  extern struct padata_instance *padata_alloc_possible(
  					struct workqueue_struct *wq);
@@ -1055,7 +1055,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	atomic_t	enable_cnt;	/* pci_enable_device has been called */
 --- a/include/linux/perf_event.h
 +++ b/include/linux/perf_event.h
-@@ -791,6 +791,8 @@ struct perf_cpu_context {
+@@ -800,6 +800,8 @@ struct perf_cpu_context {
  
  	struct list_head		sched_cb_entry;
  	int				sched_cb_usage;
@@ -1237,7 +1237,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  # ifdef CONFIG_SCHED_DEBUG
  	int				migrate_disable_atomic;
  # endif
-@@ -1328,6 +1329,16 @@ extern struct pid *cad_pid;
+@@ -1336,6 +1337,16 @@ extern struct pid *cad_pid;
  #define tsk_used_math(p)			((p)->flags & PF_USED_MATH)
  #define used_math()				tsk_used_math(current)
  
@@ -1254,7 +1254,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  /* Per-process atomic flags. */
  #define PFA_NO_NEW_PRIVS		0	/* May not gain new privileges. */
  #define PFA_SPREAD_PAGE			1	/* Spread page cache over cpuset */
-@@ -1386,10 +1397,6 @@ extern int task_can_attach(struct task_s
+@@ -1394,10 +1405,6 @@ extern int task_can_attach(struct task_s
  #ifdef CONFIG_SMP
  extern void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask);
  extern int set_cpus_allowed_ptr(struct task_struct *p, const struct cpumask *new_mask);
@@ -1265,7 +1265,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  #else
  static inline void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask)
  {
-@@ -1400,9 +1407,6 @@ static inline int set_cpus_allowed_ptr(s
+@@ -1408,9 +1415,6 @@ static inline int set_cpus_allowed_ptr(s
  		return -EINVAL;
  	return 0;
  }
@@ -1341,14 +1341,14 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  				   const struct cpumask *cpus);
  #else	/* CONFIG_SMP || CONFIG_HOTPLUG_CPU */
  
--static inline int stop_machine(cpu_stop_fn_t fn, void *data,
--				 const struct cpumask *cpus)
-+static inline int stop_machine_cpuslocked(cpu_stop_fn_t fn, void *data,
-+					  const struct cpumask *cpus)
+-static __always_inline int stop_machine(cpu_stop_fn_t fn, void *data,
+-					const struct cpumask *cpus)
++static __always_inline int stop_machine_cpuslocked(cpu_stop_fn_t fn, void *data,
++						   const struct cpumask *cpus)
  {
  	unsigned long flags;
  	int ret;
-@@ -134,6 +148,12 @@ static inline int stop_machine(cpu_stop_
+@@ -134,6 +148,12 @@ static __always_inline int stop_machine(
  	return ret;
  }
  
@@ -1358,9 +1358,9 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +	return stop_machine_cpuslocked(fn, data, cpus);
 +}
 +
- static inline int stop_machine_from_inactive_cpu(cpu_stop_fn_t fn, void *data,
- 						 const struct cpumask *cpus)
- {
+ static __always_inline int
+ stop_machine_from_inactive_cpu(cpu_stop_fn_t fn, void *data,
+ 			       const struct cpumask *cpus)
 --- a/kernel/Kconfig.locks
 +++ b/kernel/Kconfig.locks
 @@ -248,3 +248,20 @@ config ARCH_USE_QUEUED_RWLOCKS
@@ -1895,7 +1895,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	__cpuhp_kick_ap_work(st);
  	wait_for_completion(&st->done);
  	trace_cpuhp_exit(cpu, st->state, state, st->result);
-@@ -1054,27 +759,33 @@ static int take_cpu_down(void *_param)
+@@ -1058,27 +763,33 @@ static int take_cpu_down(void *_param)
  
  static int takedown_cpu(unsigned int cpu)
  {
@@ -1934,7 +1934,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		/* CPU refused to die */
  		irq_unlock_sparse();
  		/* Unpark the hotplug thread so we can rollback there */
-@@ -1093,6 +804,9 @@ static int takedown_cpu(unsigned int cpu
+@@ -1097,6 +808,9 @@ static int takedown_cpu(unsigned int cpu
  	wait_for_completion(&st->done);
  	BUG_ON(st->state != CPUHP_AP_IDLE_DEAD);
  
@@ -1944,7 +1944,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	/* Interrupts are moved away from the dying cpu, reenable alloc/free */
  	irq_unlock_sparse();
  
-@@ -1138,9 +852,6 @@ static int __ref _cpu_down(unsigned int
+@@ -1142,9 +856,6 @@ static int __ref _cpu_down(unsigned int
  {
  	struct cpuhp_cpu_state *st = per_cpu_ptr(&cpuhp_state, cpu);
  	int prev_state, ret = 0;
@@ -1954,7 +1954,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	if (num_online_cpus() == 1)
  		return -EBUSY;
-@@ -1148,34 +859,7 @@ static int __ref _cpu_down(unsigned int
+@@ -1152,34 +863,7 @@ static int __ref _cpu_down(unsigned int
  	if (!cpu_present(cpu))
  		return -EINVAL;
  
@@ -1990,7 +1990,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	cpuhp_tasks_frozen = tasks_frozen;
  
-@@ -1213,12 +897,7 @@ static int __ref _cpu_down(unsigned int
+@@ -1217,12 +901,7 @@ static int __ref _cpu_down(unsigned int
  	}
  
  out:
@@ -2004,7 +2004,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	return ret;
  }
  
-@@ -1289,7 +968,7 @@ static int _cpu_up(unsigned int cpu, int
+@@ -1293,7 +972,7 @@ static int _cpu_up(unsigned int cpu, int
  	struct task_struct *idle;
  	int ret = 0;
  
@@ -2013,7 +2013,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	if (!cpu_present(cpu)) {
  		ret = -EINVAL;
-@@ -1824,18 +1503,20 @@ static void cpuhp_rollback_install(int f
+@@ -1828,18 +1507,20 @@ static void cpuhp_rollback_install(int f
  	}
  }
  
@@ -2037,7 +2037,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	mutex_lock(&cpuhp_state_mutex);
  
  	if (!invoke || !sp->startup.multi)
-@@ -1864,13 +1545,23 @@ add_node:
+@@ -1868,13 +1549,23 @@ add_node:
  	hlist_add_head(node, &sp->list);
  unlock:
  	mutex_unlock(&cpuhp_state_mutex);
@@ -2063,7 +2063,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
   * @state:		The state to setup
   * @invoke:		If true, the startup function is invoked for cpus where
   *			cpu state >= @state
-@@ -1879,25 +1570,27 @@ EXPORT_SYMBOL_GPL(__cpuhp_state_add_inst
+@@ -1883,25 +1574,27 @@ EXPORT_SYMBOL_GPL(__cpuhp_state_add_inst
   * @multi_instance:	State is set up for multiple instances which get
   *			added afterwards.
   *
@@ -2097,7 +2097,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	mutex_lock(&cpuhp_state_mutex);
  
  	ret = cpuhp_store_callbacks(state, name, startup, teardown,
-@@ -1933,7 +1626,6 @@ int __cpuhp_setup_state(enum cpuhp_state
+@@ -1937,7 +1630,6 @@ int __cpuhp_setup_state(enum cpuhp_state
  	}
  out:
  	mutex_unlock(&cpuhp_state_mutex);
@@ -2105,7 +2105,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	/*
  	 * If the requested state is CPUHP_AP_ONLINE_DYN, return the
  	 * dynamically allocated state in case of success.
-@@ -1942,6 +1634,22 @@ out:
+@@ -1946,6 +1638,22 @@ out:
  		return state;
  	return ret;
  }
@@ -2128,7 +2128,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  EXPORT_SYMBOL(__cpuhp_setup_state);
  
  int __cpuhp_state_remove_instance(enum cpuhp_state state,
-@@ -1955,7 +1663,7 @@ int __cpuhp_state_remove_instance(enum c
+@@ -1959,7 +1667,7 @@ int __cpuhp_state_remove_instance(enum c
  	if (!sp->multi_instance)
  		return -EINVAL;
  
@@ -2137,7 +2137,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	mutex_lock(&cpuhp_state_mutex);
  
  	if (!invoke || !cpuhp_get_teardown_cb(state))
-@@ -1976,29 +1684,30 @@ int __cpuhp_state_remove_instance(enum c
+@@ -1980,29 +1688,30 @@ int __cpuhp_state_remove_instance(enum c
  remove:
  	hlist_del(node);
  	mutex_unlock(&cpuhp_state_mutex);
@@ -2172,7 +2172,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	mutex_lock(&cpuhp_state_mutex);
  	if (sp->multi_instance) {
-@@ -2026,7 +1735,14 @@ void __cpuhp_remove_state(enum cpuhp_sta
+@@ -2030,7 +1739,14 @@ void __cpuhp_remove_state(enum cpuhp_sta
  remove:
  	cpuhp_store_callbacks(state, NULL, NULL, NULL, false);
  	mutex_unlock(&cpuhp_state_mutex);
@@ -2198,7 +2198,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  /*
   * perf event paranoia level:
-@@ -4035,14 +4036,6 @@ find_get_context(struct pmu *pmu, struct
+@@ -4055,14 +4056,6 @@ find_get_context(struct pmu *pmu, struct
  		if (perf_paranoid_cpu() && !capable(CAP_SYS_ADMIN))
  			return ERR_PTR(-EACCES);
  
@@ -2213,7 +2213,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		cpuctx = per_cpu_ptr(pmu->pmu_cpu_context, cpu);
  		ctx = &cpuctx->ctx;
  		get_ctx(ctx);
-@@ -7988,7 +7981,8 @@ static int swevent_hlist_get_cpu(int cpu
+@@ -8088,7 +8081,8 @@ static int swevent_hlist_get_cpu(int cpu
  	int err = 0;
  
  	mutex_lock(&swhash->hlist_mutex);
@@ -2223,7 +2223,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		struct swevent_hlist *hlist;
  
  		hlist = kzalloc(sizeof(*hlist), GFP_KERNEL);
-@@ -8009,7 +8003,7 @@ static int swevent_hlist_get(void)
+@@ -8109,7 +8103,7 @@ static int swevent_hlist_get(void)
  {
  	int err, cpu, failed_cpu;
  
@@ -2232,7 +2232,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	for_each_possible_cpu(cpu) {
  		err = swevent_hlist_get_cpu(cpu);
  		if (err) {
-@@ -8017,8 +8011,7 @@ static int swevent_hlist_get(void)
+@@ -8117,8 +8111,7 @@ static int swevent_hlist_get(void)
  			goto fail;
  		}
  	}
@@ -2242,7 +2242,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	return 0;
  fail:
  	for_each_possible_cpu(cpu) {
-@@ -8026,8 +8019,7 @@ fail:
+@@ -8126,8 +8119,7 @@ fail:
  			break;
  		swevent_hlist_put_cpu(cpu);
  	}
@@ -2252,7 +2252,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	return err;
  }
  
-@@ -9351,7 +9343,7 @@ perf_event_mux_interval_ms_store(struct
+@@ -9453,7 +9445,7 @@ perf_event_mux_interval_ms_store(struct
  	pmu->hrtimer_interval_ms = timer;
  
  	/* update all cpuctx for this PMU */
@@ -2261,7 +2261,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	for_each_online_cpu(cpu) {
  		struct perf_cpu_context *cpuctx;
  		cpuctx = per_cpu_ptr(pmu->pmu_cpu_context, cpu);
-@@ -9360,7 +9352,7 @@ perf_event_mux_interval_ms_store(struct
+@@ -9462,7 +9454,7 @@ perf_event_mux_interval_ms_store(struct
  		cpu_function_call(cpu,
  			(remote_function_f)perf_mux_hrtimer_restart, cpuctx);
  	}
@@ -2270,7 +2270,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	mutex_unlock(&mux_interval_mutex);
  
  	return count;
-@@ -9490,6 +9482,7 @@ skip_type:
+@@ -9592,6 +9584,7 @@ skip_type:
  		lockdep_set_class(&cpuctx->ctx.mutex, &cpuctx_mutex);
  		lockdep_set_class(&cpuctx->ctx.lock, &cpuctx_lock);
  		cpuctx->ctx.pmu = pmu;
@@ -2278,7 +2278,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  		__perf_mux_hrtimer_init(cpuctx, cpu);
  	}
-@@ -10338,12 +10331,10 @@ SYSCALL_DEFINE5(perf_event_open,
+@@ -10457,12 +10450,10 @@ SYSCALL_DEFINE5(perf_event_open,
  		goto err_task;
  	}
  
@@ -2292,7 +2292,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  		/*
  		 * Reuse ptrace permission checks for now.
-@@ -10528,6 +10519,23 @@ SYSCALL_DEFINE5(perf_event_open,
+@@ -10655,6 +10646,23 @@ SYSCALL_DEFINE5(perf_event_open,
  		goto err_locked;
  	}
  
@@ -2316,7 +2316,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	/*
  	 * Must be under the same ctx::mutex as perf_install_in_context(),
  	 * because we need to serialize with concurrent event creation.
-@@ -10615,8 +10623,6 @@ SYSCALL_DEFINE5(perf_event_open,
+@@ -10739,8 +10747,6 @@ SYSCALL_DEFINE5(perf_event_open,
  		put_task_struct(task);
  	}
  
@@ -2325,7 +2325,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	mutex_lock(&current->perf_event_mutex);
  	list_add_tail(&event->owner_entry, &current->perf_event_list);
  	mutex_unlock(&current->perf_event_mutex);
-@@ -10650,8 +10656,6 @@ err_alloc:
+@@ -10774,8 +10780,6 @@ err_alloc:
  err_cred:
  	if (task)
  		mutex_unlock(&task->signal->cred_guard_mutex);
@@ -2334,7 +2334,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  err_task:
  	if (task)
  		put_task_struct(task);
-@@ -10706,6 +10710,21 @@ perf_event_create_kernel_counter(struct
+@@ -10830,6 +10834,21 @@ perf_event_create_kernel_counter(struct
  		goto err_unlock;
  	}
  
@@ -2356,7 +2356,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	if (!exclusive_event_installable(event, ctx)) {
  		err = -EBUSY;
  		goto err_unlock;
-@@ -11373,6 +11392,8 @@ static void __init perf_event_init_all_c
+@@ -11527,6 +11546,8 @@ static void __init perf_event_init_all_c
  	struct swevent_htable *swhash;
  	int cpu;
  
@@ -2365,7 +2365,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	for_each_possible_cpu(cpu) {
  		swhash = &per_cpu(swevent_htable, cpu);
  		mutex_init(&swhash->hlist_mutex);
-@@ -11388,7 +11409,7 @@ static void __init perf_event_init_all_c
+@@ -11542,7 +11563,7 @@ static void __init perf_event_init_all_c
  	}
  }
  
@@ -2374,7 +2374,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	struct swevent_htable *swhash = &per_cpu(swevent_htable, cpu);
  
-@@ -11401,7 +11422,6 @@ int perf_event_init_cpu(unsigned int cpu
+@@ -11555,7 +11576,6 @@ int perf_event_init_cpu(unsigned int cpu
  		rcu_assign_pointer(swhash->swevent_hlist, hlist);
  	}
  	mutex_unlock(&swhash->hlist_mutex);
@@ -2382,7 +2382,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  #if defined CONFIG_HOTPLUG_CPU || defined CONFIG_KEXEC_CORE
-@@ -11419,19 +11439,22 @@ static void __perf_event_exit_context(vo
+@@ -11573,19 +11593,22 @@ static void __perf_event_exit_context(vo
  
  static void perf_event_exit_cpu_context(int cpu)
  {
@@ -2410,7 +2410,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  #else
  
-@@ -11439,6 +11462,29 @@ static void perf_event_exit_cpu_context(
+@@ -11593,6 +11616,29 @@ static void perf_event_exit_cpu_context(
  
  #endif
  
@@ -2999,7 +2999,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	int ret;
 --- a/kernel/locking/rtmutex_common.h
 +++ b/kernel/locking/rtmutex_common.h
-@@ -140,6 +140,10 @@ int __sched rt_mutex_slowlock_locked(str
+@@ -139,6 +139,10 @@ int __sched rt_mutex_slowlock_locked(str
  				     enum rtmutex_chainwalk chwalk,
  				     struct ww_acquire_ctx *ww_ctx,
  				     struct rt_mutex_waiter *waiter);
@@ -3415,7 +3415,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +EXPORT_SYMBOL(__rt_rwlock_init);
 --- a/kernel/padata.c
 +++ b/kernel/padata.c
-@@ -934,29 +934,18 @@ static struct kobj_type padata_attr_type
+@@ -966,29 +966,18 @@ static struct kobj_type padata_attr_type
  };
  
  /**
@@ -3450,7 +3450,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	struct padata_instance *pinst;
  	struct parallel_data *pd = NULL;
-@@ -965,7 +954,6 @@ struct padata_instance *padata_alloc(str
+@@ -997,7 +986,6 @@ struct padata_instance *padata_alloc(str
  	if (!pinst)
  		goto err;
  
@@ -3458,7 +3458,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	if (!alloc_cpumask_var(&pinst->cpumask.pcpu, GFP_KERNEL))
  		goto err_free_inst;
  	if (!alloc_cpumask_var(&pinst->cpumask.cbcpu, GFP_KERNEL)) {
-@@ -989,14 +977,12 @@ struct padata_instance *padata_alloc(str
+@@ -1021,14 +1009,12 @@ struct padata_instance *padata_alloc(str
  
  	pinst->flags = 0;
  
@@ -3474,7 +3474,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  #endif
  	return pinst;
  
-@@ -1005,12 +991,27 @@ err_free_masks:
+@@ -1037,12 +1023,27 @@ err_free_masks:
  	free_cpumask_var(pinst->cpumask.cbcpu);
  err_free_inst:
  	kfree(pinst);
@@ -3590,7 +3590,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  /*
   * Change a given task's CPU affinity. Migrate the thread to a
   * proper CPU and schedule it away if the CPU it's executing on
-@@ -7665,8 +7587,6 @@ void migrate_disable(void)
+@@ -7667,8 +7589,6 @@ void migrate_disable(void)
  		return;
  	}
  
@@ -3599,7 +3599,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	preempt_disable();
  	preempt_lazy_disable();
  	pin_current_cpu();
-@@ -7742,13 +7662,11 @@ void migrate_enable(void)
+@@ -7744,13 +7664,11 @@ void migrate_enable(void)
  			preempt_enable();
  			stop_one_cpu(task_cpu(p), migration_cpu_stop, &arg);
  			tlb_migrate_finish(p->mm);
@@ -3615,7 +3615,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
 --- a/kernel/stop_machine.c
 +++ b/kernel/stop_machine.c
-@@ -554,7 +554,8 @@ static int __init cpu_stop_init(void)
+@@ -577,7 +577,8 @@ static int __init cpu_stop_init(void)
  }
  early_initcall(cpu_stop_init);
  
@@ -3625,7 +3625,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	struct multi_stop_data msdata = {
  		.fn = fn,
-@@ -563,6 +564,8 @@ static int __stop_machine(cpu_stop_fn_t
+@@ -586,6 +587,8 @@ static int __stop_machine(cpu_stop_fn_t
  		.active_cpus = cpus,
  	};
  
@@ -3634,7 +3634,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	if (!stop_machine_initialized) {
  		/*
  		 * Handle the case where stop_machine() is called
-@@ -592,9 +595,9 @@ int stop_machine(cpu_stop_fn_t fn, void
+@@ -615,9 +618,9 @@ int stop_machine(cpu_stop_fn_t fn, void
  	int ret;
  
  	/* No CPUs can come up or down during this. */
