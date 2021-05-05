@@ -1,0 +1,85 @@
+From: Trond Myklebust <trond.myklebust@primarydata.com>
+Date: Tue, 7 Nov 2017 12:39:44 -0500
+Subject: [PATCH] NFSv4: Replace closed stateids with the "invalid special
+ stateid"
+Git-commit: fcd8843c406b46433857ae45e5e9d84b01a7d20b
+Patch-mainline: v4.15
+References: bsc#1185481
+
+When decoding a CLOSE, replace the stateid returned by the server
+with the "invalid special stateid" described in RFC5661, Section 8.2.3.
+
+In nfs_set_open_stateid_locked, ignore stateids from closed state.
+
+Signed-off-by: Trond Myklebust <trond.myklebust@primarydata.com>
+Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/nfs4_fs.h   |    1 +
+ fs/nfs/nfs4state.c |    8 ++++++++
+ fs/nfs/nfs4xdr.c   |   12 +++++++++++-
+ 3 files changed, 20 insertions(+), 1 deletion(-)
+
+--- a/fs/nfs/nfs4_fs.h
++++ b/fs/nfs/nfs4_fs.h
+@@ -476,6 +476,7 @@ extern int nfs4_sequence_done(struct rpc
+ extern void nfs4_free_lock_state(struct nfs_server *server, struct nfs4_lock_state *lsp);
+ 
+ extern const nfs4_stateid zero_stateid;
++extern const nfs4_stateid invalid_stateid;
+ 
+ /* nfs4super.c */
+ struct nfs_mount_info;
+--- a/fs/nfs/nfs4state.c
++++ b/fs/nfs/nfs4state.c
+@@ -69,6 +69,14 @@ const nfs4_stateid zero_stateid = {
+ 	{ .data = { 0 } },
+ 	.type = NFS4_SPECIAL_STATEID_TYPE,
+ };
++const nfs4_stateid invalid_stateid = {
++	{
++		.seqid = cpu_to_be32(0xffffffffU),
++		.other = { 0 },
++	},
++	.type = NFS4_INVALID_STATEID_TYPE,
++};
++
+ static DEFINE_MUTEX(nfs_clid_init_mutex);
+ 
+ int nfs4_init_clientid(struct nfs_client *clp, struct rpc_cred *cred)
+--- a/fs/nfs/nfs4xdr.c
++++ b/fs/nfs/nfs4xdr.c
+@@ -4297,6 +4297,14 @@ static int decode_delegation_stateid(str
+ 	return decode_stateid(xdr, stateid);
+ }
+ 
++static int decode_invalid_stateid(struct xdr_stream *xdr, nfs4_stateid *stateid)
++{
++	nfs4_stateid dummy;
++
++	nfs4_stateid_copy(stateid, &invalid_stateid);
++	return decode_stateid(xdr, &dummy);
++}
++
+ static int decode_close(struct xdr_stream *xdr, struct nfs_closeres *res)
+ {
+ 	int status;
+@@ -4305,7 +4313,7 @@ static int decode_close(struct xdr_strea
+ 	if (status != -EIO)
+ 		nfs_increment_open_seqid(status, res->seqid);
+ 	if (!status)
+-		status = decode_open_stateid(xdr, &res->stateid);
++		status = decode_invalid_stateid(xdr, &res->stateid);
+ 	return status;
+ }
+ 
+@@ -6018,6 +6026,8 @@ static int decode_layoutreturn(struct xd
+ 	res->lrs_present = be32_to_cpup(p);
+ 	if (res->lrs_present)
+ 		status = decode_layout_stateid(xdr, &res->stateid);
++	else
++		nfs4_stateid_copy(&res->stateid, &invalid_stateid);
+ 	return status;
+ out_overflow:
+ 	print_overflow_msg(__func__, xdr);
