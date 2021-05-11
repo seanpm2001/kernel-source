@@ -1,0 +1,125 @@
+From 5fb45414ae03421255593fd5556aa2d1d82303aa Mon Sep 17 00:00:00 2001
+From: Takashi Iwai <tiwai@suse.de>
+Date: Tue, 6 Apr 2021 13:35:34 +0200
+Subject: [PATCH] ALSA: usb-audio: Add error checks for usb_driver_claim_interface() calls
+Git-commit: 5fb45414ae03421255593fd5556aa2d1d82303aa
+Patch-mainline: v5.13-rc1
+References: git-fixes
+
+There are a few calls of usb_driver_claim_interface() but all of those
+miss the proper error checks, as reported by Coverity.  This patch
+adds those missing checks.
+
+Along with it, replace the magic pointer with -1 with a constant
+USB_AUDIO_IFACE_UNUSED for better readability.
+
+Reported-by: coverity-bot <keescook+coverity-bot@chromium.org>
+Addresses-coverity-id: 1475943 ("Error handling issues")
+Addresses-coverity-id: 1475944 ("Error handling issues")
+Addresses-coverity-id: 1475945 ("Error handling issues")
+Fixes: b1ce7ba619d9 ("ALSA: usb-audio: claim autodetected PCM interfaces all at once")
+Fixes: e5779998bf8b ("ALSA: usb-audio: refactor code")
+Link: https://lore.kernel.org/r/202104051059.FB7F3016@keescook
+Link: https://lore.kernel.org/r/20210406113534.30455-1-tiwai@suse.de
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ sound/usb/card.c     |   14 +++++++-------
+ sound/usb/quirks.c   |   16 ++++++++++++----
+ sound/usb/usbaudio.h |    2 ++
+ 3 files changed, 21 insertions(+), 11 deletions(-)
+
+--- a/sound/usb/card.c
++++ b/sound/usb/card.c
+@@ -195,9 +195,8 @@ static int snd_usb_create_stream(struct
+ 				ctrlif, interface);
+ 			return -EINVAL;
+ 		}
+-		usb_driver_claim_interface(&usb_audio_driver, iface, (void *)-1L);
+-
+-		return 0;
++		return usb_driver_claim_interface(&usb_audio_driver, iface,
++						  USB_AUDIO_IFACE_UNUSED);
+ 	}
+ 
+ 	if ((altsd->bInterfaceClass != USB_CLASS_AUDIO &&
+@@ -217,7 +216,8 @@ static int snd_usb_create_stream(struct
+ 
+ 	if (! snd_usb_parse_audio_interface(chip, interface)) {
+ 		usb_set_interface(dev, interface, 0); /* reset the current interface */
+-		usb_driver_claim_interface(&usb_audio_driver, iface, (void *)-1L);
++		return usb_driver_claim_interface(&usb_audio_driver, iface,
++						  USB_AUDIO_IFACE_UNUSED);
+ 	}
+ 
+ 	return 0;
+@@ -747,7 +747,7 @@ static void usb_audio_disconnect(struct
+ 	struct snd_card *card;
+ 	struct list_head *p;
+ 
+-	if (chip == (void *)-1L)
++	if (chip == USB_AUDIO_IFACE_UNUSED)
+ 		return;
+ 
+ 	card = chip->card;
+@@ -865,7 +865,7 @@ static int usb_audio_suspend(struct usb_
+ 	struct usb_mixer_interface *mixer;
+ 	struct list_head *p;
+ 
+-	if (chip == (void *)-1L)
++	if (chip == USB_AUDIO_IFACE_UNUSED)
+ 		return 0;
+ 
+ 	if (!chip->num_suspended_intf++) {
+@@ -897,7 +897,7 @@ static int __usb_audio_resume(struct usb
+ 	struct list_head *p;
+ 	int err = 0;
+ 
+-	if (chip == (void *)-1L)
++	if (chip == USB_AUDIO_IFACE_UNUSED)
+ 		return 0;
+ 
+ 	atomic_inc(&chip->active); /* avoid autopm */
+--- a/sound/usb/quirks.c
++++ b/sound/usb/quirks.c
+@@ -67,8 +67,12 @@ static int create_composite_quirk(struct
+ 		if (!iface)
+ 			continue;
+ 		if (quirk->ifnum != probed_ifnum &&
+-		    !usb_interface_claimed(iface))
+-			usb_driver_claim_interface(driver, iface, (void *)-1L);
++		    !usb_interface_claimed(iface)) {
++			err = usb_driver_claim_interface(driver, iface,
++							 USB_AUDIO_IFACE_UNUSED);
++			if (err < 0)
++				return err;
++		}
+ 	}
+ 
+ 	return 0;
+@@ -403,8 +407,12 @@ static int create_autodetect_quirks(stru
+ 			continue;
+ 
+ 		err = create_autodetect_quirk(chip, iface, driver);
+-		if (err >= 0)
+-			usb_driver_claim_interface(driver, iface, (void *)-1L);
++		if (err >= 0) {
++			err = usb_driver_claim_interface(driver, iface,
++							 USB_AUDIO_IFACE_UNUSED);
++			if (err < 0)
++				return err;
++		}
+ 	}
+ 
+ 	return 0;
+--- a/sound/usb/usbaudio.h
++++ b/sound/usb/usbaudio.h
+@@ -70,6 +70,8 @@ struct snd_usb_audio {
+ 	struct usb_host_interface *ctrl_intf;	/* the audio control interface */
+ };
+ 
++#define USB_AUDIO_IFACE_UNUSED	((void *)-1L)
++
+ #define usb_audio_err(chip, fmt, args...) \
+ 	dev_err(&(chip)->dev->dev, fmt, ##args)
+ #define usb_audio_warn(chip, fmt, args...) \

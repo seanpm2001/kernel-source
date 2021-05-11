@@ -1,0 +1,46 @@
+From f9924e69667423a1fb011e9fa369b91a09e20d74 Mon Sep 17 00:00:00 2001
+From: Ali Abdallah <aabdallah@suse.de>
+Date: Tue, 4 May 2021 10:23:13 +0200
+Subject: [PATCH] Don't drop out of segments RST if tcp_be_liberal is set
+Patch-mainline: Not yet, submitted
+References: bsc#1183947
+
+When tcp_be_liberal is set, don't be conservative on out of segments
+RSTs.
+
+Signed-off-by: Ali Abdallah <aabdallah@suse.de>
+---
+ Documentation/networking/nf_conntrack-sysctl.txt | 2 +-
+ net/netfilter/nf_conntrack_proto_tcp.c           | 3 ++-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/Documentation/networking/nf_conntrack-sysctl.txt b/Documentation/networking/nf_conntrack-sysctl.txt
+index 497d668..b5afe05 100644
+--- a/Documentation/networking/nf_conntrack-sysctl.txt
++++ b/Documentation/networking/nf_conntrack-sysctl.txt
+@@ -112,7 +112,7 @@ nf_conntrack_tcp_be_liberal - BOOLEAN
+ 	not 0 - enabled
+ 
+ 	Be conservative in what you do, be liberal in what you accept from others.
+-	If it's non-zero, we mark only out of window RST segments as INVALID.
++	If it's non-zero, we don't mark out of window segments as INVALID.
+ 
+ nf_conntrack_tcp_loose - BOOLEAN
+ 	0 - disabled
+diff --git a/net/netfilter/nf_conntrack_proto_tcp.c b/net/netfilter/nf_conntrack_proto_tcp.c
+index 3d887bf..b7660b6 100644
+--- a/net/netfilter/nf_conntrack_proto_tcp.c
++++ b/net/netfilter/nf_conntrack_proto_tcp.c
+@@ -1013,7 +1013,8 @@ static int tcp_packet(struct nf_conn *ct,
+ 
+ 		if (index == TCP_RST_SET
+ 		    && (ct->proto.tcp.seen[!dir].flags & IP_CT_TCP_FLAG_MAXACK_SET)
+-		    && before(ntohl(th->seq), ct->proto.tcp.seen[!dir].td_maxack)) {
++		    && before(ntohl(th->seq), ct->proto.tcp.seen[!dir].td_maxack)
++		    && !tn->tcp_be_liberal) {
+ 			/* Invalid RST  */
+ 			spin_unlock_bh(&ct->lock);
+ 			if (LOG_INVALID(net, IPPROTO_TCP))
+-- 
+2.26.2
+

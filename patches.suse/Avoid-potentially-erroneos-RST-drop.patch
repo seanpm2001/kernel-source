@@ -1,0 +1,60 @@
+From 8fb924672cc295f56aeb572697adc1d615a908e1 Mon Sep 17 00:00:00 2001
+From: Ali Abdallah <aabdallah@suse.de>
+Date: Tue, 4 May 2021 10:18:32 +0200
+Subject: [PATCH] Avoid potentially erroneos RST drop
+Patch-mainline: Not yet, submitted
+References: bsc#1183947
+
+In ignore state, we let SYN goes in original, the server might respond
+with RST/ACK, and that RST packet is erroneously dropped because of the
+flag IP_CT_TCP_FLAG_MAXACK_SET being already set. So we reset the flag
+in this case.
+
+Unfortunately that might not be enough, an out of order ACK in origin
+might reset it back, and we might end up again dropping a valid RST when
+the server responds with RST SEQ=0.
+
+The patch disables also the RST check when we are not in established
+state and we receive an RST with SEQ=0 that is most likely a response to
+a SYN we had let it go through.
+
+Signed-off-by: Ali Abdallah <aabdallah@suse.de>
+---
+ net/netfilter/nf_conntrack_proto_tcp.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/net/netfilter/nf_conntrack_proto_tcp.c b/net/netfilter/nf_conntrack_proto_tcp.c
+index 9758a7d..3d887bf 100644
+--- a/net/netfilter/nf_conntrack_proto_tcp.c
++++ b/net/netfilter/nf_conntrack_proto_tcp.c
+@@ -928,6 +928,10 @@ static int tcp_packet(struct nf_conn *ct,
+ 
+ 			ct->proto.tcp.last_flags =
+ 			ct->proto.tcp.last_wscale = 0;
++			/* Reset the max ack flag so in case the server replies
++			 * with RST/ACK it will not be marked as an invalid rst.
++			 */
++			ct->proto.tcp.seen[dir].flags &= ~IP_CT_TCP_FLAG_MAXACK_SET;
+ 			tcp_options(skb, dataoff, th, &seen);
+ 			if (seen.flags & IP_CT_TCP_FLAG_WINDOW_SCALE) {
+ 				ct->proto.tcp.last_flags |=
+@@ -996,6 +1000,16 @@ static int tcp_packet(struct nf_conn *ct,
+ 		}
+ 		break;
+ 	case TCP_CONNTRACK_CLOSE:
++		/* If we are not in established state, and an RST is
++		 * observed with SEQ=0, this is most likely an answer
++		 * to a SYN we had let go through above.
++		 */
++		if (index == TCP_RST_SET
++		    && th->seq == 0
++		    && (ct->proto.tcp.state != TCP_CONNTRACK_ESTABLISHED
++		        || !test_bit(IPS_ASSURED_BIT, &ct->status)))
++				break;
++
+ 		if (index == TCP_RST_SET
+ 		    && (ct->proto.tcp.seen[!dir].flags & IP_CT_TCP_FLAG_MAXACK_SET)
+ 		    && before(ntohl(th->seq), ct->proto.tcp.seen[!dir].td_maxack)) {
+-- 
+2.26.2
+
