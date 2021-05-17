@@ -1,0 +1,47 @@
+From: Yoshiki Komachi <komachi.yoshiki@lab.ntt.co.jp>
+Date: Mon, 18 Mar 2019 14:39:52 +0900
+Subject: af_packet: fix the tx skb protocol in raw sockets with ETH_P_ALL
+Patch-mainline: v5.1-rc3
+Git-commit: 18bed89107a400af0d672ec85a270f1545db2569
+References: bsc#1176081
+
+I am using "protocol ip" filters in TC to manipulate TC flower
+classifiers, which are only available with "protocol ip". However,
+I faced an issue that packets sent via raw sockets with ETH_P_ALL
+did not match the ip filters even if they did satisfy the condition
+(e.g., DHCP offer from dhcpd).
+
+I have determined that the behavior was caused by an unexpected
+value stored in skb->protocol, namely, ETH_P_ALL instead of ETH_P_IP,
+when packets were sent via raw sockets with ETH_P_ALL set.
+
+IMHO, storing ETH_P_ALL in skb->protocol is not appropriate for
+packets sent via raw sockets because ETH_P_ALL is not a real ether
+type used on wire, but a virtual one.
+
+This patch fixes the tx protocol selection in cases of transmission
+via raw sockets created with ETH_P_ALL so that it asks the driver to
+extract protocol from the Ethernet header.
+
+Fixes: 75c65772c3 ("net/packet: Ask driver for protocol if not provided by user")
+Signed-off-by: Yoshiki Komachi <komachi.yoshiki@lab.ntt.co.jp>
+Acked-by: Willem de Bruijn <willemb@google.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Michal Kubecek <mkubecek@suse.cz>
+
+---
+ net/packet/af_packet.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/net/packet/af_packet.c
++++ b/net/packet/af_packet.c
+@@ -1898,7 +1898,8 @@ static int packet_rcv_spkt(struct sk_buff *skb, struct net_device *dev,
+ 
+ static void packet_parse_headers(struct sk_buff *skb, struct socket *sock)
+ {
+-	if (!skb->protocol && sock->type == SOCK_RAW) {
++	if ((!skb->protocol || skb->protocol == htons(ETH_P_ALL)) &&
++	    sock->type == SOCK_RAW) {
+ 		skb_reset_mac_header(skb);
+ 		skb->protocol = dev_parse_header_protocol(skb);
+ 	}
