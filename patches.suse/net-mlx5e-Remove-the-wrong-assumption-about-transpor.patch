@@ -1,0 +1,40 @@
+From: Maxim Mikityanskiy <maximmi@mellanox.com>
+Date: Thu, 21 Feb 2019 12:40:04 +0000
+Subject: net/mlx5e: Remove the wrong assumption about transport offset
+Patch-mainline: v5.1-rc1
+Git-commit: 3517dfe6f23608951044cbfc833fa108603441fa
+References: bsc#1176081
+
+skb_transport_offset() == 0 is not a special value. The only special
+value is when skb->transport_header is ~0U, and it's checked by
+skb_transport_header_was_set().
+
+Signed-off-by: Maxim Mikityanskiy <maximmi@mellanox.com>
+Reviewed-by: Saeed Mahameed <saeedm@mellanox.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Michal Kubecek <mkubecek@suse.cz>
+
+---
+ drivers/net/ethernet/mellanox/mlx5/core/en_tx.c | 11 ++---------
+ 1 file changed, 2 insertions(+), 9 deletions(-)
+
+--- a/drivers/net/ethernet/mellanox/mlx5/core/en_tx.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/en_tx.c
+@@ -143,15 +143,8 @@ static inline u16 mlx5e_calc_min_inline(enum mlx5_inline_modes mode,
+ 			hlen += VLAN_HLEN;
+ 		break;
+ 	case MLX5_INLINE_MODE_IP:
+-		/* When transport header is set to zero, it means no transport
+-		 * header. When transport header is set to 0xff's, it means
+-		 * transport header wasn't set.
+-		 */
+-		if (skb_transport_offset(skb)) {
+-			hlen = mlx5e_skb_l3_header_offset(skb);
+-			break;
+-		}
+-		/* fall through */
++		hlen = mlx5e_skb_l3_header_offset(skb);
++		break;
+ 	case MLX5_INLINE_MODE_L2:
+ 	default:
+ 		hlen = mlx5e_skb_l2_header_offset(skb);

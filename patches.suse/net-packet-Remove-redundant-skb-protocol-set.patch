@@ -1,0 +1,49 @@
+From: Maxim Mikityanskiy <maximmi@mellanox.com>
+Date: Thu, 21 Feb 2019 12:40:02 +0000
+Subject: net/packet: Remove redundant skb->protocol set
+Patch-mainline: v5.1-rc1
+Git-commit: 6437866e493fa5aa5be03dfb94e1d686a7fc984b
+References: bsc#1176081
+
+c72219b75f introduced tpacket_set_protocol that parses the Ethernet L2
+header and sets skb->protocol if it's unset. It is no longer needed
+since the introduction of packet_parse_headers. In case of SOCK_RAW and
+unset skb->protocol, packet_parse_headers asks the driver to tell the
+protocol number, and it's implemented for all Ethernet devices. As the
+old function supported only Ethernet, no functionality is lost.
+
+Signed-off-by: Maxim Mikityanskiy <maximmi@mellanox.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Michal Kubecek <mkubecek@suse.cz>
+
+---
+ net/packet/af_packet.c | 11 -----------
+ 1 file changed, 11 deletions(-)
+
+--- a/net/packet/af_packet.c
++++ b/net/packet/af_packet.c
+@@ -2467,15 +2467,6 @@ static void tpacket_destruct_skb(struct sk_buff *skb)
+ 	sock_wfree(skb);
+ }
+ 
+-static void tpacket_set_protocol(const struct net_device *dev,
+-				 struct sk_buff *skb)
+-{
+-	if (dev->type == ARPHRD_ETHER) {
+-		skb_reset_mac_header(skb);
+-		skb->protocol = eth_hdr(skb)->h_proto;
+-	}
+-}
+-
+ static int __packet_snd_vnet_parse(struct virtio_net_hdr *vnet_hdr, size_t len)
+ {
+ 	if ((vnet_hdr->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) &&
+@@ -2545,8 +2536,6 @@ static int tpacket_fill_skb(struct packet_sock *po, struct sk_buff *skb,
+ 			return err;
+ 		if (!dev_validate_header(dev, skb->data, hdrlen))
+ 			return -EINVAL;
+-		if (!skb->protocol)
+-			tpacket_set_protocol(dev, skb);
+ 
+ 		data += hdrlen;
+ 		to_write -= hdrlen;

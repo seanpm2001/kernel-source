@@ -1,0 +1,70 @@
+From: Daniel Wagner <dwagner@suse.de>
+Date: Tue, 16 Feb 2021 18:02:22 +0100
+Subject: [PATCH] nvme-loop: Introduce no merge flag for biovec
+Patch-mainline: Never, fixed upstream but to invasive to backport
+References: bsc#1174682
+
+The biovec physical merging code is broken for the loop device.
+blk-merge figures it possible to merge some segments but
+blk_rq_map_sg() creates a mapping which using more segments.
+
+This was fixed in a rework of the merging code. As this rework is too
+big and invasive just disable the machinery for known broken
+setups.
+
+Signed-off-by: Daniel Wagner <dwagner@suse.de>
+---
+ block/blk.h                | 2 ++
+ drivers/nvme/target/loop.c | 1 +
+ include/linux/blkdev.h     | 3 +++
+ 3 files changed, 6 insertions(+)
+
+diff --git a/block/blk.h b/block/blk.h
+index 847eba8fd9c6..b47c8ae84116 100644
+--- a/block/blk.h
++++ b/block/blk.h
+@@ -162,6 +162,8 @@ static inline bool biovec_phys_mergeable(struct request_queue *q,
+ 		return false;
+ 	if ((addr1 | mask) != ((addr2 + vec2->bv_len - 1) | mask))
+ 		return false;
++	if (blk_queue_biovec_phys_nomerge(q))
++		return false;
+ 	return true;
+ }
+ 
+diff --git a/drivers/nvme/target/loop.c b/drivers/nvme/target/loop.c
+index 06827e534dec..2106412d5855 100644
+--- a/drivers/nvme/target/loop.c
++++ b/drivers/nvme/target/loop.c
+@@ -240,6 +240,7 @@ static int nvme_loop_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
+ 
+ 	BUG_ON(hctx_idx >= ctrl->ctrl.queue_count);
+ 
++	blk_queue_flag_set(QUEUE_FLAG_BIOVEC_PHYS_NOMERGE, hctx->queue);
+ 	hctx->driver_data = queue;
+ 	return 0;
+ }
+diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
+index 17d9bdd825c4..b34f5541a2fe 100644
+--- a/include/linux/blkdev.h
++++ b/include/linux/blkdev.h
+@@ -709,6 +709,7 @@ struct request_queue {
+ #define QUEUE_FLAG_SCSI_PASSTHROUGH 27	/* queue supports SCSI commands */
+ #define QUEUE_FLAG_QUIESCED    28	/* queue has been quiesced */
+ #define QUEUE_FLAG_PREEMPT_ONLY	29	/* only process REQ_PREEMPT requests */
++#define QUEUE_FLAG_BIOVEC_PHYS_NOMERGE 30 /* disable phys biovec merge */
+ 
+ #define QUEUE_FLAG_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
+ 				 (1 << QUEUE_FLAG_SAME_COMP)	|	\
+@@ -741,6 +742,8 @@ bool blk_queue_flag_test_and_clear(unsigned int flag, struct request_queue *q);
+ #define blk_queue_dax(q)	test_bit(QUEUE_FLAG_DAX, &(q)->queue_flags)
+ #define blk_queue_scsi_passthrough(q)	\
+ 	test_bit(QUEUE_FLAG_SCSI_PASSTHROUGH, &(q)->queue_flags)
++#define blk_queue_biovec_phys_nomerge(q) \
++	test_bit(QUEUE_FLAG_BIOVEC_PHYS_NOMERGE, &(q)->queue_flags)
+ 
+ #define blk_noretry_request(rq) \
+ 	((rq)->cmd_flags & (REQ_FAILFAST_DEV|REQ_FAILFAST_TRANSPORT| \
+-- 
+2.29.2
+
