@@ -1,0 +1,108 @@
+From 3684346961e68b512591ca27c5422180054b2c73 Mon Sep 17 00:00:00 2001
+From: Ali Abdallah <aabdallah@suse.de>
+Date: Fri, 28 May 2021 11:52:21 +0200
+Subject: [PATCH] netfilter: conntrack: add new sysctl to disable RST check
+Patch-mainline: Not yet, submitted
+References: bsc#1183947 bsc#1185950
+
+This patch adds a new sysctl tcp_ignore_invalid_rst to disable marking
+out of segments RSTs as INVALID.
+
+Signed-off-by: Ali Abdallah <aabdallah@suse.de>
+Reviewed-by: Florian Westphal <fw@strlen.de>
+
+Acked-by: Ali Abdallah <aabdallah@suse.de>
+---
+ Documentation/networking/nf_conntrack-sysctl.txt |  6 ++++++
+ include/net/netns/conntrack.h                    |  3 +++
+ net/netfilter/nf_conntrack_proto_tcp.c           | 14 +++++++++++++-
+ 3 files changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/Documentation/networking/nf_conntrack-sysctl.txt b/Documentation/networking/nf_conntrack-sysctl.txt
+index 497d66828..ae1f28f98 100644
+--- a/Documentation/networking/nf_conntrack-sysctl.txt
++++ b/Documentation/networking/nf_conntrack-sysctl.txt
+@@ -114,6 +114,12 @@ nf_conntrack_tcp_be_liberal - BOOLEAN
+ 	Be conservative in what you do, be liberal in what you accept from others.
+ 	If it's non-zero, we mark only out of window RST segments as INVALID.
+ 
++nf_conntrack_tcp_ignore_invalid_rst - BOOLEAN
++	- 0 - disabled (default)
++	- 1 - enabled
++
++	If it's non-zero, we don't mark out of window RST segments as INVALID.
++
+ nf_conntrack_tcp_loose - BOOLEAN
+ 	0 - disabled
+ 	not 0 - enabled (default)
+diff --git a/include/net/netns/conntrack.h b/include/net/netns/conntrack.h
+index 17724c62d..d78d2d088 100644
+--- a/include/net/netns/conntrack.h
++++ b/include/net/netns/conntrack.h
+@@ -36,6 +36,9 @@ struct nf_tcp_net {
+ 	unsigned int tcp_loose;
+ 	unsigned int tcp_be_liberal;
+ 	unsigned int tcp_max_retrans;
++#ifndef __GENKSYMS__
++	unsigned int tcp_ignore_invalid_rst;
++#endif
+ };
+ 
+ enum udp_conntrack {
+diff --git a/net/netfilter/nf_conntrack_proto_tcp.c b/net/netfilter/nf_conntrack_proto_tcp.c
+index d08e64776..751e551c4 100644
+--- a/net/netfilter/nf_conntrack_proto_tcp.c
++++ b/net/netfilter/nf_conntrack_proto_tcp.c
+@@ -38,6 +38,9 @@
+     If it's non-zero, we mark only out of window RST segments as INVALID. */
+ static int nf_ct_tcp_be_liberal __read_mostly = 0;
+ 
++/* If it's non-zero, we turn off RST sequence number check */
++static int nf_ct_tcp_ignore_invalid_rst __read_mostly = 0;
++
+ /* If it is set to zero, we disable picking up already established
+    connections. */
+ static int nf_ct_tcp_loose __read_mostly = 1;
+@@ -1044,7 +1047,8 @@ static int tcp_packet(struct nf_conn *ct,
+ 			if (seq == 0 && !nf_conntrack_tcp_established(ct))
+ 				break;
+ 
+-			if (before(seq, ct->proto.tcp.seen[!dir].td_maxack)) {
++			if (before(seq, ct->proto.tcp.seen[!dir].td_maxack) &&
++				   !tn->tcp_ignore_invalid_rst) {
+ 				/* Invalid RST  */
+ 				spin_unlock_bh(&ct->lock);
+ 				nf_log_packet(net, pf, 0, skb, NULL, NULL,
+@@ -1544,6 +1548,12 @@ static struct ctl_table tcp_sysctl_table[] = {
+ 		.mode		= 0644,
+ 		.proc_handler	= proc_dointvec,
+ 	},
++	{
++		.procname       = "nf_conntrack_tcp_ignore_invalid_rst",
++		.maxlen         = sizeof(unsigned int),
++		.mode           = 0644,
++		.proc_handler   = proc_dointvec,
++	},
+ 	{ }
+ };
+ #endif /* CONFIG_SYSCTL */
+@@ -1574,6 +1584,7 @@ static int tcp_kmemdup_sysctl_table(struct nf_proto_net *pn,
+ 	pn->ctl_table[10].data = &tn->tcp_loose;
+ 	pn->ctl_table[11].data = &tn->tcp_be_liberal;
+ 	pn->ctl_table[12].data = &tn->tcp_max_retrans;
++	pn->ctl_table[13].data = &tn->tcp_ignore_invalid_rst;
+ #endif
+ 	return 0;
+ }
+@@ -1592,6 +1603,7 @@ static int tcp_init_net(struct net *net, u_int16_t proto)
+ 		tn->tcp_loose = nf_ct_tcp_loose;
+ 		tn->tcp_be_liberal = nf_ct_tcp_be_liberal;
+ 		tn->tcp_max_retrans = nf_ct_tcp_max_retrans;
++		tn->tcp_ignore_invalid_rst = nf_ct_tcp_ignore_invalid_rst;
+ 	}
+ 
+ 	return tcp_kmemdup_sysctl_table(pn, tn);
+-- 
+2.26.2
+
+
