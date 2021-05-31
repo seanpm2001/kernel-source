@@ -1,0 +1,38 @@
+From 5dd6cdca8b67cf4e976fc0d9437045388c04811c Mon Sep 17 00:00:00 2001
+From: Michal Suchanek <msuchanek@suse.de>
+Date: Thu, 27 May 2021 15:36:33 +0200
+Subject: [PATCH] kABI: powerpc/64: add back start_tb and accum_tb to
+ thread_struct
+
+Also rename the members to make sure no users remain.
+
+References: bsc#1186487 ltc#177613
+Patch-mainline: never, kABI
+
+Signed-off-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/include/asm/processor.h | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/arch/powerpc/include/asm/processor.h b/arch/powerpc/include/asm/processor.h
+index 8c082cb7d9fc..18ef6b44b91f 100644
+--- a/arch/powerpc/include/asm/processor.h
++++ b/arch/powerpc/include/asm/processor.h
+@@ -264,6 +264,14 @@ struct thread_struct {
+ 	struct thread_fp_state	*fp_save_area;
+ 	int		fpexc_mode;	/* floating-point exception mode */
+ 	unsigned int	align_ctl;	/* alignment handling control */
++#ifdef CONFIG_PPC64
++#ifdef __GENKSYMS__
++	unsigned long	start_tb;	/* Start purr when proc switched in */
++	unsigned long	accum_tb;	/* Total accumulated purr for process */
++#else
++	unsigned long	__unused_padding[2];
++#endif
++#endif
+ #ifdef CONFIG_HAVE_HW_BREAKPOINT
+ 	struct perf_event *ptrace_bps[HBP_NUM];
+ 	/*
+-- 
+2.26.2
+
