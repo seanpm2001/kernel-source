@@ -1,0 +1,40 @@
+From d9f8fbbdc0017d766dc278b6e9befaafff17fcb3 Mon Sep 17 00:00:00 2001
+From: Ali Abdallah <aabdallah@suse.de>
+Date: Fri, 28 May 2021 08:37:38 +0200
+Subject: [PATCH] netfilter: conntrack: avoid misleading 'invalid' in log message
+Patch-mainline: v5.12-rc3
+Git-commit: 07b5a76e18925a595bfef44531dbf2f397bb5507
+References: bsc#1183947 bsc#1185950
+
+The packet is not flagged as invalid: conntrack will accept it and its
+associated with the conntrack entry.
+
+This happens e.g. when receiving a retransmitted SYN in SYN_RECV state.
+
+Signed-off-by: Florian Westphal <fw@strlen.de>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+
+Acked-by: Ali Abdallah <aabdallah@suse.de>
+---
+ net/netfilter/nf_conntrack_proto_tcp.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/net/netfilter/nf_conntrack_proto_tcp.c b/net/netfilter/nf_conntrack_proto_tcp.c
+index 9758a7df..804ff7de 100644
+--- a/net/netfilter/nf_conntrack_proto_tcp.c
++++ b/net/netfilter/nf_conntrack_proto_tcp.c
+@@ -949,8 +949,9 @@ static int tcp_packet(struct nf_conn *ct,
+ 		spin_unlock_bh(&ct->lock);
+ 		if (LOG_INVALID(net, IPPROTO_TCP))
+ 			nf_log_packet(net, pf, 0, skb, NULL, NULL, NULL,
+-				  "nf_ct_tcp: invalid packet ignored in "
+-				  "state %s ", tcp_conntrack_names[old_state]);
++				  "nf_ct_tcp: packet (index %d) in dir %d ignored, "
++				  "state %s ", index, dir,
++				  tcp_conntrack_names[old_state]);
+ 		return NF_ACCEPT;
+ 	case TCP_CONNTRACK_MAX:
+ 		/* Special case for SYN proxy: when the SYN to the server or
+-- 
+2.26.2
+
