@@ -40,9 +40,9 @@ Acked-by: Gary Lin <glin@suse.com>
 -	struct bpf_insn_aux_data *aux = commit_window ? cur_aux(env) : tmp_aux;
 +	struct bpf_insn_aux_data *aux = commit_window ? cur_aux(env) : &info->aux;
  	struct bpf_verifier_state *vstate = env->cur_state;
+ 	bool off_is_imm = tnum_is_const(off_reg->var_off);
  	bool off_is_neg = off_reg->smin_value < 0;
- 	bool ptr_is_dst_reg = ptr_reg == dst_reg;
-@@ -2035,8 +2039,8 @@ static int sanitize_ptr_alu(struct bpf_v
+@@ -2036,8 +2040,8 @@ static int sanitize_ptr_alu(struct bpf_v
  		/* In commit phase we narrow the masking window based on
  		 * the observed pointer move after the simulated operation.
  		 */
@@ -52,8 +52,8 @@ Acked-by: Gary Lin <glin@suse.com>
 +		alu_limit = abs(info->aux.alu_limit - alu_limit);
  	} else {
  		alu_state  = off_is_neg ? BPF_ALU_NEG_VALUE : 0;
- 		alu_state |= ptr_is_dst_reg ?
-@@ -2163,7 +2167,7 @@ static int adjust_ptr_min_max_vals(struc
+ 		alu_state |= off_is_imm ? BPF_ALU_IMMEDIATE : 0;
+@@ -2165,7 +2169,7 @@ static int adjust_ptr_min_max_vals(struc
  	    smin_ptr = ptr_reg->smin_value, smax_ptr = ptr_reg->smax_value;
  	u64 umin_val = off_reg->umin_value, umax_val = off_reg->umax_value,
  	    umin_ptr = ptr_reg->umin_value, umax_ptr = ptr_reg->umax_value;
@@ -62,7 +62,7 @@ Acked-by: Gary Lin <glin@suse.com>
  	u8 opcode = BPF_OP(insn->code);
  	u32 dst = insn->dst_reg;
  	int ret;
-@@ -2215,7 +2219,7 @@ static int adjust_ptr_min_max_vals(struc
+@@ -2217,7 +2221,7 @@ static int adjust_ptr_min_max_vals(struc
  
  	if (sanitize_needed(opcode)) {
  		ret = sanitize_ptr_alu(env, insn, ptr_reg, off_reg, dst_reg,
@@ -71,7 +71,7 @@ Acked-by: Gary Lin <glin@suse.com>
  		if (ret < 0)
  			return sanitize_err(env, insn, ret, off_reg, dst_reg);
  	}
-@@ -2356,7 +2360,7 @@ static int adjust_ptr_min_max_vals(struc
+@@ -2358,7 +2362,7 @@ static int adjust_ptr_min_max_vals(struc
  		return -EACCES;
  	if (sanitize_needed(opcode)) {
  		ret = sanitize_ptr_alu(env, insn, dst_reg, off_reg, dst_reg,
