@@ -1,0 +1,178 @@
+From: Ethan Lien <ethanlien@synology.com>
+Date: Thu, 1 Nov 2018 14:49:03 +0800
+Subject: btrfs: use tagged writepage to mitigate livelock of snapshot
+Git-commit: 3cd24c698004d2f7668e0eb9fc1f096f533c791b
+Patch-mainline: v5.0-rc1
+References: bsc#1135481
+
+Snapshot is expected to be fast. But if there are writers steadily
+creating dirty pages in our subvolume, the snapshot may take a very long
+time to complete. To fix the problem, we use tagged writepage for
+snapshot flusher as we do in the generic write_cache_pages(), so we can
+omit pages dirtied after the snapshot command.
+
+This does not change the semantics regarding which data get to the
+snapshot, if there are pages being dirtied during the snapshotting
+operation.  There's a sync called before snapshot is taken in old/new
+case, any IO in flight just after that may be in the snapshot but this
+depends on other system effects that might still sync the IO.
+
+We do a simple snapshot speed test on a Intel D-1531 box:
+
+fio --ioengine=libaio --iodepth=32 --bs=4k --rw=write --size=64G
+--direct=0 --thread=1 --numjobs=1 --time_based --runtime=120
+--filename=/mnt/sub/testfile --name=job1 --group_reporting & sleep 5;
+time btrfs sub snap -r /mnt/sub /mnt/snap; killall fio
+
+original: 1m58sec
+patched:  6.54sec
+
+This is the best case for this patch since for a sequential write case,
+we omit nearly all pages dirtied after the snapshot command.
+
+For a multi writers, random write test:
+
+fio --ioengine=libaio --iodepth=32 --bs=4k --rw=randwrite --size=64G
+--direct=0 --thread=1 --numjobs=4 --time_based --runtime=120
+--filename=/mnt/sub/testfile --name=job1 --group_reporting & sleep 5;
+time btrfs sub snap -r /mnt/sub /mnt/snap; killall fio
+
+original: 15.83sec
+patched:  10.35sec
+
+The improvement is smaller compared to the sequential write case,
+since we omit only half of the pages dirtied after snapshot command.
+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Ethan Lien <ethanlien@synology.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/btrfs_inode.h |    1 +
+ fs/btrfs/ctree.h       |    2 +-
+ fs/btrfs/extent_io.c   |   17 +++++++++++++++--
+ fs/btrfs/inode.c       |   20 ++++++++++----------
+ fs/btrfs/ioctl.c       |    2 +-
+ 5 files changed, 28 insertions(+), 14 deletions(-)
+
+--- a/fs/btrfs/btrfs_inode.h
++++ b/fs/btrfs/btrfs_inode.h
+@@ -42,6 +42,7 @@ enum {
+ 	BTRFS_INODE_IN_DELALLOC_LIST,
+ 	BTRFS_INODE_READDIO_NEED_LOCK,
+ 	BTRFS_INODE_HAS_PROPS,
++	BTRFS_INODE_SNAPSHOT_FLUSH,
+ };
+ 
+ /* in memory btrfs inode */
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -3246,7 +3246,7 @@ int btrfs_truncate_inode_items(struct bt
+ 			       struct inode *inode, u64 new_size,
+ 			       u32 min_type);
+ 
+-int btrfs_start_delalloc_inodes(struct btrfs_root *root, int delay_iput);
++int btrfs_start_delalloc_snapshot(struct btrfs_root *root);
+ int btrfs_start_delalloc_roots(struct btrfs_fs_info *fs_info, int delay_iput,
+ 			       int nr);
+ int btrfs_set_extent_delalloc(struct inode *inode, u64 start, u64 end,
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -3988,12 +3988,25 @@ static int extent_write_cache_pages(stru
+ 			range_whole = 1;
+ 		scanned = 1;
+ 	}
+-	if (wbc->sync_mode == WB_SYNC_ALL)
++
++	/*
++	 * We do the tagged writepage as long as the snapshot flush bit is set
++	 * and we are the first one who do the filemap_flush() on this inode.
++	 *
++	 * The nr_to_write == LONG_MAX is needed to make sure other flushers do
++	 * not race in and drop the bit.
++	 */
++	if (range_whole && wbc->nr_to_write == LONG_MAX &&
++	    test_and_clear_bit(BTRFS_INODE_SNAPSHOT_FLUSH,
++			       &BTRFS_I(inode)->runtime_flags))
++		wbc->tagged_writepages = 1;
++
++	if (wbc->sync_mode == WB_SYNC_ALL || wbc->tagged_writepages)
+ 		tag = PAGECACHE_TAG_TOWRITE;
+ 	else
+ 		tag = PAGECACHE_TAG_DIRTY;
+ retry:
+-	if (wbc->sync_mode == WB_SYNC_ALL)
++	if (wbc->sync_mode == WB_SYNC_ALL || wbc->tagged_writepages)
+ 		tag_pages_for_writeback(mapping, index, end);
+ 	done_index = index;
+ 	while (!done && !nr_to_write_done && (index <= end) &&
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -9969,8 +9969,7 @@ void btrfs_wait_and_free_delalloc_work(s
+  * some fairly slow code that needs optimization. This walks the list
+  * of all the inodes with pending delalloc and forces them to disk.
+  */
+-static int __start_delalloc_inodes(struct btrfs_root *root, int delay_iput,
+-				   int nr)
++static int start_delalloc_inodes(struct btrfs_root *root, int nr, bool snapshot)
+ {
+ 	struct btrfs_inode *binode;
+ 	struct inode *inode;
+@@ -9998,12 +9997,13 @@ static int __start_delalloc_inodes(struc
+ 		}
+ 		spin_unlock(&root->delalloc_lock);
+ 
+-		work = btrfs_alloc_delalloc_work(inode, delay_iput);
++		if (snapshot)
++			set_bit(BTRFS_INODE_SNAPSHOT_FLUSH,
++				&binode->runtime_flags);
++
++		work = btrfs_alloc_delalloc_work(inode, 0);
+ 		if (!work) {
+-			if (delay_iput)
+-				btrfs_add_delayed_iput(inode);
+-			else
+-				iput(inode);
++			iput(inode);
+ 			ret = -ENOMEM;
+ 			goto out;
+ 		}
+@@ -10033,7 +10033,7 @@ out:
+ 	return ret;
+ }
+ 
+-int btrfs_start_delalloc_inodes(struct btrfs_root *root, int delay_iput)
++int btrfs_start_delalloc_snapshot(struct btrfs_root *root)
+ {
+ 	struct btrfs_fs_info *fs_info = root->fs_info;
+ 	int ret;
+@@ -10041,7 +10041,7 @@ int btrfs_start_delalloc_inodes(struct b
+ 	if (test_bit(BTRFS_FS_STATE_ERROR, &fs_info->fs_state))
+ 		return -EROFS;
+ 
+-	ret = __start_delalloc_inodes(root, delay_iput, -1);
++	ret = start_delalloc_inodes(root, -1, true);
+ 	if (ret > 0)
+ 		ret = 0;
+ 	/*
+@@ -10084,7 +10084,7 @@ int btrfs_start_delalloc_roots(struct bt
+ 			       &fs_info->delalloc_roots);
+ 		spin_unlock(&fs_info->delalloc_root_lock);
+ 
+-		ret = __start_delalloc_inodes(root, delay_iput, nr);
++		ret = start_delalloc_inodes(root, nr, false);
+ 		btrfs_put_fs_root(root);
+ 		if (ret < 0)
+ 			goto out;
+--- a/fs/btrfs/ioctl.c
++++ b/fs/btrfs/ioctl.c
+@@ -697,7 +697,7 @@ static int create_snapshot(struct btrfs_
+ 	smp_mb__after_atomic();
+ 	btrfs_wait_for_no_snapshoting_writes(root);
+ 
+-	ret = btrfs_start_delalloc_inodes(root, 0);
++	ret = btrfs_start_delalloc_snapshot(root);
+ 	if (ret)
+ 		goto dec_and_free;
+ 
