@@ -1,0 +1,42 @@
+From: Calum Mackay <calum.mackay@oracle.com>
+Date: Sat, 24 Oct 2020 22:36:38 +0100
+Subject: [PATCH] SUNRPC: correct error code comment in xs_tcp_setup_socket()
+Git-commit: 8c71139d9f84c1963b0a416941244502a20a7e52
+Patch-mainline: v5.12
+References: git-fixes
+
+This comment was introduced by commit 6ea44adce915
+("sunrpc: ensure correct error is reported by xs_tcp_setup_socket()").
+
+I believe EIO was a typo at the time: it should have been EAGAIN.
+
+Subsequently, commit 0445f92c5d53 ("SUNRPC: Fix disconnection races")
+changed that to ENOTCONN.
+
+Rather than trying to keep the comment here in sync with the code in
+xprt_force_disconnect(), make the point in a non-specific way.
+
+Fixes: 6ea44adce915 ("SUNRPC: ensure correct error is reported by xs_tcp_setup_socket()")
+Signed-off-by: Calum Mackay <calum.mackay@oracle.com>
+Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ net/sunrpc/xprtsock.c |    6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+--- a/net/sunrpc/xprtsock.c
++++ b/net/sunrpc/xprtsock.c
+@@ -2457,10 +2457,8 @@ static void xs_tcp_setup_socket(struct w
+ 	case -EHOSTUNREACH:
+ 	case -EADDRINUSE:
+ 	case -ENOBUFS:
+-		/*
+-		 * xs_tcp_force_close() wakes tasks with -EIO.
+-		 * We need to wake them first to ensure the
+-		 * correct error code.
++		/* xs_tcp_force_close() wakes tasks with a fixed error code.
++		 * We need to wake them first to ensure the correct error code.
+ 		 */
+ 		xprt_wake_pending_tasks(xprt, status);
+ 		xs_tcp_force_close(xprt);
