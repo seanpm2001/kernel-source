@@ -28,14 +28,14 @@ Signed-off-by: Josef Bacik <josef@toxicpanda.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 Acked-by: Nikolay Borisov <nborisov@suse.com>
 ---
- fs/btrfs/delalloc-space.c |  118 +---------------------------------------------
- fs/btrfs/space-info.c     |   98 ++++++++++++++++++++++++++++++++++++++
+ fs/btrfs/delalloc-space.c |  119 +---------------------------------------------
+ fs/btrfs/space-info.c     |   98 +++++++++++++++++++++++++++++++++++++
  fs/btrfs/space-info.h     |    2 
- 3 files changed, 104 insertions(+), 114 deletions(-)
+ 3 files changed, 104 insertions(+), 115 deletions(-)
 
 --- a/fs/btrfs/delalloc-space.c
 +++ b/fs/btrfs/delalloc-space.c
-@@ -13,125 +13,15 @@ int btrfs_alloc_data_chunk_ondemand(stru
+@@ -13,126 +13,15 @@ int btrfs_alloc_data_chunk_ondemand(stru
  {
  	struct btrfs_root *root = inode->root;
  	struct btrfs_fs_info *fs_info = root->fs_info;
@@ -109,9 +109,10 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 -		 * allocation, and no removed chunk in current transaction,
 -		 * don't bother committing the transaction.
 -		 */
--		have_pinned_space = percpu_counter_compare(
+-		have_pinned_space = __percpu_counter_compare(
 -			&data_sinfo->total_bytes_pinned,
--			used + bytes - data_sinfo->total_bytes);
+-			used + bytes - data_sinfo->total_bytes,
+-			BTRFS_TOTAL_BYTES_PINNED_BATCH);
 -		spin_unlock(&data_sinfo->lock);
 -
 -		/* Commit the current transaction and try again */
@@ -167,7 +168,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  int btrfs_check_data_free_space(struct inode *inode,
 --- a/fs/btrfs/space-info.c
 +++ b/fs/btrfs/space-info.c
-@@ -1205,3 +1205,101 @@ int btrfs_reserve_metadata_bytes(struct
+@@ -1207,3 +1207,101 @@ int btrfs_reserve_metadata_bytes(struct
  	return ret;
  }
  

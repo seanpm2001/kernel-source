@@ -86,15 +86,16 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	trans = btrfs_join_transaction(fs_info->extent_root);
  	if (IS_ERR(trans))
  		return PTR_ERR(trans);
-@@ -503,14 +517,17 @@ static int may_commit_transaction(struct
+@@ -503,15 +517,18 @@ static int may_commit_transaction(struct
  	 * we have block groups that are going to be freed, allowing us to
  	 * possibly do a chunk allocation the next loop through.
  	 */
 -	if (test_bit(BTRFS_TRANS_HAVE_FREE_BGS, &trans->transaction->flags) ||
 +	if (do_commit ||
 +	    test_bit(BTRFS_TRANS_HAVE_FREE_BGS, &trans->transaction->flags) ||
- 	    percpu_counter_compare(&space_info->total_bytes_pinned,
- 				   bytes_needed) >= 0)
+ 	    __percpu_counter_compare(&space_info->total_bytes_pinned,
+ 				   bytes_needed,
+ 				   BTRFS_TOTAL_BYTES_PINNED_BATCH) >= 0)
  		goto commit;
  
  	/*
@@ -107,7 +108,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	 */
  	if (space_info != delayed_rsv->space_info)
  		goto enospc;
-@@ -613,7 +630,7 @@ static int flush_space(struct btrfs_fs_i
+@@ -615,7 +632,7 @@ static int flush_space(struct btrfs_fs_i
  		btrfs_wait_on_delayed_iputs(fs_info);
  		break;
  	case COMMIT_TRANS:
