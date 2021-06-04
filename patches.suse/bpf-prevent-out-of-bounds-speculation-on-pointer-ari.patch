@@ -346,7 +346,7 @@ Acked-by: Gary Lin <glin@suse.com>
  	if (env->stack_size > BPF_COMPLEXITY_LIMIT_STACK) {
  		verbose(env, "BPF program is too complex\n");
  		goto err;
-@@ -1890,6 +1893,102 @@ static bool check_reg_sane_offset(struct
+@@ -1905,6 +1908,102 @@ static bool check_reg_sane_offset(struct
  	return true;
  }
  
@@ -449,7 +449,7 @@ Acked-by: Gary Lin <glin@suse.com>
  /* Handles arithmetic on a pointer and a scalar: computes new min/max and var_off.
   * Caller should also handle BPF_MOV case separately.
   * If we return -EACCES, caller may want to try again treating pointer as a
-@@ -1908,6 +2007,7 @@ static int adjust_ptr_min_max_vals(struc
+@@ -1923,6 +2022,7 @@ static int adjust_ptr_min_max_vals(struc
  	    umin_ptr = ptr_reg->umin_value, umax_ptr = ptr_reg->umax_value;
  	u32 dst = insn->dst_reg, src = insn->src_reg;
  	u8 opcode = BPF_OP(insn->code);
@@ -457,7 +457,7 @@ Acked-by: Gary Lin <glin@suse.com>
  
  	dst_reg = &regs[dst];
  
-@@ -1956,6 +2056,11 @@ static int adjust_ptr_min_max_vals(struc
+@@ -1971,6 +2071,11 @@ static int adjust_ptr_min_max_vals(struc
  
  	switch (opcode) {
  	case BPF_ADD:
@@ -469,7 +469,7 @@ Acked-by: Gary Lin <glin@suse.com>
  		/* We can take a fixed offset as long as it doesn't overflow
  		 * the s32 'off' field
  		 */
-@@ -2006,6 +2111,11 @@ static int adjust_ptr_min_max_vals(struc
+@@ -2021,6 +2126,11 @@ static int adjust_ptr_min_max_vals(struc
  		}
  		break;
  	case BPF_SUB:
@@ -481,7 +481,7 @@ Acked-by: Gary Lin <glin@suse.com>
  		if (dst_reg == off_reg) {
  			/* scalar -= pointer.  Creates an unknown scalar */
  			verbose(env, "R%d tried to subtract pointer from scalar\n",
-@@ -2988,7 +3098,8 @@ static int check_cond_jmp_op(struct bpf_
+@@ -3003,7 +3113,8 @@ static int check_cond_jmp_op(struct bpf_
  		}
  	}
  
@@ -491,7 +491,7 @@ Acked-by: Gary Lin <glin@suse.com>
  	if (!other_branch)
  		return -EFAULT;
  
-@@ -3625,6 +3736,12 @@ static bool states_equal(struct bpf_veri
+@@ -3640,6 +3751,12 @@ static bool states_equal(struct bpf_veri
  	bool ret = false;
  	int i;
  
@@ -504,7 +504,7 @@ Acked-by: Gary Lin <glin@suse.com>
  	idmap = kcalloc(ID_MAP_SIZE, sizeof(struct idpair), GFP_KERNEL);
  	/* If we failed to allocate the idmap, just say it's not safe */
  	if (!idmap)
-@@ -3799,6 +3916,7 @@ static int do_check(struct bpf_verifier_
+@@ -3814,6 +3931,7 @@ static int do_check(struct bpf_verifier_
  	if (!state)
  		return -ENOMEM;
  	env->cur_state = state;
@@ -512,7 +512,7 @@ Acked-by: Gary Lin <glin@suse.com>
  	init_reg_state(env, state->regs);
  	state->parent = NULL;
  	for (;;) {
-@@ -3829,8 +3947,10 @@ static int do_check(struct bpf_verifier_
+@@ -3844,8 +3962,10 @@ static int do_check(struct bpf_verifier_
  			/* found equivalent state, can prune the search */
  			if (env->log.level) {
  				if (do_print_state)
@@ -525,7 +525,7 @@ Acked-by: Gary Lin <glin@suse.com>
  				else
  					verbose(env, "%d: safe\n", env->insn_idx);
  			}
-@@ -3844,8 +3964,10 @@ static int do_check(struct bpf_verifier_
+@@ -3859,8 +3979,10 @@ static int do_check(struct bpf_verifier_
  			if (env->log.level > 1)
  				verbose(env, "%d:", env->insn_idx);
  			else
@@ -538,11 +538,10 @@ Acked-by: Gary Lin <glin@suse.com>
  			print_verifier_state(env, state);
  			do_print_state = false;
  		}
-@@ -4463,6 +4585,57 @@ static int fixup_bpf_calls(struct bpf_ve
- 			new_prog = bpf_patch_insn_data(env, i + delta, insn_buf, cnt);
+@@ -4501,6 +4623,57 @@ static int fixup_bpf_calls(struct bpf_ve
  			if (!new_prog)
  				return -ENOMEM;
-+
+ 
 +			delta    += cnt - 1;
 +			env->prog = prog = new_prog;
 +			insn      = new_prog->insnsi + i + delta;
@@ -593,6 +592,7 @@ Acked-by: Gary Lin <glin@suse.com>
 +			new_prog = bpf_patch_insn_data(env, i + delta, insn_buf, cnt);
 +			if (!new_prog)
 +				return -ENOMEM;
- 
++
  			delta    += cnt - 1;
  			env->prog = prog = new_prog;
+ 			insn      = new_prog->insnsi + i + delta;
