@@ -17,9 +17,9 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 ---
  fs/btrfs/Makefile           |    2 
  fs/btrfs/ctree.h            |   14 -
- fs/btrfs/delalloc-space.c   |  493 ++++++++++++++++++++++++++++++++++++++++++++
+ fs/btrfs/delalloc-space.c   |  494 ++++++++++++++++++++++++++++++++++++++++++++
  fs/btrfs/delalloc-space.h   |   23 ++
- fs/btrfs/extent-tree.c      |  493 --------------------------------------------
+ fs/btrfs/extent-tree.c      |  494 --------------------------------------------
  fs/btrfs/file.c             |    1 
  fs/btrfs/free-space-cache.c |    1 
  fs/btrfs/inode-map.c        |    1 
@@ -27,7 +27,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  fs/btrfs/ioctl.c            |    1 
  fs/btrfs/ordered-data.c     |    1 
  fs/btrfs/relocation.c       |    1 
- 12 files changed, 525 insertions(+), 507 deletions(-)
+ 12 files changed, 526 insertions(+), 508 deletions(-)
 
 --- a/fs/btrfs/Makefile
 +++ b/fs/btrfs/Makefile
@@ -42,7 +42,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  btrfs-$(CONFIG_BTRFS_FS_CHECK_INTEGRITY) += check-integrity.o
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -2754,16 +2754,6 @@ enum btrfs_chunk_alloc_enum {
+@@ -2761,16 +2761,6 @@ enum btrfs_chunk_alloc_enum {
  
  int btrfs_chunk_alloc(struct btrfs_trans_handle *trans, u64 flags,
  		      enum btrfs_chunk_alloc_enum force);
@@ -59,7 +59,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  void btrfs_trans_release_metadata(struct btrfs_trans_handle *trans,
  				  struct btrfs_fs_info *fs_info);
  int btrfs_subvolume_reserve_metadata(struct btrfs_root *root,
-@@ -2776,10 +2766,6 @@ void btrfs_delalloc_release_extents(stru
+@@ -2783,10 +2773,6 @@ void btrfs_delalloc_release_extents(stru
  				    bool qgroup_free);
  
  int btrfs_delalloc_reserve_metadata(struct btrfs_inode *inode, u64 num_bytes);
@@ -72,7 +72,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  void btrfs_dec_block_group_ro(struct btrfs_block_group_cache *cache);
 --- /dev/null
 +++ b/fs/btrfs/delalloc-space.c
-@@ -0,0 +1,493 @@
+@@ -0,0 +1,494 @@
 +// SPDX-License-Identifier: GPL-2.0
 +
 +#include "ctree.h"
@@ -154,9 +154,10 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 +		 * allocation, and no removed chunk in current transaction,
 +		 * don't bother committing the transaction.
 +		 */
-+		have_pinned_space = percpu_counter_compare(
++		have_pinned_space = __percpu_counter_compare(
 +			&data_sinfo->total_bytes_pinned,
-+			used + bytes - data_sinfo->total_bytes);
++			used + bytes - data_sinfo->total_bytes,
++			BTRFS_TOTAL_BYTES_PINNED_BATCH);
 +		spin_unlock(&data_sinfo->lock);
 +
 +		/* Commit the current transaction and try again */
@@ -602,7 +603,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  #undef SCRAMBLE_DELAYED_REFS
  
-@@ -4083,213 +4084,6 @@ u64 btrfs_system_alloc_profile(struct bt
+@@ -4072,214 +4073,6 @@ u64 btrfs_system_alloc_profile(struct bt
  	return get_alloc_profile(fs_info, BTRFS_BLOCK_GROUP_SYSTEM);
  }
  
@@ -684,9 +685,10 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 -		 * allocation, and no removed chunk in current transaction,
 -		 * don't bother committing the transaction.
 -		 */
--		have_pinned_space = percpu_counter_compare(
+-		have_pinned_space = __percpu_counter_compare(
 -			&data_sinfo->total_bytes_pinned,
--			used + bytes - data_sinfo->total_bytes);
+-			used + bytes - data_sinfo->total_bytes,
+-			BTRFS_TOTAL_BYTES_PINNED_BATCH);
 -		spin_unlock(&data_sinfo->lock);
 -
 -		/* commit the current transaction and try again */
@@ -816,7 +818,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  static void force_metadata_allocation(struct btrfs_fs_info *info)
  {
  	struct list_head *head = &info->space_info;
-@@ -4532,41 +4326,6 @@ out:
+@@ -4522,41 +4315,6 @@ out:
  	return ret;
  }
  
@@ -858,7 +860,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  void btrfs_trans_release_metadata(struct btrfs_trans_handle *trans,
  				  struct btrfs_fs_info *fs_info)
  {
-@@ -4644,256 +4403,6 @@ void btrfs_subvolume_release_metadata(st
+@@ -4634,256 +4392,6 @@ void btrfs_subvolume_release_metadata(st
  	btrfs_block_rsv_release(fs_info, rsv, (u64)-1);
  }
  

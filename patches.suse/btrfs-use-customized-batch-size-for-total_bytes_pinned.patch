@@ -1,0 +1,202 @@
+From: Ethan Lien <ethanlien@synology.com>
+Date: Fri, 13 Jul 2018 16:50:42 +0800
+Subject: btrfs: use customized batch size for total_bytes_pinned
+Git-commit: dec59fa3a760952fc71f2e122e66a7291109670a
+Patch-mainline: v4.19-rc1
+References: bsc#1135481
+
+In commit b150a4f10d878 ("Btrfs: use a percpu to keep track of possibly
+pinned bytes") we use total_bytes_pinned to track how many bytes we are
+going to free in this transaction. When we are close to ENOSPC, we check it
+and know if we can make the allocation by commit the current transaction.
+For every data/metadata extent we are going to free, we add
+total_bytes_pinned in btrfs_free_extent() and btrfs_free_tree_block(), and
+release it in unpin_extent_range() when we finish the transaction. So this
+is a variable we frequently update but rarely read - just the suitable
+use of percpu_counter. But in previous commit we update total_bytes_pinned
+by default 32 batch size, making every update essentially a spin lock
+protected update. Since every spin lock/unlock operation involves syncing
+a globally used variable and some kind of barrier in a SMP system, this is
+more expensive than using total_bytes_pinned as a simple atomic64_t.
+
+So fix this by using a customized batch size. Since we only read
+total_bytes_pinned when we are close to ENOSPC and fail to allocate new
+chunk, we can use a really large batch size and have nearly no penalty
+in most cases.
+
+[Test]
+We tested the patch on a 4-cores x86 machine:
+
+1. fallocate a 16GiB size test file
+2. take snapshot (so all following writes will be COW)
+3. run a 180 sec, 4 jobs, 4K random write fio on test file
+
+We also added a temporary lockdep class on percpu_counter's spin lock
+used by total_bytes_pinned to track it by lock_stat.
+
+[Results]
+unpatched:
+lock_stat version 0.4
+-----------------------------------------------------------------------
+                              class name    con-bounces    contentions
+waittime-min   waittime-max waittime-total   waittime-avg    acq-bounces
+acquisitions   holdtime-min   holdtime-max holdtime-total   holdtime-avg
+
+               total_bytes_pinned_percpu:            82             82
+        0.21           0.61          29.46           0.36         298340
+      635973           0.09          11.01      173476.25           0.27
+
+patched:
+lock_stat version 0.4
+-----------------------------------------------------------------------
+                              class name    con-bounces    contentions
+waittime-min   waittime-max waittime-total   waittime-avg    acq-bounces
+acquisitions   holdtime-min   holdtime-max holdtime-total   holdtime-avg
+
+               total_bytes_pinned_percpu:             1              1
+        0.62           0.62           0.62           0.62          13601
+       31542           0.14           9.61       11016.90           0.35
+
+[Analysis]
+Since the spin lock only protects a single in-memory variable, the
+contentions (number of lock acquisitions that had to wait) in both
+unpatched and patched version are low. But when we see acquisitions and
+acq-bounces, we get much lower counts in patched version. Here the most
+important metric is acq-bounces. It means how many times the lock gets
+transferred between different cpus, so the patch can really reduce
+cacheline bouncing of spin lock (also the global counter of percpu_counter)
+in a SMP system.
+
+Fixes: b150a4f10d878 ("Btrfs: use a percpu to keep track of possibly pinned bytes")
+Signed-off-by: Ethan Lien <ethanlien@synology.com>
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/ctree.h       |    8 ++++++++
+ fs/btrfs/extent-tree.c |   39 ++++++++++++++++++++++++---------------
+ 2 files changed, 32 insertions(+), 15 deletions(-)
+
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -97,6 +97,14 @@ static const int btrfs_csum_sizes[] = {
+
+ #define BTRFS_DIRTY_METADATA_THRESH	SZ_32M
+
++/*
++ * Use large batch size to reduce overhead of metadata updates.  On the reader
++ * side, we only read it when we are close to ENOSPC and the read overhead is
++ * mostly related to the number of CPUs, so it is OK to use arbitrary large
++ * value here.
++ */
++#define BTRFS_TOTAL_BYTES_PINNED_BATCH	SZ_128M
++
+ #define BTRFS_MAX_EXTENT_SIZE SZ_128M
+
+ /*
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -784,7 +784,8 @@ static void add_pinned_bytes(struct btrf
+
+ 	space_info = __find_space_info(fs_info, flags);
+ 	ASSERT(space_info);
+-	percpu_counter_add(&space_info->total_bytes_pinned, num_bytes);
++	percpu_counter_add_batch(&space_info->total_bytes_pinned, num_bytes,
++		    BTRFS_TOTAL_BYTES_PINNED_BATCH);
+ }
+
+ /*
+@@ -2626,8 +2627,9 @@ static int cleanup_ref_head(struct btrfs
+ 			flags = BTRFS_BLOCK_GROUP_METADATA;
+ 		space_info = __find_space_info(fs_info, flags);
+ 		ASSERT(space_info);
+-		percpu_counter_add(&space_info->total_bytes_pinned,
+-				   	-head->num_bytes);
++		percpu_counter_add_batch(&space_info->total_bytes_pinned,
++				   -head->num_bytes,
++				   BTRFS_TOTAL_BYTES_PINNED_BATCH);
+ 		if (head->is_data) {
+ 			spin_lock(&delayed_refs->lock);
+ 			delayed_refs->pending_csums -= head->num_bytes;
+@@ -4343,9 +4345,10 @@ alloc:
+ 		 * allocation, and no removed chunk in current transaction,
+ 		 * don't bother committing the transaction.
+ 		 */
+-		have_pinned_space = percpu_counter_compare(
++		have_pinned_space = __percpu_counter_compare(
+ 			&data_sinfo->total_bytes_pinned,
+-			used + bytes - data_sinfo->total_bytes);
++			used + bytes - data_sinfo->total_bytes,
++			BTRFS_TOTAL_BYTES_PINNED_BATCH);
+ 		spin_unlock(&data_sinfo->lock);
+
+ 		/* commit the current transaction and try again */
+@@ -4953,8 +4956,9 @@ static int may_commit_transaction(struct
+ 	if (!bytes)
+ 		return 0;
+ 	/* See if there is enough pinned space to make this reservation */
+-	if (percpu_counter_compare(&space_info->total_bytes_pinned,
+-				   bytes) >= 0)
++	if (__percpu_counter_compare(&space_info->total_bytes_pinned,
++				   bytes,
++				   BTRFS_TOTAL_BYTES_PINNED_BATCH) >= 0)
+ 		goto commit;
+
+ 	/*
+@@ -4970,8 +4974,9 @@ static int may_commit_transaction(struct
+ 	else
+ 		bytes -= delayed_rsv->size;
+
+-	if (percpu_counter_compare(&space_info->total_bytes_pinned,
+-				   bytes) < 0) {
++	if (__percpu_counter_compare(&space_info->total_bytes_pinned,
++				   bytes,
++				   BTRFS_TOTAL_BYTES_PINNED_BATCH) < 0) {
+ 		spin_unlock(&delayed_rsv->lock);
+ 		return -ENOSPC;
+ 	}
+@@ -6334,8 +6339,9 @@ static int update_block_group(struct btr
+ 			trace_btrfs_space_reservation(info, "pinned",
+ 						      cache->space_info->flags,
+ 						      num_bytes, 1);
+-			percpu_counter_add(&cache->space_info->total_bytes_pinned,
+-					   num_bytes);
++			percpu_counter_add_batch(&cache->space_info->total_bytes_pinned,
++					   num_bytes,
++					   BTRFS_TOTAL_BYTES_PINNED_BATCH);
+ 			set_extent_dirty(info->pinned_extents,
+ 					 bytenr, bytenr + num_bytes - 1,
+ 					 GFP_NOFS | __GFP_NOFAIL);
+@@ -6412,7 +6418,8 @@ static int pin_down_extent(struct btrfs_
+
+ 	trace_btrfs_space_reservation(fs_info, "pinned",
+ 				      cache->space_info->flags, num_bytes, 1);
+-	percpu_counter_add(&cache->space_info->total_bytes_pinned, num_bytes);
++	percpu_counter_add_batch(&cache->space_info->total_bytes_pinned,
++		    num_bytes, BTRFS_TOTAL_BYTES_PINNED_BATCH);
+ 	set_extent_dirty(fs_info->pinned_extents, bytenr,
+ 			 bytenr + num_bytes - 1, GFP_NOFS | __GFP_NOFAIL);
+ 	return 0;
+@@ -6773,7 +6780,8 @@ static int unpin_extent_range(struct btr
+ 		trace_btrfs_space_reservation(fs_info, "pinned",
+ 					      space_info->flags, len, 0);
+ 		space_info->max_extent_size = 0;
+-		percpu_counter_add(&space_info->total_bytes_pinned, -len);
++		percpu_counter_add_batch(&space_info->total_bytes_pinned,
++			    -len, BTRFS_TOTAL_BYTES_PINNED_BATCH);
+ 		if (cache->ro) {
+ 			space_info->bytes_readonly += len;
+ 			readonly = true;
+@@ -10785,8 +10793,9 @@ void btrfs_delete_unused_bgs(struct btrf
+
+ 		space_info->bytes_pinned -= block_group->pinned;
+ 		space_info->bytes_readonly += block_group->pinned;
+-		percpu_counter_add(&space_info->total_bytes_pinned,
+-				   -block_group->pinned);
++		percpu_counter_add_batch(&space_info->total_bytes_pinned,
++				   -block_group->pinned,
++				   BTRFS_TOTAL_BYTES_PINNED_BATCH);
+ 		block_group->pinned = 0;
+
+ 		spin_unlock(&block_group->lock);

@@ -27,8 +27,8 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 
 --- a/fs/btrfs/inode.c
 +++ b/fs/btrfs/inode.c
-@@ -3264,6 +3264,28 @@ void btrfs_add_delayed_iput(struct inode
- 	spin_unlock(&fs_info->delayed_iput_lock);
+@@ -3268,6 +3268,28 @@ void btrfs_add_delayed_iput(struct inode
+ 		wake_up_process(fs_info->cleaner_kthread);
  }
  
 +static void run_delayed_iput_locked(struct btrfs_fs_info *fs_info,
@@ -56,7 +56,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  void btrfs_run_delayed_iputs(struct btrfs_fs_info *fs_info)
  {
  	spin_lock(&fs_info->delayed_iput_lock);
-@@ -3272,12 +3294,7 @@ void btrfs_run_delayed_iputs(struct btrf
+@@ -3276,12 +3298,7 @@ void btrfs_run_delayed_iputs(struct btrf
  
  		inode = list_first_entry(&fs_info->delayed_iputs,
  				struct btrfs_inode, delayed_iput);
@@ -69,8 +69,8 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 +		run_delayed_iput_locked(fs_info, inode);
  	}
  	spin_unlock(&fs_info->delayed_iput_lock);
- 	if (!test_bit(BTRFS_FS_CLEANER_RUNNING, &fs_info->flags))
-@@ -4006,6 +4023,17 @@ skip_backref:
+ }
+@@ -4008,6 +4025,17 @@ skip_backref:
  		ret = 0;
  	else if (ret)
  		btrfs_abort_transaction(trans, ret);

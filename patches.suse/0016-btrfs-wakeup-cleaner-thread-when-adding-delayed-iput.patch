@@ -30,7 +30,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -756,6 +756,10 @@ struct btrfs_delayed_root;
+@@ -765,6 +765,10 @@ struct btrfs_delayed_root;
   */
  #define BTRFS_FS_BALANCE_RUNNING		18
  
@@ -43,7 +43,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	u8 chunk_tree_uuid[BTRFS_UUID_SIZE];
 --- a/fs/btrfs/disk-io.c
 +++ b/fs/btrfs/disk-io.c
-@@ -1754,6 +1754,8 @@ static int cleaner_kthread(void *arg)
+@@ -1724,6 +1724,8 @@ static int cleaner_kthread(void *arg)
  	while (1) {
  		again = 0;
  
@@ -52,7 +52,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		/* Make the cleaner go to sleep early. */
  		if (btrfs_need_cleaner_sleep(fs_info))
  			goto sleep;
-@@ -1800,6 +1802,7 @@ static int cleaner_kthread(void *arg)
+@@ -1770,6 +1772,7 @@ static int cleaner_kthread(void *arg)
  		 */
  		btrfs_delete_unused_bgs(fs_info);
  sleep:
@@ -62,12 +62,12 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		if (kthread_should_stop())
 --- a/fs/btrfs/inode.c
 +++ b/fs/btrfs/inode.c
-@@ -3276,6 +3276,8 @@ void btrfs_run_delayed_iputs(struct btrf
- 		spin_lock(&fs_info->delayed_iput_lock);
- 	}
+@@ -3261,6 +3261,8 @@ void btrfs_add_delayed_iput(struct inode
+ 	ASSERT(list_empty(&binode->delayed_iput));
+ 	list_add_tail(&binode->delayed_iput, &fs_info->delayed_iputs);
  	spin_unlock(&fs_info->delayed_iput_lock);
 +	if (!test_bit(BTRFS_FS_CLEANER_RUNNING, &fs_info->flags))
 +		wake_up_process(fs_info->cleaner_kthread);
  }
  
- /*
+ void btrfs_run_delayed_iputs(struct btrfs_fs_info *fs_info)

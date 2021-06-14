@@ -157,7 +157,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  		next = rb_next(node);
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -919,14 +919,12 @@ struct btrfs_fs_info {
+@@ -684,14 +684,12 @@ struct btrfs_fs_info {
  	atomic_t nr_delayed_iputs;
  	wait_queue_head_t delayed_iputs_wait;
  
@@ -172,11 +172,11 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	struct rb_root tree_mod_log;
 +	struct list_head tree_mod_seq_list;
  
- 	atomic_t nr_async_submits;
- 	atomic_t async_submit_draining;
+ 	atomic_t async_delalloc_pages;
+ 	atomic_t open_ioctl_trans;
 --- a/fs/btrfs/delayed-ref.c
 +++ b/fs/btrfs/delayed-ref.c
-@@ -311,7 +311,7 @@ void btrfs_merge_delayed_refs(struct btr
+@@ -485,7 +485,7 @@ void btrfs_merge_delayed_refs(struct btr
  	if (head->is_data)
  		return;
  
@@ -185,7 +185,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	if (!list_empty(&fs_info->tree_mod_seq_list)) {
  		struct seq_list *elem;
  
-@@ -319,7 +319,7 @@ void btrfs_merge_delayed_refs(struct btr
+@@ -493,7 +493,7 @@ void btrfs_merge_delayed_refs(struct btr
  					struct seq_list, list);
  		seq = elem->seq;
  	}
@@ -194,7 +194,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  
  again:
  	for (node = rb_first(&head->ref_tree); node; node = rb_next(node)) {
-@@ -338,7 +338,7 @@ int btrfs_check_delayed_seq(struct btrfs
+@@ -512,7 +512,7 @@ int btrfs_check_delayed_seq(struct btrfs
  	struct seq_list *elem;
  	int ret = 0;
  
@@ -203,7 +203,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	if (!list_empty(&fs_info->tree_mod_seq_list)) {
  		elem = list_first_entry(&fs_info->tree_mod_seq_list,
  					struct seq_list, list);
-@@ -352,7 +352,7 @@ int btrfs_check_delayed_seq(struct btrfs
+@@ -526,7 +526,7 @@ int btrfs_check_delayed_seq(struct btrfs
  		}
  	}
  
@@ -214,7 +214,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  
 --- a/fs/btrfs/disk-io.c
 +++ b/fs/btrfs/disk-io.c
-@@ -2518,7 +2518,6 @@ int open_ctree(struct super_block *sb,
+@@ -2522,7 +2522,6 @@ int open_ctree(struct super_block *sb,
  	spin_lock_init(&fs_info->delayed_iput_lock);
  	spin_lock_init(&fs_info->defrag_inodes_lock);
  	spin_lock_init(&fs_info->free_chunk_lock);
@@ -224,7 +224,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  	spin_lock_init(&fs_info->buffer_lock);
 --- a/fs/btrfs/tests/btrfs-tests.c
 +++ b/fs/btrfs/tests/btrfs-tests.c
-@@ -121,7 +121,6 @@ struct btrfs_fs_info *btrfs_alloc_dummy_
+@@ -122,7 +122,6 @@ struct btrfs_fs_info *btrfs_alloc_dummy_
  	spin_lock_init(&fs_info->qgroup_op_lock);
  	spin_lock_init(&fs_info->super_lock);
  	spin_lock_init(&fs_info->fs_roots_radix_lock);

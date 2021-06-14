@@ -27,7 +27,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  static int update_block_group(struct btrfs_trans_handle *trans,
  			      struct btrfs_fs_info *fs_info, u64 bytenr,
-@@ -6309,7 +6310,7 @@ static int update_block_group(struct btr
+@@ -6335,7 +6336,7 @@ static int update_block_group(struct btr
  			old_val -= num_bytes;
  			btrfs_set_block_group_used(&cache->item, old_val);
  			cache->pinned += num_bytes;
@@ -36,7 +36,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  			cache->space_info->bytes_used -= num_bytes;
  			cache->space_info->disk_used -= num_bytes * factor;
  			spin_unlock(&cache->lock);
-@@ -6386,7 +6387,7 @@ static int pin_down_extent(struct btrfs_
+@@ -6413,7 +6414,7 @@ static int pin_down_extent(struct btrfs_
  	spin_lock(&cache->space_info->lock);
  	spin_lock(&cache->lock);
  	cache->pinned += num_bytes;
@@ -45,7 +45,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	if (reserved) {
  		cache->reserved -= num_bytes;
  		cache->space_info->bytes_reserved -= num_bytes;
-@@ -6760,7 +6761,7 @@ static int unpin_extent_range(struct btr
+@@ -6781,7 +6782,7 @@ static int unpin_extent_range(struct btr
  		spin_lock(&space_info->lock);
  		spin_lock(&cache->lock);
  		cache->pinned -= len;
@@ -54,12 +54,12 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  		trace_btrfs_space_reservation(fs_info, "pinned",
  					      space_info->flags, len, 0);
-@@ -10855,7 +10856,7 @@ void btrfs_delete_unused_bgs(struct btrf
+@@ -10877,7 +10878,7 @@ void btrfs_delete_unused_bgs(struct btrf
  		spin_lock(&space_info->lock);
  		spin_lock(&block_group->lock);
  
 -		space_info->bytes_pinned -= block_group->pinned;
 +		update_bytes_pinned(space_info, -block_group->pinned);
  		space_info->bytes_readonly += block_group->pinned;
- 		percpu_counter_add(&space_info->total_bytes_pinned,
- 				   -block_group->pinned);
+ 		percpu_counter_add_batch(&space_info->total_bytes_pinned,
+ 				   -block_group->pinned,
