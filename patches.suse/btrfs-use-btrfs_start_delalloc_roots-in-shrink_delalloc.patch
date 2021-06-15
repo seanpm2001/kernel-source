@@ -1,0 +1,110 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Tue, 21 Jul 2020 10:22:21 -0400
+Subject: btrfs: use btrfs_start_delalloc_roots in shrink_delalloc
+Git-commit: 38d715f494f2f1dddbf3d0c6e50aefff49519232
+Patch-mainline: v5.10-rc1
+References: bsc#1135481
+
+The original iteration of flushing had us flushing delalloc and then
+checking to see if we could make our reservation, thus we were very
+careful about how many pages we would flush at once.
+
+But now that everything is async and we satisfy tickets as the space
+becomes available we don't have to keep track of any of this, simply
+try and flush the number of dirty inodes we may have in order to
+reclaim space to make our reservation.  This cleans up our delalloc
+flushing significantly.
+
+The async_pages stuff is dropped because btrfs_start_delalloc_roots()
+handles the case that we generate async extents for us, so we no longer
+require this extra logic.
+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Tested-by: Nikolay Borisov <nborisov@suse.com>
+Reviewed-by: Johannes Thumshirn <johannes.thumshirn@wdc.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/space-info.c |   52 +-------------------------------------------------
+ 1 file changed, 2 insertions(+), 50 deletions(-)
+
+--- a/fs/btrfs/space-info.c
++++ b/fs/btrfs/space-info.c
+@@ -353,29 +353,6 @@ again:
+ 	up_read(&info->groups_sem);
+ }
+ 
+-static void btrfs_writeback_inodes_sb_nr(struct btrfs_fs_info *fs_info,
+-					 unsigned long nr_pages, u64 nr_items)
+-{
+-	struct super_block *sb = fs_info->sb;
+-
+-	if (down_read_trylock(&sb->s_umount)) {
+-		writeback_inodes_sb_nr(sb, nr_pages, WB_REASON_FS_FREE_SPACE);
+-		up_read(&sb->s_umount);
+-	} else {
+-		/*
+-		 * We needn't worry the filesystem going from r/w to r/o though
+-		 * we don't acquire ->s_umount mutex, because the filesystem
+-		 * should guarantee the delalloc inodes list be empty after
+-		 * the filesystem is readonly(all dirty pages are written to
+-		 * the disk).
+-		 */
+-		btrfs_start_delalloc_roots(fs_info, nr_items);
+-		if (!current->journal_info)
+-			btrfs_wait_ordered_roots(fs_info, nr_items, 0, (u64)-1);
+-	}
+-}
+-
+-
+ static inline u64 calc_reclaim_items_nr(struct btrfs_fs_info *fs_info,
+ 					u64 to_reclaim)
+ {
+@@ -401,12 +378,9 @@ static void shrink_delalloc(struct btrfs
+ 	struct btrfs_trans_handle *trans;
+ 	u64 delalloc_bytes;
+ 	u64 dio_bytes;
+-	u64 max_reclaim;
+ 	u64 items;
+ 	long time_left;
+-	unsigned long nr_pages;
+ 	int loops;
+-	enum btrfs_reserve_flush_enum flush;
+ 
+ 	/* Calc the number of the pages we need flush for space reservation */
+ 	if (to_reclaim == U64_MAX) {
+@@ -446,30 +420,8 @@ static void shrink_delalloc(struct btrfs
+ 
+ 	loops = 0;
+ 	while ((delalloc_bytes || dio_bytes) && loops < 3) {
+-		max_reclaim = min(delalloc_bytes, to_reclaim);
+-		nr_pages = max_reclaim >> PAGE_SHIFT;
+-		btrfs_writeback_inodes_sb_nr(fs_info, nr_pages, items);
+-		/*
+-		 * We need to wait for the async pages to actually start before
+-		 * we do anything.
+-		 */
+-		max_reclaim = atomic_read(&fs_info->async_delalloc_pages);
+-		if (!max_reclaim)
+-			goto skip_async;
+-
+-		if (max_reclaim <= nr_pages)
+-			max_reclaim = 0;
+-		else
+-			max_reclaim -= nr_pages;
+-
+-		wait_event(fs_info->async_submit_wait,
+-			   atomic_read(&fs_info->async_delalloc_pages) <=
+-			   (int)max_reclaim);
+-skip_async:
+-		if (!trans)
+-			flush = BTRFS_RESERVE_FLUSH_ALL;
+-		else
+-			flush = BTRFS_RESERVE_NO_FLUSH;
++		btrfs_start_delalloc_roots(fs_info, items);
++
+ 		spin_lock(&space_info->lock);
+ 		if (list_empty(&space_info->tickets) &&
+ 		    list_empty(&space_info->priority_tickets)) {

@@ -59,7 +59,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -457,8 +457,9 @@ struct btrfs_space_info {
+@@ -466,8 +466,9 @@ struct btrfs_space_info {
  #define	BTRFS_BLOCK_RSV_TRANS		3
  #define	BTRFS_BLOCK_RSV_CHUNK		4
  #define	BTRFS_BLOCK_RSV_DELOPS		5
@@ -71,7 +71,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  struct btrfs_block_rsv {
  	u64 size;
-@@ -800,6 +801,8 @@ struct btrfs_fs_info {
+@@ -809,6 +810,8 @@ struct btrfs_fs_info {
  	struct btrfs_block_rsv chunk_block_rsv;
  	/* block reservation for delayed operations */
  	struct btrfs_block_rsv delayed_block_rsv;
@@ -80,7 +80,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  	struct btrfs_block_rsv empty_block_rsv;
  
-@@ -2825,6 +2828,13 @@ int btrfs_cond_migrate_bytes(struct btrf
+@@ -2834,6 +2837,13 @@ int btrfs_cond_migrate_bytes(struct btrf
  void btrfs_block_rsv_release(struct btrfs_fs_info *fs_info,
  			     struct btrfs_block_rsv *block_rsv,
  			     u64 num_bytes);
@@ -198,16 +198,16 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
 --- a/fs/btrfs/disk-io.c
 +++ b/fs/btrfs/disk-io.c
-@@ -2540,6 +2540,8 @@ int open_ctree(struct super_block *sb,
+@@ -2510,6 +2510,8 @@ int open_ctree(struct super_block *sb,
  	btrfs_init_block_rsv(&fs_info->empty_block_rsv, BTRFS_BLOCK_RSV_EMPTY);
  	btrfs_init_block_rsv(&fs_info->delayed_block_rsv,
  			     BTRFS_BLOCK_RSV_DELOPS);
 +	btrfs_init_block_rsv(&fs_info->delayed_refs_rsv,
 +			     BTRFS_BLOCK_RSV_DELREFS);
- 	atomic_set(&fs_info->nr_async_submits, 0);
  	atomic_set(&fs_info->async_delalloc_pages, 0);
- 	atomic_set(&fs_info->async_submit_draining, 0);
-@@ -4461,6 +4463,7 @@ void btrfs_cleanup_dirty_bgs(struct btrf
+ 	atomic_set(&fs_info->defrag_running, 0);
+ 	atomic_set(&fs_info->qgroup_op_seq, 0);
+@@ -4430,6 +4432,7 @@ void btrfs_cleanup_dirty_bgs(struct btrf
  
  		spin_unlock(&cur_trans->dirty_bgs_lock);
  		btrfs_put_block_group(cache);
@@ -217,7 +217,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	spin_unlock(&cur_trans->dirty_bgs_lock);
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -2611,6 +2611,7 @@ static void cleanup_ref_head_accounting(
+@@ -2614,6 +2614,7 @@ static void cleanup_ref_head_accounting(
  	struct btrfs_fs_info *fs_info = trans->fs_info;
  	struct btrfs_delayed_ref_root *delayed_refs =
  		&trans->transaction->delayed_refs;
@@ -225,9 +225,9 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  	if (head->total_ref_mod < 0) {
  		struct btrfs_space_info *space_info;
-@@ -2627,16 +2628,24 @@ static void cleanup_ref_head_accounting(
- 		percpu_counter_add(&space_info->total_bytes_pinned,
- 				   -head->num_bytes);
+@@ -2631,16 +2632,24 @@ static void cleanup_ref_head_accounting(
+ 				   -head->num_bytes,
+ 				   BTRFS_TOTAL_BYTES_PINNED_BATCH);
  
 +		/*
 +		 * We had csum deletions accounted for in our delayed refs rsv,
@@ -250,7 +250,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  }
  
  static int cleanup_ref_head(struct btrfs_trans_handle *trans,
-@@ -3748,6 +3757,8 @@ again:
+@@ -3752,6 +3761,8 @@ again:
  	 */
  	mutex_lock(&trans->transaction->cache_write_mutex);
  	while (!list_empty(&dirty)) {
@@ -259,7 +259,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		cache = list_first_entry(&dirty,
  					 struct btrfs_block_group_cache,
  					 dirty_list);
-@@ -3819,6 +3830,7 @@ again:
+@@ -3823,6 +3834,7 @@ again:
  					list_add_tail(&cache->dirty_list,
  						      &cur_trans->dirty_bgs);
  					btrfs_get_block_group(cache);
@@ -267,7 +267,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  				}
  				spin_unlock(&cur_trans->dirty_bgs_lock);
  			} else if (ret) {
-@@ -3829,6 +3841,8 @@ again:
+@@ -3833,6 +3845,8 @@ again:
  		/* if its not on the io list, we need to put the block group */
  		if (should_put)
  			btrfs_put_block_group(cache);
@@ -276,7 +276,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  		if (ret)
  			break;
-@@ -3977,6 +3991,7 @@ int btrfs_write_dirty_block_groups(struc
+@@ -3981,6 +3995,7 @@ int btrfs_write_dirty_block_groups(struc
  		/* if its not on the io list, we need to put the block group */
  		if (should_put)
  			btrfs_put_block_group(cache);
@@ -284,7 +284,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		spin_lock(&cur_trans->dirty_bgs_lock);
  	}
  	spin_unlock(&cur_trans->dirty_bgs_lock);
-@@ -5499,6 +5514,90 @@ int btrfs_cond_migrate_bytes(struct btrf
+@@ -5527,6 +5542,90 @@ int btrfs_cond_migrate_bytes(struct btrf
  	return 0;
  }
  
@@ -375,7 +375,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  /*
   * This is for space we already have accounted in space_info->bytes_may_use, so
   * basically when we're returning space from block_rsv's.
-@@ -5829,6 +5928,31 @@ int btrfs_inode_rsv_refill(struct btrfs_
+@@ -5856,6 +5955,31 @@ int btrfs_inode_rsv_refill(struct btrfs_
  	return ret;
  }
  
@@ -407,7 +407,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  /**
   * btrfs_inode_rsv_release - release any excessive reservation.
   * @inode - the inode we need to release from.
-@@ -5843,7 +5967,6 @@ int btrfs_inode_rsv_refill(struct btrfs_
+@@ -5870,7 +5994,6 @@ int btrfs_inode_rsv_refill(struct btrfs_
  void btrfs_inode_rsv_release(struct btrfs_inode *inode, bool qgroup_free)
  {
  	struct btrfs_fs_info *fs_info = inode->root->fs_info;
@@ -415,7 +415,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	struct btrfs_block_rsv *block_rsv = &inode->block_rsv;
  	u64 released = 0;
  	u64 qgroup_to_release = 0;
-@@ -5853,8 +5976,8 @@ void btrfs_inode_rsv_release(struct btrf
+@@ -5880,8 +6003,8 @@ void btrfs_inode_rsv_release(struct btrf
  	 * are releasing 0 bytes, and then we'll just get the reservation over
  	 * the size free'd.
  	 */
@@ -426,7 +426,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	if (released > 0)
  		trace_btrfs_space_reservation(fs_info, "delalloc",
  					      btrfs_ino(inode), released, 0);
-@@ -5865,16 +5988,26 @@ void btrfs_inode_rsv_release(struct btrf
+@@ -5892,16 +6015,26 @@ void btrfs_inode_rsv_release(struct btrf
  						   qgroup_to_release);
  }
  
@@ -460,7 +460,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  }
  
  static void update_global_block_rsv(struct btrfs_fs_info *fs_info)
-@@ -5939,9 +6072,10 @@ static void init_global_block_rsv(struct
+@@ -5966,9 +6099,10 @@ static void init_global_block_rsv(struct
  	fs_info->trans_block_rsv.space_info = space_info;
  	fs_info->empty_block_rsv.space_info = space_info;
  	fs_info->delayed_block_rsv.space_info = space_info;
@@ -473,7 +473,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	fs_info->dev_root->block_rsv = &fs_info->global_block_rsv;
  	fs_info->tree_root->block_rsv = &fs_info->global_block_rsv;
  	if (fs_info->quota_root)
-@@ -5961,6 +6095,33 @@ static void release_global_block_rsv(str
+@@ -5988,6 +6122,33 @@ static void release_global_block_rsv(str
  	WARN_ON(fs_info->chunk_block_rsv.reserved > 0);
  	WARN_ON(fs_info->delayed_block_rsv.size > 0);
  	WARN_ON(fs_info->delayed_block_rsv.reserved > 0);
@@ -507,7 +507,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  }
  
  void btrfs_trans_release_metadata(struct btrfs_trans_handle *trans,
-@@ -6277,6 +6438,7 @@ static int update_block_group(struct btr
+@@ -6304,6 +6465,7 @@ static int update_block_group(struct btr
  	u64 old_val;
  	u64 byte_in_group;
  	int factor;
@@ -515,7 +515,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  	/* block accounting for super block */
  	spin_lock(&info->delalloc_root_lock);
-@@ -6290,8 +6452,10 @@ static int update_block_group(struct btr
+@@ -6317,8 +6479,10 @@ static int update_block_group(struct btr
  
  	while (total) {
  		cache = btrfs_lookup_block_group(info, bytenr);
@@ -528,7 +528,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		factor = btrfs_bg_type_to_factor(cache->flags);
  
  		/*
-@@ -6348,7 +6512,8 @@ static int update_block_group(struct btr
+@@ -6376,7 +6540,8 @@ static int update_block_group(struct btr
  		if (list_empty(&cache->dirty_list)) {
  			list_add_tail(&cache->dirty_list,
  				      &trans->transaction->dirty_bgs);
@@ -538,7 +538,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  			btrfs_get_block_group(cache);
  		}
  		spin_unlock(&trans->transaction->dirty_bgs_lock);
-@@ -6373,7 +6538,10 @@ static int update_block_group(struct btr
+@@ -6401,7 +6566,10 @@ static int update_block_group(struct btr
  		total -= num_bytes;
  		bytenr += num_bytes;
  	}
@@ -550,7 +550,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  }
  
  static u64 first_logical_byte(struct btrfs_fs_info *fs_info, u64 search_start)
-@@ -8380,7 +8548,12 @@ again:
+@@ -8403,7 +8571,12 @@ again:
  		goto again;
  	}
  
@@ -564,7 +564,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		static DEFINE_RATELIMIT_STATE(_rs,
  				DEFAULT_RATELIMIT_INTERVAL * 10,
  				/*DEFAULT_RATELIMIT_BURST*/ 1);
-@@ -10317,6 +10490,7 @@ void btrfs_create_pending_block_groups(s
+@@ -10340,6 +10513,7 @@ void btrfs_create_pending_block_groups(s
  		add_block_group_free_space(trans, fs_info, block_group);
  		/* already aborted the transaction if it failed. */
  next:
@@ -572,7 +572,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		list_del_init(&block_group->bg_list);
  	}
  	btrfs_trans_release_chunk_metadata(trans);
-@@ -10394,6 +10568,8 @@ int btrfs_make_block_group(struct btrfs_
+@@ -10417,6 +10591,8 @@ int btrfs_make_block_group(struct btrfs_
  	link_block_group(cache);
  
  	list_add_tail(&cache->bg_list, &trans->new_bgs);
@@ -581,7 +581,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  	set_avail_alloc_bits(fs_info, type);
  	return 0;
-@@ -10431,6 +10607,7 @@ int btrfs_remove_block_group(struct btrf
+@@ -10454,6 +10630,7 @@ int btrfs_remove_block_group(struct btrf
  	int factor;
  	struct btrfs_caching_control *caching_ctl = NULL;
  	bool remove_em;
@@ -589,7 +589,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  	block_group = btrfs_lookup_block_group(fs_info, group_start);
  	BUG_ON(!block_group);
-@@ -10492,6 +10669,7 @@ int btrfs_remove_block_group(struct btrf
+@@ -10515,6 +10692,7 @@ int btrfs_remove_block_group(struct btrf
  
  	if (!list_empty(&block_group->dirty_list)) {
  		list_del_init(&block_group->dirty_list);
@@ -597,7 +597,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		btrfs_put_block_group(block_group);
  	}
  	spin_unlock(&trans->transaction->dirty_bgs_lock);
-@@ -10701,6 +10879,8 @@ int btrfs_remove_block_group(struct btrf
+@@ -10724,6 +10902,8 @@ int btrfs_remove_block_group(struct btrf
  
  	ret = btrfs_del_item(trans, root, path);
  out:

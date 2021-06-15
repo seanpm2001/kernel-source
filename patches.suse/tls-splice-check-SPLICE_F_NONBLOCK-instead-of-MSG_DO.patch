@@ -1,0 +1,68 @@
+From: Jim Ma <majinjing3@gmail.com>
+Date: Fri, 14 May 2021 11:11:02 +0800
+Subject: tls splice: check SPLICE_F_NONBLOCK instead of MSG_DONTWAIT
+Patch-mainline: v5.13-rc4
+Git-commit: 974271e5ed45cfe4daddbeb16224a2156918530e
+References: bsc#1103990 FATE#326006
+
+In tls_sw_splice_read, checkout MSG_* is inappropriate, should use
+SPLICE_*, update tls_wait_data to accept nonblock arguments instead
+of flags for recvmsg and splice.
+
+Fixes: c46234ebb4d1 ("tls: RX path for ktls")
+Signed-off-by: Jim Ma <majinjing3@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ net/tls/tls_sw.c |   11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+--- a/net/tls/tls_sw.c
++++ b/net/tls/tls_sw.c
+@@ -37,6 +37,7 @@
+ 
+ #include <linux/sched/signal.h>
+ #include <linux/module.h>
++#include <linux/splice.h>
+ #include <crypto/aead.h>
+ 
+ #include <net/strparser.h>
+@@ -1174,7 +1175,7 @@ int tls_sw_sendpage(struct sock *sk, str
+ }
+ 
+ static struct sk_buff *tls_wait_data(struct sock *sk, struct sk_psock *psock,
+-				     int flags, long timeo, int *err)
++				     bool nonblock, long timeo, int *err)
+ {
+ 	struct tls_context *tls_ctx = tls_get_ctx(sk);
+ 	struct tls_sw_context_rx *ctx = tls_sw_ctx_rx(tls_ctx);
+@@ -1199,7 +1200,7 @@ static struct sk_buff *tls_wait_data(str
+ 		if (sock_flag(sk, SOCK_DONE))
+ 			return NULL;
+ 
+-		if ((flags & MSG_DONTWAIT) || !timeo) {
++		if (nonblock || !timeo) {
+ 			*err = -EAGAIN;
+ 			return NULL;
+ 		}
+@@ -1512,7 +1513,7 @@ int tls_sw_recvmsg(struct sock *sk,
+ 		bool async = false;
+ 		int chunk = 0;
+ 
+-		skb = tls_wait_data(sk, psock, flags, timeo, &err);
++		skb = tls_wait_data(sk, psock, flags & MSG_DONTWAIT, timeo, &err);
+ 		if (!skb) {
+ 			if (psock) {
+ 				int ret = __tcp_bpf_recvmsg(sk, psock,
+@@ -1653,9 +1654,9 @@ ssize_t tls_sw_splice_read(struct socket
+ 
+ 	lock_sock(sk);
+ 
+-	timeo = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
++	timeo = sock_rcvtimeo(sk, flags & SPLICE_F_NONBLOCK);
+ 
+-	skb = tls_wait_data(sk, NULL, flags, timeo, &err);
++	skb = tls_wait_data(sk, NULL, flags & SPLICE_F_NONBLOCK, timeo, &err);
+ 	if (!skb)
+ 		goto splice_read_end;
+ 

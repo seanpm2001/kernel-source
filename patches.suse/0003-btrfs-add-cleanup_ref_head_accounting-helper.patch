@@ -18,12 +18,12 @@ Signed-off-by: Josef Bacik <jbacik@fb.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 Acked-by: Nikolay Borisov <nborisov@suse.com>
 ---
- fs/btrfs/extent-tree.c |   64 +++++++++++++++++++++++++++++--------------------
- 1 file changed, 38 insertions(+), 26 deletions(-)
+ fs/btrfs/extent-tree.c |   66 ++++++++++++++++++++++++++++---------------------
+ 1 file changed, 39 insertions(+), 27 deletions(-)
 
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -2578,6 +2578,40 @@ static int cleanup_extent_op(struct btrf
+@@ -2597,6 +2597,41 @@ static int cleanup_extent_op(struct btrf
  	return ret ? ret : 1;
  }
  
@@ -46,8 +46,9 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 +			flags = BTRFS_BLOCK_GROUP_METADATA;
 +		space_info = __find_space_info(fs_info, flags);
 +		ASSERT(space_info);
-+		percpu_counter_add(&space_info->total_bytes_pinned,
-+				   -head->num_bytes);
++		percpu_counter_add_batch(&space_info->total_bytes_pinned,
++				   -head->num_bytes,
++				   BTRFS_TOTAL_BYTES_PINNED_BATCH);
 +
 +		if (head->is_data) {
 +			spin_lock(&delayed_refs->lock);
@@ -64,7 +65,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  static int cleanup_ref_head(struct btrfs_trans_handle *trans,
  			    struct btrfs_fs_info *fs_info,
  			    struct btrfs_delayed_ref_head *head)
-@@ -2612,29 +2646,6 @@ static int cleanup_ref_head(struct btrfs
+@@ -2631,30 +2666,6 @@ static int cleanup_ref_head(struct btrfs
  	spin_unlock(&delayed_refs->lock);
  	spin_unlock(&head->lock);
  
@@ -82,8 +83,9 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 -			flags = BTRFS_BLOCK_GROUP_METADATA;
 -		space_info = __find_space_info(fs_info, flags);
 -		ASSERT(space_info);
--		percpu_counter_add(&space_info->total_bytes_pinned,
--				   	-head->num_bytes);
+-		percpu_counter_add_batch(&space_info->total_bytes_pinned,
+-				   -head->num_bytes,
+-				   BTRFS_TOTAL_BYTES_PINNED_BATCH);
 -		if (head->is_data) {
 -			spin_lock(&delayed_refs->lock);
 -			delayed_refs->pending_csums -= head->num_bytes;
@@ -94,7 +96,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	if (head->must_insert_reserved) {
  		btrfs_pin_extent(fs_info, head->bytenr,
  				 head->num_bytes, 1);
-@@ -2644,9 +2655,9 @@ static int cleanup_ref_head(struct btrfs
+@@ -2664,9 +2675,9 @@ static int cleanup_ref_head(struct btrfs
  		}
  	}
  
@@ -107,7 +109,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	btrfs_delayed_ref_unlock(head);
  	btrfs_put_delayed_ref_head(head);
  	return 0;
-@@ -7180,6 +7191,7 @@ static noinline int check_ref_cleanup(st
+@@ -7205,6 +7216,7 @@ static noinline int check_ref_cleanup(st
  	if (head->must_insert_reserved)
  		ret = 1;
  
