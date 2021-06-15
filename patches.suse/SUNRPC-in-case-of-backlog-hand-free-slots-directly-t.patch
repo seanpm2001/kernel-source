@@ -40,12 +40,12 @@ Acked-by: NeilBrown <neilb@suse.com>
 
 ---
  net/sunrpc/clnt.c |   10 ------
- net/sunrpc/xprt.c |   86 +++++++++++++++++++++++++++++++++++-------------------
- 2 files changed, 56 insertions(+), 40 deletions(-)
+ net/sunrpc/xprt.c |   84 +++++++++++++++++++++++++++++++++++-------------------
+ 2 files changed, 55 insertions(+), 39 deletions(-)
 
 --- a/net/sunrpc/clnt.c
 +++ b/net/sunrpc/clnt.c
-@@ -1630,16 +1630,6 @@ call_reserveresult(struct rpc_task *task
+@@ -1599,16 +1599,6 @@ call_reserveresult(struct rpc_task *task
  		return;
  	}
  
@@ -72,7 +72,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  
  static DEFINE_SPINLOCK(xprt_list_lock);
  static LIST_HEAD(xprt_list);
-@@ -1088,10 +1089,26 @@ static void xprt_add_backlog(struct rpc_
+@@ -1091,10 +1092,26 @@ static void xprt_add_backlog(struct rpc_
  	rpc_sleep_on(&xprt->backlog, task, NULL);
  }
  
@@ -101,7 +101,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  }
  
  static bool xprt_throttle_congested(struct rpc_xprt *xprt, struct rpc_task *task)
-@@ -1192,11 +1209,11 @@ EXPORT_SYMBOL_GPL(xprt_lock_and_alloc_sl
+@@ -1195,11 +1212,11 @@ EXPORT_SYMBOL_GPL(xprt_lock_and_alloc_sl
  void xprt_free_slot(struct rpc_xprt *xprt, struct rpc_rqst *req)
  {
  	spin_lock(&xprt->reserve_lock);
@@ -115,7 +115,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  	spin_unlock(&xprt->reserve_lock);
  }
  EXPORT_SYMBOL_GPL(xprt_free_slot);
-@@ -1272,6 +1289,10 @@ xprt_request_init(struct rpc_task *task)
+@@ -1281,6 +1298,10 @@ xprt_request_init(struct rpc_task *task)
  	struct rpc_xprt *xprt = task->tk_xprt;
  	struct rpc_rqst	*req = task->tk_rqstp;
  
@@ -126,7 +126,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  	INIT_LIST_HEAD(&req->rq_list);
  	req->rq_timeout = task->tk_client->cl_timeout->to_initval;
  	req->rq_task	= task;
-@@ -1334,8 +1355,10 @@ void xprt_retry_reserve(struct rpc_task
+@@ -1343,8 +1364,10 @@ void xprt_retry_reserve(struct rpc_task
  	struct rpc_xprt *xprt = task->tk_xprt;
  
  	task->tk_status = 0;
@@ -138,7 +138,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  
  	task->tk_timeout = 0;
  	task->tk_status = -EAGAIN;
-@@ -1362,32 +1385,35 @@ void xprt_release(struct rpc_task *task)
+@@ -1371,31 +1394,34 @@ void xprt_release(struct rpc_task *task)
  	}
  
  	xprt = req->rq_xprt;
@@ -161,7 +161,6 @@ Acked-by: NeilBrown <neilb@suse.com>
 -	spin_unlock_bh(&xprt->transport_lock);
 -	if (req->rq_buffer)
 -		xprt->ops->buf_free(task);
--	xprt_inject_disconnect(xprt);
 -	if (req->rq_cred != NULL)
 -		put_rpccred(req->rq_cred);
 -	task->tk_rqstp = NULL;
@@ -187,7 +186,6 @@ Acked-by: NeilBrown <neilb@suse.com>
 +		spin_unlock_bh(&xprt->transport_lock);
 +		if (req->rq_buffer)
 +			xprt->ops->buf_free(task);
-+		xprt_inject_disconnect(xprt);
 +		if (req->rq_cred != NULL)
 +			put_rpccred(req->rq_cred);
 +		if (req->rq_release_snd_buf)

@@ -24,7 +24,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -4958,8 +4958,10 @@ static int may_commit_transaction(struct
+@@ -4980,8 +4980,10 @@ static int may_commit_transaction(struct
  {
  	struct reserve_ticket *ticket = NULL;
  	struct btrfs_block_rsv *delayed_rsv = &fs_info->delayed_block_rsv;
@@ -36,7 +36,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  	trans = (struct btrfs_trans_handle *)current->journal_info;
  	if (trans)
-@@ -4972,14 +4974,14 @@ static int may_commit_transaction(struct
+@@ -4994,14 +4996,14 @@ static int may_commit_transaction(struct
  	else if (!list_empty(&space_info->tickets))
  		ticket = list_first_entry(&space_info->tickets,
  					  struct reserve_ticket, list);
@@ -48,13 +48,13 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 +	if (!bytes_needed)
  		return 0;
  	/* See if there is enough pinned space to make this reservation */
- 	if (percpu_counter_compare(&space_info->total_bytes_pinned,
--				   bytes) >= 0)
-+				   bytes_needed) >= 0)
+ 	if (__percpu_counter_compare(&space_info->total_bytes_pinned,
+-				   bytes,
++				   bytes_needed,
+ 				   BTRFS_TOTAL_BYTES_PINNED_BATCH) >= 0)
  		goto commit;
  
- 	/*
-@@ -4990,17 +4992,20 @@ static int may_commit_transaction(struct
+@@ -5013,18 +5015,21 @@ static int may_commit_transaction(struct
  		return -ENOSPC;
  
  	spin_lock(&delayed_rsv->lock);
@@ -72,10 +72,11 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 +		goto commit;
 +	bytes_needed -= reclaim_bytes;
  
- 	if (percpu_counter_compare(&space_info->total_bytes_pinned,
--				   bytes) < 0) {
+ 	if (__percpu_counter_compare(&space_info->total_bytes_pinned,
+-				   bytes,
++				   bytes_needed,
+ 				   BTRFS_TOTAL_BYTES_PINNED_BATCH) < 0) {
 -		spin_unlock(&delayed_rsv->lock);
-+				   bytes_needed) < 0) {
  		return -ENOSPC;
  	}
 -	spin_unlock(&delayed_rsv->lock);

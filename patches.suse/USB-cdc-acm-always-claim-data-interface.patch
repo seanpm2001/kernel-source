@@ -1,0 +1,60 @@
+From 0b2b23ca20ac9329d91bdba713028cf279423383 Mon Sep 17 00:00:00 2001
+From: Johan Hovold <johan@kernel.org>
+Date: Mon, 22 Mar 2021 16:53:17 +0100
+Subject: [PATCH] USB: cdc-acm: always claim data interface
+Git-commit: 0b2b23ca20ac9329d91bdba713028cf279423383
+References: git-fixes
+Patch-mainline: v5.12-rc6
+
+Make sure to always claim the data interface and bail out if binding
+fails.
+
+Note that the driver had a check to verify that the data interface was
+not already bound to a driver but would not detect other failures (e.g.
+if the interface was not authorised).
+
+Signed-off-by: Johan Hovold <johan@kernel.org>
+Link: https://lore.kernel.org/r/20210322155318.9837-8-johan@kernel.org
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/usb/class/cdc-acm.c |   14 ++++++--------
+ 1 file changed, 6 insertions(+), 8 deletions(-)
+
+--- a/drivers/usb/class/cdc-acm.c
++++ b/drivers/usb/class/cdc-acm.c
+@@ -1360,13 +1360,6 @@ skip_normal_probe:
+ 	if (!combined_interfaces && intf != control_interface)
+ 		return -ENODEV;
+ 
+-	if (!combined_interfaces && usb_interface_claimed(data_interface)) {
+-		/* valid in this context */
+-		dev_dbg(&intf->dev, "The data interface isn't available\n");
+-		return -EBUSY;
+-	}
+-
+-
+ 	if (data_interface->cur_altsetting->desc.bNumEndpoints < 2 ||
+ 	    control_interface->cur_altsetting->desc.bNumEndpoints == 0)
+ 		return -EINVAL;
+@@ -1549,7 +1542,11 @@ skip_countries:
+ 	acm->line.bDataBits = 8;
+ 	acm_set_line(acm, &acm->line);
+ 
+-	usb_driver_claim_interface(&acm_driver, data_interface, acm);
++	if (!acm->combined_interfaces) {
++		rv = usb_driver_claim_interface(&acm_driver, data_interface, acm);
++		if (rv)
++			goto err_remove_files;
++	}
+ 	usb_set_intfdata(data_interface, acm);
+ 
+ 	tty_dev = tty_port_register_device(&acm->port, acm_tty_driver, minor,
+@@ -1566,6 +1563,7 @@ skip_countries:
+ 
+ 	return 0;
+ alloc_fail8:
++err_remove_files:
+ 	if (acm->country_codes) {
+ 		device_remove_file(&acm->control->dev,
+ 				&dev_attr_wCountryCodes);

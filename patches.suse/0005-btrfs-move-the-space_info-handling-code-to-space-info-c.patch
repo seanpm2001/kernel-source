@@ -58,14 +58,15 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  static void add_pinned_bytes(struct btrfs_fs_info *fs_info,
  			     struct btrfs_ref *ref, int sign)
  {
-@@ -779,26 +760,11 @@ static void add_pinned_bytes(struct btrf
+@@ -779,27 +760,12 @@ static void add_pinned_bytes(struct btrf
  		flags = BTRFS_BLOCK_GROUP_DATA;
  	}
  
 -	space_info = __find_space_info(fs_info, flags);
 +	space_info = btrfs_find_space_info(fs_info, flags);
  	ASSERT(space_info);
- 	percpu_counter_add(&space_info->total_bytes_pinned, num_bytes);
+ 	percpu_counter_add_batch(&space_info->total_bytes_pinned, num_bytes,
+ 		    BTRFS_TOTAL_BYTES_PINNED_BATCH);
  }
  
 -/*
@@ -86,16 +87,16 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  /* simple helper to search for an existing data extent at a given offset */
  int btrfs_lookup_data_extent(struct btrfs_fs_info *fs_info, u64 start, u64 len)
  {
-@@ -2596,7 +2562,7 @@ void btrfs_cleanup_ref_head_accounting(s
+@@ -2597,7 +2563,7 @@ void btrfs_cleanup_ref_head_accounting(s
  			flags = BTRFS_BLOCK_GROUP_SYSTEM;
  		else
  			flags = BTRFS_BLOCK_GROUP_METADATA;
 -		space_info = __find_space_info(fs_info, flags);
 +		space_info = btrfs_find_space_info(fs_info, flags);
  		ASSERT(space_info);
- 		percpu_counter_add(&space_info->total_bytes_pinned,
- 				   -head->num_bytes);
-@@ -4035,94 +4001,6 @@ void btrfs_wait_nocow_writers(struct btr
+ 		percpu_counter_add_batch(&space_info->total_bytes_pinned,
+ 				   -head->num_bytes,
+@@ -4031,94 +3997,6 @@ void btrfs_wait_nocow_writers(struct btr
  			 TASK_UNINTERRUPTIBLE);
  }
  
@@ -190,7 +191,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  static void set_avail_alloc_bits(struct btrfs_fs_info *fs_info, u64 flags)
  {
  	u64 extra_flags = chunk_to_extended(flags) &
-@@ -4270,15 +4148,6 @@ u64 btrfs_system_alloc_profile(struct bt
+@@ -4266,15 +4144,6 @@ u64 btrfs_system_alloc_profile(struct bt
  	return get_alloc_profile(fs_info, BTRFS_BLOCK_GROUP_SYSTEM);
  }
  
@@ -206,7 +207,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  int btrfs_alloc_data_chunk_ondemand(struct btrfs_inode *inode, u64 bytes)
  {
  	struct btrfs_space_info *data_sinfo;
-@@ -4568,7 +4437,7 @@ void check_system_chunk(struct btrfs_tra
+@@ -4565,7 +4434,7 @@ void check_system_chunk(struct btrfs_tra
  	 */
  	ASSERT(mutex_is_locked(&fs_info->chunk_mutex));
  
@@ -215,7 +216,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	spin_lock(&info->lock);
  	left = info->total_bytes - btrfs_space_info_used(info, true);
  	spin_unlock(&info->lock);
-@@ -4627,7 +4496,7 @@ int btrfs_chunk_alloc(struct btrfs_trans
+@@ -4624,7 +4493,7 @@ int btrfs_chunk_alloc(struct btrfs_trans
  	if (trans->allocating_chunk)
  		return -ENOSPC;
  
@@ -224,7 +225,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	ASSERT(space_info);
  
  again:
-@@ -4857,7 +4726,7 @@ static void shrink_delalloc(struct btrfs
+@@ -4854,7 +4723,7 @@ static void shrink_delalloc(struct btrfs
  	to_reclaim = items * EXTENT_SIZE_PER_ITEM;
  
  	trans = (struct btrfs_trans_handle *)current->journal_info;
@@ -233,7 +234,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  	delalloc_bytes = percpu_counter_sum_positive(
  						&fs_info->delalloc_bytes);
-@@ -5183,7 +5052,7 @@ static void btrfs_async_reclaim_metadata
+@@ -5182,7 +5051,7 @@ static void btrfs_async_reclaim_metadata
  	u64 last_tickets_id;
  
  	fs_info = container_of(work, struct btrfs_fs_info, async_reclaim_work);
@@ -242,7 +243,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  	spin_lock(&space_info->lock);
  	to_reclaim = btrfs_calc_reclaim_metadata_size(fs_info, space_info,
-@@ -5836,7 +5705,7 @@ void btrfs_init_metadata_block_rsv(struc
+@@ -5835,7 +5704,7 @@ void btrfs_init_metadata_block_rsv(struc
  				   unsigned short type)
  {
  	btrfs_init_block_rsv(rsv, type);
@@ -251,7 +252,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  					    BTRFS_BLOCK_GROUP_METADATA);
  }
  
-@@ -6068,10 +5937,10 @@ static void init_global_block_rsv(struct
+@@ -6067,10 +5936,10 @@ static void init_global_block_rsv(struct
  {
  	struct btrfs_space_info *space_info;
  
@@ -264,7 +265,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	fs_info->global_block_rsv.space_info = space_info;
  	fs_info->trans_block_rsv.space_info = space_info;
  	fs_info->empty_block_rsv.space_info = space_info;
-@@ -6203,7 +6072,7 @@ int btrfs_subvolume_reserve_metadata(str
+@@ -6202,7 +6071,7 @@ int btrfs_subvolume_reserve_metadata(str
  	*qgroup_reserved = num_bytes;
  
  	num_bytes = btrfs_calc_trans_metadata_size(fs_info, items);
@@ -273,7 +274,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  					    BTRFS_BLOCK_GROUP_METADATA);
  	ret = btrfs_block_rsv_add(root, rsv, num_bytes,
  				  BTRFS_RESERVE_FLUSH_ALL);
-@@ -7719,7 +7588,7 @@ static noinline int find_free_extent(str
+@@ -7721,7 +7590,7 @@ static noinline int find_free_extent(str
  
  	trace_find_free_extent(fs_info, num_bytes, empty_size, flags);
  
@@ -282,7 +283,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	if (!space_info) {
  		btrfs_err(fs_info, "No space info for %llu", flags);
  		return -ENOSPC;
-@@ -8258,7 +8127,7 @@ again:
+@@ -8260,7 +8129,7 @@ again:
  		} else if (btrfs_test_opt(fs_info, ENOSPC_DEBUG)) {
  			struct btrfs_space_info *sinfo;
  
@@ -291,7 +292,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  			btrfs_err(fs_info,
  				  "allocation failed flags %llu, wanted %llu",
  				  flags, num_bytes);
-@@ -10271,7 +10140,7 @@ void btrfs_add_raid_kobjects(struct btrf
+@@ -10273,7 +10142,7 @@ void btrfs_add_raid_kobjects(struct btrf
  	spin_unlock(&fs_info->pending_raid_kobjs_lock);
  
  	list_for_each_entry(rkobj, &list, list) {
@@ -300,7 +301,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		index = __get_raid_index(rkobj->flags);
  
  		ret = kobject_add(&rkobj->kobj, &space_info->kobj,
-@@ -10542,9 +10411,9 @@ int btrfs_read_block_groups(struct btrfs
+@@ -10544,9 +10413,9 @@ int btrfs_read_block_groups(struct btrfs
  		}
  
  		trace_btrfs_add_block_group(info, cache, 0);
@@ -313,7 +314,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  		cache->space_info = space_info;
  
-@@ -10686,7 +10555,7 @@ int btrfs_make_block_group(struct btrfs_
+@@ -10688,7 +10557,7 @@ int btrfs_make_block_group(struct btrfs_
  	 * assigned to our block group. We want our bg to be added to the rbtree
  	 * with its ->space_info set.
  	 */
@@ -322,7 +323,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	ASSERT(cache->space_info);
  
  	ret = btrfs_add_block_group_cache(fs_info, cache);
-@@ -10701,7 +10570,7 @@ int btrfs_make_block_group(struct btrfs_
+@@ -10703,7 +10572,7 @@ int btrfs_make_block_group(struct btrfs_
  	 * the rbtree, update the space info's counters.
  	 */
  	trace_btrfs_add_block_group(fs_info, cache, 1);
@@ -331,7 +332,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  				cache->bytes_super, &cache->space_info);
  	update_global_block_rsv(fs_info);
  
-@@ -11236,43 +11105,6 @@ next:
+@@ -11239,43 +11108,6 @@ next:
  	spin_unlock(&fs_info->unused_bgs_lock);
  }
  

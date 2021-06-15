@@ -16,15 +16,15 @@ Acked-by: NeilBrown <neilb@suse.com>
 
 ---
  include/linux/sunrpc/xprt.h     |    2 +
- net/sunrpc/xprt.c               |   76 +++++++++++++++++++---------------------
+ net/sunrpc/xprt.c               |   74 +++++++++++++++++++---------------------
  net/sunrpc/xprtrdma/transport.c |   10 +++--
  net/sunrpc/xprtrdma/verbs.c     |   24 ++++++++++++
  net/sunrpc/xprtrdma/xprt_rdma.h |    1 
- 5 files changed, 70 insertions(+), 43 deletions(-)
+ 5 files changed, 69 insertions(+), 42 deletions(-)
 
 --- a/include/linux/sunrpc/xprt.h
 +++ b/include/linux/sunrpc/xprt.h
-@@ -349,6 +349,8 @@ struct rpc_xprt *	xprt_alloc(struct net
+@@ -344,6 +344,8 @@ struct rpc_xprt *	xprt_alloc(struct net
  				unsigned int num_prealloc,
  				unsigned int max_req);
  void			xprt_free(struct rpc_xprt *);
@@ -35,7 +35,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  {
 --- a/net/sunrpc/xprt.c
 +++ b/net/sunrpc/xprt.c
-@@ -1083,11 +1083,18 @@ void xprt_transmit(struct rpc_task *task
+@@ -1086,11 +1086,18 @@ void xprt_transmit(struct rpc_task *task
  	}
  }
  
@@ -56,7 +56,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  
  static bool __xprt_set_rq(struct rpc_task *task, void *data)
  {
-@@ -1095,14 +1102,13 @@ static bool __xprt_set_rq(struct rpc_tas
+@@ -1098,14 +1105,13 @@ static bool __xprt_set_rq(struct rpc_tas
  
  	if (task->tk_rqstp == NULL) {
  		memset(req, 0, sizeof(*req));	/* mark unused */
@@ -72,7 +72,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  {
  	if (rpc_wake_up_first(&xprt->backlog, __xprt_set_rq, req) == NULL) {
  		clear_bit(XPRT_CONGESTED, &xprt->state);
-@@ -1110,6 +1116,7 @@ static bool xprt_wake_up_backlog(struct
+@@ -1113,6 +1119,7 @@ static bool xprt_wake_up_backlog(struct
  	}
  	return true;
  }
@@ -80,7 +80,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  
  static bool xprt_throttle_congested(struct rpc_xprt *xprt, struct rpc_task *task)
  {
-@@ -1119,7 +1126,7 @@ static bool xprt_throttle_congested(stru
+@@ -1122,7 +1129,7 @@ static bool xprt_throttle_congested(stru
  		goto out;
  	spin_lock(&xprt->reserve_lock);
  	if (test_bit(XPRT_CONGESTED, &xprt->state)) {
@@ -89,7 +89,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  		ret = true;
  	}
  	spin_unlock(&xprt->reserve_lock);
-@@ -1289,10 +1296,6 @@ xprt_request_init(struct rpc_task *task)
+@@ -1298,10 +1305,6 @@ xprt_request_init(struct rpc_task *task)
  	struct rpc_xprt *xprt = task->tk_xprt;
  	struct rpc_rqst	*req = task->tk_rqstp;
  
@@ -100,7 +100,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  	INIT_LIST_HEAD(&req->rq_list);
  	req->rq_timeout = task->tk_client->cl_timeout->to_initval;
  	req->rq_task	= task;
-@@ -1355,10 +1358,8 @@ void xprt_retry_reserve(struct rpc_task
+@@ -1364,10 +1367,8 @@ void xprt_retry_reserve(struct rpc_task
  	struct rpc_xprt *xprt = task->tk_xprt;
  
  	task->tk_status = 0;
@@ -112,7 +112,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  
  	task->tk_timeout = 0;
  	task->tk_status = -EAGAIN;
-@@ -1385,33 +1386,30 @@ void xprt_release(struct rpc_task *task)
+@@ -1394,32 +1395,29 @@ void xprt_release(struct rpc_task *task)
  	}
  
  	xprt = req->rq_xprt;
@@ -136,7 +136,6 @@ Acked-by: NeilBrown <neilb@suse.com>
 -		spin_unlock_bh(&xprt->transport_lock);
 -		if (req->rq_buffer)
 -			xprt->ops->buf_free(task);
--		xprt_inject_disconnect(xprt);
 -		if (req->rq_cred != NULL)
 -			put_rpccred(req->rq_cred);
 -		if (req->rq_release_snd_buf)
@@ -162,7 +161,6 @@ Acked-by: NeilBrown <neilb@suse.com>
 +	spin_unlock_bh(&xprt->transport_lock);
 +	if (req->rq_buffer)
 +		xprt->ops->buf_free(task);
-+	xprt_inject_disconnect(xprt);
 +	if (req->rq_cred != NULL)
 +		put_rpccred(req->rq_cred);
 +	if (req->rq_release_snd_buf)
