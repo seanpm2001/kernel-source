@@ -1,0 +1,97 @@
+From: Jan Kara <jack@suse.cz>
+Subject: blk-wbt: Fix missed wakeup
+References: bsc#1186627
+Patch-mainline: Never, upstream has reworked the code
+
+When multiple __wbt_wait() calls race with end of IO handled by wbt_rqw_done()
+a missed wakeup (and consequently infinite hang in __wbt_wait()) can happen
+like:
+
+CPU1 (waiter1)		CPU2 (waiter2)		CPU3 (waker)
+__wbt_wait()		__wbt_wait
+  blocks in io_schedule()
+			  has_sleeper = wq_has_sleeper();
+			    -> true as waiter1 is already queued
+					        __wbt_done()
+						  wbt_rqw_done()
+						    wakes up waiter1
+  ... wakes up
+  if (data.got_token)
+    break; (got_token set by wakeup function)
+blk_mq_get_request()
+  - returns NULL
+if (unlikely(!rq)) {
+  __wbt_done();
+  ...
+			  prepare_to_wait_exclusive(...);
+			    goes to sleep as has_sleeper is true
+
+Now there's nobody to wake up waiter2 and all further process entering
+__wbt_wait() will go to sleep as well behind waiter2.
+
+Fix the problem by updating has_sleeper when adding ourselves to the wait
+queue based on current situation. That way forward progress is guaranteed at
+least for one process.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+
+---
+ block/blk-wbt.c      |    3 ++-
+ include/linux/wait.h |    1 +
+ kernel/sched/wait.c  |   14 ++++++++++++--
+ 3 files changed, 15 insertions(+), 3 deletions(-)
+
+--- a/block/blk-wbt.c
++++ b/block/blk-wbt.c
+@@ -603,7 +603,8 @@ static void __wbt_wait(struct rq_wb *rwb
+ 			atomic_inc_below(&rqw->inflight, get_limit(rwb, rw)))
+ 		return;
+ 
+-	prepare_to_wait_exclusive(&rqw->wait, &data.wq, TASK_UNINTERRUPTIBLE);
++	has_sleeper = !prepare_to_wait_exclusive_first(&rqw->wait, &data.wq,
++						       TASK_UNINTERRUPTIBLE);
+ 	do {
+ 		set_current_state(TASK_UNINTERRUPTIBLE);
+ 		if (data.got_token)
+--- a/include/linux/wait.h
++++ b/include/linux/wait.h
+@@ -982,6 +982,7 @@ do {										\
+  */
+ void prepare_to_wait(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry, int state);
+ void prepare_to_wait_exclusive(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry, int state);
++bool prepare_to_wait_exclusive_first(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry, int state);
+ long prepare_to_wait_event(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry, int state);
+ void finish_wait(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry);
+ long wait_woken(struct wait_queue_entry *wq_entry, unsigned mode, long timeout);
+--- a/kernel/sched/wait.c
++++ b/kernel/sched/wait.c
+@@ -239,17 +239,27 @@ prepare_to_wait(struct wait_queue_head *
+ }
+ EXPORT_SYMBOL(prepare_to_wait);
+ 
+-void
+-prepare_to_wait_exclusive(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry, int state)
++bool
++prepare_to_wait_exclusive_first(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry, int state)
+ {
+ 	unsigned long flags;
++	bool ret;
+ 
+ 	wq_entry->flags |= WQ_FLAG_EXCLUSIVE;
+ 	spin_lock_irqsave(&wq_head->lock, flags);
++	ret = list_empty(&wq_head->head);
+ 	if (list_empty(&wq_entry->entry))
+ 		__add_wait_queue_entry_tail(wq_head, wq_entry);
+ 	set_current_state(state);
+ 	spin_unlock_irqrestore(&wq_head->lock, flags);
++	return ret;
++}
++EXPORT_SYMBOL(prepare_to_wait_exclusive_first);
++
++void
++prepare_to_wait_exclusive(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry, int state)
++{
++	prepare_to_wait_exclusive_first(wq_head, wq_entry, state);
+ }
+ EXPORT_SYMBOL(prepare_to_wait_exclusive);
+ 
