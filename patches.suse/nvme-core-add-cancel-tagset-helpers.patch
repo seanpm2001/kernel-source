@@ -1,0 +1,58 @@
+From: Chao Leng <lengchao@huawei.com>
+Date: Thu, 21 Jan 2021 11:32:36 +0800
+Subject: [PATCH] nvme-core: add cancel tagset helpers
+Patch-mainline: v5.12-rc1
+Git-commit: 2547906982e2e6a0d42f8957f55af5bb51a7e55f
+References: bsc#1181161
+
+Add nvme_cancel_tagset and nvme_cancel_admin_tagset for tear down and
+reconnection error handling.
+
+Signed-off-by: Chao Leng <lengchao@huawei.com>
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ drivers/nvme/host/core.c | 20 ++++++++++++++++++++
+ drivers/nvme/host/nvme.h |  2 ++
+ 2 files changed, 22 insertions(+)
+
+--- a/drivers/nvme/host/core.c
++++ b/drivers/nvme/host/core.c
+@@ -333,6 +333,26 @@ void nvme_cancel_request(struct request
+ }
+ EXPORT_SYMBOL_GPL(nvme_cancel_request);
+ 
++void nvme_cancel_tagset(struct nvme_ctrl *ctrl)
++{
++	if (ctrl->tagset) {
++		blk_mq_tagset_busy_iter(ctrl->tagset,
++				nvme_cancel_request, ctrl);
++		blk_mq_tagset_wait_completed_request(ctrl->tagset);
++	}
++}
++EXPORT_SYMBOL_GPL(nvme_cancel_tagset);
++
++void nvme_cancel_admin_tagset(struct nvme_ctrl *ctrl)
++{
++	if (ctrl->admin_tagset) {
++		blk_mq_tagset_busy_iter(ctrl->admin_tagset,
++				nvme_cancel_request, ctrl);
++		blk_mq_tagset_wait_completed_request(ctrl->admin_tagset);
++	}
++}
++EXPORT_SYMBOL_GPL(nvme_cancel_admin_tagset);
++
+ bool nvme_change_ctrl_state(struct nvme_ctrl *ctrl,
+ 		enum nvme_ctrl_state new_state)
+ {
+--- a/drivers/nvme/host/nvme.h
++++ b/drivers/nvme/host/nvme.h
+@@ -428,6 +428,8 @@ static inline void nvme_put_ctrl(struct
+ 
+ void nvme_complete_rq(struct request *req);
+ void nvme_cancel_request(struct request *req, void *data, bool reserved);
++void nvme_cancel_tagset(struct nvme_ctrl *ctrl);
++void nvme_cancel_admin_tagset(struct nvme_ctrl *ctrl);
+ bool nvme_change_ctrl_state(struct nvme_ctrl *ctrl,
+ 		enum nvme_ctrl_state new_state);
+ int nvme_disable_ctrl(struct nvme_ctrl *ctrl, u64 cap);
