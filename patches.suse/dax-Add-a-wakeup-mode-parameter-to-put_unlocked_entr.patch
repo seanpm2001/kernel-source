@@ -1,0 +1,91 @@
+From 4c3d043d271d4d629aa2328796cdfc96b37d3b3c Mon Sep 17 00:00:00 2001
+From: Vivek Goyal <vgoyal@redhat.com>
+Date: Wed, 28 Apr 2021 15:03:13 -0400
+Subject: [PATCH] dax: Add a wakeup mode parameter to put_unlocked_entry()
+Git-commit: 4c3d043d271d4d629aa2328796cdfc96b37d3b3c
+Patch-mainline: v5.13-rc2
+References: bsc#1187411
+
+As of now put_unlocked_entry() always wakes up next waiter. In next
+patches we want to wake up all waiters at one callsite. Hence, add a
+parameter to the function.
+
+This patch does not introduce any change of behavior.
+
+Reviewed-by: Greg Kurz <groug@kaod.org>
+Reviewed-by: Jan Kara <jack@suse.cz>
+Suggested-by: Dan Williams <dan.j.williams@intel.com>
+Signed-off-by: Vivek Goyal <vgoyal@redhat.com>
+Link: https://lore.kernel.org/r/20210428190314.1865312-3-vgoyal@redhat.com
+Signed-off-by: Dan Williams <dan.j.williams@intel.com>
+Acked-by: Jan Kara <jack@suse.cz>
+
+---
+ fs/dax.c |   16 +++++++++-------
+ 1 file changed, 9 insertions(+), 7 deletions(-)
+
+--- a/fs/dax.c
++++ b/fs/dax.c
+@@ -328,13 +328,14 @@ static void put_locked_mapping_entry(str
+  * get_unlocked_mapping_entry() and which we didn't lock in the end.
+  */
+ static void put_unlocked_mapping_entry(struct address_space *mapping,
+-				       pgoff_t index, void *entry)
++				       pgoff_t index, void *entry,
++				       enum dax_wake_mode mode)
+ {
+ 	if (!entry)
+ 		return;
+ 
+ 	/* We have to wake up next waiter for the radix tree entry lock */
+-	dax_wake_mapping_entry_waiter(mapping, index, entry, WAKE_NEXT);
++	dax_wake_mapping_entry_waiter(mapping, index, entry, mode);
+ }
+ 
+ static unsigned long dax_entry_size(void *entry)
+@@ -541,7 +542,7 @@ restart:
+ 		if (size_flag & RADIX_DAX_PMD) {
+ 			if (dax_is_pte_entry(entry)) {
+ 				put_unlocked_mapping_entry(mapping, index,
+-						entry);
++						entry, WAKE_NEXT);
+ 				entry = ERR_PTR(-EEXIST);
+ 				goto out_unlock;
+ 			}
+@@ -715,7 +716,8 @@ struct page *dax_layout_busy_page(struct
+ 				if (i + 1 >= pagevec_count(&pvec))
+ 					nr_pages = 1UL << dax_radix_order(entry);
+ 			}
+-			put_unlocked_mapping_entry(mapping, index, entry);
++			put_unlocked_mapping_entry(mapping, index, entry,
++						   WAKE_NEXT);
+ 			spin_unlock_irq(&mapping->tree_lock);
+ 			if (page)
+ 				break;
+@@ -758,7 +760,7 @@ static int __dax_invalidate_mapping_entr
+ 	mapping->nrexceptional--;
+ 	ret = 1;
+ out:
+-	put_unlocked_mapping_entry(mapping, index, entry);
++	put_unlocked_mapping_entry(mapping, index, entry, WAKE_NEXT);
+ 	spin_unlock_irq(&mapping->tree_lock);
+ 	return ret;
+ }
+@@ -1029,7 +1031,7 @@ static int dax_writeback_one(struct dax_
+ 	return ret;
+ 
+  put_unlocked:
+-	put_unlocked_mapping_entry(mapping, index, entry2);
++	put_unlocked_mapping_entry(mapping, index, entry2, WAKE_NEXT);
+ 	spin_unlock_irq(&mapping->tree_lock);
+ 	return ret;
+ }
+@@ -1815,7 +1817,7 @@ static int dax_insert_pfn_mkwrite(struct
+ 	if (!entry ||
+ 	    (pe_size == PE_SIZE_PTE && !dax_is_pte_entry(entry)) ||
+ 	    (pe_size == PE_SIZE_PMD && !dax_is_pmd_entry(entry))) {
+-		put_unlocked_mapping_entry(mapping, index, entry);
++		put_unlocked_mapping_entry(mapping, index, entry, WAKE_NEXT);
+ 		spin_unlock_irq(&mapping->tree_lock);
+ 		trace_dax_insert_pfn_mkwrite_no_entry(mapping->host, vmf,
+ 						      VM_FAULT_NOPAGE);
