@@ -1,0 +1,61 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:24:56 -0500
+Subject: btrfs: convert some BUG_ON()'s to ASSERT()'s in do_relocation
+Git-commit: ffe30dd892ad37f1193ae639ce7e2ad142a62721
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+A few of these are checking for correctness, and won't be triggered by
+corrupted file systems, so convert them to ASSERT() instead of BUG_ON()
+and add a comment explaining their existence.
+
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |   18 +++++++++++++++---
+ 1 file changed, 15 insertions(+), 3 deletions(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -2864,7 +2864,11 @@ static int do_relocation(struct btrfs_tr
+ 	int ret;
+ 	int err = 0;
+ 
+-	BUG_ON(lowest && node->eb);
++	/*
++	 * If we are lowest then this is the first time we're processing this
++	 * block, and thus shouldn't have an eb associated with it yet.
++	 */
++	ASSERT(!lowest || !node->eb);
+ 
+ 	path->lowest_level = node->level + 1;
+ 	rc->backref_cache.path[node->level] = node;
+@@ -2960,7 +2964,11 @@ static int do_relocation(struct btrfs_tr
+ 				err = ret;
+ 				goto next;
+ 			}
+-			BUG_ON(node->eb != eb);
++			/*
++			 * We've just COWed this block, it should have updated
++			 * the correct backref node entry.
++			 */
++			ASSERT(node->eb == eb);
+ 		} else {
+ 			btrfs_set_node_blockptr(upper->eb, slot,
+ 						node->eb->start);
+@@ -2996,7 +3004,11 @@ next:
+ 	}
+ 
+ 	path->lowest_level = 0;
+-	BUG_ON(err == -ENOSPC);
++	/*
++	 * We should have allocated all of our space in the block rsv and thus
++	 * shouldn't ENOSPC.
++	 */
++	ASSERT(ret != -ENOSPC);
+ 	return err;
+ }
+ 
