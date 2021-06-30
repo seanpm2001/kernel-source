@@ -20,9 +20,9 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 
 --- a/fs/btrfs/relocation.c
 +++ b/fs/btrfs/relocation.c
-@@ -2864,7 +2864,11 @@ static int do_relocation(struct btrfs_tr
- 	int ret;
- 	int err = 0;
+@@ -2865,7 +2865,11 @@ static int do_relocation(struct btrfs_tr
+ 	int slot;
+ 	int ret = 0;
  
 -	BUG_ON(lowest && node->eb);
 +	/*
@@ -33,10 +33,10 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  	path->lowest_level = node->level + 1;
  	rc->backref_cache.path[node->level] = node;
-@@ -2960,7 +2964,11 @@ static int do_relocation(struct btrfs_tr
- 				err = ret;
+@@ -2961,7 +2965,11 @@ static int do_relocation(struct btrfs_tr
+ 			free_extent_buffer(eb);
+ 			if (ret < 0)
  				goto next;
- 			}
 -			BUG_ON(node->eb != eb);
 +			/*
 +			 * We've just COWed this block, it should have updated
@@ -46,16 +46,16 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		} else {
  			btrfs_set_node_blockptr(upper->eb, slot,
  						node->eb->start);
-@@ -2996,7 +3004,11 @@ next:
+@@ -2997,7 +3005,11 @@ next:
  	}
  
  	path->lowest_level = 0;
--	BUG_ON(err == -ENOSPC);
+-	BUG_ON(ret == -ENOSPC);
 +	/*
 +	 * We should have allocated all of our space in the block rsv and thus
 +	 * shouldn't ENOSPC.
 +	 */
 +	ASSERT(ret != -ENOSPC);
- 	return err;
+ 	return ret;
  }
  
