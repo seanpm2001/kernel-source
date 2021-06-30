@@ -1,0 +1,57 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:15 -0500
+Subject: btrfs: validate root::reloc_root after recording root in trans
+Git-commit: 39200e59089e260af8edb9feeb69c54ba51699c5
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+If we fail to setup a root->reloc_root in a different thread that path
+will error out, however it still leaves root->reloc_root NULL but would
+still appear set up in the transaction.  Subsequent calls to
+btrfs_record_root_in_transaction would succeed without attempting to
+create the reloc root, as the transid has already been updated.
+
+Handle this case by making sure we have a root->reloc_root set after a
+btrfs_record_root_in_transaction call so we don't end up dereferencing a
+NULL pointer.
+
+Reported-by: Zygo Blaxell <ce3g8jdj@umail.furryterror.org>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |   15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -2764,6 +2764,13 @@ struct btrfs_root *select_reloc_root(str
+ 			return ERR_PTR(ret);
+ 		root = root->reloc_root;
+ 
++		/*
++		 * We could have raced with another thread which failed, so
++		 * root->reloc_root may not be set, return ENOENT in this case.
++		 */
++		if (!root)
++			return ERR_PTR(-ENOENT);
++
+ 		if (next->new_bytenr != root->node->start) {
+ 			/*
+ 			 * We just created the reloc root, so we shouldn't have
+@@ -3287,6 +3294,14 @@ static int relocate_tree_block(struct bt
+ 			ret = btrfs_record_root_in_trans(trans, root);
+ 			if (ret)
+ 				goto out;
++			/*
++			 * Another thread could have failed, need to check if we
++			 * have reloc_root actually set.
++			 */
++			if (!root->reloc_root) {
++				ret = -ENOENT;
++				goto out;
++			}
+ 			root = root->reloc_root;
+ 			node->new_bytenr = root->node->start;
+ 			node->root = root;
