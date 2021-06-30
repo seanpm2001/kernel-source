@@ -1,0 +1,54 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:24:57 -0500
+Subject: btrfs: convert BUG_ON()'s in relocate_tree_block
+Git-commit: 1c7bfa159fe796f0f6d310b02215d765f066b9c2
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+We have a couple of BUG_ON()'s in relocate_tree_block() that can be
+tripped if we have file system corruption.  Convert these to ASSERT()'s
+so developers still get yelled at when they break the backref code, but
+error out nicely for users so the whole box doesn't go down.
+
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |   24 ++++++++++++++++++++++--
+ 1 file changed, 22 insertions(+), 2 deletions(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -3167,8 +3167,28 @@ static int relocate_tree_block(struct bt
+ 
+ 	if (root) {
+ 		if (test_bit(BTRFS_ROOT_REF_COWS, &root->state)) {
+-			BUG_ON(node->new_bytenr);
+-			BUG_ON(!list_empty(&node->list));
++			/*
++			 * This block was the root block of a root, and this is
++			 * the first time we're processing the block and thus it
++			 * should not have had the ->new_bytenr modified and
++			 * should have not been included on the changed list.
++			 *
++			 * However in the case of corruption we could have
++			 * multiple refs pointing to the same block improperly,
++			 * and thus we would trip over these checks.  ASSERT()
++			 * for the developer case, because it could indicate a
++			 * bug in the backref code, however error out for a
++			 * normal user in the case of corruption.
++			 */
++			ASSERT(node->new_bytenr == 0);
++			ASSERT(list_empty(&node->list));
++			if (node->new_bytenr || !list_empty(&node->list)) {
++				btrfs_err(root->fs_info,
++				  "bytenr %llu has improper references to it",
++					  node->bytenr);
++				ret = -EUCLEAN;
++				goto out;
++			}
+ 			btrfs_record_root_in_trans(trans, root);
+ 			root = root->reloc_root;
+ 			node->new_bytenr = root->node->start;
