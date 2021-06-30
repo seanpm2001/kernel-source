@@ -1,0 +1,33 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:07 -0500
+Subject: btrfs: handle btrfs_record_root_in_trans failure in
+ relocate_tree_block
+Git-commit: d18c7bd95c3d1adf5de385acc8c0bdb64b1a8d68
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+btrfs_record_root_in_trans will return errors in the future, so handle
+the error properly in relocate_tree_block.
+
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -3260,7 +3260,9 @@ static int relocate_tree_block(struct bt
+ 				ret = -EUCLEAN;
+ 				goto out;
+ 			}
+-			btrfs_record_root_in_trans(trans, root);
++			ret = btrfs_record_root_in_trans(trans, root);
++			if (ret)
++				goto out;
+ 			root = root->reloc_root;
+ 			node->new_bytenr = root->node->start;
+ 			node->root = root;
