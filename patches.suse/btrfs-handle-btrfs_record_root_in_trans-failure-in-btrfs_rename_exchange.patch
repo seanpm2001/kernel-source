@@ -1,0 +1,39 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:02 -0500
+Subject: btrfs: handle btrfs_record_root_in_trans failure in
+ btrfs_rename_exchange
+Git-commit: 00aa8e87c9dc63bf145bee00d890198cf7c45a24
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+btrfs_record_root_in_trans will return errors in the future, so handle
+the error properly in btrfs_rename_exchange.
+
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/inode.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
+index 41517d14c950..179ffb9529d4 100644
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -9108,8 +9108,11 @@ static int btrfs_rename_exchange(struct inode *old_dir,
+ 		goto out_notrans;
+ 	}
+ 
+-	if (dest != root)
+-		btrfs_record_root_in_trans(trans, dest);
++	if (dest != root) {
++		ret = btrfs_record_root_in_trans(trans, dest);
++		if (ret)
++			goto out_fail;
++	}
+ 
+ 	/*
+ 	 * We need to find a free sequence number both in the source and
+
