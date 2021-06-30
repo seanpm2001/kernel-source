@@ -1,0 +1,99 @@
+From: Filipe Manana <fdmanana@suse.com>
+Date: Mon, 18 Feb 2019 16:57:26 +0000
+Subject: Btrfs: add missing error handling after doing leaf/node binary search
+Git-commit: cbca7d59fea4e81ee3bf724cf20018f96d53ccea
+Patch-mainline: v5.1-rc1
+References: bsc#1187833
+
+The function map_private_extent_buffer() can return an -EINVAL error, and
+it is called by generic_bin_search() which will return back the error. The
+btrfs_bin_search() function in turn calls generic_bin_search() and the
+key_search() function calls btrfs_bin_search(), so both can return the
+-EINVAL error coming from the map_private_extent_buffer() function. Some
+callers of these functions were ignoring that these functions can return
+an error, so fix them to deal with error return values.
+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Filipe Manana <fdmanana@suse.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/ctree.c      |  6 ++++++
+ fs/btrfs/relocation.c | 10 ++++++++++
+ fs/btrfs/tree-log.c   |  2 ++
+ 3 files changed, 18 insertions(+)
+
+diff --git a/fs/btrfs/ctree.c b/fs/btrfs/ctree.c
+index 4fac5cc2e648..399b9c5182d5 100644
+--- a/fs/btrfs/ctree.c
++++ b/fs/btrfs/ctree.c
+@@ -3020,6 +3020,8 @@ int btrfs_search_old_slot(struct btrfs_root *root, const struct btrfs_key *key,
+ 		 */
+ 		prev_cmp = -1;
+ 		ret = key_search(b, key, level, &prev_cmp, &slot);
++		if (ret < 0)
++			goto done;
+ 
+ 		if (level != 0) {
+ 			int dec = 0;
+@@ -5171,6 +5173,10 @@ int btrfs_search_forward(struct btrfs_root *root, struct btrfs_key *min_key,
+ 		nritems = btrfs_header_nritems(cur);
+ 		level = btrfs_header_level(cur);
+ 		sret = btrfs_bin_search(cur, min_key, level, &slot);
++		if (sret < 0) {
++			ret = sret;
++			goto out;
++		}
+ 
+ 		/* at the lowest level, we're done, setup the path and exit */
+ 		if (level == path->lowest_level) {
+diff --git a/fs/btrfs/relocation.c b/fs/btrfs/relocation.c
+index 70b85a593b7b..ddf028509931 100644
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -1806,6 +1806,8 @@ int replace_path(struct btrfs_trans_handle *trans, struct reloc_control *rc,
+ 		BUG_ON(level < lowest_level);
+ 
+ 		ret = btrfs_bin_search(parent, &key, level, &slot);
++		if (ret < 0)
++			break;
+ 		if (ret && slot > 0)
+ 			slot--;
+ 
+@@ -2730,6 +2732,10 @@ static int do_relocation(struct btrfs_trans_handle *trans,
+ 			if (!lowest) {
+ 				ret = btrfs_bin_search(upper->eb, key,
+ 						       upper->level, &slot);
++				if (ret < 0) {
++					err = ret;
++					goto next;
++				}
+ 				BUG_ON(ret);
+ 				bytenr = btrfs_node_blockptr(upper->eb, slot);
+ 				if (node->eb->start == bytenr)
+@@ -2765,6 +2771,10 @@ static int do_relocation(struct btrfs_trans_handle *trans,
+ 		} else {
+ 			ret = btrfs_bin_search(upper->eb, key, upper->level,
+ 					       &slot);
++			if (ret < 0) {
++				err = ret;
++				goto next;
++			}
+ 			BUG_ON(ret);
+ 		}
+ 
+diff --git a/fs/btrfs/tree-log.c b/fs/btrfs/tree-log.c
+index e76345f52beb..f06454a55e00 100644
+--- a/fs/btrfs/tree-log.c
++++ b/fs/btrfs/tree-log.c
+@@ -3767,6 +3767,8 @@ static int drop_objectid_items(struct btrfs_trans_handle *trans,
+ 		found_key.type = 0;
+ 		ret = btrfs_bin_search(path->nodes[0], &found_key, 0,
+ 				       &start_slot);
++		if (ret < 0)
++			break;
+ 
+ 		ret = btrfs_del_items(trans, log, path, start_slot,
+ 				      path->slots[0] - start_slot + 1);
+
