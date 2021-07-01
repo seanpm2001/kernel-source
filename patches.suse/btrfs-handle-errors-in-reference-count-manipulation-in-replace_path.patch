@@ -1,0 +1,66 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:24 -0500
+Subject: btrfs: handle errors in reference count manipulation in replace_path
+Git-commit: 253e258c34262c50ce2622b38d2769911a9cddfd
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+If any of the reference count manipulation stuff fails in replace_path
+we need to abort the transaction, as we've modified the blocks already.
+We can simply break at this point and everything will be cleaned up.
+
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |   20 ++++++++++++++++----
+ 1 file changed, 16 insertions(+), 4 deletions(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -2052,27 +2052,39 @@ again:
+ 		ref.skip_qgroup = true;
+ 		btrfs_init_tree_ref(&ref, level - 1, src->root_key.objectid);
+ 		ret = btrfs_inc_extent_ref(trans, src, &ref);
+-		BUG_ON(ret);
++		if (ret) {
++			btrfs_abort_transaction(trans, ret);
++			break;
++		}
+ 		btrfs_init_generic_ref(&ref, BTRFS_ADD_DELAYED_REF, new_bytenr,
+ 				       blocksize, 0);
+ 		ref.skip_qgroup = true;
+ 		btrfs_init_tree_ref(&ref, level - 1, dest->root_key.objectid);
+ 		ret = btrfs_inc_extent_ref(trans, dest, &ref);
+-		BUG_ON(ret);
++		if (ret) {
++			btrfs_abort_transaction(trans, ret);
++			break;
++		}
+ 
+ 		btrfs_init_generic_ref(&ref, BTRFS_DROP_DELAYED_REF, new_bytenr,
+ 				       blocksize, path->nodes[level]->start);
+ 		btrfs_init_tree_ref(&ref, level - 1, src->root_key.objectid);
+ 		ref.skip_qgroup = true;
+ 		ret = btrfs_free_extent(trans, src, &ref);
+-		BUG_ON(ret);
++		if (ret) {
++			btrfs_abort_transaction(trans, ret);
++			break;
++		}
+ 
+ 		btrfs_init_generic_ref(&ref, BTRFS_DROP_DELAYED_REF, old_bytenr,
+ 				       blocksize, 0);
+ 		btrfs_init_tree_ref(&ref, level - 1, dest->root_key.objectid);
+ 		ref.skip_qgroup = true;
+ 		ret = btrfs_free_extent(trans, dest, &ref);
+-		BUG_ON(ret);
++		if (ret) {
++			btrfs_abort_transaction(trans, ret);
++			break;
++		}
+ 
+ 		btrfs_unlock_up_safe(path, 0);
+ 
