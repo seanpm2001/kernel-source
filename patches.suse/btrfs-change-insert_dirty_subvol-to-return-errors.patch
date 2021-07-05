@@ -1,0 +1,56 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:17 -0500
+Subject: btrfs: change insert_dirty_subvol to return errors
+Git-commit: ac54da6c37f1eb45218e107f9c924e4d7f054e5b
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+This will be able to return errors in the future, so change it to return
+an error and handle the errors appropriately.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |   15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -2262,9 +2262,9 @@ static int find_next_key(struct btrfs_pa
+ /*
+  * Insert current subvolume into reloc_control::dirty_subvol_roots
+  */
+-static void insert_dirty_subvol(struct btrfs_trans_handle *trans,
+-				struct reloc_control *rc,
+-				struct btrfs_root *root)
++static int insert_dirty_subvol(struct btrfs_trans_handle *trans,
++			       struct reloc_control *rc,
++			       struct btrfs_root *root)
+ {
+ 	struct btrfs_root *reloc_root = root->reloc_root;
+ 	struct btrfs_root_item *reloc_root_item;
+@@ -2284,6 +2284,8 @@ static void insert_dirty_subvol(struct b
+ 		btrfs_grab_fs_root(root);
+ 		list_add_tail(&root->reloc_dirty_list, &rc->dirty_subvol_roots);
+ 	}
++
++	return 0;
+ }
+ 
+ static int clean_dirty_subvols(struct reloc_control *rc)
+@@ -2471,8 +2473,11 @@ static noinline_for_stack int merge_relo
+ out:
+ 	btrfs_free_path(path);
+ 
+-	if (err == 0)
+-		insert_dirty_subvol(trans, rc, root);
++	if (err == 0) {
++		err = insert_dirty_subvol(trans, rc, root);
++		if (err)
++			btrfs_abort_transaction(trans, err);
++	}
+ 
+ 	if (trans)
+ 		btrfs_end_transaction_throttle(trans);

@@ -1,0 +1,39 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:16 -0500
+Subject: btrfs: handle btrfs_update_reloc_root failure in commit_fs_roots
+Git-commit: 2dd8298eb3e90103f3cb36a975aee84bae66f218
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+btrfs_update_reloc_root will will return errors in the future, so handle
+the error properly in commit_fs_roots.
+
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/transaction.c |    5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/fs/btrfs/transaction.c
++++ b/fs/btrfs/transaction.c
+@@ -1242,13 +1242,16 @@ static noinline int commit_fs_roots(stru
+ 			break;
+ 		for (i = 0; i < ret; i++) {
+ 			struct btrfs_root *root = gang[i];
++			int ret2;
+ 			radix_tree_tag_clear(&fs_info->fs_roots_radix,
+ 					(unsigned long)root->root_key.objectid,
+ 					BTRFS_ROOT_TRANS_TAG);
+ 			spin_unlock(&fs_info->fs_roots_radix_lock);
+ 
+ 			btrfs_free_log(trans, root);
+-			btrfs_update_reloc_root(trans, root);
++			ret2 = btrfs_update_reloc_root(trans, root);
++			if (ret2)
++				return ret2;
+ 
+ 			btrfs_save_ino_cache(root, trans);
+ 

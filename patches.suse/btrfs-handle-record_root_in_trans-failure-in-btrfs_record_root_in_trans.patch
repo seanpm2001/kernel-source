@@ -1,0 +1,41 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:10 -0500
+Subject: btrfs: handle record_root_in_trans failure in
+ btrfs_record_root_in_trans
+Git-commit: 1409e6cc7461d091b2ef1ad16954972d4ca1c784
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+record_root_in_trans can fail currently, handle this failure properly.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/transaction.c |    6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+--- a/fs/btrfs/transaction.c
++++ b/fs/btrfs/transaction.c
+@@ -387,6 +387,7 @@ int btrfs_record_root_in_trans(struct bt
+ 			       struct btrfs_root *root)
+ {
+ 	struct btrfs_fs_info *fs_info = root->fs_info;
++	int ret;
+
+ 	if (!test_bit(BTRFS_ROOT_REF_COWS, &root->state))
+ 		return 0;
+@@ -401,10 +402,10 @@ int btrfs_record_root_in_trans(struct bt
+ 		return 0;
+
+ 	mutex_lock(&fs_info->reloc_mutex);
+-	record_root_in_trans(trans, root, 0);
++	ret = record_root_in_trans(trans, root, 0);
+ 	mutex_unlock(&fs_info->reloc_mutex);
+
+-	return 0;
++	return ret;
+ }
+
+ static inline int is_transaction_blocked(struct btrfs_transaction *trans)

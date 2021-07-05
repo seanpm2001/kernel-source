@@ -1,0 +1,55 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:33 -0500
+Subject: btrfs: do proper error handling in merge_reloc_roots
+Git-commit: 24213fa46c7080c31d79aa2e3e2f0d9480cab700
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+We have a BUG_ON() if we get an error back from btrfs_get_fs_root().
+This honestly should never fail, as at this point we have a solid
+coordination of fs root to reloc root, and these roots will all be in
+memory.  But in the name of killing BUG_ON()'s remove these and handle
+the error condition properly, ASSERT()'ing for developers.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |   25 +++++++++++++++++++++++--
+ 1 file changed, 23 insertions(+), 2 deletions(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -2654,8 +2654,29 @@ again:
+ 
+ 		root = read_fs_root(fs_info, reloc_root->root_key.offset);
+ 		if (btrfs_root_refs(&reloc_root->root_item) > 0) {
+-			BUG_ON(IS_ERR(root));
+-			BUG_ON(root->reloc_root != reloc_root);
++			if (IS_ERR(root)) {
++				/*
++				 * For recovery we read the fs roots on mount,
++				 * and if we didn't find the root then we marked
++				 * the reloc root as a garbage root.  For normal
++				 * relocation obviously the root should exist in
++				 * memory.  However there's no reason we can't
++				 * handle the error properly here just in case.
++				 */
++				ASSERT(0);
++				ret = PTR_ERR(root);
++				goto out;
++			}
++			if (root->reloc_root != reloc_root) {
++				/*
++				 * This is actually impossible without something
++				 * going really wrong (like weird race condition
++				 * or cosmic rays).
++				 */
++				ASSERT(0);
++				ret = -EINVAL;
++				goto out;
++			}
+ 			ret = merge_reloc_root(rc, root);
+ 			if (ret) {
+ 				if (list_empty(&reloc_root->root_list))
