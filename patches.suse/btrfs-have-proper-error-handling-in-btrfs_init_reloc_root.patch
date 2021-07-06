@@ -1,0 +1,35 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:13 -0500
+Subject: btrfs: have proper error handling in btrfs_init_reloc_root
+Git-commit: 00bb36a0e76ab7e94bdd70d561baf25f9bc1415d
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+create_reloc_root will return errors in the future, and __add_reloc_root
+can return ENOMEM or EEXIST, so handle these errors properly.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+[ add comment ]
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |    5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -1537,9 +1537,12 @@ int btrfs_init_reloc_root(struct btrfs_t
+ 	reloc_root = create_reloc_root(trans, root, root->root_key.objectid);
+ 	if (clear_rsv)
+ 		trans->block_rsv = rsv;
++	if (IS_ERR(reloc_root))
++		return PTR_ERR(reloc_root);
+ 
+ 	ret = __add_reloc_root(reloc_root);
+-	BUG_ON(ret < 0);
++	if (ret)
++		return ret;
+ 	root->reloc_root = reloc_root;
+ 	return 0;
+ }

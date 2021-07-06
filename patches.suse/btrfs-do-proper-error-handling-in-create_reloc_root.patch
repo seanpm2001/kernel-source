@@ -1,0 +1,92 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:14 -0500
+Subject: btrfs: do proper error handling in create_reloc_root
+Git-commit: 84c50ba5214c2f3c1be4a931d521ec19f55dfdc8
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+We do memory allocations here, read blocks from disk, all sorts of
+operations that could easily fail at any given point.  Instead of
+panicing the box, simply return the error back up the chain, all callers
+at this point have proper error handling.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |   33 +++++++++++++++++++++++++++------
+ 1 file changed, 27 insertions(+), 6 deletions(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -1433,10 +1433,12 @@ static struct btrfs_root *create_reloc_r
+ 	struct extent_buffer *eb;
+ 	struct btrfs_root_item *root_item;
+ 	struct btrfs_key root_key;
+-	int ret;
++	int ret = 0;
++	bool must_abort = false;
+ 
+ 	root_item = kmalloc(sizeof(*root_item), GFP_NOFS);
+-	BUG_ON(!root_item);
++	if (!root_item)
++		return ERR_PTR(-ENOMEM);
+ 
+ 	root_key.objectid = BTRFS_TREE_RELOC_OBJECTID;
+ 	root_key.type = BTRFS_ROOT_ITEM_KEY;
+@@ -1448,7 +1450,9 @@ static struct btrfs_root *create_reloc_r
+ 		/* called by btrfs_init_reloc_root */
+ 		ret = btrfs_copy_root(trans, root, root->commit_root, &eb,
+ 				      BTRFS_TREE_RELOC_OBJECTID);
+-		BUG_ON(ret);
++		if (ret)
++			goto fail;
++
+ 		/*
+ 		 * Set the last_snapshot field to the generation of the commit
+ 		 * root - like this ctree.c:btrfs_block_can_be_shared() behaves
+@@ -1469,9 +1473,16 @@ static struct btrfs_root *create_reloc_r
+ 		 */
+ 		ret = btrfs_copy_root(trans, root, root->node, &eb,
+ 				      BTRFS_TREE_RELOC_OBJECTID);
+-		BUG_ON(ret);
++		if (ret)
++			goto fail;
+ 	}
+ 
++	/*
++	 * We have changed references at this point, we must abort the
++	 * transaction if anything fails.
++	 */
++	must_abort = true;
++
+ 	memcpy(root_item, &root->root_item, sizeof(*root_item));
+ 	btrfs_set_root_bytenr(root_item, eb->start);
+ 	btrfs_set_root_level(root_item, btrfs_header_level(eb));
+@@ -1489,13 +1500,23 @@ static struct btrfs_root *create_reloc_r
+ 
+ 	ret = btrfs_insert_root(trans, fs_info->tree_root,
+ 				&root_key, root_item);
+-	BUG_ON(ret);
++	if (ret)
++		goto fail;
+ 	kfree(root_item);
+ 
+ 	reloc_root = btrfs_read_fs_root(fs_info->tree_root, &root_key);
+-	BUG_ON(IS_ERR(reloc_root));
++	if (IS_ERR(reloc_root)) {
++		ret = PTR_ERR(reloc_root);
++		goto abort;
++	}
+ 	reloc_root->last_trans = trans->transid;
+ 	return reloc_root;
++fail:
++	kfree(root_item);
++abort:
++	if (must_abort)
++		btrfs_abort_transaction(trans, ret);
++	return ERR_PTR(ret);
+ }
+ 
+ /*

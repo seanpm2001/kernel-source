@@ -1,0 +1,40 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:08 -0500
+Subject: btrfs: handle btrfs_record_root_in_trans failure in start_transaction
+Git-commit: 68075ea8d760d6136900a268d65b7fd072977ccb
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+btrfs_record_root_in_trans will return errors in the future, so handle
+the error properly in start_transaction.
+
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+[ add comment ]
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/transaction.c |   11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+--- a/fs/btrfs/transaction.c
++++ b/fs/btrfs/transaction.c
+@@ -643,7 +643,16 @@ got_it:
+ 	 * Thus it need to be called after current->journal_info initialized,
+ 	 * or we can deadlock.
+ 	 */
+-	btrfs_record_root_in_trans(h, root);
++	ret = btrfs_record_root_in_trans(h, root);
++	if (ret) {
++		/*
++		 * The transaction handle is fully initialized and linked with
++		 * other structures so it needs to be ended in case of errors,
++		 * not just freed.
++		 */
++		btrfs_end_transaction(h);
++		return ERR_PTR(ret);
++	}
+ 	return h;
+ 
+ join_fail:

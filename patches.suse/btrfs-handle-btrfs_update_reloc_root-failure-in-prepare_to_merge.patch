@@ -1,0 +1,42 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:19 -0500
+Subject: btrfs: handle btrfs_update_reloc_root failure in prepare_to_merge
+Git-commit: bbae13f8ab22fb997403ee8a67f87432f4751a8d
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+btrfs_update_reloc_root will will return errors in the future, so handle
+an error properly in prepare_to_merge.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |   13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -2552,9 +2552,20 @@ again:
+ 		 */
+ 		if (!err)
+ 			btrfs_set_root_refs(&reloc_root->root_item, 1);
+-		btrfs_update_reloc_root(trans, root);
++		ret = btrfs_update_reloc_root(trans, root);
+ 
++		/*
++		 * Even if we have an error we need this reloc root back on our
++		 * list so we can clean up properly.
++		 */
+ 		list_add(&reloc_root->root_list, &reloc_roots);
++
++		if (ret) {
++			btrfs_abort_transaction(trans, ret);
++			if (!err)
++				err = ret;
++			break;
++		}
+ 	}
+ 
+ 	list_splice(&reloc_roots, &rc->reloc_roots);

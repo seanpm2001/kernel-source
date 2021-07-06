@@ -1,0 +1,38 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:25 -0500
+Subject: btrfs: handle extent reference errors in do_relocation
+Git-commit: eb6b7fb4b544ae0ab19a85b55ca548d838dc4beb
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+We can already deal with errors appropriately from do_relocation, simply
+handle any errors that come from changing the refs at this point
+cleanly.  We have to abort the transaction if we fail here as we've
+modified metadata at this point.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |    9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -3126,10 +3126,11 @@ static int do_relocation(struct btrfs_tr
+ 			btrfs_init_tree_ref(&ref, node->level,
+ 					    btrfs_header_owner(upper->eb));
+ 			ret = btrfs_inc_extent_ref(trans, root, &ref);
+-			BUG_ON(ret);
+-
+-			ret = btrfs_drop_subtree(trans, root, eb, upper->eb);
+-			BUG_ON(ret);
++			if (!ret)
++				ret = btrfs_drop_subtree(trans, root, eb,
++							 upper->eb);
++			if (ret)
++				btrfs_abort_transaction(trans, ret);
+ 		}
+ next:
+ 		if (!upper->pending)
