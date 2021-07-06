@@ -1,0 +1,45 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:29 -0500
+Subject: btrfs: handle __add_reloc_root failures in btrfs_recover_relocation
+Git-commit: 3c9258632c49436558f10776be1809ae051cdb9e
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+We can already handle errors appropriately from this function, deal with
+an error coming from __add_reloc_root appropriately.
+
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+[ add comment ]
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |    9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -4955,7 +4955,11 @@ int btrfs_recover_relocation(struct btrf
+ 		}
+ 
+ 		err = __add_reloc_root(reloc_root);
+-		BUG_ON(err < 0); /* -ENOMEM or logic error */
++		if (err) {
++			list_add_tail(&reloc_root->root_list, &reloc_roots);
++			btrfs_end_transaction(trans);
++			goto out_unset;
++		}
+ 		fs_root->reloc_root = reloc_root;
+ 	}
+ 
+@@ -5172,7 +5176,8 @@ int btrfs_reloc_post_snapshot(struct btr
+ 		return PTR_ERR(reloc_root);
+ 
+ 	ret = __add_reloc_root(reloc_root);
+-	BUG_ON(ret < 0);
++	if (ret)
++		return ret;
+ 	new_root->reloc_root = reloc_root;
+ 
+ 	if (rc->create_reloc_tree)

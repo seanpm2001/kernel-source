@@ -144,19 +144,19 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	if (!noop)
  		wait_for_completion(&fwork.done);
-@@ -985,9 +985,9 @@ static bool __kthread_cancel_work(struct
- 		 * any queuing is blocked by setting the canceling counter.
- 		 */
- 		work->canceling++;
--		spin_unlock_irqrestore(&worker->lock, *flags);
-+		raw_spin_unlock_irqrestore(&worker->lock, *flags);
- 		del_timer_sync(&dwork->timer);
--		spin_lock_irqsave(&worker->lock, *flags);
-+		raw_spin_lock_irqsave(&worker->lock, *flags);
- 		work->canceling--;
- 	}
+@@ -980,9 +980,9 @@ static void kthread_cancel_delayed_work_
+ 	 * any queuing is blocked by setting the canceling counter.
+ 	 */
+ 	work->canceling++;
+-	spin_unlock_irqrestore(&worker->lock, *flags);
++	raw_spin_unlock_irqrestore(&worker->lock, *flags);
+ 	del_timer_sync(&dwork->timer);
+-	spin_lock_irqsave(&worker->lock, *flags);
++	raw_spin_lock_irqsave(&worker->lock, *flags);
+ 	work->canceling--;
+ }
  
-@@ -1034,7 +1034,7 @@ bool kthread_mod_delayed_work(struct kth
+@@ -1044,7 +1044,7 @@ bool kthread_mod_delayed_work(struct kth
  	unsigned long flags;
  	int ret = false;
  
@@ -165,7 +165,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	/* Do not bother with canceling when never queued. */
  	if (!work->worker)
-@@ -1051,7 +1051,7 @@ bool kthread_mod_delayed_work(struct kth
+@@ -1073,7 +1073,7 @@ bool kthread_mod_delayed_work(struct kth
  fast_queue:
  	__kthread_queue_delayed_work(worker, dwork, delay);
  out:
@@ -174,7 +174,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	return ret;
  }
  EXPORT_SYMBOL_GPL(kthread_mod_delayed_work);
-@@ -1065,7 +1065,7 @@ static bool __kthread_cancel_work_sync(s
+@@ -1087,7 +1087,7 @@ static bool __kthread_cancel_work_sync(s
  	if (!worker)
  		goto out;
  
@@ -183,7 +183,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	/* Work must not be used with >1 worker, see kthread_queue_work(). */
  	WARN_ON_ONCE(work->worker != worker);
  
-@@ -1079,13 +1079,13 @@ static bool __kthread_cancel_work_sync(s
+@@ -1104,13 +1104,13 @@ static bool __kthread_cancel_work_sync(s
  	 * In the meantime, block any queuing by setting the canceling counter.
  	 */
  	work->canceling++;
