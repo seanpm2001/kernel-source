@@ -6,6 +6,7 @@ Subject: [PATCH] powerpc/64s: flush L1D on kernel entry
 References: CVE-2020-4788 bsc#1177666
 Patch-mainline: v4.19.159
 Git-commit: f69bb4e51f41973fb7594be1479fa689831efe1a
+Alt-commit: f79643787e0a0762d2409b7b8334e83f22d85695
 
 commit f79643787e0a0762d2409b7b8334e83f22d85695 upstream.
 
@@ -367,11 +368,10 @@ index d081d726ca8e..1432cf996201 100644
  	__stf_exit_barrier_fixup : AT(ADDR(__stf_exit_barrier_fixup) - LOAD_OFFSET) {
  		__start___stf_exit_barrier_fixup = .;
 diff --git a/arch/powerpc/lib/feature-fixups.c b/arch/powerpc/lib/feature-fixups.c
-index dbe478e7b8e0..22bae8741cae 100644
 --- a/arch/powerpc/lib/feature-fixups.c
 +++ b/arch/powerpc/lib/feature-fixups.c
 @@ -232,6 +232,60 @@ void do_stf_barrier_fixups(enum stf_barrier_type types)
- 	do_stf_exit_barrier_fixups(types);
+ 	stop_machine(__do_stf_barrier_fixups, &types, NULL);
  }
  
 +void do_entry_flush_fixups(enum l1d_flush_type types)

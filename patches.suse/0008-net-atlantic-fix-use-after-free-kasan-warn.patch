@@ -1,0 +1,65 @@
+From 9e5821bd5eb82d0e11b207495d111a1e994ba741 Mon Sep 17 00:00:00 2001
+From: Pavel Belous <pbelous@marvell.com>
+Date: Fri, 14 Feb 2020 18:44:55 +0300
+Subject: [PATCH 08/16] net: atlantic: fix use after free kasan warn
+Git-commit: a4980919ad6a7be548d499bc5338015e1a9191c6
+Patch-mainline: v5.6-rc3
+References: git-fixes
+
+skb->len is used to calculate statistics after xmit invocation.
+
+Under a stress load it may happen that skb will be xmited,
+rx interrupt will come and skb will be freed, all before xmit function
+is even returned.
+
+Eventually, skb->len will access unallocated area.
+
+Moving stats calculation into tx_clean routine.
+
+Fixes: 018423e90bee ("net: ethernet: aquantia: Add ring support code")
+Reported-by: Christophe Vu-Brugier <cvubrugier@fastmail.fm>
+Signed-off-by: Igor Russkikh <irusskikh@marvell.com>
+Signed-off-by: Pavel Belous <pbelous@marvell.com>
+Signed-off-by: Dmitry Bogdanov <dbogdanov@marvell.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/aquantia/atlantic/aq_nic.c  | 3 ---
+ drivers/net/ethernet/aquantia/atlantic/aq_ring.c | 6 +++++-
+ 2 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/ethernet/aquantia/atlantic/aq_nic.c b/drivers/net/ethernet/aquantia/atlantic/aq_nic.c
+index 723b1106c801..d46f7ba3ec8c 100644
+--- a/drivers/net/ethernet/aquantia/atlantic/aq_nic.c
++++ b/drivers/net/ethernet/aquantia/atlantic/aq_nic.c
+@@ -636,9 +636,6 @@ int aq_nic_xmit(struct aq_nic_s *self, struct sk_buff *skb)
+ 		if (err >= 0) {
+ 			if (aq_ring_avail_dx(ring) < AQ_CFG_SKB_FRAGS_MAX + 1)
+ 				aq_nic_ndev_queue_stop(self, ring->idx);
+-
+-			++ring->stats.tx.packets;
+-			ring->stats.tx.bytes += skb->len;
+ 		}
+ 	} else {
+ 		err = NETDEV_TX_BUSY;
+diff --git a/drivers/net/ethernet/aquantia/atlantic/aq_ring.c b/drivers/net/ethernet/aquantia/atlantic/aq_ring.c
+index 81e715ffd734..393fc575ca60 100644
+--- a/drivers/net/ethernet/aquantia/atlantic/aq_ring.c
++++ b/drivers/net/ethernet/aquantia/atlantic/aq_ring.c
+@@ -121,8 +121,12 @@ void aq_ring_tx_clean(struct aq_ring_s *self)
+ 					       DMA_TO_DEVICE);
+ 		}
+ 
+-		if (unlikely(buff->is_eop))
++		if (unlikely(buff->is_eop)) {
++			++self->stats.rx.packets;
++			self->stats.tx.bytes += buff->skb->len;
++
+ 			dev_kfree_skb_any(buff->skb);
++		}
+ 	}
+ }
+ 
+-- 
+2.16.4
+

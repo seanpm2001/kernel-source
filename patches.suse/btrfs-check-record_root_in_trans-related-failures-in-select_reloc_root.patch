@@ -1,0 +1,49 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:00 -0500
+Subject: btrfs: check record_root_in_trans related failures in
+ select_reloc_root
+Git-commit: 92de551b837650568486b94b67f4168e4c6cc68a
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+We will record the fs root or the reloc root in the trans in
+select_reloc_root.  These will actually return errors in the following
+patches, so check their return value here and return it up the stack.
+
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |    9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -2675,6 +2675,7 @@ struct btrfs_root *select_reloc_root(str
+ 	struct backref_node *next;
+ 	struct btrfs_root *root;
+ 	int index = 0;
++	int ret;
+ 
+ 	next = node;
+ 	while (1) {
+@@ -2710,11 +2711,15 @@ struct btrfs_root *select_reloc_root(str
+ 		}
+ 
+ 		if (root->root_key.objectid == BTRFS_TREE_RELOC_OBJECTID) {
+-			record_reloc_root_in_trans(trans, root);
++			ret = record_reloc_root_in_trans(trans, root);
++			if (ret)
++				return ERR_PTR(ret);
+ 			break;
+ 		}
+ 
+-		btrfs_record_root_in_trans(trans, root);
++		ret = btrfs_record_root_in_trans(trans, root);
++		if (ret)
++			return ERR_PTR(ret);
+ 		root = root->reloc_root;
+ 
+ 		if (next->new_bytenr != root->node->start) {

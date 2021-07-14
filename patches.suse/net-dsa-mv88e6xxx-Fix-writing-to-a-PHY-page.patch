@@ -1,0 +1,36 @@
+From 5a5c708b9b0fddc49cfd014529c35c69a167496f Mon Sep 17 00:00:00 2001
+From: Denis Kirjanov <denis.kirjanov@suse.com>
+Date: Thu, 24 Jun 2021 16:07:40 +0300
+Subject: [PATCH 5/6] net: dsa: mv88e6xxx: Fix writing to a PHY page.
+Git-commit: c309b158090d788e96ee597444965cb79b040484
+Patch-mainline: v4.20-rc1
+References: git-fixes
+
+After changing to the needed page, actually write the value to the
+register!
+
+Fixes: 09cb7dfd3f14 ("net: dsa: mv88e6xxx: describe PHY page and SerDes")
+Signed-off-by: Andrew Lunn <andrew@lunn.ch>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/dsa/mv88e6xxx/chip.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/net/dsa/mv88e6xxx/chip.c b/drivers/net/dsa/mv88e6xxx/chip.c
+index 246a2c36db38..d18b563b3e4a 100644
+--- a/drivers/net/dsa/mv88e6xxx/chip.c
++++ b/drivers/net/dsa/mv88e6xxx/chip.c
+@@ -330,6 +330,9 @@ static int mv88e6xxx_phy_page_write(struct mv88e6xxx_chip *chip, int phy,
+ 	err = mv88e6xxx_phy_page_get(chip, phy, page);
+ 	if (!err) {
+ 		err = mv88e6xxx_phy_write(chip, phy, PHY_PAGE, page);
++		if (!err)
++			err = mv88e6xxx_phy_write(chip, phy, reg, val);
++
+ 		mv88e6xxx_phy_page_put(chip, phy);
+ 	}
+ 
+-- 
+2.16.4
+

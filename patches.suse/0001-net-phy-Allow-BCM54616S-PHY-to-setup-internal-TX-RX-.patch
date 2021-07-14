@@ -1,0 +1,80 @@
+From 3aa592154fe0cdb997713722e17dd7a9b87a3ae0 Mon Sep 17 00:00:00 2001
+From: Tao Ren <taoren@fb.com>
+Date: Mon, 5 Nov 2018 14:35:40 -0800
+Subject: [PATCH 01/10] net: phy: Allow BCM54616S PHY to setup internal TX/RX
+ clock delay
+Git-commit: 042cb56478152b31c50bea8a784fc826891eb38e
+References: git-fixes
+Patch-mainline: v4.20-rc2
+
+This patch allows users to enable/disable internal TX and/or RX clock
+delay for BCM54616S PHYs so as to satisfy RGMII timing specifications.
+
+On a particular platform, whether TX and/or RX clock delay is required
+depends on how PHY connected to the MAC IP. This requirement can be
+specified through "phy-mode" property in the platform device tree.
+
+The patch is inspired by commit 733336262b28 ("net: phy: Allow BCM5481x
+PHYs to setup internal TX/RX clock delay").
+
+Signed-off-by: Tao Ren <taoren@fb.com>
+Reviewed-by: Florian Fainelli <f.fainelli@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/phy/broadcom.c | 18 ++++++++++++++++--
+ 1 file changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/phy/broadcom.c b/drivers/net/phy/broadcom.c
+index a8f69c5777bc..1af5d73bcd44 100644
+--- a/drivers/net/phy/broadcom.c
++++ b/drivers/net/phy/broadcom.c
+@@ -80,7 +80,7 @@ static int bcm54612e_config_init(struct phy_device *phydev)
+ 	return 0;
+ }
+ 
+-static int bcm5481x_config(struct phy_device *phydev)
++static int bcm54xx_config_clock_delay(struct phy_device *phydev)
+ {
+ 	int rc, val;
+ 
+@@ -417,7 +417,7 @@ static int bcm5481_config_aneg(struct phy_device *phydev)
+ 	ret = genphy_config_aneg(phydev);
+ 
+ 	/* Then we can set up the delay. */
+-	bcm5481x_config(phydev);
++	bcm54xx_config_clock_delay(phydev);
+ 
+ 	if (of_property_read_bool(np, "enet-phy-lane-swap")) {
+ 		/* Lane Swap - Undocumented register...magic! */
+@@ -430,6 +430,19 @@ static int bcm5481_config_aneg(struct phy_device *phydev)
+ 	return ret;
+ }
+ 
++static int bcm54616s_config_aneg(struct phy_device *phydev)
++{
++	int ret;
++
++	/* Aneg firsly. */
++	ret = genphy_config_aneg(phydev);
++
++	/* Then we can set up the delay. */
++	bcm54xx_config_clock_delay(phydev);
++
++	return ret;
++}
++
+ static int brcm_phy_setbits(struct phy_device *phydev, int reg, int set)
+ {
+ 	int val;
+@@ -593,6 +606,7 @@ static struct phy_driver broadcom_drivers[] = {
+ 	.features	= PHY_GBIT_FEATURES,
+ 	.flags		= PHY_HAS_INTERRUPT,
+ 	.config_init	= bcm54xx_config_init,
++	.config_aneg	= bcm54616s_config_aneg,
+ 	.ack_interrupt	= bcm_phy_ack_intr,
+ 	.config_intr	= bcm_phy_config_intr,
+ }, {
+-- 
+2.16.4
+

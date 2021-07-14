@@ -1,0 +1,57 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:30 -0500
+Subject: btrfs: do not panic in __add_reloc_root
+Git-commit: 57a304cfd43b2b4a5b44b8f5dc026abb34183068
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+If we have a duplicate entry for a reloc root then we could have fs
+corruption that resulted in a double allocation.  Since this shouldn't
+happen unless there is corruption, add an ASSERT(ret != -EEXIST) to all
+of the callers of __add_reloc_root() to catch any logic mistakes for
+developers, otherwise normal error handling will happen for normal
+users.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |    5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -1350,7 +1350,7 @@ static int __must_check __add_reloc_root
+ 			      node->bytenr, &node->rb_node);
+ 	spin_unlock(&rc->reloc_root_tree.lock);
+ 	if (rb_node) {
+-		btrfs_panic(fs_info, -EEXIST,
++		btrfs_err(fs_info,
+ 			    "Duplicate root found for start=%llu while inserting into relocation tree",
+ 			    node->bytenr);
+ 		kfree(node);
+@@ -1562,6 +1562,7 @@ int btrfs_init_reloc_root(struct btrfs_t
+ 		return PTR_ERR(reloc_root);
+ 
+ 	ret = __add_reloc_root(reloc_root);
++	ASSERT(ret != -EEXIST);
+ 	if (ret)
+ 		return ret;
+ 	root->reloc_root = reloc_root;
+@@ -4955,6 +4956,7 @@ int btrfs_recover_relocation(struct btrf
+ 		}
+ 
+ 		err = __add_reloc_root(reloc_root);
++		ASSERT(err != -EEXIST);
+ 		if (err) {
+ 			list_add_tail(&reloc_root->root_list, &reloc_roots);
+ 			btrfs_end_transaction(trans);
+@@ -5176,6 +5178,7 @@ int btrfs_reloc_post_snapshot(struct btr
+ 		return PTR_ERR(reloc_root);
+ 
+ 	ret = __add_reloc_root(reloc_root);
++	ASSERT(ret != -EEXIST);
+ 	if (ret)
+ 		return ret;
+ 	new_root->reloc_root = reloc_root;

@@ -1,0 +1,47 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:22 -0500
+Subject: btrfs: handle btrfs_cow_block errors in replace_path
+Git-commit: 45b87c5d2557a327bb702d00040cfbf2271b56ed
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+If we error out COWing the root node when doing a replace_path then we
+simply unlock and free the buffer and return the error.
+
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |   12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -1907,7 +1907,11 @@ again:
+ 
+ 	if (cow) {
+ 		ret = btrfs_cow_block(trans, dest, eb, NULL, 0, &eb);
+-		BUG_ON(ret);
++		if (ret) {
++			btrfs_tree_unlock(eb);
++			free_extent_buffer(eb);
++			return ret;
++		}
+ 	}
+ 	btrfs_set_lock_blocking(eb);
+ 
+@@ -1975,7 +1979,11 @@ again:
+ 			if (cow) {
+ 				ret = btrfs_cow_block(trans, dest, eb, parent,
+ 						      slot, &eb);
+-				BUG_ON(ret);
++				if (ret) {
++					btrfs_tree_unlock(eb);
++					free_extent_buffer(eb);
++					break;
++				}
+ 			}
+ 			btrfs_set_lock_blocking(eb);
+ 

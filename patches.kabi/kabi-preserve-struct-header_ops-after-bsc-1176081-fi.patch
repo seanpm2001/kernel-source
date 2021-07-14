@@ -1,0 +1,74 @@
+From: Michal Kubecek <mkubecek@suse.cz>
+Date: Mon, 18 Jan 2021 18:30:59 +0100
+Subject: kabi: preserve struct header_ops after bsc#1176081 fix
+Patch-mainline: Never, kabi workaround
+References: bsc#1176081
+
+Backport of mainline commit e78b2915517e ("net: Introduce parse_protocol
+header_ops callback") adds ->parse_protocol() callback into struct
+header_ops which would break kabi.
+
+As this callback is only used in dev_parse_header_protocol() and only set
+in eth_header_ops - the latter until mainline commit 2606aff91685 ("net:
+ip_tunnel: add header_ops for layer 3 devices") - replace the call in
+dev_parse_header_protocol() with an explicit test of dev->header_ops
+against &eth_header_ops so that we can drop the callback from struct
+header_ops.
+
+Duplicating the eth_header_ops and eth_header_parse_protocol declaration in
+include/linux/netdevice.h is a bit unclean but including
+<linux/etherdevice.h> could result in spurious "became defined" kabi
+errors.
+
+Signed-off-by: Michal Kubecek <mkubecek@suse.cz>
+---
+ include/linux/netdevice.h | 11 +++++++----
+ net/ethernet/eth.c        |  2 +-
+ 2 files changed, 8 insertions(+), 5 deletions(-)
+
+--- a/include/linux/netdevice.h
++++ b/include/linux/netdevice.h
+@@ -262,6 +262,9 @@ struct hh_cache {
+ #define LL_RESERVED_SPACE_EXTRA(dev,extra) \
+ 	((((dev)->hard_header_len+(dev)->needed_headroom+(extra))&~(HH_DATA_MOD - 1)) + HH_DATA_MOD)
+ 
++extern const struct header_ops eth_header_ops;
++__be16 eth_header_parse_protocol(const struct sk_buff *skb);
++
+ struct header_ops {
+ 	int	(*create) (struct sk_buff *skb, struct net_device *dev,
+ 			   unsigned short type, const void *daddr,
+@@ -272,7 +275,6 @@ struct header_ops {
+ 				const struct net_device *dev,
+ 				const unsigned char *haddr);
+ 	bool	(*validate)(const char *ll_header, unsigned int len);
+-	__be16	(*parse_protocol)(const struct sk_buff *skb);
+ };
+ 
+ /* These flag bits are private to the generic network queueing
+@@ -2730,9 +2732,10 @@ static inline __be16 dev_parse_header_protocol(const struct sk_buff *skb)
+ {
+ 	const struct net_device *dev = skb->dev;
+ 
+-	if (!dev->header_ops || !dev->header_ops->parse_protocol)
+-		return 0;
+-	return dev->header_ops->parse_protocol(skb);
++	if (dev->header_ops == &eth_header_ops)
++		return eth_header_parse_protocol(skb);
++
++	return 0;
+ }
+ 
+ /* ll_header must have at least hard_header_len allocated */
+--- a/net/ethernet/eth.c
++++ b/net/ethernet/eth.c
+@@ -355,8 +355,8 @@ const struct header_ops eth_header_ops ____cacheline_aligned = {
+ 	.parse		= eth_header_parse,
+ 	.cache		= eth_header_cache,
+ 	.cache_update	= eth_header_cache_update,
+-	.parse_protocol	= eth_header_parse_protocol,
+ };
++EXPORT_SYMBOL(eth_header_ops);
+ 
+ /**
+  * ether_setup - setup Ethernet network device

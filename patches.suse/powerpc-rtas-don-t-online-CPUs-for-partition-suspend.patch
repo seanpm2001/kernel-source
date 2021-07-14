@@ -49,7 +49,6 @@ Fixes: 120496ac2d2d ("powerpc: Bring all threads online prior to migration/hiber
 Signed-off-by: Nathan Lynch <nathanl@linux.ibm.com>
 Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
 Link: https://lore.kernel.org/r/20200612051238.1007764-3-nathanl@linux.ibm.com
-[keep exported functions]
 Acked-by: Michal Suchanek <msuchanek@suse.de>
 ---
  arch/powerpc/include/asm/rtas.h          |   2 -
@@ -57,9 +56,11 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  arch/powerpc/platforms/pseries/suspend.c |  22 +---
  3 files changed, 3 insertions(+), 143 deletions(-)
 
+diff --git a/arch/powerpc/include/asm/rtas.h b/arch/powerpc/include/asm/rtas.h
+index 014968f25f7e..0107d724e9da 100644
 --- a/arch/powerpc/include/asm/rtas.h
 +++ b/arch/powerpc/include/asm/rtas.h
-@@ -372,8 +372,6 @@ extern int rtas_set_indicator_fast(int i
+@@ -253,8 +253,6 @@ extern int rtas_set_indicator_fast(int indicator, int index, int new_value);
  extern void rtas_progress(char *s, unsigned short hex);
  extern int rtas_suspend_cpu(struct rtas_suspend_me_data *data);
  extern int rtas_suspend_last_cpu(struct rtas_suspend_me_data *data);
@@ -68,9 +69,10 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  extern int rtas_ibm_suspend_me(u64 handle);
  
  struct rtc_time;
+diff --git a/arch/powerpc/kernel/rtas.c b/arch/powerpc/kernel/rtas.c
 --- a/arch/powerpc/kernel/rtas.c
 +++ b/arch/powerpc/kernel/rtas.c
-@@ -845,95 +845,15 @@ static void rtas_percpu_suspend_me(void
+@@ -843,96 +843,6 @@ static void rtas_percpu_suspend_me(void *info)
  	__rtas_suspend_cpu((struct rtas_suspend_me_data *)info, 1);
  }
  
@@ -138,8 +140,8 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
 -}
 -#endif
 -
- int rtas_online_cpus_mask(cpumask_var_t cpus)
- {
+-int rtas_online_cpus_mask(cpumask_var_t cpus)
+-{
 -	int ret;
 -
 -	ret = rtas_cpu_state_change_mask(UP, cpus);
@@ -157,18 +159,17 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
 -	}
 -
 -	return ret;
-+	return 0;
- }
- EXPORT_SYMBOL(rtas_online_cpus_mask);
- 
- int rtas_offline_cpus_mask(cpumask_var_t cpus)
- {
+-}
+-
+-int rtas_offline_cpus_mask(cpumask_var_t cpus)
+-{
 -	return rtas_cpu_state_change_mask(DOWN, cpus);
-+	return -ENOTSUPP;
- }
- EXPORT_SYMBOL(rtas_offline_cpus_mask);
- 
-@@ -944,8 +864,6 @@ int rtas_ibm_suspend_me(u64 handle)
+-}
+-
+ int rtas_ibm_suspend_me(u64 handle)
+ {
+ 	long state;
+@@ -940,8 +850,6 @@ int rtas_ibm_suspend_me(u64 handle)
  	unsigned long retbuf[PLPAR_HCALL_BUFSIZE];
  	struct rtas_suspend_me_data data;
  	DECLARE_COMPLETION_ONSTACK(done);
@@ -177,7 +178,7 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  
  	if (!rtas_service_present("ibm,suspend-me"))
  		return -ENOSYS;
-@@ -966,9 +884,6 @@ int rtas_ibm_suspend_me(u64 handle)
+@@ -962,9 +870,6 @@ int rtas_ibm_suspend_me(u64 handle)
  		return -EIO;
  	}
  
@@ -187,7 +188,7 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  	atomic_set(&data.working, 0);
  	atomic_set(&data.done, 0);
  	atomic_set(&data.error, 0);
-@@ -977,24 +892,8 @@ int rtas_ibm_suspend_me(u64 handle)
+@@ -973,24 +878,8 @@ int rtas_ibm_suspend_me(u64 handle)
  
  	lock_device_hotplug();
  
@@ -212,7 +213,7 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  	/* Call function on all CPUs.  One of us will make the
  	 * rtas call
  	 */
-@@ -1006,18 +905,11 @@ int rtas_ibm_suspend_me(u64 handle)
+@@ -1001,18 +890,11 @@ int rtas_ibm_suspend_me(u64 handle)
  	if (atomic_read(&data.error) != 0)
  		printk(KERN_ERR "Error doing global join\n");
  
@@ -233,9 +234,10 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  	return atomic_read(&data.error);
  }
  #else /* CONFIG_PPC_PSERIES */
+diff --git a/arch/powerpc/platforms/pseries/suspend.c b/arch/powerpc/platforms/pseries/suspend.c
 --- a/arch/powerpc/platforms/pseries/suspend.c
 +++ b/arch/powerpc/platforms/pseries/suspend.c
-@@ -145,15 +145,11 @@ static ssize_t store_hibernate(struct de
+@@ -132,15 +132,11 @@ static ssize_t store_hibernate(struct device *dev,
  			       struct device_attribute *attr,
  			       const char *buf, size_t count)
  {
@@ -251,7 +253,7 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  	stream_id = simple_strtoul(buf, NULL, 16);
  
  	do {
-@@ -163,32 +159,16 @@ static ssize_t store_hibernate(struct de
+@@ -150,32 +146,16 @@ static ssize_t store_hibernate(struct device *dev,
  	} while (rc == -EAGAIN);
  
  	if (!rc) {
@@ -285,3 +287,6 @@ Acked-by: Michal Suchanek <msuchanek@suse.de>
  	return rc;
  }
  
+-- 
+2.26.2
+

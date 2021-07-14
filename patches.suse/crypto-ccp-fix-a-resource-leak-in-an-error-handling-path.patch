@@ -1,0 +1,46 @@
+From: Christophe JAILLET <christophe.jaillet@wanadoo.fr>
+Date: Sun, 16 May 2021 08:58:04 +0200
+Subject: crypto: ccp - Fix a resource leak in an error handling path
+Git-commit: a6f8e68e238a15bb15f1726b35c695136c64eaba
+Patch-mainline: v5.13 or v5.13-rc8 (next release)
+References: 12sp5
+
+If an error occurs after calling 'sp_get_irqs()', 'sp_free_irqs()' must be
+called as already done in the error handling path.
+
+Fixes: f4d18d656f88 ("crypto: ccp - Abstract interrupt registeration")
+Signed-off-by: Christophe JAILLET <christophe.jaillet@wanadoo.fr>
+Acked-by: John Allen <john.allen@amd.com>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Acked-by: Borislav Petkov <bp@suse.de>
+---
+ drivers/crypto/ccp/sp-pci.c |    6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+--- a/drivers/crypto/ccp/sp-pci.c
++++ b/drivers/crypto/ccp/sp-pci.c
+@@ -225,7 +225,7 @@ static int sp_pci_probe(struct pci_dev *
+ 		if (ret) {
+ 			dev_err(dev, "dma_set_mask_and_coherent failed (%d)\n",
+ 				ret);
+-			goto e_err;
++			goto free_irqs;
+ 		}
+ 	}
+ 
+@@ -233,12 +233,14 @@ static int sp_pci_probe(struct pci_dev *
+ 
+ 	ret = sp_init(sp);
+ 	if (ret)
+-		goto e_err;
++		goto free_irqs;
+ 
+ 	dev_notice(dev, "enabled\n");
+ 
+ 	return 0;
+ 
++free_irqs:
++	sp_free_irqs(sp);
+ e_err:
+ 	dev_notice(dev, "initialization failed\n");
+ 	return ret;

@@ -1,0 +1,53 @@
+From c591c2e36ccc9a08f265841d2fd68e35327ab3c4 Mon Sep 17 00:00:00 2001
+From: Alexey Kardashevskiy <aik@ozlabs.ru>
+Date: Fri, 9 Feb 2018 17:23:58 +1100
+Subject: [PATCH] powerpc/pci: Fix broken INTx configuration via OF
+
+References: bsc#1172145 ltc#184630
+Patch-mainline: v4.16-rc1
+Git-commit: c591c2e36ccc9a08f265841d2fd68e35327ab3c4
+
+59f47eff03a0 ("powerpc/pci: Use of_irq_parse_and_map_pci() helper")
+replaced of_irq_parse_pci() + irq_create_of_mapping() with
+of_irq_parse_and_map_pci(), but neglected to capture the virq
+returned by irq_create_of_mapping(), so virq remained zero, which
+caused INTx configuration to fail.
+
+Save the virq value returned by of_irq_parse_and_map_pci() and correct
+the virq declaration to match the of_irq_parse_and_map_pci() signature.
+
+Fixes: 59f47eff03a0 "powerpc/pci: Use of_irq_parse_and_map_pci() helper"
+Signed-off-by: Alexey Kardashevskiy <aik@ozlabs.ru>
+[bhelgaas: changelog]
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kernel/pci-common.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/arch/powerpc/kernel/pci-common.c b/arch/powerpc/kernel/pci-common.c
+index 344af823c3c4..4e884db7b213 100644
+--- a/arch/powerpc/kernel/pci-common.c
++++ b/arch/powerpc/kernel/pci-common.c
+@@ -339,7 +339,7 @@ struct pci_controller* pci_find_hose_for_OF_device(struct device_node* node)
+  */
+ static int pci_read_irq_line(struct pci_dev *pci_dev)
+ {
+-	unsigned int virq = 0;
++	int virq;
+ 
+ 	pr_debug("PCI: Try to map irq for %s...\n", pci_name(pci_dev));
+ 
+@@ -347,7 +347,8 @@ static int pci_read_irq_line(struct pci_dev *pci_dev)
+ 	memset(&oirq, 0xff, sizeof(oirq));
+ #endif
+ 	/* Try to get a mapping from the device-tree */
+-	if (!of_irq_parse_and_map_pci(pci_dev, 0, 0)) {
++	virq = of_irq_parse_and_map_pci(pci_dev, 0, 0);
++	if (virq <= 0) {
+ 		u8 line, pin;
+ 
+ 		/* If that fails, lets fallback to what is in the config
+-- 
+2.26.2
+

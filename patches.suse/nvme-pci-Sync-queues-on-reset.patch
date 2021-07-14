@@ -1,0 +1,65 @@
+From: Keith Busch <keith.busch@intel.com>
+Date: Tue, 14 May 2019 14:46:09 -0600
+Subject: [PATCH] nvme-pci: Sync queues on reset
+Patch-mainline: v5.2-rc2
+Git-commit: d6135c3a1ec0cddda7b8b8e1b5b4abeeafd98289
+References: bsc#1181161
+
+A controller with multiple namespaces may have multiple request_queues with
+their own timeout work. If a controller fails with IO outstanding to
+diffent namespaces, each request queue may attempt to handle it, so
+ensure there is no previously scheduled timeout work executing prior to
+starting controller initialization by synchronizing with each queue.
+
+Reviewed-by: Minwoo Im <minwoo.im.dev@gmail.com>
+Reviewed-by: Ming Lei <ming.lei@redhat.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Keith Busch <keith.busch@intel.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ drivers/nvme/host/core.c | 12 ++++++++++++
+ drivers/nvme/host/nvme.h |  1 +
+ drivers/nvme/host/pci.c  |  1 +
+ 3 files changed, 14 insertions(+)
+
+--- a/drivers/nvme/host/core.c
++++ b/drivers/nvme/host/core.c
+@@ -3677,6 +3677,18 @@ static void nvme_free_ctrl(struct device
+ 		nvme_put_subsystem(subsys);
+ }
+ 
++
++void nvme_sync_queues(struct nvme_ctrl *ctrl)
++{
++	struct nvme_ns *ns;
++
++	down_read(&ctrl->namespaces_rwsem);
++	list_for_each_entry(ns, &ctrl->namespaces, list)
++		blk_sync_queue(ns->queue);
++	up_read(&ctrl->namespaces_rwsem);
++}
++EXPORT_SYMBOL_GPL(nvme_sync_queues);
++
+ /*
+  * Initialize a NVMe controller structures.  This needs to be called during
+  * earliest initialization so that we have the initialized structured around
+--- a/drivers/nvme/host/nvme.h
++++ b/drivers/nvme/host/nvme.h
+@@ -449,6 +449,7 @@ void nvme_complete_async_event(struct nv
+ void nvme_stop_queues(struct nvme_ctrl *ctrl);
+ void nvme_start_queues(struct nvme_ctrl *ctrl);
+ void nvme_kill_queues(struct nvme_ctrl *ctrl);
++void nvme_sync_queues(struct nvme_ctrl *ctrl);
+ void nvme_unfreeze(struct nvme_ctrl *ctrl);
+ void nvme_wait_freeze(struct nvme_ctrl *ctrl);
+ void nvme_wait_freeze_timeout(struct nvme_ctrl *ctrl, long timeout);
+--- a/drivers/nvme/host/pci.c
++++ b/drivers/nvme/host/pci.c
+@@ -2266,6 +2266,7 @@ static void nvme_reset_work(struct work_
+ 	 */
+ 	if (dev->ctrl.ctrl_config & NVME_CC_ENABLE)
+ 		nvme_dev_disable(dev, false);
++	nvme_sync_queues(&dev->ctrl);
+ 
+ 	/*
+ 	 * Introduce CONNECTING state from nvme-fc/rdma transports to mark the

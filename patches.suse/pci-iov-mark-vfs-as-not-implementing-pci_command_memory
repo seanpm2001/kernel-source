@@ -1,0 +1,44 @@
+From: Matthew Rosato <mjrosato@linux.ibm.com>
+Date: Thu, 10 Sep 2020 10:59:55 -0400
+Subject: PCI/IOV: Mark VFs as not implementing PCI_COMMAND_MEMORY
+Git-commit: 12856e7acde4702b7c3238c15fcba86ff6aa507f
+Patch-mainline: v5.10-rc1
+References: bsc#1179612
+
+For VFs, the Memory Space Enable bit in the Command Register is
+hard-wired to 0.
+
+Add a new bit to signify devices where the Command Register Memory
+Space Enable bit does not control the device's response to MMIO
+accesses.
+
+Fixes: abafbc551fdd ("vfio-pci: Invalidate mmaps and block MMIO access on disabled memory")
+Signed-off-by: Matthew Rosato <mjrosato@linux.ibm.com>
+Acked-by: Bjorn Helgaas <bhelgaas@google.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+Acked-by: Joerg Roedel <jroedel@suse.de>
+---
+ drivers/pci/iov.c   |    1 +
+ include/linux/pci.h |    1 +
+ 2 files changed, 2 insertions(+)
+
+--- a/drivers/pci/iov.c
++++ b/drivers/pci/iov.c
+@@ -134,6 +134,7 @@ int pci_iov_add_virtfn(struct pci_dev *d
+ 
+ 	virtfn->devfn = pci_iov_virtfn_devfn(dev, id);
+ 	virtfn->vendor = dev->vendor;
++	virtfn->no_command_memory = 1;
+ 	pci_read_config_word(dev, iov->pos + PCI_SRIOV_VF_DID, &virtfn->device);
+ 	rc = pci_setup_device(virtfn);
+ 	if (rc)
+--- a/include/linux/pci.h
++++ b/include/linux/pci.h
+@@ -414,6 +414,7 @@ struct pci_dev {
+ 	unsigned int	has_secondary_link:1;
+ 	unsigned int	non_compliant_bars:1;	/* broken BARs; ignore them */
+ 	unsigned int	no_vf_scan:1;		/* Don't scan for VFs after IOV enablement */
++	unsigned int	no_command_memory:1;	/* No PCI_COMMAND_MEMORY */
+ 	pci_dev_flags_t dev_flags;
+ 	atomic_t	enable_cnt;	/* pci_enable_device has been called */
+ 

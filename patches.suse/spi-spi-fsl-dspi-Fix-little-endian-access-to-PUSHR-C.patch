@@ -1,0 +1,110 @@
+From: Vladimir Oltean <vladimir.oltean@nxp.com>
+Date: Wed, 18 Mar 2020 02:15:53 +0200
+Subject: spi: spi-fsl-dspi: Fix little endian access to PUSHR CMD and TXDATA
+
+Git-commit: 671ffde1752f594c60ccdfd75378defacfaf7c83
+Patch-mainline: v5.7-rc1
+References: git-fixes
+
+In XSPI mode, the 32-bit PUSHR register can be written to separately:
+the higher 16 bits are for commands and the lower 16 bits are for data.
+
+This has nicely been hacked around, by defining a second regmap with a
+width of 16 bits, and effectively splitting a 32-bit register into 2
+16-bit ones, from the perspective of this regmap_pushr.
+
+The problem is the assumption about the controller's endianness. If the
+controller is little endian (such as anything post-LS1046A), then the
+first 2 bytes, in the order imposed by memory layout, will actually hold
+the TXDATA, and the last 2 bytes will hold the CMD.
+
+So take the controller's endianness into account when performing split
+writes to PUSHR. The obvious and simple solution would have been to call
+regmap_get_val_endian(), but that is an internal regmap function and we
+don't want to change regmap just for this. Therefore, we just re-read
+the "big-endian" device tree property.
+
+Fixes: 58ba07ec79e6 ("spi: spi-fsl-dspi: Add support for XSPI mode registers")
+Signed-off-by: Vladimir Oltean <vladimir.oltean@nxp.com>
+Tested-by: Michael Walle <michael@walle.cc>
+Link: https://lore.kernel.org/r/20200318001603.9650-3-olteanv@gmail.com
+Signed-off-by: Mark Brown <broonie@kernel.org>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ drivers/spi/spi-fsl-dspi.c |   26 ++++++++++++++++++++------
+ 1 file changed, 20 insertions(+), 6 deletions(-)
+
+--- a/drivers/spi/spi-fsl-dspi.c
++++ b/drivers/spi/spi-fsl-dspi.c
+@@ -119,10 +119,6 @@
+ #define SPI_FRAME_EBITS(bits)	SPI_CTARE_FMSZE(((bits) - 1) >> 4)
+ #define SPI_FRAME_EBITS_MASK	SPI_CTARE_FMSZE(1)
+ 
+-/* Register offsets for regmap_pushr */
+-#define PUSHR_CMD		0x0
+-#define PUSHR_TX		0x2
+-
+ #define SPI_CS_INIT		0x01
+ #define SPI_CS_ASSERT		0x02
+ #define SPI_CS_DROP		0x04
+@@ -210,6 +206,13 @@ struct fsl_dspi {
+ 	u32			waitflags;
+ 
+ 	struct fsl_dspi_dma	*dma;
++	/*
++	 * Offsets for CMD and TXDATA within SPI_PUSHR when accessed
++	 * individually (in XSPI mode)
++	 */
++	int					pushr_cmd;
++	int					pushr_tx;
++
+ };
+ 
+ static u32 dspi_pop_tx(struct fsl_dspi *dspi)
+@@ -574,12 +577,12 @@ static void cmd_fifo_write(struct fsl_ds
+ 
+ 	if (dspi->len > 0)
+ 		cmd |= SPI_PUSHR_CMD_CONT;
+-	regmap_write(dspi->regmap_pushr, PUSHR_CMD, cmd);
++	regmap_write(dspi->regmap_pushr, dspi->pushr_cmd, cmd);
+ }
+ 
+ static void tx_fifo_write(struct fsl_dspi *dspi, u16 txdata)
+ {
+-	regmap_write(dspi->regmap_pushr, PUSHR_TX, txdata);
++	regmap_write(dspi->regmap_pushr, dspi->pushr_tx, txdata);
+ }
+ 
+ static void dspi_tcfq_write(struct fsl_dspi *dspi)
+@@ -983,6 +986,7 @@ static int dspi_probe(struct platform_de
+ 	void __iomem *base;
+ 	struct fsl_dspi_platform_data *pdata;
+ 	int ret = 0, cs_num, bus_num;
++	bool big_endian;
+ 
+ 	master = spi_alloc_master(&pdev->dev, sizeof(struct fsl_dspi));
+ 	if (!master)
+@@ -1006,6 +1010,7 @@ static int dspi_probe(struct platform_de
+ 		master->bus_num = pdata->bus_num;
+ 
+ 		dspi->devtype_data = &coldfire_data;
++		big_endian = true;
+ 	} else {
+ 
+ 		ret = of_property_read_u32(np, "spi-num-chipselects", &cs_num);
+@@ -1028,6 +1033,15 @@ static int dspi_probe(struct platform_de
+ 			ret = -EFAULT;
+ 			goto out_master_put;
+ 		}
++
++		big_endian = of_device_is_big_endian(np);
++	}
++	if (big_endian) {
++		dspi->pushr_cmd = 0;
++		dspi->pushr_tx = 2;
++	} else {
++		dspi->pushr_cmd = 2;
++		dspi->pushr_tx = 0;
+ 	}
+ 
+ 	if (dspi->devtype_data->xspi_mode)

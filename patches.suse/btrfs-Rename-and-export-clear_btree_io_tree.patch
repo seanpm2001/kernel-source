@@ -15,17 +15,15 @@ Reviewed-by: David Sterba <dsterba@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 Signed-off-by: Filipe Manana <fdmanana@suse.com>
 ---
- fs/btrfs/extent_io.c   | 29 +++++++++++++++++++++++++++++
- fs/btrfs/extent_io.h   |  1 +
- fs/btrfs/transaction.c | 37 ++++---------------------------------
+ fs/btrfs/extent_io.c   |   29 +++++++++++++++++++++++++++++
+ fs/btrfs/extent_io.h   |    1 +
+ fs/btrfs/transaction.c |   37 ++++---------------------------------
  3 files changed, 34 insertions(+), 33 deletions(-)
 
-diff --git a/fs/btrfs/extent_io.c b/fs/btrfs/extent_io.c
-index 77fbe3a9e982..3d36272aedea 100644
 --- a/fs/btrfs/extent_io.c
 +++ b/fs/btrfs/extent_io.c
-@@ -276,6 +276,35 @@ void extent_io_tree_init(struct extent_io_tree *tree,
- 	tree->mapping = mapping;
+@@ -277,6 +277,35 @@ void extent_io_tree_init(struct extent_i
+ 	tree->owner = owner;
  }
  
 +void extent_io_tree_release(struct extent_io_tree *tree)
@@ -60,23 +58,19 @@ index 77fbe3a9e982..3d36272aedea 100644
  static struct extent_state *alloc_extent_state(gfp_t mask)
  {
  	struct extent_state *state;
-diff --git a/fs/btrfs/extent_io.h b/fs/btrfs/extent_io.h
-index 9a2befc07efa..7c976bce62da 100644
 --- a/fs/btrfs/extent_io.h
 +++ b/fs/btrfs/extent_io.h
-@@ -265,6 +265,7 @@ typedef struct extent_map *(get_extent_t)(struct btrfs_inode *inode,
+@@ -278,6 +278,7 @@ typedef struct extent_map *(get_extent_t
  
  void extent_io_tree_init(struct extent_io_tree *tree,
- 			 struct address_space *mapping);
+ 			 struct address_space *mapping, unsigned int owner);
 +void extent_io_tree_release(struct extent_io_tree *tree);
  int try_release_extent_mapping(struct extent_map_tree *map,
  			       struct extent_io_tree *tree, struct page *page,
  			       gfp_t mask);
-diff --git a/fs/btrfs/transaction.c b/fs/btrfs/transaction.c
-index 11af9ece9ad3..04e36a507502 100644
 --- a/fs/btrfs/transaction.c
 +++ b/fs/btrfs/transaction.c
-@@ -99,35 +99,6 @@ void btrfs_put_transaction(struct btrfs_transaction *transaction)
+@@ -97,35 +97,6 @@ void btrfs_put_transaction(struct btrfs_
  	}
  }
  
@@ -112,7 +106,7 @@ index 11af9ece9ad3..04e36a507502 100644
  static noinline void switch_commit_roots(struct btrfs_transaction *trans,
  					 struct btrfs_fs_info *fs_info)
  {
-@@ -141,7 +112,7 @@ static noinline void switch_commit_roots(struct btrfs_transaction *trans,
+@@ -139,7 +110,7 @@ static noinline void switch_commit_roots
  		root->commit_root = btrfs_root_node(root);
  		if (is_fstree(root->objectid))
  			btrfs_unpin_free_ino(root);
@@ -121,7 +115,7 @@ index 11af9ece9ad3..04e36a507502 100644
  		btrfs_qgroup_clean_swapped_blocks(root);
  	}
  
-@@ -957,7 +928,7 @@ int btrfs_write_marked_extents(struct btrfs_fs_info *fs_info,
+@@ -952,7 +923,7 @@ int btrfs_write_marked_extents(struct bt
  		 * superblock that points to btree nodes/leafs for which
  		 * writeback hasn't finished yet (and without errors).
  		 * We cleanup any entries left in the io tree when committing
@@ -130,7 +124,7 @@ index 11af9ece9ad3..04e36a507502 100644
  		 */
  		if (err == -ENOMEM) {
  			err = 0;
-@@ -1002,7 +973,7 @@ static int __btrfs_wait_marked_extents(struct btrfs_fs_info *fs_info,
+@@ -997,7 +968,7 @@ static int __btrfs_wait_marked_extents(s
  		 * left in the io tree. For a log commit, we don't remove them
  		 * after committing the log because the tree can be accessed
  		 * concurrently - we do it only at transaction commit time when
@@ -139,7 +133,7 @@ index 11af9ece9ad3..04e36a507502 100644
  		 */
  		err = clear_extent_bit(dirty_pages, start, end,
  				       EXTENT_NEED_WAIT,
-@@ -1081,7 +1052,7 @@ static int btrfs_write_and_wait_transaction(struct btrfs_trans_handle *trans,
+@@ -1076,7 +1047,7 @@ static int btrfs_write_and_wait_transact
  	blk_finish_plug(&plug);
  	ret2 = btrfs_wait_extents(fs_info, dirty_pages);
  
@@ -148,6 +142,3 @@ index 11af9ece9ad3..04e36a507502 100644
  
  	if (ret)
  		return ret;
--- 
-2.26.2
-

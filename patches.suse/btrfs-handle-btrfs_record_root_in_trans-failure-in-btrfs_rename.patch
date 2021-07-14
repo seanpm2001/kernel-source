@@ -1,0 +1,37 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:03 -0500
+Subject: btrfs: handle btrfs_record_root_in_trans failure in btrfs_rename
+Git-commit: b0fec6fd330fe10cb68c137f6b7a17898ee69671
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+btrfs_record_root_in_trans will return errors in the future, so handle
+the error properly in btrfs_rename.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/inode.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
+index 179ffb9529d4..b8863537d31d 100644
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -9416,8 +9416,11 @@ static int btrfs_rename(struct inode *old_dir, struct dentry *old_dentry,
+ 		goto out_notrans;
+ 	}
+ 
+-	if (dest != root)
+-		btrfs_record_root_in_trans(trans, dest);
++	if (dest != root) {
++		ret = btrfs_record_root_in_trans(trans, dest);
++		if (ret)
++			goto out_fail;
++	}
+ 
+ 	ret = btrfs_set_inode_index(BTRFS_I(new_dir), &index);
+ 	if (ret)
+

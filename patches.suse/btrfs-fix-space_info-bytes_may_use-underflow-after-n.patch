@@ -98,14 +98,12 @@ CC: stable@vger.kernel.org # 4.4+
 Signed-off-by: Filipe Manana <fdmanana@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 ---
- fs/btrfs/inode.c | 62 +++++++++++++++++++++++++++++++++++++++++++-----
+ fs/btrfs/inode.c |   62 +++++++++++++++++++++++++++++++++++++++++++++++++------
  1 file changed, 56 insertions(+), 6 deletions(-)
 
-diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
-index c4dd5d52bf6a..dd70c64b7b61 100644
 --- a/fs/btrfs/inode.c
 +++ b/fs/btrfs/inode.c
-@@ -65,6 +65,7 @@
+@@ -64,6 +64,7 @@
  #include "dedupe.h"
  #include "delalloc-space.h"
  #include "block-group.h"
@@ -113,7 +111,7 @@ index c4dd5d52bf6a..dd70c64b7b61 100644
  
  struct btrfs_iget_args {
  	struct btrfs_key *location;
-@@ -1280,6 +1281,56 @@ static noinline int csum_exist_in_range(struct btrfs_fs_info *fs_info,
+@@ -1281,6 +1282,56 @@ static noinline int csum_exist_in_range(
  	return 1;
  }
  
@@ -170,7 +168,7 @@ index c4dd5d52bf6a..dd70c64b7b61 100644
  /*
   * when nowcow writeback call back.  This checks for snapshots or COW copies
   * of the extents that exist in the file, and COWs the file as required.
-@@ -1472,10 +1523,9 @@ static noinline int run_delalloc_nocow(struct inode *inode,
+@@ -1487,10 +1538,9 @@ out_check:
  
  		btrfs_release_path(path);
  		if (cow_start != (u64)-1) {
@@ -182,9 +180,9 @@ index c4dd5d52bf6a..dd70c64b7b61 100644
 +					      found_key.offset - 1,
 +					      page_started, nr_written);
  			if (ret) {
- 				if (!nolock && nocow)
- 					btrfs_end_write_no_snapshoting(root);
-@@ -1559,8 +1609,8 @@ static noinline int run_delalloc_nocow(struct inode *inode,
+ 				if (nocow)
+ 					btrfs_dec_nocow_writers(fs_info,
+@@ -1568,8 +1618,8 @@ out_check:
  
  	if (cow_start != (u64)-1) {
  		cur_offset = end;
@@ -195,6 +193,3 @@ index c4dd5d52bf6a..dd70c64b7b61 100644
  		if (ret)
  			goto error;
  	}
--- 
-2.26.2
-

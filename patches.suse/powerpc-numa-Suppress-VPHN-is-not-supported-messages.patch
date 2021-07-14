@@ -1,0 +1,38 @@
+From 437ccdc8ce629470babdda1a7086e2f477048cbd Mon Sep 17 00:00:00 2001
+From: Satheesh Rajendran <sathnaga@linux.vnet.ibm.com>
+Date: Thu, 8 Nov 2018 10:47:56 +0530
+Subject: [PATCH] powerpc/numa: Suppress "VPHN is not supported" messages
+
+References: bsc#1181674 ltc#189159
+Patch-mainline: v4.20-rc3
+Git-commit: 437ccdc8ce629470babdda1a7086e2f477048cbd
+
+When VPHN function is not supported and during cpu hotplug event,
+kernel prints message 'VPHN function not supported. Disabling
+polling...'. Currently it prints on every hotplug event, it floods
+dmesg when a KVM guest tries to hotplug huge number of vcpus, let's
+just print once and suppress further kernel prints.
+
+Signed-off-by: Satheesh Rajendran <sathnaga@linux.vnet.ibm.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/mm/numa.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/powerpc/mm/numa.c b/arch/powerpc/mm/numa.c
+index 3a048e98a132..ce28ae5ca080 100644
+--- a/arch/powerpc/mm/numa.c
++++ b/arch/powerpc/mm/numa.c
+@@ -1178,7 +1178,7 @@ static long vphn_get_associativity(unsigned long cpu,
+ 
+ 	switch (rc) {
+ 	case H_FUNCTION:
+-		printk(KERN_INFO
++		printk_once(KERN_INFO
+ 			"VPHN is not supported. Disabling polling...\n");
+ 		stop_topology_update();
+ 		break;
+-- 
+2.26.2
+

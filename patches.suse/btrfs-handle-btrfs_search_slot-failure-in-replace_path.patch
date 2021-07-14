@@ -1,0 +1,39 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:23 -0500
+Subject: btrfs: handle btrfs_search_slot failure in replace_path
+Git-commit: 0e9873e2fe43ea098e70c30c996ebb90a22cce43
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+The search can fail for various reasons, in case of errors there's no
+cleanup to be done so we can pass the error to the caller, adjusting for
+the case where the key is not found and search slot returns 1.
+
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+[ update changelog ]
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/fs/btrfs/relocation.c b/fs/btrfs/relocation.c
+index f1702157532a..b62f5e46cf34 100644
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -1323,7 +1323,11 @@ int replace_path(struct btrfs_trans_handle *trans, struct reloc_control *rc,
+ 		path->lowest_level = level;
+ 		ret = btrfs_search_slot(trans, src, &key, path, 0, 1);
+ 		path->lowest_level = 0;
+-		BUG_ON(ret);
++		if (ret) {
++			if (ret > 0)
++				ret = -ENOENT;
++			break;
++		}
+ 
+ 		/*
+ 		 * Info qgroup to trace both subtrees.
+

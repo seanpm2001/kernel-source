@@ -207,16 +207,15 @@ CC: stable@vger.kernel.org # 4.4+
 Signed-off-by: Filipe Manana <fdmanana@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 ---
- fs/btrfs/ctree.h    |  3 +++
- fs/btrfs/disk-io.c  |  4 +++-
- fs/btrfs/tree-log.c | 24 +++++++++++++++++++++---
- 3 files changed, 27 insertions(+), 4 deletions(-)
+ fs/btrfs/ctree.h     |    3 +++
+ fs/btrfs/disk-io.c   |    5 ++++-
+ fs/btrfs/extent_io.h |    1 +
+ fs/btrfs/tree-log.c  |   24 +++++++++++++++++++++---
+ 4 files changed, 29 insertions(+), 4 deletions(-)
 
-diff --git a/fs/btrfs/ctree.h b/fs/btrfs/ctree.h
-index a7f78304d..c9403e7b3 100644
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -1119,6 +1119,9 @@ struct btrfs_root {
+@@ -1120,6 +1120,9 @@ struct btrfs_root {
  	spinlock_t qgroup_meta_rsv_lock;
  	u64 qgroup_meta_rsv_pertrans;
  	u64 qgroup_meta_rsv_prealloc;
@@ -225,29 +224,37 @@ index a7f78304d..c9403e7b3 100644
 +	struct extent_io_tree log_csum_range;
  };
  
- struct btrfs_file_private {
-diff --git a/fs/btrfs/disk-io.c b/fs/btrfs/disk-io.c
-index 4bb8aa684..af38b1b7d 100644
+ struct btrfs_clone_extent_info {
 --- a/fs/btrfs/disk-io.c
 +++ b/fs/btrfs/disk-io.c
-@@ -1272,9 +1272,11 @@ static void __setup_root(struct btrfs_root *root, struct btrfs_fs_info *fs_info,
+@@ -1273,10 +1273,13 @@ static void __setup_root(struct btrfs_ro
  	root->log_transid = 0;
  	root->log_transid_committed = -1;
  	root->last_log_commit = 0;
 -	if (!dummy)
 +	if (!dummy) {
  		extent_io_tree_init(&root->dirty_log_pages,
- 				     fs_info->btree_inode->i_mapping);
-+		extent_io_tree_init(&root->log_csum_range, NULL);
+ 				    fs_info->btree_inode->i_mapping,
+ 				    IO_TREE_ROOT_DIRTY_LOG_PAGES);
++		extent_io_tree_init(&root->log_csum_range, NULL,
++				    IO_TREE_LOG_CSUM_RANGE);
 +	}
  
  	memset(&root->root_key, 0, sizeof(root->root_key));
  	memset(&root->root_item, 0, sizeof(root->root_item));
-diff --git a/fs/btrfs/tree-log.c b/fs/btrfs/tree-log.c
-index 71c1efc5c..b327ea2d0 100644
+--- a/fs/btrfs/extent_io.h
++++ b/fs/btrfs/extent_io.h
+@@ -139,6 +139,7 @@ enum {
+ 	IO_TREE_TRANS_DIRTY_PAGES,
+ 	IO_TREE_ROOT_DIRTY_LOG_PAGES,
+ 	IO_TREE_INODE_FILE_EXTENT,
++	IO_TREE_LOG_CSUM_RANGE,
+ 	IO_TREE_SELFTEST,
+ };
+ 
 --- a/fs/btrfs/tree-log.c
 +++ b/fs/btrfs/tree-log.c
-@@ -3334,6 +3334,8 @@ static void free_log_tree(struct btrfs_t
+@@ -3352,6 +3352,8 @@ static void free_log_tree(struct btrfs_t
  				  EXTENT_DIRTY | EXTENT_NEW | EXTENT_NEED_WAIT);
  	}
  
@@ -256,7 +263,7 @@ index 71c1efc5c..b327ea2d0 100644
  	free_extent_buffer(log->node);
  	kfree(log);
  }
-@@ -3964,8 +3966,21 @@ static int log_csums(struct btrfs_trans_handle *trans,
+@@ -3966,9 +3968,22 @@ static int log_csums(struct btrfs_trans_
  		     struct btrfs_root *log_root,
  		     struct btrfs_ordered_sum *sums)
  {
@@ -264,7 +271,7 @@ index 71c1efc5c..b327ea2d0 100644
 +	struct extent_state *cached_state = NULL;
  	int ret;
  
-+	/*
+ 	/*
 +	 * Serialize logging for checksums. This is to avoid racing with the
 +	 * same checksum being logged by another task that is logging another
 +	 * file which happens to refer to the same extent as well. Such races
@@ -275,10 +282,11 @@ index 71c1efc5c..b327ea2d0 100644
 +	if (ret)
 +		return ret;
 +
- 	/*
++	/*
  	 * Due to extent cloning, we might have logged a csum item that covers a
  	 * subrange of a cloned extent, and later we can end up logging a csum
-@@ -3976,10 +3991,13 @@ static int log_csums(struct btrfs_trans_handle *trans,
+ 	 * item for a larger subrange of the same extent or the entire range.
+@@ -3978,10 +3993,13 @@ static int log_csums(struct btrfs_trans_
  	 * trim and adjust) any existing csum items in the log for this range.
  	 */
  	ret = btrfs_del_csums(trans, log_root, sums->bytenr, sums->len);
@@ -295,6 +303,3 @@ index 71c1efc5c..b327ea2d0 100644
  }
  
  static noinline int copy_items(struct btrfs_trans_handle *trans,
--- 
-2.26.2
-

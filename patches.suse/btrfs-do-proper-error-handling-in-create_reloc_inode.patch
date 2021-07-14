@@ -1,0 +1,89 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:28 -0500
+Subject: btrfs: do proper error handling in create_reloc_inode
+Git-commit: 790c1b8cd477af069a93375fa268d637ef799794
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+We already handle some errors in this function, and the callers do the
+correct error handling, so clean up the rest of the function to do the
+appropriate error handling.
+
+There's a little extra work that needs to be done here, as we create the
+inode item before we create the orphan item.  We could potentially add
+the orphan item, but if we failed to create the inode item we would have
+to abort the transaction.
+
+Instead add a helper to delete the inode item we created in the case
+that we're unable to look up the inode (this would likely be caused by
+an ENOMEM), which if it succeeds means we can avoid a transaction abort
+in this particular error case.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |   39 +++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 37 insertions(+), 2 deletions(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -4559,6 +4559,35 @@ out:
+ 	return ret;
+ }
+ 
++static void delete_orphan_inode(struct btrfs_trans_handle *trans,
++				struct btrfs_root *root, u64 objectid)
++{
++	struct btrfs_path *path;
++	struct btrfs_key key;
++	int ret = 0;
++
++	path = btrfs_alloc_path();
++	if (!path) {
++		ret = -ENOMEM;
++		goto out;
++	}
++
++	key.objectid = objectid;
++	key.type = BTRFS_INODE_ITEM_KEY;
++	key.offset = 0;
++	ret = btrfs_search_slot(trans, root, &key, path, -1, 1);
++	if (ret) {
++		if (ret > 0)
++			ret = -ENOENT;
++		goto out;
++	}
++	ret = btrfs_del_item(trans, root, path);
++out:
++	if (ret)
++		btrfs_abort_transaction(trans, ret);
++	btrfs_free_path(path);
++}
++
+ /*
+  * helper to create inode for data relocation.
+  * the inode is in data relocation tree and its link count is 0
+@@ -4587,13 +4616,19 @@ struct inode *create_reloc_inode(struct
+ 		goto out;
+ 
+ 	err = __insert_orphan_inode(trans, root, objectid);
+-	BUG_ON(err);
++	if (err)
++		goto out;
+ 
+ 	key.objectid = objectid;
+ 	key.type = BTRFS_INODE_ITEM_KEY;
+ 	key.offset = 0;
+ 	inode = btrfs_iget(fs_info->sb, &key, root, NULL);
+-	BUG_ON(IS_ERR(inode) || is_bad_inode(inode));
++	if (IS_ERR(inode)) {
++		delete_orphan_inode(trans, root, objectid);
++		err = PTR_ERR(inode);
++		inode = NULL;
++		goto out;
++	}
+ 	BTRFS_I(inode)->index_cnt = group->key.objectid;
+ 
+ 	err = btrfs_orphan_add(trans, BTRFS_I(inode));

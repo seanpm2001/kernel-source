@@ -1,0 +1,984 @@
+From e8e319b187e7fb7784c86989da82dd5ff79d859e Mon Sep 17 00:00:00 2001
+From: Joe Perches <joe@perches.com>
+Date: Fri, 23 Mar 2018 15:54:39 -0700
+Subject: [PATCH 04/10] drivers/net: Use octal not symbolic permissions
+Git-commit: 2ef00c53049b6a8758d118188992da01d75f3628
+References: git-fixes
+Patch-mainline: v4.17-rc1
+
+Prefer the direct use of octal for permissions.
+
+Done with checkpatch -f --types=SYMBOLIC_PERMS --fix-inplace
+and some typing.
+
+Miscellanea:
+
+o Whitespace neatening around these conversions.
+
+Signed-off-by: Joe Perches <joe@perches.com>
+Reviewed-by: Wei Liu <wei.liu2@citrix.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/bonding/bond_procfs.c      |  2 +-
+ drivers/net/bonding/bond_sysfs.c       | 73 +++++++++++++++++-----------------
+ drivers/net/bonding/bond_sysfs_slave.c |  4 +-
+ drivers/net/caif/caif_serial.c         | 32 +++++++--------
+ drivers/net/caif/caif_spi.c            | 16 ++++----
+ drivers/net/caif/caif_virtio.c         | 16 ++++----
+ drivers/net/can/at91_can.c             |  3 +-
+ drivers/net/can/cc770/cc770.c          |  4 +-
+ drivers/net/can/cc770/cc770_isa.c      | 16 ++++----
+ drivers/net/can/grcan.c                |  4 +-
+ drivers/net/can/janz-ican3.c           |  6 +--
+ drivers/net/can/sja1000/sja1000_isa.c  | 14 +++----
+ drivers/net/can/softing/softing_main.c |  4 +-
+ drivers/net/can/spi/mcp251x.c          |  2 +-
+ drivers/net/can/usb/esd_usb2.c         |  6 +--
+ drivers/net/can/vcan.c                 |  2 +-
+ drivers/net/hamradio/bpqether.c        |  3 +-
+ drivers/net/hamradio/yam.c             |  2 +-
+ drivers/net/hyperv/netvsc_drv.c        |  4 +-
+ drivers/net/ieee802154/at86rf230.c     |  2 +-
+ drivers/net/phy/spi_ks8995.c           |  2 +-
+ drivers/net/ppp/ppp_generic.c          |  2 +-
+ drivers/net/ppp/pppoe.c                |  2 +-
+ drivers/net/usb/cdc_ncm.c              | 12 +++---
+ drivers/net/usb/hso.c                  |  8 ++--
+ drivers/net/xen-netback/xenbus.c       |  4 +-
+ drivers/net/xen-netfront.c             |  6 +--
+ 27 files changed, 124 insertions(+), 127 deletions(-)
+
+diff --git a/drivers/net/bonding/bond_procfs.c b/drivers/net/bonding/bond_procfs.c
+index d8d4ada034b7..a0036bc553b5 100644
+--- a/drivers/net/bonding/bond_procfs.c
++++ b/drivers/net/bonding/bond_procfs.c
+@@ -286,7 +286,7 @@ void bond_create_proc_entry(struct bonding *bond)
+ 
+ 	if (bn->proc_dir) {
+ 		bond->proc_entry = proc_create_data(bond_dev->name,
+-						    S_IRUGO, bn->proc_dir,
++						    0444, bn->proc_dir,
+ 						    &bond_info_fops, bond);
+ 		if (bond->proc_entry == NULL)
+ 			netdev_warn(bond_dev, "Cannot create /proc/net/%s/%s\n",
+diff --git a/drivers/net/bonding/bond_sysfs.c b/drivers/net/bonding/bond_sysfs.c
+index 770623a0cc01..04bb160041ec 100644
+--- a/drivers/net/bonding/bond_sysfs.c
++++ b/drivers/net/bonding/bond_sysfs.c
+@@ -147,7 +147,7 @@ static ssize_t bonding_store_bonds(struct class *cls,
+ static const struct class_attribute class_attr_bonding_masters = {
+ 	.attr = {
+ 		.name = "bonding_masters",
+-		.mode = S_IWUSR | S_IRUGO,
++		.mode = 0644,
+ 	},
+ 	.show = bonding_show_bonds,
+ 	.store = bonding_store_bonds,
+@@ -202,7 +202,7 @@ static ssize_t bonding_show_slaves(struct device *d,
+ 
+ 	return res;
+ }
+-static DEVICE_ATTR(slaves, S_IRUGO | S_IWUSR, bonding_show_slaves,
++static DEVICE_ATTR(slaves, 0644, bonding_show_slaves,
+ 		   bonding_sysfs_store_option);
+ 
+ /* Show the bonding mode. */
+@@ -216,8 +216,7 @@ static ssize_t bonding_show_mode(struct device *d,
+ 
+ 	return sprintf(buf, "%s %d\n", val->string, BOND_MODE(bond));
+ }
+-static DEVICE_ATTR(mode, S_IRUGO | S_IWUSR,
+-		   bonding_show_mode, bonding_sysfs_store_option);
++static DEVICE_ATTR(mode, 0644, bonding_show_mode, bonding_sysfs_store_option);
+ 
+ /* Show the bonding transmit hash method. */
+ static ssize_t bonding_show_xmit_hash(struct device *d,
+@@ -231,7 +230,7 @@ static ssize_t bonding_show_xmit_hash(struct device *d,
+ 
+ 	return sprintf(buf, "%s %d\n", val->string, bond->params.xmit_policy);
+ }
+-static DEVICE_ATTR(xmit_hash_policy, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(xmit_hash_policy, 0644,
+ 		   bonding_show_xmit_hash, bonding_sysfs_store_option);
+ 
+ /* Show arp_validate. */
+@@ -247,7 +246,7 @@ static ssize_t bonding_show_arp_validate(struct device *d,
+ 
+ 	return sprintf(buf, "%s %d\n", val->string, bond->params.arp_validate);
+ }
+-static DEVICE_ATTR(arp_validate, S_IRUGO | S_IWUSR, bonding_show_arp_validate,
++static DEVICE_ATTR(arp_validate, 0644, bonding_show_arp_validate,
+ 		   bonding_sysfs_store_option);
+ 
+ /* Show arp_all_targets. */
+@@ -263,7 +262,7 @@ static ssize_t bonding_show_arp_all_targets(struct device *d,
+ 	return sprintf(buf, "%s %d\n",
+ 		       val->string, bond->params.arp_all_targets);
+ }
+-static DEVICE_ATTR(arp_all_targets, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(arp_all_targets, 0644,
+ 		   bonding_show_arp_all_targets, bonding_sysfs_store_option);
+ 
+ /* Show fail_over_mac. */
+@@ -279,7 +278,7 @@ static ssize_t bonding_show_fail_over_mac(struct device *d,
+ 
+ 	return sprintf(buf, "%s %d\n", val->string, bond->params.fail_over_mac);
+ }
+-static DEVICE_ATTR(fail_over_mac, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(fail_over_mac, 0644,
+ 		   bonding_show_fail_over_mac, bonding_sysfs_store_option);
+ 
+ /* Show the arp timer interval. */
+@@ -291,7 +290,7 @@ static ssize_t bonding_show_arp_interval(struct device *d,
+ 
+ 	return sprintf(buf, "%d\n", bond->params.arp_interval);
+ }
+-static DEVICE_ATTR(arp_interval, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(arp_interval, 0644,
+ 		   bonding_show_arp_interval, bonding_sysfs_store_option);
+ 
+ /* Show the arp targets. */
+@@ -312,7 +311,7 @@ static ssize_t bonding_show_arp_targets(struct device *d,
+ 
+ 	return res;
+ }
+-static DEVICE_ATTR(arp_ip_target, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(arp_ip_target, 0644,
+ 		   bonding_show_arp_targets, bonding_sysfs_store_option);
+ 
+ /* Show the up and down delays. */
+@@ -324,7 +323,7 @@ static ssize_t bonding_show_downdelay(struct device *d,
+ 
+ 	return sprintf(buf, "%d\n", bond->params.downdelay * bond->params.miimon);
+ }
+-static DEVICE_ATTR(downdelay, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(downdelay, 0644,
+ 		   bonding_show_downdelay, bonding_sysfs_store_option);
+ 
+ static ssize_t bonding_show_updelay(struct device *d,
+@@ -336,7 +335,7 @@ static ssize_t bonding_show_updelay(struct device *d,
+ 	return sprintf(buf, "%d\n", bond->params.updelay * bond->params.miimon);
+ 
+ }
+-static DEVICE_ATTR(updelay, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(updelay, 0644,
+ 		   bonding_show_updelay, bonding_sysfs_store_option);
+ 
+ /* Show the LACP interval. */
+@@ -351,7 +350,7 @@ static ssize_t bonding_show_lacp(struct device *d,
+ 
+ 	return sprintf(buf, "%s %d\n", val->string, bond->params.lacp_fast);
+ }
+-static DEVICE_ATTR(lacp_rate, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(lacp_rate, 0644,
+ 		   bonding_show_lacp, bonding_sysfs_store_option);
+ 
+ static ssize_t bonding_show_min_links(struct device *d,
+@@ -362,7 +361,7 @@ static ssize_t bonding_show_min_links(struct device *d,
+ 
+ 	return sprintf(buf, "%u\n", bond->params.min_links);
+ }
+-static DEVICE_ATTR(min_links, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(min_links, 0644,
+ 		   bonding_show_min_links, bonding_sysfs_store_option);
+ 
+ static ssize_t bonding_show_ad_select(struct device *d,
+@@ -376,7 +375,7 @@ static ssize_t bonding_show_ad_select(struct device *d,
+ 
+ 	return sprintf(buf, "%s %d\n", val->string, bond->params.ad_select);
+ }
+-static DEVICE_ATTR(ad_select, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(ad_select, 0644,
+ 		   bonding_show_ad_select, bonding_sysfs_store_option);
+ 
+ /* Show the number of peer notifications to send after a failover event. */
+@@ -387,9 +386,9 @@ static ssize_t bonding_show_num_peer_notif(struct device *d,
+ 	struct bonding *bond = to_bond(d);
+ 	return sprintf(buf, "%d\n", bond->params.num_peer_notif);
+ }
+-static DEVICE_ATTR(num_grat_arp, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(num_grat_arp, 0644,
+ 		   bonding_show_num_peer_notif, bonding_sysfs_store_option);
+-static DEVICE_ATTR(num_unsol_na, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(num_unsol_na, 0644,
+ 		   bonding_show_num_peer_notif, bonding_sysfs_store_option);
+ 
+ /* Show the MII monitor interval. */
+@@ -401,7 +400,7 @@ static ssize_t bonding_show_miimon(struct device *d,
+ 
+ 	return sprintf(buf, "%d\n", bond->params.miimon);
+ }
+-static DEVICE_ATTR(miimon, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(miimon, 0644,
+ 		   bonding_show_miimon, bonding_sysfs_store_option);
+ 
+ /* Show the primary slave. */
+@@ -421,7 +420,7 @@ static ssize_t bonding_show_primary(struct device *d,
+ 
+ 	return count;
+ }
+-static DEVICE_ATTR(primary, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(primary, 0644,
+ 		   bonding_show_primary, bonding_sysfs_store_option);
+ 
+ /* Show the primary_reselect flag. */
+@@ -438,7 +437,7 @@ static ssize_t bonding_show_primary_reselect(struct device *d,
+ 	return sprintf(buf, "%s %d\n",
+ 		       val->string, bond->params.primary_reselect);
+ }
+-static DEVICE_ATTR(primary_reselect, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(primary_reselect, 0644,
+ 		   bonding_show_primary_reselect, bonding_sysfs_store_option);
+ 
+ /* Show the use_carrier flag. */
+@@ -450,7 +449,7 @@ static ssize_t bonding_show_carrier(struct device *d,
+ 
+ 	return sprintf(buf, "%d\n", bond->params.use_carrier);
+ }
+-static DEVICE_ATTR(use_carrier, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(use_carrier, 0644,
+ 		   bonding_show_carrier, bonding_sysfs_store_option);
+ 
+ 
+@@ -471,7 +470,7 @@ static ssize_t bonding_show_active_slave(struct device *d,
+ 
+ 	return count;
+ }
+-static DEVICE_ATTR(active_slave, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(active_slave, 0644,
+ 		   bonding_show_active_slave, bonding_sysfs_store_option);
+ 
+ /* Show link status of the bond interface. */
+@@ -484,7 +483,7 @@ static ssize_t bonding_show_mii_status(struct device *d,
+ 
+ 	return sprintf(buf, "%s\n", active ? "up" : "down");
+ }
+-static DEVICE_ATTR(mii_status, S_IRUGO, bonding_show_mii_status, NULL);
++static DEVICE_ATTR(mii_status, 0444, bonding_show_mii_status, NULL);
+ 
+ /* Show current 802.3ad aggregator ID. */
+ static ssize_t bonding_show_ad_aggregator(struct device *d,
+@@ -503,7 +502,7 @@ static ssize_t bonding_show_ad_aggregator(struct device *d,
+ 
+ 	return count;
+ }
+-static DEVICE_ATTR(ad_aggregator, S_IRUGO, bonding_show_ad_aggregator, NULL);
++static DEVICE_ATTR(ad_aggregator, 0444, bonding_show_ad_aggregator, NULL);
+ 
+ 
+ /* Show number of active 802.3ad ports. */
+@@ -523,7 +522,7 @@ static ssize_t bonding_show_ad_num_ports(struct device *d,
+ 
+ 	return count;
+ }
+-static DEVICE_ATTR(ad_num_ports, S_IRUGO, bonding_show_ad_num_ports, NULL);
++static DEVICE_ATTR(ad_num_ports, 0444, bonding_show_ad_num_ports, NULL);
+ 
+ 
+ /* Show current 802.3ad actor key. */
+@@ -543,7 +542,7 @@ static ssize_t bonding_show_ad_actor_key(struct device *d,
+ 
+ 	return count;
+ }
+-static DEVICE_ATTR(ad_actor_key, S_IRUGO, bonding_show_ad_actor_key, NULL);
++static DEVICE_ATTR(ad_actor_key, 0444, bonding_show_ad_actor_key, NULL);
+ 
+ 
+ /* Show current 802.3ad partner key. */
+@@ -563,7 +562,7 @@ static ssize_t bonding_show_ad_partner_key(struct device *d,
+ 
+ 	return count;
+ }
+-static DEVICE_ATTR(ad_partner_key, S_IRUGO, bonding_show_ad_partner_key, NULL);
++static DEVICE_ATTR(ad_partner_key, 0444, bonding_show_ad_partner_key, NULL);
+ 
+ 
+ /* Show current 802.3ad partner mac. */
+@@ -582,7 +581,7 @@ static ssize_t bonding_show_ad_partner_mac(struct device *d,
+ 
+ 	return count;
+ }
+-static DEVICE_ATTR(ad_partner_mac, S_IRUGO, bonding_show_ad_partner_mac, NULL);
++static DEVICE_ATTR(ad_partner_mac, 0444, bonding_show_ad_partner_mac, NULL);
+ 
+ /* Show the queue_ids of the slaves in the current bond. */
+ static ssize_t bonding_show_queue_id(struct device *d,
+@@ -615,7 +614,7 @@ static ssize_t bonding_show_queue_id(struct device *d,
+ 
+ 	return res;
+ }
+-static DEVICE_ATTR(queue_id, S_IRUGO | S_IWUSR, bonding_show_queue_id,
++static DEVICE_ATTR(queue_id, 0644, bonding_show_queue_id,
+ 		   bonding_sysfs_store_option);
+ 
+ 
+@@ -628,7 +627,7 @@ static ssize_t bonding_show_slaves_active(struct device *d,
+ 
+ 	return sprintf(buf, "%d\n", bond->params.all_slaves_active);
+ }
+-static DEVICE_ATTR(all_slaves_active, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(all_slaves_active, 0644,
+ 		   bonding_show_slaves_active, bonding_sysfs_store_option);
+ 
+ /* Show the number of IGMP membership reports to send on link failure */
+@@ -640,7 +639,7 @@ static ssize_t bonding_show_resend_igmp(struct device *d,
+ 
+ 	return sprintf(buf, "%d\n", bond->params.resend_igmp);
+ }
+-static DEVICE_ATTR(resend_igmp, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(resend_igmp, 0644,
+ 		   bonding_show_resend_igmp, bonding_sysfs_store_option);
+ 
+ 
+@@ -652,7 +651,7 @@ static ssize_t bonding_show_lp_interval(struct device *d,
+ 
+ 	return sprintf(buf, "%d\n", bond->params.lp_interval);
+ }
+-static DEVICE_ATTR(lp_interval, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(lp_interval, 0644,
+ 		   bonding_show_lp_interval, bonding_sysfs_store_option);
+ 
+ static ssize_t bonding_show_tlb_dynamic_lb(struct device *d,
+@@ -662,7 +661,7 @@ static ssize_t bonding_show_tlb_dynamic_lb(struct device *d,
+ 	struct bonding *bond = to_bond(d);
+ 	return sprintf(buf, "%d\n", bond->params.tlb_dynamic_lb);
+ }
+-static DEVICE_ATTR(tlb_dynamic_lb, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(tlb_dynamic_lb, 0644,
+ 		   bonding_show_tlb_dynamic_lb, bonding_sysfs_store_option);
+ 
+ static ssize_t bonding_show_packets_per_slave(struct device *d,
+@@ -674,7 +673,7 @@ static ssize_t bonding_show_packets_per_slave(struct device *d,
+ 
+ 	return sprintf(buf, "%u\n", packets_per_slave);
+ }
+-static DEVICE_ATTR(packets_per_slave, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(packets_per_slave, 0644,
+ 		   bonding_show_packets_per_slave, bonding_sysfs_store_option);
+ 
+ static ssize_t bonding_show_ad_actor_sys_prio(struct device *d,
+@@ -688,7 +687,7 @@ static ssize_t bonding_show_ad_actor_sys_prio(struct device *d,
+ 
+ 	return 0;
+ }
+-static DEVICE_ATTR(ad_actor_sys_prio, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(ad_actor_sys_prio, 0644,
+ 		   bonding_show_ad_actor_sys_prio, bonding_sysfs_store_option);
+ 
+ static ssize_t bonding_show_ad_actor_system(struct device *d,
+@@ -703,7 +702,7 @@ static ssize_t bonding_show_ad_actor_system(struct device *d,
+ 	return 0;
+ }
+ 
+-static DEVICE_ATTR(ad_actor_system, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(ad_actor_system, 0644,
+ 		   bonding_show_ad_actor_system, bonding_sysfs_store_option);
+ 
+ static ssize_t bonding_show_ad_user_port_key(struct device *d,
+@@ -717,7 +716,7 @@ static ssize_t bonding_show_ad_user_port_key(struct device *d,
+ 
+ 	return 0;
+ }
+-static DEVICE_ATTR(ad_user_port_key, S_IRUGO | S_IWUSR,
++static DEVICE_ATTR(ad_user_port_key, 0644,
+ 		   bonding_show_ad_user_port_key, bonding_sysfs_store_option);
+ 
+ static struct attribute *per_bond_attrs[] = {
+diff --git a/drivers/net/bonding/bond_sysfs_slave.c b/drivers/net/bonding/bond_sysfs_slave.c
+index 7d16c51e6913..2f120b2ffef0 100644
+--- a/drivers/net/bonding/bond_sysfs_slave.c
++++ b/drivers/net/bonding/bond_sysfs_slave.c
+@@ -25,8 +25,8 @@ const struct slave_attribute slave_attr_##_name = {		\
+ 		 .mode = _mode },				\
+ 	.show	= _show,					\
+ };
+-#define SLAVE_ATTR_RO(_name) \
+-	SLAVE_ATTR(_name, S_IRUGO, _name##_show)
++#define SLAVE_ATTR_RO(_name)					\
++	SLAVE_ATTR(_name, 0444, _name##_show)
+ 
+ static ssize_t state_show(struct slave *slave, char *buf)
+ {
+diff --git a/drivers/net/caif/caif_serial.c b/drivers/net/caif/caif_serial.c
+index 709838e4c062..a0f954f36c09 100644
+--- a/drivers/net/caif/caif_serial.c
++++ b/drivers/net/caif/caif_serial.c
+@@ -40,20 +40,20 @@ static LIST_HEAD(ser_list);
+ static LIST_HEAD(ser_release_list);
+ 
+ static bool ser_loop;
+-module_param(ser_loop, bool, S_IRUGO);
++module_param(ser_loop, bool, 0444);
+ MODULE_PARM_DESC(ser_loop, "Run in simulated loopback mode.");
+ 
+ static bool ser_use_stx = true;
+-module_param(ser_use_stx, bool, S_IRUGO);
++module_param(ser_use_stx, bool, 0444);
+ MODULE_PARM_DESC(ser_use_stx, "STX enabled or not.");
+ 
+ static bool ser_use_fcs = true;
+ 
+-module_param(ser_use_fcs, bool, S_IRUGO);
++module_param(ser_use_fcs, bool, 0444);
+ MODULE_PARM_DESC(ser_use_fcs, "FCS enabled or not.");
+ 
+ static int ser_write_chunk = MAX_WRITE_CHUNK;
+-module_param(ser_write_chunk, int, S_IRUGO);
++module_param(ser_write_chunk, int, 0444);
+ 
+ MODULE_PARM_DESC(ser_write_chunk, "Maximum size of data written to UART.");
+ 
+@@ -97,21 +97,21 @@ static inline void debugfs_init(struct ser_device *ser, struct tty_struct *tty)
+ 	ser->debugfs_tty_dir =
+ 			debugfs_create_dir(tty->name, debugfsdir);
+ 	if (!IS_ERR(ser->debugfs_tty_dir)) {
+-		debugfs_create_blob("last_tx_msg", S_IRUSR,
+-				ser->debugfs_tty_dir,
+-				&ser->tx_blob);
++		debugfs_create_blob("last_tx_msg", 0400,
++				    ser->debugfs_tty_dir,
++				    &ser->tx_blob);
+ 
+-		debugfs_create_blob("last_rx_msg", S_IRUSR,
+-				ser->debugfs_tty_dir,
+-				&ser->rx_blob);
++		debugfs_create_blob("last_rx_msg", 0400,
++				    ser->debugfs_tty_dir,
++				    &ser->rx_blob);
+ 
+-		debugfs_create_x32("ser_state", S_IRUSR,
+-				ser->debugfs_tty_dir,
+-				(u32 *)&ser->state);
++		debugfs_create_x32("ser_state", 0400,
++				   ser->debugfs_tty_dir,
++				   (u32 *)&ser->state);
+ 
+-		debugfs_create_x8("tty_status", S_IRUSR,
+-				ser->debugfs_tty_dir,
+-				&ser->tty_status);
++		debugfs_create_x8("tty_status", 0400,
++				  ser->debugfs_tty_dir,
++				  &ser->tty_status);
+ 
+ 	}
+ 	ser->tx_blob.data = ser->tx_data;
+diff --git a/drivers/net/caif/caif_spi.c b/drivers/net/caif/caif_spi.c
+index 207cb8423de0..3b30cd706ccf 100644
+--- a/drivers/net/caif/caif_spi.c
++++ b/drivers/net/caif/caif_spi.c
+@@ -35,27 +35,27 @@ MODULE_DESCRIPTION("CAIF SPI driver");
+ #define PAD_POW2(x, pow) ((((x)&((pow)-1))==0) ? 0 : (((pow)-((x)&((pow)-1)))))
+ 
+ static bool spi_loop;
+-module_param(spi_loop, bool, S_IRUGO);
++module_param(spi_loop, bool, 0444);
+ MODULE_PARM_DESC(spi_loop, "SPI running in loopback mode.");
+ 
+ /* SPI frame alignment. */
+-module_param(spi_frm_align, int, S_IRUGO);
++module_param(spi_frm_align, int, 0444);
+ MODULE_PARM_DESC(spi_frm_align, "SPI frame alignment.");
+ 
+ /*
+  * SPI padding options.
+  * Warning: must be a base of 2 (& operation used) and can not be zero !
+  */
+-module_param(spi_up_head_align, int, S_IRUGO);
++module_param(spi_up_head_align, int, 0444);
+ MODULE_PARM_DESC(spi_up_head_align, "SPI uplink head alignment.");
+ 
+-module_param(spi_up_tail_align, int, S_IRUGO);
++module_param(spi_up_tail_align, int, 0444);
+ MODULE_PARM_DESC(spi_up_tail_align, "SPI uplink tail alignment.");
+ 
+-module_param(spi_down_head_align, int, S_IRUGO);
++module_param(spi_down_head_align, int, 0444);
+ MODULE_PARM_DESC(spi_down_head_align, "SPI downlink head alignment.");
+ 
+-module_param(spi_down_tail_align, int, S_IRUGO);
++module_param(spi_down_tail_align, int, 0444);
+ MODULE_PARM_DESC(spi_down_tail_align, "SPI downlink tail alignment.");
+ 
+ #ifdef CONFIG_ARM
+@@ -250,10 +250,10 @@ static const struct file_operations dbgfs_frame_fops = {
+ static inline void dev_debugfs_add(struct cfspi *cfspi)
+ {
+ 	cfspi->dbgfs_dir = debugfs_create_dir(cfspi->pdev->name, dbgfs_root);
+-	cfspi->dbgfs_state = debugfs_create_file("state", S_IRUGO,
++	cfspi->dbgfs_state = debugfs_create_file("state", 0444,
+ 						 cfspi->dbgfs_dir, cfspi,
+ 						 &dbgfs_state_fops);
+-	cfspi->dbgfs_frame = debugfs_create_file("frame", S_IRUGO,
++	cfspi->dbgfs_frame = debugfs_create_file("frame", 0444,
+ 						 cfspi->dbgfs_dir, cfspi,
+ 						 &dbgfs_frame_fops);
+ }
+diff --git a/drivers/net/caif/caif_virtio.c b/drivers/net/caif/caif_virtio.c
+index c3d104feee13..2814e0dee4bb 100644
+--- a/drivers/net/caif/caif_virtio.c
++++ b/drivers/net/caif/caif_virtio.c
+@@ -629,21 +629,21 @@ static inline void debugfs_init(struct cfv_info *cfv)
+ 	if (IS_ERR(cfv->debugfs))
+ 		return;
+ 
+-	debugfs_create_u32("rx-napi-complete", S_IRUSR, cfv->debugfs,
++	debugfs_create_u32("rx-napi-complete", 0400, cfv->debugfs,
+ 			   &cfv->stats.rx_napi_complete);
+-	debugfs_create_u32("rx-napi-resched", S_IRUSR, cfv->debugfs,
++	debugfs_create_u32("rx-napi-resched", 0400, cfv->debugfs,
+ 			   &cfv->stats.rx_napi_resched);
+-	debugfs_create_u32("rx-nomem", S_IRUSR, cfv->debugfs,
++	debugfs_create_u32("rx-nomem", 0400, cfv->debugfs,
+ 			   &cfv->stats.rx_nomem);
+-	debugfs_create_u32("rx-kicks", S_IRUSR, cfv->debugfs,
++	debugfs_create_u32("rx-kicks", 0400, cfv->debugfs,
+ 			   &cfv->stats.rx_kicks);
+-	debugfs_create_u32("tx-full-ring", S_IRUSR, cfv->debugfs,
++	debugfs_create_u32("tx-full-ring", 0400, cfv->debugfs,
+ 			   &cfv->stats.tx_full_ring);
+-	debugfs_create_u32("tx-no-mem", S_IRUSR, cfv->debugfs,
++	debugfs_create_u32("tx-no-mem", 0400, cfv->debugfs,
+ 			   &cfv->stats.tx_no_mem);
+-	debugfs_create_u32("tx-kicks", S_IRUSR, cfv->debugfs,
++	debugfs_create_u32("tx-kicks", 0400, cfv->debugfs,
+ 			   &cfv->stats.tx_kicks);
+-	debugfs_create_u32("tx-flow-on", S_IRUSR, cfv->debugfs,
++	debugfs_create_u32("tx-flow-on", 0400, cfv->debugfs,
+ 			   &cfv->stats.tx_flow_on);
+ }
+ 
+diff --git a/drivers/net/can/at91_can.c b/drivers/net/can/at91_can.c
+index 0e0df0ba288c..898a9a5b7643 100644
+--- a/drivers/net/can/at91_can.c
++++ b/drivers/net/can/at91_can.c
+@@ -1224,8 +1224,7 @@ static ssize_t at91_sysfs_set_mb0_id(struct device *dev,
+ 	return ret;
+ }
+ 
+-static DEVICE_ATTR(mb0_id, S_IWUSR | S_IRUGO,
+-	at91_sysfs_show_mb0_id, at91_sysfs_set_mb0_id);
++static DEVICE_ATTR(mb0_id, 0644, at91_sysfs_show_mb0_id, at91_sysfs_set_mb0_id);
+ 
+ static struct attribute *at91_sysfs_attrs[] = {
+ 	&dev_attr_mb0_id.attr,
+diff --git a/drivers/net/can/cc770/cc770.c b/drivers/net/can/cc770/cc770.c
+index 6da69af103e6..d4dd4da23997 100644
+--- a/drivers/net/can/cc770/cc770.c
++++ b/drivers/net/can/cc770/cc770.c
+@@ -67,12 +67,12 @@ MODULE_DESCRIPTION(KBUILD_MODNAME "CAN netdevice driver");
+  * otherwise 11 bit SFF messages.
+  */
+ static int msgobj15_eff;
+-module_param(msgobj15_eff, int, S_IRUGO);
++module_param(msgobj15_eff, int, 0444);
+ MODULE_PARM_DESC(msgobj15_eff, "Extended 29-bit frames for message object 15 "
+ 		 "(default: 11-bit standard frames)");
+ 
+ static int i82527_compat;
+-module_param(i82527_compat, int, S_IRUGO);
++module_param(i82527_compat, int, 0444);
+ MODULE_PARM_DESC(i82527_compat, "Strict Intel 82527 comptibility mode "
+ 		 "without using additional functions");
+ 
+diff --git a/drivers/net/can/cc770/cc770_isa.c b/drivers/net/can/cc770/cc770_isa.c
+index 3a30fd3b4498..fcd34698074f 100644
+--- a/drivers/net/can/cc770/cc770_isa.c
++++ b/drivers/net/can/cc770/cc770_isa.c
+@@ -82,29 +82,29 @@ static u8 cor[MAXDEV] = {[0 ... (MAXDEV - 1)] = 0xff};
+ static u8 bcr[MAXDEV] = {[0 ... (MAXDEV - 1)] = 0xff};
+ static int indirect[MAXDEV] = {[0 ... (MAXDEV - 1)] = -1};
+ 
+-module_param_hw_array(port, ulong, ioport, NULL, S_IRUGO);
++module_param_hw_array(port, ulong, ioport, NULL, 0444);
+ MODULE_PARM_DESC(port, "I/O port number");
+ 
+-module_param_hw_array(mem, ulong, iomem, NULL, S_IRUGO);
++module_param_hw_array(mem, ulong, iomem, NULL, 0444);
+ MODULE_PARM_DESC(mem, "I/O memory address");
+ 
+-module_param_hw_array(indirect, int, ioport, NULL, S_IRUGO);
++module_param_hw_array(indirect, int, ioport, NULL, 0444);
+ MODULE_PARM_DESC(indirect, "Indirect access via address and data port");
+ 
+-module_param_hw_array(irq, int, irq, NULL, S_IRUGO);
++module_param_hw_array(irq, int, irq, NULL, 0444);
+ MODULE_PARM_DESC(irq, "IRQ number");
+ 
+-module_param_array(clk, int, NULL, S_IRUGO);
++module_param_array(clk, int, NULL, 0444);
+ MODULE_PARM_DESC(clk, "External oscillator clock frequency "
+ 		 "(default=16000000 [16 MHz])");
+ 
+-module_param_array(cir, byte, NULL, S_IRUGO);
++module_param_array(cir, byte, NULL, 0444);
+ MODULE_PARM_DESC(cir, "CPU interface register (default=0x40 [DSC])");
+ 
+-module_param_array(cor, byte, NULL, S_IRUGO);
++module_param_array(cor, byte, NULL, 0444);
+ MODULE_PARM_DESC(cor, "Clockout register (default=0x00)");
+ 
+-module_param_array(bcr, byte, NULL, S_IRUGO);
++module_param_array(bcr, byte, NULL, 0444);
+ MODULE_PARM_DESC(bcr, "Bus configuration register (default=0x40 [CBY])");
+ 
+ #define CC770_IOSIZE          0x20
+diff --git a/drivers/net/can/grcan.c b/drivers/net/can/grcan.c
+index a7be12d9a139..a1f5a254dc09 100644
+--- a/drivers/net/can/grcan.c
++++ b/drivers/net/can/grcan.c
+@@ -1484,7 +1484,7 @@ static netdev_tx_t grcan_start_xmit(struct sk_buff *skb,
+ 		}							\
+ 	}								\
+ 	module_param_named(name, grcan_module_config.name,		\
+-			   mtype, S_IRUGO);				\
++			   mtype, 0444);				\
+ 	MODULE_PARM_DESC(name, desc)
+ 
+ #define GRCAN_CONFIG_ATTR(name, desc)					\
+@@ -1513,7 +1513,7 @@ static netdev_tx_t grcan_start_xmit(struct sk_buff *skb,
+ 		struct grcan_priv *priv = netdev_priv(dev);		\
+ 		return sprintf(buf, "%d\n", priv->config.name);		\
+ 	}								\
+-	static DEVICE_ATTR(name, S_IRUGO | S_IWUSR,			\
++	static DEVICE_ATTR(name, 0644,					\
+ 			   grcan_show_##name,				\
+ 			   grcan_store_##name);				\
+ 	GRCAN_MODULE_PARAM(name, ushort, GRCAN_NOT_BOOL, desc)
+diff --git a/drivers/net/can/janz-ican3.c b/drivers/net/can/janz-ican3.c
+index 2ba1a81500c1..fd02ed5d48d4 100644
+--- a/drivers/net/can/janz-ican3.c
++++ b/drivers/net/can/janz-ican3.c
+@@ -1865,9 +1865,9 @@ static ssize_t ican3_sysfs_show_fwinfo(struct device *dev,
+ 	return scnprintf(buf, PAGE_SIZE, "%s\n", mod->fwinfo);
+ }
+ 
+-static DEVICE_ATTR(termination, S_IWUSR | S_IRUGO, ican3_sysfs_show_term,
+-						   ican3_sysfs_set_term);
+-static DEVICE_ATTR(fwinfo, S_IRUSR | S_IRUGO, ican3_sysfs_show_fwinfo, NULL);
++static DEVICE_ATTR(termination, 0644, ican3_sysfs_show_term,
++		   ican3_sysfs_set_term);
++static DEVICE_ATTR(fwinfo, 0444, ican3_sysfs_show_fwinfo, NULL);
+ 
+ static struct attribute *ican3_sysfs_attrs[] = {
+ 	&dev_attr_termination.attr,
+diff --git a/drivers/net/can/sja1000/sja1000_isa.c b/drivers/net/can/sja1000/sja1000_isa.c
+index a89c1e92554d..1a2ae6ce8d87 100644
+--- a/drivers/net/can/sja1000/sja1000_isa.c
++++ b/drivers/net/can/sja1000/sja1000_isa.c
+@@ -48,27 +48,27 @@ static unsigned char ocr[MAXDEV] = {[0 ... (MAXDEV - 1)] = 0xff};
+ static int indirect[MAXDEV] = {[0 ... (MAXDEV - 1)] = -1};
+ static spinlock_t indirect_lock[MAXDEV];  /* lock for indirect access mode */
+ 
+-module_param_hw_array(port, ulong, ioport, NULL, S_IRUGO);
++module_param_hw_array(port, ulong, ioport, NULL, 0444);
+ MODULE_PARM_DESC(port, "I/O port number");
+ 
+-module_param_hw_array(mem, ulong, iomem, NULL, S_IRUGO);
++module_param_hw_array(mem, ulong, iomem, NULL, 0444);
+ MODULE_PARM_DESC(mem, "I/O memory address");
+ 
+-module_param_hw_array(indirect, int, ioport, NULL, S_IRUGO);
++module_param_hw_array(indirect, int, ioport, NULL, 0444);
+ MODULE_PARM_DESC(indirect, "Indirect access via address and data port");
+ 
+-module_param_hw_array(irq, int, irq, NULL, S_IRUGO);
++module_param_hw_array(irq, int, irq, NULL, 0444);
+ MODULE_PARM_DESC(irq, "IRQ number");
+ 
+-module_param_array(clk, int, NULL, S_IRUGO);
++module_param_array(clk, int, NULL, 0444);
+ MODULE_PARM_DESC(clk, "External oscillator clock frequency "
+ 		 "(default=16000000 [16 MHz])");
+ 
+-module_param_array(cdr, byte, NULL, S_IRUGO);
++module_param_array(cdr, byte, NULL, 0444);
+ MODULE_PARM_DESC(cdr, "Clock divider register "
+ 		 "(default=0x48 [CDR_CBP | CDR_CLK_OFF])");
+ 
+-module_param_array(ocr, byte, NULL, S_IRUGO);
++module_param_array(ocr, byte, NULL, 0444);
+ MODULE_PARM_DESC(ocr, "Output control register "
+ 		 "(default=0x18 [OCR_TX0_PUSHPULL])");
+ 
+diff --git a/drivers/net/can/softing/softing_main.c b/drivers/net/can/softing/softing_main.c
+index 3f6b10a8887f..2988fe819218 100644
+--- a/drivers/net/can/softing/softing_main.c
++++ b/drivers/net/can/softing/softing_main.c
+@@ -607,8 +607,8 @@ static ssize_t store_output(struct device *dev, struct device_attribute *attr,
+ 	return count;
+ }
+ 
+-static const DEVICE_ATTR(chip, S_IRUGO, show_chip, NULL);
+-static const DEVICE_ATTR(output, S_IRUGO | S_IWUSR, show_output, store_output);
++static const DEVICE_ATTR(chip, 0444, show_chip, NULL);
++static const DEVICE_ATTR(output, 0644, show_output, store_output);
+ 
+ static const struct attribute *const netdev_sysfs_attrs[] = {
+ 	&dev_attr_chip.attr,
+diff --git a/drivers/net/can/spi/mcp251x.c b/drivers/net/can/spi/mcp251x.c
+index da0be22b46e8..90e8c767d9ea 100644
+--- a/drivers/net/can/spi/mcp251x.c
++++ b/drivers/net/can/spi/mcp251x.c
+@@ -220,7 +220,7 @@
+ #define DEVICE_NAME "mcp251x"
+ 
+ static int mcp251x_enable_dma; /* Enable SPI DMA. Default: 0 (Off) */
+-module_param(mcp251x_enable_dma, int, S_IRUGO);
++module_param(mcp251x_enable_dma, int, 0444);
+ MODULE_PARM_DESC(mcp251x_enable_dma, "Enable SPI DMA. Default: 0 (Off)");
+ 
+ static const struct can_bittiming_const mcp251x_bittiming_const = {
+diff --git a/drivers/net/can/usb/esd_usb2.c b/drivers/net/can/usb/esd_usb2.c
+index c6dcf93675c0..5820fd5b69b5 100644
+--- a/drivers/net/can/usb/esd_usb2.c
++++ b/drivers/net/can/usb/esd_usb2.c
+@@ -496,7 +496,7 @@ static ssize_t show_firmware(struct device *d,
+ 		       (dev->version >> 8) & 0xf,
+ 		       dev->version & 0xff);
+ }
+-static DEVICE_ATTR(firmware, S_IRUGO, show_firmware, NULL);
++static DEVICE_ATTR(firmware, 0444, show_firmware, NULL);
+ 
+ static ssize_t show_hardware(struct device *d,
+ 			     struct device_attribute *attr, char *buf)
+@@ -509,7 +509,7 @@ static ssize_t show_hardware(struct device *d,
+ 		       (dev->version >> 24) & 0xf,
+ 		       (dev->version >> 16) & 0xff);
+ }
+-static DEVICE_ATTR(hardware, S_IRUGO, show_hardware, NULL);
++static DEVICE_ATTR(hardware, 0444, show_hardware, NULL);
+ 
+ static ssize_t show_nets(struct device *d,
+ 			 struct device_attribute *attr, char *buf)
+@@ -519,7 +519,7 @@ static ssize_t show_nets(struct device *d,
+ 
+ 	return sprintf(buf, "%d", dev->net_count);
+ }
+-static DEVICE_ATTR(nets, S_IRUGO, show_nets, NULL);
++static DEVICE_ATTR(nets, 0444, show_nets, NULL);
+ 
+ static int esd_usb2_send_msg(struct esd_usb2 *dev, struct esd_usb2_msg *msg)
+ {
+diff --git a/drivers/net/can/vcan.c b/drivers/net/can/vcan.c
+index a8cb33264ff1..429bf500d5fd 100644
+--- a/drivers/net/can/vcan.c
++++ b/drivers/net/can/vcan.c
+@@ -65,7 +65,7 @@ MODULE_ALIAS_RTNL_LINK(DRV_NAME);
+  */
+ 
+ static bool echo; /* echo testing. Default: 0 (Off) */
+-module_param(echo, bool, S_IRUGO);
++module_param(echo, bool, 0444);
+ MODULE_PARM_DESC(echo, "Echo sent frames (for testing). Default: 0 (Off)");
+ 
+ 
+diff --git a/drivers/net/hamradio/bpqether.c b/drivers/net/hamradio/bpqether.c
+index 78a6414c5fd9..dfabbae72efd 100644
+--- a/drivers/net/hamradio/bpqether.c
++++ b/drivers/net/hamradio/bpqether.c
+@@ -590,8 +590,7 @@ static int bpq_device_event(struct notifier_block *this,
+ static int __init bpq_init_driver(void)
+ {
+ #ifdef CONFIG_PROC_FS
+-	if (!proc_create("bpqether", S_IRUGO, init_net.proc_net,
+-			 &bpq_info_fops)) {
++	if (!proc_create("bpqether", 0444, init_net.proc_net, &bpq_info_fops)) {
+ 		printk(KERN_ERR
+ 			"bpq: cannot create /proc/net/bpqether entry.\n");
+ 		return -ENOENT;
+diff --git a/drivers/net/hamradio/yam.c b/drivers/net/hamradio/yam.c
+index b74c735a423d..f6100d530076 100644
+--- a/drivers/net/hamradio/yam.c
++++ b/drivers/net/hamradio/yam.c
+@@ -1173,7 +1173,7 @@ static int __init yam_init_driver(void)
+ 	yam_timer.expires = jiffies + HZ / 100;
+ 	add_timer(&yam_timer);
+ 
+-	proc_create("yam", S_IRUGO, init_net.proc_net, &yam_info_fops);
++	proc_create("yam", 0444, init_net.proc_net, &yam_info_fops);
+ 	return 0;
+  error:
+ 	while (--i >= 0) {
+diff --git a/drivers/net/hyperv/netvsc_drv.c b/drivers/net/hyperv/netvsc_drv.c
+index 8ad1196273f0..a9f9b77c7f47 100644
+--- a/drivers/net/hyperv/netvsc_drv.c
++++ b/drivers/net/hyperv/netvsc_drv.c
+@@ -55,7 +55,7 @@
+ #define VF_TAKEOVER_INT (HZ / 10)
+ 
+ static unsigned int ring_size __ro_after_init = 128;
+-module_param(ring_size, uint, S_IRUGO);
++module_param(ring_size, uint, 0444);
+ MODULE_PARM_DESC(ring_size, "Ring buffer size (# of pages)");
+ unsigned int netvsc_ring_bytes __ro_after_init;
+ struct reciprocal_value netvsc_ring_reciprocal __ro_after_init;
+@@ -66,7 +66,7 @@ static const u32 default_msg = NETIF_MSG
+ 				NETIF_MSG_TX_ERR;
+ 
+ static int debug = -1;
+-module_param(debug, int, S_IRUGO);
++module_param(debug, int, 0444);
+ MODULE_PARM_DESC(debug, "Debug level (0=none,...,16=all)");
+ 
+ static void netvsc_change_rx_flags(struct net_device *net, int change)
+diff --git a/drivers/net/ieee802154/at86rf230.c b/drivers/net/ieee802154/at86rf230.c
+index 5c48bdb6f678..3d9e91579866 100644
+--- a/drivers/net/ieee802154/at86rf230.c
++++ b/drivers/net/ieee802154/at86rf230.c
+@@ -1656,7 +1656,7 @@ static int at86rf230_debugfs_init(struct at86rf230_local *lp)
+ 	if (!at86rf230_debugfs_root)
+ 		return -ENOMEM;
+ 
+-	stats = debugfs_create_file("trac_stats", S_IRUGO,
++	stats = debugfs_create_file("trac_stats", 0444,
+ 				    at86rf230_debugfs_root, lp,
+ 				    &at86rf230_stats_fops);
+ 	if (!stats)
+diff --git a/drivers/net/phy/spi_ks8995.c b/drivers/net/phy/spi_ks8995.c
+index 45df03673e01..d8ea4147dfe7 100644
+--- a/drivers/net/phy/spi_ks8995.c
++++ b/drivers/net/phy/spi_ks8995.c
+@@ -425,7 +425,7 @@ static void ks8995_parse_dt(struct ks8995_switch *ks)
+ static const struct bin_attribute ks8995_registers_attr = {
+ 	.attr = {
+ 		.name   = "registers",
+-		.mode   = S_IRUSR | S_IWUSR,
++		.mode   = 0600,
+ 	},
+ 	.size   = KS8995_REGS_SIZE,
+ 	.read   = ks8995_registers_read,
+diff --git a/drivers/net/ppp/ppp_generic.c b/drivers/net/ppp/ppp_generic.c
+index e1f25e80b697..d4dd44d0f002 100644
+--- a/drivers/net/ppp/ppp_generic.c
++++ b/drivers/net/ppp/ppp_generic.c
+@@ -1668,7 +1668,7 @@ ppp_push(struct ppp *ppp)
+ 
+ #ifdef CONFIG_PPP_MULTILINK
+ static bool mp_protocol_compress __read_mostly = true;
+-module_param(mp_protocol_compress, bool, S_IRUGO | S_IWUSR);
++module_param(mp_protocol_compress, bool, 0644);
+ MODULE_PARM_DESC(mp_protocol_compress,
+ 		 "compress protocol id in multilink fragments");
+ 
+diff --git a/drivers/net/ppp/pppoe.c b/drivers/net/ppp/pppoe.c
+index 202a0f415e1e..b6fa3f9882de 100644
+--- a/drivers/net/ppp/pppoe.c
++++ b/drivers/net/ppp/pppoe.c
+@@ -1158,7 +1158,7 @@ static __net_init int pppoe_init_net(struct net *net)
+ 
+ 	rwlock_init(&pn->hash_lock);
+ 
+-	pde = proc_create("pppoe", S_IRUGO, net->proc_net, &pppoe_seq_fops);
++	pde = proc_create("pppoe", 0444, net->proc_net, &pppoe_seq_fops);
+ #ifdef CONFIG_PROC_FS
+ 	if (!pde)
+ 		return -ENOMEM;
+diff --git a/drivers/net/usb/cdc_ncm.c b/drivers/net/usb/cdc_ncm.c
+index 0edfd17ff550..7100337eb8e8 100644
+--- a/drivers/net/usb/cdc_ncm.c
++++ b/drivers/net/usb/cdc_ncm.c
+@@ -58,7 +58,7 @@ static bool prefer_mbim = true;
+ #else
+ static bool prefer_mbim;
+ #endif
+-module_param(prefer_mbim, bool, S_IRUGO | S_IWUSR);
++module_param(prefer_mbim, bool, 0644);
+ MODULE_PARM_DESC(prefer_mbim, "Prefer MBIM setting on dual NCM/MBIM functions");
+ 
+ static void cdc_ncm_txpath_bh(unsigned long param);
+@@ -279,10 +279,10 @@ static ssize_t cdc_ncm_store_tx_timer_usecs(struct device *d,  struct device_att
+ 	return len;
+ }
+ 
+-static DEVICE_ATTR(min_tx_pkt, S_IRUGO | S_IWUSR, cdc_ncm_show_min_tx_pkt, cdc_ncm_store_min_tx_pkt);
+-static DEVICE_ATTR(rx_max, S_IRUGO | S_IWUSR, cdc_ncm_show_rx_max, cdc_ncm_store_rx_max);
+-static DEVICE_ATTR(tx_max, S_IRUGO | S_IWUSR, cdc_ncm_show_tx_max, cdc_ncm_store_tx_max);
+-static DEVICE_ATTR(tx_timer_usecs, S_IRUGO | S_IWUSR, cdc_ncm_show_tx_timer_usecs, cdc_ncm_store_tx_timer_usecs);
++static DEVICE_ATTR(min_tx_pkt, 0644, cdc_ncm_show_min_tx_pkt, cdc_ncm_store_min_tx_pkt);
++static DEVICE_ATTR(rx_max, 0644, cdc_ncm_show_rx_max, cdc_ncm_store_rx_max);
++static DEVICE_ATTR(tx_max, 0644, cdc_ncm_show_tx_max, cdc_ncm_store_tx_max);
++static DEVICE_ATTR(tx_timer_usecs, 0644, cdc_ncm_show_tx_timer_usecs, cdc_ncm_store_tx_timer_usecs);
+ 
+ static ssize_t ndp_to_end_show(struct device *d, struct device_attribute *attr, char *buf)
+ {
+@@ -333,7 +333,7 @@ static ssize_t cdc_ncm_show_##name(struct device *d, struct device_attribute *at
+ 	struct cdc_ncm_ctx *ctx = (struct cdc_ncm_ctx *)dev->data[0]; \
+ 	return sprintf(buf, format "\n", tocpu(ctx->ncm_parm.name));	\
+ } \
+-static DEVICE_ATTR(name, S_IRUGO, cdc_ncm_show_##name, NULL)
++static DEVICE_ATTR(name, 0444, cdc_ncm_show_##name, NULL)
+ 
+ NCM_PARM_ATTR(bmNtbFormatsSupported, "0x%04x", le16_to_cpu);
+ NCM_PARM_ATTR(dwNtbInMaxSize, "%u", le32_to_cpu);
+diff --git a/drivers/net/usb/hso.c b/drivers/net/usb/hso.c
+index d25da6dffb27..4a1cea1d9317 100644
+--- a/drivers/net/usb/hso.c
++++ b/drivers/net/usb/hso.c
+@@ -520,7 +520,7 @@ static ssize_t hso_sysfs_show_porttype(struct device *dev,
+ 
+ 	return sprintf(buf, "%s\n", port_name);
+ }
+-static DEVICE_ATTR(hsotype, S_IRUGO, hso_sysfs_show_porttype, NULL);
++static DEVICE_ATTR(hsotype, 0444, hso_sysfs_show_porttype, NULL);
+ 
+ static struct attribute *hso_serial_dev_attrs[] = {
+ 	&dev_attr_hsotype.attr,
+@@ -3314,12 +3314,12 @@ MODULE_LICENSE(MOD_LICENSE);
+ 
+ /* change the debug level (eg: insmod hso.ko debug=0x04) */
+ MODULE_PARM_DESC(debug, "debug level mask [0x01 | 0x02 | 0x04 | 0x08 | 0x10]");
+-module_param(debug, int, S_IRUGO | S_IWUSR);
++module_param(debug, int, 0644);
+ 
+ /* set the major tty number (eg: insmod hso.ko tty_major=245) */
+ MODULE_PARM_DESC(tty_major, "Set the major tty number");
+-module_param(tty_major, int, S_IRUGO | S_IWUSR);
++module_param(tty_major, int, 0644);
+ 
+ /* disable network interface (eg: insmod hso.ko disable_net=1) */
+ MODULE_PARM_DESC(disable_net, "Disable the network interface");
+-module_param(disable_net, int, S_IRUGO | S_IWUSR);
++module_param(disable_net, int, 0644);
+diff --git a/drivers/net/xen-netback/xenbus.c b/drivers/net/xen-netback/xenbus.c
+index a56d3eab35dd..e1aef253601e 100644
+--- a/drivers/net/xen-netback/xenbus.c
++++ b/drivers/net/xen-netback/xenbus.c
+@@ -224,7 +224,7 @@ static void xenvif_debugfs_addif(struct xenvif *vif)
+ 
+ 			snprintf(filename, sizeof(filename), "io_ring_q%d", i);
+ 			pfile = debugfs_create_file(filename,
+-						    S_IRUSR | S_IWUSR,
++						    0600,
+ 						    vif->xenvif_dbg_root,
+ 						    &vif->queues[i],
+ 						    &xenvif_dbg_io_ring_ops_fops);
+@@ -235,7 +235,7 @@ static void xenvif_debugfs_addif(struct xenvif *vif)
+ 
+ 		if (vif->ctrl_irq) {
+ 			pfile = debugfs_create_file("ctrl",
+-						    S_IRUSR,
++						    0400,
+ 						    vif->xenvif_dbg_root,
+ 						    vif,
+ 						    &xenvif_dbg_ctrl_ops_fops);
+diff --git a/drivers/net/xen-netfront.c b/drivers/net/xen-netfront.c
+index 9f9ac8139d9b..9971c7af3df5 100644
+--- a/drivers/net/xen-netfront.c
++++ b/drivers/net/xen-netfront.c
+@@ -2118,9 +2118,9 @@ static ssize_t store_rxbuf(struct device *dev,
+ 	return len;
+ }
+ 
+-static DEVICE_ATTR(rxbuf_min, S_IRUGO|S_IWUSR, show_rxbuf, store_rxbuf);
+-static DEVICE_ATTR(rxbuf_max, S_IRUGO|S_IWUSR, show_rxbuf, store_rxbuf);
+-static DEVICE_ATTR(rxbuf_cur, S_IRUGO, show_rxbuf, NULL);
++static DEVICE_ATTR(rxbuf_min, 0644, show_rxbuf, store_rxbuf);
++static DEVICE_ATTR(rxbuf_max, 0644, show_rxbuf, store_rxbuf);
++static DEVICE_ATTR(rxbuf_cur, 0444, show_rxbuf, NULL);
+ 
+ static struct attribute *xennet_dev_attrs[] = {
+ 	&dev_attr_rxbuf_min.attr,
+-- 
+2.16.4
+

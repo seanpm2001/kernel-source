@@ -1,0 +1,57 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 12 Mar 2021 15:25:01 -0500
+Subject: btrfs: do proper error handling in record_reloc_root_in_trans
+Git-commit: 404bccbcaa7ecb073b4d7c1126efda47b346be4a
+Patch-mainline: v5.13-rc1
+References: bsc#1187833
+
+Generally speaking this shouldn't ever fail, the corresponding fs root
+for the reloc root will already be in memory, so we won't get ENOMEM
+here.
+
+However if there is no corresponding root for the reloc root then we
+could get ENOMEM when we try to allocate it or we could get ENOENT
+when we look it up and see that it doesn't exist.
+
+Convert these BUG_ON()'s into ASSERT()'s and add proper error handling
+for the case of corruption.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/relocation.c |   22 ++++++++++++++++++++--
+ 1 file changed, 20 insertions(+), 2 deletions(-)
+
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -2660,8 +2660,26 @@ static int record_reloc_root_in_trans(st
+ 		return 0;
+ 
+ 	root = read_fs_root(fs_info, reloc_root->root_key.offset);
+-	BUG_ON(IS_ERR(root));
+-	BUG_ON(root->reloc_root != reloc_root);
++
++	/*
++	 * This should succeed, since we can't have a reloc root without having
++	 * already looked up the actual root and created the reloc root for this
++	 * root.
++	 *
++	 * However if there's some sort of corruption where we have a ref to a
++	 * reloc root without a corresponding root this could return ENOENT.
++	 */
++	if (IS_ERR(root)) {
++		ASSERT(0);
++		return PTR_ERR(root);
++	}
++	if (root->reloc_root != reloc_root) {
++		ASSERT(0);
++		btrfs_err(fs_info,
++			  "root %llu has two reloc roots associated with it",
++			  reloc_root->root_key.offset);
++		return -EUCLEAN;
++	}
+ 
+ 	return btrfs_record_root_in_trans(trans, root);
+ }

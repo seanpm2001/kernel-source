@@ -1,0 +1,326 @@
+From be80e758d0c2ec87eceac7676f08c761b4235869 Mon Sep 17 00:00:00 2001
+From: Madhavan Srinivasan <maddy@linux.vnet.ibm.com>
+Date: Thu, 4 Apr 2019 17:24:50 +0530
+Subject: [PATCH] powerpc/perf: Add generic compat mode pmu driver
+
+References: bsc#1178900 ltc#189284
+Patch-mainline: v5.2-rc1
+Git-commit: be80e758d0c2ec87eceac7676f08c761b4235869
+
+Most of the power processor generation performance monitoring
+unit (PMU) driver code is bundled in the kernel and one of those
+is enabled/registered based on the oprofile_cpu_type check at
+the boot.
+
+But things get little tricky incase of "compat" mode boot.
+IBM POWER System Server based processors has a compactibility
+mode feature, which simpily put is, Nth generation processor
+(lets say POWER8) will act and appear in a mode consistent
+with an earlier generation (N-1) processor (that is POWER7).
+And in this "compat" mode boot, kernel modify the
+"oprofile_cpu_type" to be Nth generation (POWER8). If Nth
+generation pmu driver is bundled (POWER8), it gets registered.
+
+Key dependency here is to have distro support for latest
+processor performance monitoring support. Patch here adds
+a generic "compat-mode" performance monitoring driver to
+be register in absence of powernv platform specific pmu driver.
+
+Driver supports only "cycles" and "instruction" events.
+"0x0001e" used as event code for "cycles" and "0x00002"
+used as event code for "instruction" events. New file
+called "generic-compat-pmu.c" is created to contain the driver
+specific code. And base raw event code format modeled
+on PPMU_ARCH_207S.
+
+Signed-off-by: Madhavan Srinivasan <maddy@linux.vnet.ibm.com>
+[mpe: Use SPDX tag for license]
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/perf/Makefile             |   3 +-
+ arch/powerpc/perf/core-book3s.c        |   2 +-
+ arch/powerpc/perf/generic-compat-pmu.c | 234 +++++++++++++++++++++++++
+ arch/powerpc/perf/internal.h           |   1 +
+ 4 files changed, 238 insertions(+), 2 deletions(-)
+ create mode 100644 arch/powerpc/perf/generic-compat-pmu.c
+
+diff --git a/arch/powerpc/perf/Makefile b/arch/powerpc/perf/Makefile
+index ab26df5bacb9..c155dcbb8691 100644
+--- a/arch/powerpc/perf/Makefile
++++ b/arch/powerpc/perf/Makefile
+@@ -5,7 +5,8 @@ obj-$(CONFIG_PERF_EVENTS)	+= callchain.o perf_regs.o
+ obj-$(CONFIG_PPC_PERF_CTRS)	+= core-book3s.o bhrb.o
+ obj64-$(CONFIG_PPC_PERF_CTRS)	+= ppc970-pmu.o power5-pmu.o \
+ 				   power5+-pmu.o power6-pmu.o power7-pmu.o \
+-				   isa207-common.o power8-pmu.o power9-pmu.o
++				   isa207-common.o power8-pmu.o power9-pmu.o \
++				   generic-compat-pmu.o
+ obj32-$(CONFIG_PPC_PERF_CTRS)	+= mpc7450-pmu.o
+ 
+ obj-$(CONFIG_PPC_POWERNV)	+= imc-pmu.o
+diff --git a/arch/powerpc/perf/core-book3s.c b/arch/powerpc/perf/core-book3s.c
+index a96f9420139c..a66fb9c01c9e 100644
+--- a/arch/powerpc/perf/core-book3s.c
++++ b/arch/powerpc/perf/core-book3s.c
+@@ -2318,7 +2318,7 @@ static int __init init_ppc64_pmu(void)
+ 	else if (!init_ppc970_pmu())
+ 		return 0;
+ 	else
+-		return -ENODEV;
++		return init_generic_compat_pmu();
+ }
+ early_initcall(init_ppc64_pmu);
+ #endif
+diff --git a/arch/powerpc/perf/generic-compat-pmu.c b/arch/powerpc/perf/generic-compat-pmu.c
+new file mode 100644
+index 000000000000..5e5a54d5588e
+--- /dev/null
++++ b/arch/powerpc/perf/generic-compat-pmu.c
+@@ -0,0 +1,234 @@
++// SPDX-License-Identifier: GPL-2.0+
++//
++// Copyright 2019 Madhavan Srinivasan, IBM Corporation.
++
++#define pr_fmt(fmt)	"generic-compat-pmu: " fmt
++
++#include "isa207-common.h"
++
++/*
++ * Raw event encoding:
++ *
++ *        60        56        52        48        44        40        36        32
++ * | - - - - | - - - - | - - - - | - - - - | - - - - | - - - - | - - - - | - - - - |
++ *
++ *        28        24        20        16        12         8         4         0
++ * | - - - - | - - - - | - - - - | - - - - | - - - - | - - - - | - - - - | - - - - |
++ *                                 [ pmc ]   [unit ]   [ ]   m   [    pmcxsel    ]
++ *                                                     |     |
++ *                                                     |     *- mark
++ *                                                     |
++ *                                                     |
++ *                                                     *- combine
++ *
++ * Below uses IBM bit numbering.
++ *
++ * MMCR1[x:y] = unit    (PMCxUNIT)
++ * MMCR1[24]   = pmc1combine[0]
++ * MMCR1[25]   = pmc1combine[1]
++ * MMCR1[26]   = pmc2combine[0]
++ * MMCR1[27]   = pmc2combine[1]
++ * MMCR1[28]   = pmc3combine[0]
++ * MMCR1[29]   = pmc3combine[1]
++ * MMCR1[30]   = pmc4combine[0]
++ * MMCR1[31]   = pmc4combine[1]
++ *
++ */
++
++/*
++ * Some power9 event codes.
++ */
++#define EVENT(_name, _code)	_name = _code,
++
++enum {
++EVENT(PM_CYC,					0x0001e)
++EVENT(PM_INST_CMPL,				0x00002)
++};
++
++#undef EVENT
++
++GENERIC_EVENT_ATTR(cpu-cycles,			PM_CYC);
++GENERIC_EVENT_ATTR(instructions,		PM_INST_CMPL);
++
++static struct attribute *generic_compat_events_attr[] = {
++	GENERIC_EVENT_PTR(PM_CYC),
++	GENERIC_EVENT_PTR(PM_INST_CMPL),
++	NULL
++};
++
++static struct attribute_group generic_compat_pmu_events_group = {
++	.name = "events",
++	.attrs = generic_compat_events_attr,
++};
++
++PMU_FORMAT_ATTR(event,		"config:0-19");
++PMU_FORMAT_ATTR(pmcxsel,	"config:0-7");
++PMU_FORMAT_ATTR(mark,		"config:8");
++PMU_FORMAT_ATTR(combine,	"config:10-11");
++PMU_FORMAT_ATTR(unit,		"config:12-15");
++PMU_FORMAT_ATTR(pmc,		"config:16-19");
++
++static struct attribute *generic_compat_pmu_format_attr[] = {
++	&format_attr_event.attr,
++	&format_attr_pmcxsel.attr,
++	&format_attr_mark.attr,
++	&format_attr_combine.attr,
++	&format_attr_unit.attr,
++	&format_attr_pmc.attr,
++	NULL,
++};
++
++static struct attribute_group generic_compat_pmu_format_group = {
++	.name = "format",
++	.attrs = generic_compat_pmu_format_attr,
++};
++
++static const struct attribute_group *generic_compat_pmu_attr_groups[] = {
++	&generic_compat_pmu_format_group,
++	&generic_compat_pmu_events_group,
++	NULL,
++};
++
++static int compat_generic_events[] = {
++	[PERF_COUNT_HW_CPU_CYCLES] =			PM_CYC,
++	[PERF_COUNT_HW_INSTRUCTIONS] =			PM_INST_CMPL,
++};
++
++#define C(x)	PERF_COUNT_HW_CACHE_##x
++
++/*
++ * Table of generalized cache-related events.
++ * 0 means not supported, -1 means nonsensical, other values
++ * are event codes.
++ */
++static int generic_compat_cache_events[C(MAX)][C(OP_MAX)][C(RESULT_MAX)] = {
++	[ C(L1D) ] = {
++		[ C(OP_READ) ] = {
++			[ C(RESULT_ACCESS) ] = 0,
++			[ C(RESULT_MISS)   ] = 0,
++		},
++		[ C(OP_WRITE) ] = {
++			[ C(RESULT_ACCESS) ] = 0,
++			[ C(RESULT_MISS)   ] = 0,
++		},
++		[ C(OP_PREFETCH) ] = {
++			[ C(RESULT_ACCESS) ] = 0,
++			[ C(RESULT_MISS)   ] = 0,
++		},
++	},
++	[ C(L1I) ] = {
++		[ C(OP_READ) ] = {
++			[ C(RESULT_ACCESS) ] = 0,
++			[ C(RESULT_MISS)   ] = 0,
++		},
++		[ C(OP_WRITE) ] = {
++			[ C(RESULT_ACCESS) ] = 0,
++			[ C(RESULT_MISS)   ] = -1,
++		},
++		[ C(OP_PREFETCH) ] = {
++			[ C(RESULT_ACCESS) ] = 0,
++			[ C(RESULT_MISS)   ] = 0,
++		},
++	},
++	[ C(LL) ] = {
++		[ C(OP_READ) ] = {
++			[ C(RESULT_ACCESS) ] = 0,
++			[ C(RESULT_MISS)   ] = 0,
++		},
++		[ C(OP_WRITE) ] = {
++			[ C(RESULT_ACCESS) ] = 0,
++			[ C(RESULT_MISS)   ] = 0,
++		},
++		[ C(OP_PREFETCH) ] = {
++			[ C(RESULT_ACCESS) ] = 0,
++			[ C(RESULT_MISS)   ] = 0,
++		},
++	},
++	[ C(DTLB) ] = {
++		[ C(OP_READ) ] = {
++			[ C(RESULT_ACCESS) ] = 0,
++			[ C(RESULT_MISS)   ] = 0,
++		},
++		[ C(OP_WRITE) ] = {
++			[ C(RESULT_ACCESS) ] = -1,
++			[ C(RESULT_MISS)   ] = -1,
++		},
++		[ C(OP_PREFETCH) ] = {
++			[ C(RESULT_ACCESS) ] = -1,
++			[ C(RESULT_MISS)   ] = -1,
++		},
++	},
++	[ C(ITLB) ] = {
++		[ C(OP_READ) ] = {
++			[ C(RESULT_ACCESS) ] = 0,
++			[ C(RESULT_MISS)   ] = 0,
++		},
++		[ C(OP_WRITE) ] = {
++			[ C(RESULT_ACCESS) ] = -1,
++			[ C(RESULT_MISS)   ] = -1,
++		},
++		[ C(OP_PREFETCH) ] = {
++			[ C(RESULT_ACCESS) ] = -1,
++			[ C(RESULT_MISS)   ] = -1,
++		},
++	},
++	[ C(BPU) ] = {
++		[ C(OP_READ) ] = {
++			[ C(RESULT_ACCESS) ] = 0,
++			[ C(RESULT_MISS)   ] = 0,
++		},
++		[ C(OP_WRITE) ] = {
++			[ C(RESULT_ACCESS) ] = -1,
++			[ C(RESULT_MISS)   ] = -1,
++		},
++		[ C(OP_PREFETCH) ] = {
++			[ C(RESULT_ACCESS) ] = -1,
++			[ C(RESULT_MISS)   ] = -1,
++		},
++	},
++	[ C(NODE) ] = {
++		[ C(OP_READ) ] = {
++			[ C(RESULT_ACCESS) ] = -1,
++			[ C(RESULT_MISS)   ] = -1,
++		},
++		[ C(OP_WRITE) ] = {
++			[ C(RESULT_ACCESS) ] = -1,
++			[ C(RESULT_MISS)   ] = -1,
++		},
++		[ C(OP_PREFETCH) ] = {
++			[ C(RESULT_ACCESS) ] = -1,
++			[ C(RESULT_MISS)   ] = -1,
++		},
++	},
++};
++
++#undef C
++
++static struct power_pmu generic_compat_pmu = {
++	.name			= "GENERIC_COMPAT",
++	.n_counter		= MAX_PMU_COUNTERS,
++	.add_fields		= ISA207_ADD_FIELDS,
++	.test_adder		= ISA207_TEST_ADDER,
++	.compute_mmcr		= isa207_compute_mmcr,
++	.get_constraint		= isa207_get_constraint,
++	.disable_pmc		= isa207_disable_pmc,
++	.flags			= PPMU_HAS_SIER | PPMU_ARCH_207S,
++	.n_generic		= ARRAY_SIZE(compat_generic_events),
++	.generic_events		= compat_generic_events,
++	.cache_events		= &generic_compat_cache_events,
++	.attr_groups		= generic_compat_pmu_attr_groups,
++};
++
++int init_generic_compat_pmu(void)
++{
++	int rc = 0;
++
++	rc = register_power_pmu(&generic_compat_pmu);
++	if (rc)
++		return rc;
++
++	/* Tell userspace that EBB is supported */
++	cur_cpu_spec->cpu_user_features2 |= PPC_FEATURE2_EBB;
++
++	return 0;
++}
+diff --git a/arch/powerpc/perf/internal.h b/arch/powerpc/perf/internal.h
+index 683f48117132..f755c64da137 100644
+--- a/arch/powerpc/perf/internal.h
++++ b/arch/powerpc/perf/internal.h
+@@ -9,3 +9,4 @@ extern int init_power6_pmu(void);
+ extern int init_power7_pmu(void);
+ extern int init_power8_pmu(void);
+ extern int init_power9_pmu(void);
++extern int init_generic_compat_pmu(void);
+-- 
+2.26.2
+

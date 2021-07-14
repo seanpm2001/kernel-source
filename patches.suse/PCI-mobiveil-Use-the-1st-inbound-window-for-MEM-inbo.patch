@@ -1,0 +1,47 @@
+From: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Date: Fri, 5 Jul 2019 17:56:34 +0800
+Subject: PCI: mobiveil: Use the 1st inbound window for MEM inbound
+ transactions
+
+Git-commit: f7fee1b42fe4f8171a4b1cad05c61907c33c53f6
+Patch-mainline: v5.3-rc1
+References: fate#326572
+
+The inbound and outbound windows have completely separate control
+registers sets in the host controller MMIO space. Windows control
+register are accessed through an MMIO base address and an offset
+that depends on the window index.
+
+Since inbound and outbound windows control registers are completely
+separate there is no real need to use different window indexes in the
+inbound/outbound windows initialization routines to prevent clashing.
+
+To fix this inconsistency, change the MEM inbound window index to 0,
+mirroring the outbound window set-up.
+
+Signed-off-by: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+[lorenzo.pieralisi@arm.com: update commit log]
+Signed-off-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
+Reviewed-by: Minghuan Lian <Minghuan.Lian@nxp.com>
+Reviewed-by: Subrahmanya Lingappa <l.subrahmanya@mobiveil.co.in>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ drivers/pci/host/pcie-mobiveil.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/pci/host/pcie-mobiveil.c b/drivers/pci/host/pcie-mobiveil.c
+index 0f41c238fa18..827218314ef3 100644
+--- a/drivers/pci/host/pcie-mobiveil.c
++++ b/drivers/pci/host/pcie-mobiveil.c
+@@ -608,7 +608,7 @@ static int mobiveil_host_init(struct mobiveil_pcie *pcie)
+ 			   CFG_WINDOW_TYPE, resource_size(pcie->ob_io_res));
+ 
+ 	/* memory inbound translation window */
+-	program_ib_windows(pcie, WIN_NUM_1, 0, MEM_WINDOW_TYPE, IB_WIN_SIZE);
++	program_ib_windows(pcie, WIN_NUM_0, 0, MEM_WINDOW_TYPE, IB_WIN_SIZE);
+ 
+ 	/* Get the I/O and memory ranges from DT */
+ 	resource_list_for_each_entry(win, &pcie->resources) {
+-- 
+2.26.2
+

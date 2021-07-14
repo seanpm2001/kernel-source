@@ -40,21 +40,19 @@ deadlocks when resolving references.
 Acked-by: Jeff Mahoney <jeffm@suse.com>
 ---
 ---
- fs/btrfs/delayed-ref.c |   22 ++++------------------
+ fs/btrfs/delayed-ref.c |   19 ++++---------------
  fs/btrfs/qgroup.c      |   30 +++---------------------------
  fs/btrfs/qgroup.h      |   33 +++------------------------------
- 3 files changed, 10 insertions(+), 75 deletions(-)
+ 3 files changed, 10 insertions(+), 72 deletions(-)
 
 --- a/fs/btrfs/delayed-ref.c
 +++ b/fs/btrfs/delayed-ref.c
-@@ -636,13 +636,11 @@ add_delayed_ref_head(struct btrfs_fs_inf
+@@ -821,11 +821,10 @@ add_delayed_ref_head(struct btrfs_fs_inf
  		     struct btrfs_trans_handle *trans,
  		     struct btrfs_delayed_ref_head *head_ref,
  		     struct btrfs_qgroup_extent_record *qrecord,
--		     int action, int *qrecord_inserted_ret,
--		     int *old_ref_mod, int *new_ref_mod)
-+		     int action, int *old_ref_mod, int *new_ref_mod)
- 
+-		     int action, int *qrecord_inserted_ret)
++		     int action)
  {
  	struct btrfs_delayed_ref_head *existing;
  	struct btrfs_delayed_ref_root *delayed_refs;
@@ -62,7 +60,7 @@ Acked-by: Jeff Mahoney <jeffm@suse.com>
  
  	delayed_refs = &trans->transaction->delayed_refs;
  
-@@ -651,8 +649,6 @@ add_delayed_ref_head(struct btrfs_fs_inf
+@@ -834,8 +833,6 @@ add_delayed_ref_head(struct btrfs_fs_inf
  		if (btrfs_qgroup_trace_extent_nolock(fs_info,
  					delayed_refs, qrecord))
  			kfree(qrecord);
@@ -71,16 +69,16 @@ Acked-by: Jeff Mahoney <jeffm@suse.com>
  	}
  
  	trace_add_delayed_ref_head(fs_info, head_ref, action);
-@@ -682,8 +678,6 @@ add_delayed_ref_head(struct btrfs_fs_inf
+@@ -867,8 +864,6 @@ add_delayed_ref_head(struct btrfs_fs_inf
  		atomic_inc(&delayed_refs->num_entries);
  		trans->delayed_ref_updates++;
  	}
 -	if (qrecord_inserted_ret)
 -		*qrecord_inserted_ret = qrecord_inserted;
- 	if (new_ref_mod)
- 		*new_ref_mod = head_ref->total_ref_mod;
  
-@@ -756,7 +750,6 @@ int btrfs_add_delayed_tree_ref(struct bt
+ 	return head_ref;
+ }
+@@ -938,7 +933,6 @@ int btrfs_add_delayed_tree_ref(struct bt
  	struct btrfs_delayed_ref_head *head_ref;
  	struct btrfs_delayed_ref_root *delayed_refs;
  	struct btrfs_qgroup_extent_record *record = NULL;
@@ -88,17 +86,16 @@ Acked-by: Jeff Mahoney <jeffm@suse.com>
  	bool is_system;
  	int action = generic_ref->action;
  	int level = generic_ref->tree_ref.level;
-@@ -810,8 +803,7 @@ int btrfs_add_delayed_tree_ref(struct bt
+@@ -992,7 +986,7 @@ int btrfs_add_delayed_tree_ref(struct bt
  	 * the spin lock
  	 */
  	head_ref = add_delayed_ref_head(fs_info, trans, head_ref, record,
--					action, &qrecord_inserted,
--					old_ref_mod, new_ref_mod);
-+					action, old_ref_mod, new_ref_mod);
- 
+-					action, &qrecord_inserted);
++					action);
  
  	ret = insert_delayed_ref(trans, delayed_refs, head_ref, &ref->node);
-@@ -829,8 +821,6 @@ int btrfs_add_delayed_tree_ref(struct bt
+ 	spin_unlock(&delayed_refs->lock);
+@@ -1009,8 +1003,6 @@ int btrfs_add_delayed_tree_ref(struct bt
  	if (ret > 0)
  		kmem_cache_free(btrfs_delayed_tree_ref_cachep, ref);
  
@@ -107,7 +104,7 @@ Acked-by: Jeff Mahoney <jeffm@suse.com>
  	return 0;
  
  free_head_ref:
-@@ -853,7 +843,6 @@ int btrfs_add_delayed_data_ref(struct bt
+@@ -1032,7 +1024,6 @@ int btrfs_add_delayed_data_ref(struct bt
  	struct btrfs_delayed_ref_head *head_ref;
  	struct btrfs_delayed_ref_root *delayed_refs;
  	struct btrfs_qgroup_extent_record *record = NULL;
@@ -115,17 +112,16 @@ Acked-by: Jeff Mahoney <jeffm@suse.com>
  	int action = generic_ref->action;
  	int ret;
  	u64 bytenr = generic_ref->bytenr;
-@@ -912,8 +901,7 @@ int btrfs_add_delayed_data_ref(struct bt
+@@ -1091,7 +1082,7 @@ int btrfs_add_delayed_data_ref(struct bt
  	 * the spin lock
  	 */
  	head_ref = add_delayed_ref_head(fs_info, trans, head_ref, record,
--					action, &qrecord_inserted,
--					old_ref_mod, new_ref_mod);
-+					action, old_ref_mod, new_ref_mod);
+-					action, &qrecord_inserted);
++					action);
  
  	ret = insert_delayed_ref(trans, delayed_refs, head_ref, &ref->node);
  	spin_unlock(&delayed_refs->lock);
-@@ -930,8 +918,6 @@ int btrfs_add_delayed_data_ref(struct bt
+@@ -1108,8 +1099,6 @@ int btrfs_add_delayed_data_ref(struct bt
  	if (ret > 0)
  		kmem_cache_free(btrfs_delayed_data_ref_cachep, ref);
  
@@ -134,18 +130,18 @@ Acked-by: Jeff Mahoney <jeffm@suse.com>
  	return 0;
  }
  
-@@ -957,7 +943,7 @@ int btrfs_add_delayed_extent_op(struct b
+@@ -1134,7 +1123,7 @@ int btrfs_add_delayed_extent_op(struct b
+ 	spin_lock(&delayed_refs->lock);
  
  	add_delayed_ref_head(fs_info, trans, head_ref, NULL,
- 			     BTRFS_UPDATE_DELAYED_HEAD,
--			     NULL, NULL, NULL);
-+			     NULL, NULL);
+-			     BTRFS_UPDATE_DELAYED_HEAD, NULL);
++			     BTRFS_UPDATE_DELAYED_HEAD);
  
  	spin_unlock(&delayed_refs->lock);
  
 --- a/fs/btrfs/qgroup.c
 +++ b/fs/btrfs/qgroup.c
-@@ -1507,28 +1507,6 @@ int btrfs_qgroup_trace_extent_nolock(str
+@@ -1506,28 +1506,6 @@ int btrfs_qgroup_trace_extent_nolock(str
  	return 0;
  }
  
@@ -156,7 +152,7 @@ Acked-by: Jeff Mahoney <jeffm@suse.com>
 -	u64 bytenr = qrecord->bytenr;
 -	int ret;
 -
--	ret = btrfs_find_all_roots(NULL, fs_info, bytenr, 0, &old_root);
+-	ret = btrfs_find_all_roots(NULL, fs_info, bytenr, 0, &old_root, false);
 -	if (ret < 0)
 -		return ret;
 -
@@ -174,7 +170,7 @@ Acked-by: Jeff Mahoney <jeffm@suse.com>
  int btrfs_qgroup_trace_extent(struct btrfs_trans_handle *trans,
  		struct btrfs_fs_info *fs_info, u64 bytenr, u64 num_bytes,
  		gfp_t gfp_flag)
-@@ -1554,11 +1532,9 @@ int btrfs_qgroup_trace_extent(struct btr
+@@ -1553,11 +1531,9 @@ int btrfs_qgroup_trace_extent(struct btr
  	spin_lock(&delayed_refs->lock);
  	ret = btrfs_qgroup_trace_extent_nolock(fs_info, delayed_refs, record);
  	spin_unlock(&delayed_refs->lock);
@@ -188,7 +184,7 @@ Acked-by: Jeff Mahoney <jeffm@suse.com>
  }
  
  int btrfs_qgroup_trace_leaf_items(struct btrfs_trans_handle *trans,
-@@ -2457,7 +2433,7 @@ int btrfs_qgroup_account_extents(struct
+@@ -2456,7 +2432,7 @@ int btrfs_qgroup_account_extents(struct
  			 * Old roots should be searched when inserting qgroup
  			 * extent record
  			 */

@@ -1,0 +1,60 @@
+From: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Date: Fri, 5 Jul 2019 17:56:55 +0800
+Subject: PCI: mobiveil: Fix infinite-loop in the INTx handling function
+
+Git-commit: 526c101dde6453e45ff5b25fbda8c3ff736f9788
+Patch-mainline: v5.3-rc1
+References: fate#326572
+
+In the loop handling INTx interrupts in mobiveil_pcie_isr(), there is
+no code to update the loop control variable, which is causing an
+infinite loop.
+
+Fix the code by reading the interrupt status registers inside the
+loop.
+
+Fixes: 9af6bcb11e12 ("PCI: mobiveil: Add Mobiveil PCIe Host Bridge IP driver")
+Signed-off-by: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Signed-off-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
+Reviewed-by: Minghuan Lian <Minghuan.Lian@nxp.com>
+Reviewed-by: Subrahmanya Lingappa <l.subrahmanya@mobiveil.co.in>
+Acked-by: Karthikeyan Mitran <m.karthikeyan@mobiveil.co.in>
+Tested-by: Karthikeyan Mitran <m.karthikeyan@mobiveil.co.in>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ drivers/pci/host/pcie-mobiveil.c | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/pci/host/pcie-mobiveil.c b/drivers/pci/host/pcie-mobiveil.c
+index f57d2d83dbd8..b3ff6555e9aa 100644
+--- a/drivers/pci/host/pcie-mobiveil.c
++++ b/drivers/pci/host/pcie-mobiveil.c
+@@ -358,8 +358,9 @@ static void mobiveil_pcie_isr(struct irq_desc *desc)
+ 
+ 	/* Handle INTx */
+ 	if (intr_status & PAB_INTP_INTX_MASK) {
+-		shifted_status = csr_readl(pcie, PAB_INTP_AMBA_MISC_STAT) >>
+-					   PAB_INTX_START;
++		shifted_status = csr_readl(pcie, PAB_INTP_AMBA_MISC_STAT);
++		shifted_status &= PAB_INTP_INTX_MASK;
++		shifted_status >>= PAB_INTX_START;
+ 		do {
+ 			for_each_set_bit(bit, &shifted_status, PCI_NUM_INTX) {
+ 				virq = irq_find_mapping(pcie->intx_domain,
+@@ -375,7 +376,12 @@ static void mobiveil_pcie_isr(struct irq_desc *desc)
+ 					   shifted_status << PAB_INTX_START,
+ 					   PAB_INTP_AMBA_MISC_STAT);
+ 			}
+-		} while ((shifted_status >> PAB_INTX_START) != 0);
++
++			shifted_status = csr_readl(pcie,
++						   PAB_INTP_AMBA_MISC_STAT);
++			shifted_status &= PAB_INTP_INTX_MASK;
++			shifted_status >>= PAB_INTX_START;
++		} while (shifted_status != 0);
+ 	}
+ 
+ 	/* read extra MSI status register */
+-- 
+2.26.2
+

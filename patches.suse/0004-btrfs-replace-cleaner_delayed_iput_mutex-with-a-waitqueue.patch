@@ -32,7 +32,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
-@@ -914,7 +914,8 @@ struct btrfs_fs_info {
+@@ -923,7 +923,8 @@ struct btrfs_fs_info {
  
  	spinlock_t delayed_iput_lock;
  	struct list_head delayed_iputs;
@@ -42,7 +42,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  	/* this protects tree_mod_seq_list */
  	spinlock_t tree_mod_seq_lock;
-@@ -3328,6 +3329,7 @@ int btrfs_cont_expand(struct inode *inod
+@@ -3337,6 +3338,7 @@ int btrfs_cont_expand(struct inode *inod
  void btrfs_invalidate_inodes(struct btrfs_root *root);
  void btrfs_add_delayed_iput(struct inode *inode);
  void btrfs_run_delayed_iputs(struct btrfs_fs_info *fs_info);
@@ -52,7 +52,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  			      loff_t actual_len, u64 *alloc_hint);
 --- a/fs/btrfs/disk-io.c
 +++ b/fs/btrfs/disk-io.c
-@@ -1781,9 +1781,7 @@ static int cleaner_kthread(void *arg)
+@@ -1759,9 +1759,7 @@ static int cleaner_kthread(void *arg)
  			goto sleep;
  		}
  
@@ -62,7 +62,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  		again = btrfs_clean_one_deleted_snapshot(root);
  		mutex_unlock(&fs_info->cleaner_mutex);
-@@ -2530,7 +2528,6 @@ int open_ctree(struct super_block *sb,
+@@ -2508,7 +2506,6 @@ int open_ctree(struct super_block *sb,
  	mutex_init(&fs_info->delete_unused_bgs_mutex);
  	mutex_init(&fs_info->reloc_mutex);
  	mutex_init(&fs_info->delalloc_root_mutex);
@@ -70,7 +70,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	seqlock_init(&fs_info->profiles_lock);
  
  	INIT_LIST_HEAD(&fs_info->dirty_cowonly_roots);
-@@ -2554,6 +2551,7 @@ int open_ctree(struct super_block *sb,
+@@ -2529,6 +2526,7 @@ int open_ctree(struct super_block *sb,
  	atomic_set(&fs_info->defrag_running, 0);
  	atomic_set(&fs_info->qgroup_op_seq, 0);
  	atomic_set(&fs_info->reada_works_cnt, 0);
@@ -78,7 +78,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	atomic64_set(&fs_info->tree_mod_seq, 0);
  	fs_info->fs_frozen = 0;
  	fs_info->sb = sb;
-@@ -2634,6 +2632,7 @@ int open_ctree(struct super_block *sb,
+@@ -2609,6 +2607,7 @@ int open_ctree(struct super_block *sb,
  	init_waitqueue_head(&fs_info->transaction_wait);
  	init_waitqueue_head(&fs_info->transaction_blocked_wait);
  	init_waitqueue_head(&fs_info->async_submit_wait);
@@ -88,7 +88,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -4402,10 +4402,14 @@ commit_trans:
+@@ -4408,10 +4408,14 @@ commit_trans:
  				/*
  				 * The cleaner kthread might still be doing iput
  				 * operations. Wait for it to finish so that
@@ -106,7 +106,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  				goto again;
  			} else {
  				btrfs_end_transaction(trans);
-@@ -5076,9 +5080,8 @@ static int flush_space(struct btrfs_fs_i
+@@ -5086,9 +5090,8 @@ static int flush_space(struct btrfs_fs_i
  		 * bunch of pinned space, so make sure we run the iputs before
  		 * we do our pinned bytes check below.
  		 */
@@ -119,7 +119,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		break;
 --- a/fs/btrfs/inode.c
 +++ b/fs/btrfs/inode.c
-@@ -3255,6 +3255,7 @@ void btrfs_add_delayed_iput(struct inode
+@@ -3257,6 +3257,7 @@ void btrfs_add_delayed_iput(struct inode
  	if (atomic_add_unless(&inode->i_count, -1, 1))
  		return;
  
@@ -127,7 +127,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	spin_lock(&fs_info->delayed_iput_lock);
  	ASSERT(list_empty(&binode->delayed_iput));
  	list_add_tail(&binode->delayed_iput, &fs_info->delayed_iputs);
-@@ -3263,7 +3264,6 @@ void btrfs_add_delayed_iput(struct inode
+@@ -3267,7 +3268,6 @@ void btrfs_add_delayed_iput(struct inode
  
  void btrfs_run_delayed_iputs(struct btrfs_fs_info *fs_info)
  {
@@ -135,7 +135,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	spin_lock(&fs_info->delayed_iput_lock);
  	while (!list_empty(&fs_info->delayed_iputs)) {
  		struct btrfs_inode *inode;
-@@ -3273,6 +3273,8 @@ void btrfs_run_delayed_iputs(struct btrf
+@@ -3277,11 +3277,32 @@ void btrfs_run_delayed_iputs(struct btrf
  		list_del_init(&inode->delayed_iput);
  		spin_unlock(&fs_info->delayed_iput_lock);
  		iput(&inode->vfs_inode);
@@ -144,8 +144,6 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		spin_lock(&fs_info->delayed_iput_lock);
  	}
  	spin_unlock(&fs_info->delayed_iput_lock);
-@@ -3280,6 +3282,25 @@ void btrfs_run_delayed_iputs(struct btrf
- 		wake_up_process(fs_info->cleaner_kthread);
  }
  
 +/**

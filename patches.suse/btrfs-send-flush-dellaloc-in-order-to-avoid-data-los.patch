@@ -74,14 +74,12 @@ CC: stable@vger.kernel.org # 3.19+
 Signed-off-by: Filipe Manana <fdmanana@suse.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 ---
- fs/btrfs/send.c | 36 ++++++++++++++++++++++++++++++++++++
+ fs/btrfs/send.c |   36 ++++++++++++++++++++++++++++++++++++
  1 file changed, 36 insertions(+)
 
-diff --git a/fs/btrfs/send.c b/fs/btrfs/send.c
-index b1eba0274983..0cfad0b15c4e 100644
 --- a/fs/btrfs/send.c
 +++ b/fs/btrfs/send.c
-@@ -6574,6 +6574,38 @@ static int ensure_commit_roots_uptodate(struct send_ctx *sctx)
+@@ -6604,6 +6604,38 @@ commit_trans:
  	return btrfs_commit_transaction(trans);
  }
  
@@ -100,7 +98,7 @@ index b1eba0274983..0cfad0b15c4e 100644
 +	int i;
 +
 +	if (root) {
-+		ret = btrfs_start_delalloc_inodes(root, 0);
++		ret = btrfs_start_delalloc_snapshot(root);
 +		if (ret)
 +			return ret;
 +		btrfs_wait_ordered_extents(root, -1, 0, U64_MAX);
@@ -108,7 +106,7 @@ index b1eba0274983..0cfad0b15c4e 100644
 +
 +	for (i = 0; i < sctx->clone_roots_cnt; i++) {
 +		root = sctx->clone_roots[i].root;
-+		ret = btrfs_start_delalloc_inodes(root, 0);
++		ret = btrfs_start_delalloc_snapshot(root);
 +		if (ret)
 +			return ret;
 +		btrfs_wait_ordered_extents(root, -1, 0, U64_MAX);
@@ -120,7 +118,7 @@ index b1eba0274983..0cfad0b15c4e 100644
  static void btrfs_root_dec_send_in_progress(struct btrfs_root* root)
  {
  	spin_lock(&root->root_item_lock);
-@@ -6809,6 +6841,10 @@ long btrfs_ioctl_send(struct file *mnt_file, void __user *arg_)
+@@ -6839,6 +6871,10 @@ long btrfs_ioctl_send(struct file *mnt_f
  			NULL);
  	sort_clone_roots = 1;
  
@@ -131,6 +129,3 @@ index b1eba0274983..0cfad0b15c4e 100644
  	ret = ensure_commit_roots_uptodate(sctx);
  	if (ret)
  		goto out;
--- 
-2.19.0
-

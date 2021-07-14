@@ -1,0 +1,38 @@
+From 1f337e535301acaa1c147a357404a5620349fd0f Mon Sep 17 00:00:00 2001
+From: Denis Efremov <efremov@linux.com>
+Date: Wed, 2 Sep 2020 14:18:45 +0300
+Subject: [PATCH 2/2] net: bcmgenet: fix mask check in bcmgenet_validate_flow()
+Patch-mainline: v5.9-rc4
+Git-commit: 1996cf46e4673a25ef2478eb266714f409a98221
+References: git-fixes
+
+VALIDATE_MASK(eth_mask->h_source) is checked twice in a row in
+bcmgenet_validate_flow(). Add VALIDATE_MASK(eth_mask->h_dest)
+instead.
+
+Fixes: 3e370952287c ("net: bcmgenet: add support for ethtool rxnfc flows")
+Signed-off-by: Denis Efremov <efremov@linux.com>
+Acked-by: Doug Berger <opendmb@gmail.com>
+Acked-by: Florian Fainelli <f.fainelli@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/broadcom/genet/bcmgenet.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/broadcom/genet/bcmgenet.c b/drivers/net/ethernet/broadcom/genet/bcmgenet.c
+index 47d0187fa27f..db7c89c28fb0 100644
+--- a/drivers/net/ethernet/broadcom/genet/bcmgenet.c
++++ b/drivers/net/ethernet/broadcom/genet/bcmgenet.c
+@@ -1412,7 +1412,7 @@ static int bcmgenet_validate_flow(struct net_device *dev,
+ 	case ETHER_FLOW:
+ 		eth_mask = &cmd->fs.m_u.ether_spec;
+ 		/* don't allow mask which isn't valid */
+-		if (VALIDATE_MASK(eth_mask->h_source) ||
++		if (VALIDATE_MASK(eth_mask->h_dest) ||
+ 		    VALIDATE_MASK(eth_mask->h_source) ||
+ 		    VALIDATE_MASK(eth_mask->h_proto)) {
+ 			netdev_err(dev, "rxnfc: Unsupported mask\n");
+-- 
+2.16.4
+

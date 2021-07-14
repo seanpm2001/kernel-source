@@ -23,16 +23,16 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 
 --- a/fs/btrfs/block-group.c
 +++ b/fs/btrfs/block-group.c
-@@ -2698,9 +2698,6 @@ int btrfs_update_block_group(struct btrf
+@@ -2699,9 +2699,6 @@ int btrfs_update_block_group(struct btrf
  			spin_unlock(&cache->lock);
  			spin_unlock(&cache->space_info->lock);
  
 -			trace_btrfs_space_reservation(info, "pinned",
 -						      cache->space_info->flags,
 -						      num_bytes, 1);
- 			percpu_counter_add(&cache->space_info->total_bytes_pinned,
- 					   num_bytes);
- 			set_extent_dirty(info->pinned_extents,
+ 			percpu_counter_add_batch(&cache->space_info->total_bytes_pinned,
+ 					   num_bytes,
+ 					   BTRFS_TOTAL_BYTES_PINNED_BATCH);
 --- a/fs/btrfs/block-rsv.c
 +++ b/fs/btrfs/block-rsv.c
 @@ -283,16 +283,11 @@ void btrfs_update_global_block_rsv(struc
@@ -54,7 +54,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
 --- a/fs/btrfs/delalloc-space.c
 +++ b/fs/btrfs/delalloc-space.c
-@@ -129,8 +129,6 @@ commit_trans:
+@@ -130,8 +130,6 @@ commit_trans:
  		return -ENOSPC;
  	}
  	btrfs_space_info_update_bytes_may_use(fs_info, data_sinfo, bytes);
@@ -63,7 +63,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	spin_unlock(&data_sinfo->lock);
  
  	return ret;
-@@ -182,8 +180,6 @@ void btrfs_free_reserved_data_space_noqu
+@@ -183,8 +181,6 @@ void btrfs_free_reserved_data_space_noqu
  	data_sinfo = fs_info->data_sinfo;
  	spin_lock(&data_sinfo->lock);
  	btrfs_space_info_update_bytes_may_use(fs_info, data_sinfo, -len);
@@ -74,7 +74,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -3051,9 +3051,6 @@ static int unpin_extent_range(struct btr
+@@ -3048,9 +3048,6 @@ static int unpin_extent_range(struct btr
  		spin_lock(&cache->lock);
  		cache->pinned -= len;
  		btrfs_space_info_update_bytes_pinned(fs_info, space_info, -len);
@@ -82,9 +82,9 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 -		trace_btrfs_space_reservation(fs_info, "pinned",
 -					      space_info->flags, len, 0);
  		space_info->max_extent_size = 0;
- 		percpu_counter_add(&space_info->total_bytes_pinned, -len);
- 		if (cache->ro) {
-@@ -3074,10 +3071,6 @@ static int unpin_extent_range(struct btr
+ 		percpu_counter_add_batch(&space_info->total_bytes_pinned,
+ 			    -len, BTRFS_TOTAL_BYTES_PINNED_BATCH);
+@@ -3072,10 +3069,6 @@ static int unpin_extent_range(struct btr
  						space_info, to_add);
  				if (global_rsv->reserved >= global_rsv->size)
  					global_rsv->full = 1;
@@ -126,7 +126,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  			btrfs_space_info_update_bytes_may_use(fs_info,
  					space_info, num_bytes);
  			ticket->bytes -= num_bytes;
-@@ -1023,8 +1015,6 @@ static int __reserve_metadata_bytes(stru
+@@ -1025,8 +1017,6 @@ static int __reserve_metadata_bytes(stru
  	     can_overcommit(fs_info, space_info, orig_bytes, flush))) {
  		btrfs_space_info_update_bytes_may_use(fs_info, space_info,
  						      orig_bytes);

@@ -137,7 +137,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
 
 --- a/fs/btrfs/inode.c
 +++ b/fs/btrfs/inode.c
-@@ -2906,7 +2906,6 @@ static int insert_ordered_extent_file_ex
+@@ -3014,7 +3014,6 @@ static int insert_ordered_extent_file_ex
  {
  	struct btrfs_file_extent_item stack_fi;
  	u64 logical_len;
@@ -145,7 +145,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  
  	memset(&stack_fi, 0, sizeof(stack_fi));
  	btrfs_set_stack_file_extent_type(&stack_fi, BTRFS_FILE_EXTENT_REG);
-@@ -2922,11 +2921,8 @@ static int insert_ordered_extent_file_ex
+@@ -3030,11 +3029,8 @@ static int insert_ordered_extent_file_ex
  	btrfs_set_stack_file_extent_compression(&stack_fi, oe->compress_type);
  	/* Encryption and other encoding is reserved and all 0 */
  
@@ -158,7 +158,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  }
  
  /*
-@@ -2981,13 +2977,6 @@ static int btrfs_finish_ordered_io(struc
+@@ -3089,13 +3085,6 @@ static int btrfs_finish_ordered_io(struc
  	if (test_bit(BTRFS_ORDERED_NOCOW, &ordered_extent->flags)) {
  		BUG_ON(!list_empty(&ordered_extent->list)); /* Logic error */
  
@@ -169,10 +169,10 @@ Signed-off-by: David Sterba <dsterba@suse.com>
 -		 */
 -		btrfs_qgroup_free_data(inode, NULL, start,
 -				       ordered_extent->num_bytes);
- 		btrfs_ordered_update_i_size(inode, 0, ordered_extent);
+ 		btrfs_inode_safe_disk_i_size_write(inode, 0);
  		if (nolock)
  			trans = btrfs_join_transaction_nolock(root);
-@@ -3038,8 +3027,6 @@ static int btrfs_finish_ordered_io(struc
+@@ -3146,8 +3135,6 @@ static int btrfs_finish_ordered_io(struc
  		compress_type = ordered_extent->compress_type;
  	if (test_bit(BTRFS_ORDERED_PREALLOC, &ordered_extent->flags)) {
  		BUG_ON(compress_type);
@@ -236,7 +236,7 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  
 --- a/fs/btrfs/ordered-data.h
 +++ b/fs/btrfs/ordered-data.h
-@@ -111,6 +111,9 @@ struct btrfs_ordered_extent {
+@@ -107,6 +107,9 @@ struct btrfs_ordered_extent {
  	/* compression algorithm */
  	int compress_type;
  

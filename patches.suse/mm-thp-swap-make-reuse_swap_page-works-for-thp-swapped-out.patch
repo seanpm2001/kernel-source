@@ -1,0 +1,76 @@
+From: Huang Ying <ying.huang@intel.com>
+Date: Wed, 6 Sep 2017 16:22:19 -0700
+Subject: mm, THP, swap: make reuse_swap_page() works for THP swapped out
+Git-commit: ba3c4ce6def4915093be80585ff69f780630f32f (partial)
+Patch-mainline: v4.14-rc1
+References: CVE-2020-29368, bsc#1179660.
+
+[ vbabka@suse.cz: this backport for 4.12 only does the modification of
+  do_huge_pmd_wp_page() to have page lock around page_trans_huge_mapcount()
+  for bsc#1179660. The rest that's needed for THP swap is ommited.          ]
+
+After supporting to delay THP (Transparent Huge Page) splitting after
+swapped out, it is possible that some page table mappings of the THP are
+turned into swap entries.  So reuse_swap_page() need to check the swap
+count in addition to the map count as before.  This patch done that.
+
+In the huge PMD write protect fault handler, in addition to the page map
+count, the swap count need to be checked too, so the page lock need to
+be acquired too when calling reuse_swap_page() in addition to the page
+table lock.
+
+[ying.huang@intel.com: silence a compiler warning]
+  Link: http://lkml.kernel.org/r/87bmnzizjy.fsf@yhuang-dev.intel.com
+Link: http://lkml.kernel.org/r/20170724051840.2309-4-ying.huang@intel.com
+Signed-off-by: "Huang, Ying" <ying.huang@intel.com>
+Cc: Johannes Weiner <hannes@cmpxchg.org>
+Cc: Minchan Kim <minchan@kernel.org>
+Cc: Hugh Dickins <hughd@google.com>
+Cc: Shaohua Li <shli@kernel.org>
+Cc: Rik van Riel <riel@redhat.com>
+Cc: Andrea Arcangeli <aarcange@redhat.com>
+Cc: "Kirill A . Shutemov" <kirill.shutemov@linux.intel.com>
+Cc: Dan Williams <dan.j.williams@intel.com>
+Cc: Jens Axboe <axboe@kernel.dk>
+Cc: Michal Hocko <mhocko@kernel.org>
+Cc: Ross Zwisler <ross.zwisler@intel.com> [for brd.c, zram_drv.c, pmem.c]
+Cc: Vishal L Verma <vishal.l.verma@intel.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Vlastimil Babka <vbabka@suse.cz>
+---
+ mm/huge_memory.c |   14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+--- a/mm/huge_memory.c
++++ b/mm/huge_memory.c
+@@ -1240,6 +1240,18 @@ int do_huge_pmd_wp_page(struct vm_fault
+ 	 * We can only reuse the page if nobody else maps the huge page or it's
+ 	 * part.
+ 	 */
++	if (!trylock_page(page)) {
++		get_page(page);
++		spin_unlock(vmf->ptl);
++		lock_page(page);
++		spin_lock(vmf->ptl);
++		if (unlikely(!pmd_same(*vmf->pmd, orig_pmd))) {
++			unlock_page(page);
++			put_page(page);
++			goto out_unlock;
++		}
++		put_page(page);
++	}
+ 	if (page_trans_huge_mapcount(page, NULL) == 1) {
+ 		pmd_t entry;
+ 		entry = pmd_mkyoung(orig_pmd);
+@@ -1247,8 +1259,10 @@ int do_huge_pmd_wp_page(struct vm_fault
+ 		if (pmdp_set_access_flags(vma, haddr, vmf->pmd, entry,  1))
+ 			update_mmu_cache_pmd(vma, vmf->address, vmf->pmd);
+ 		ret |= VM_FAULT_WRITE;
++		unlock_page(page);
+ 		goto out_unlock;
+ 	}
++	unlock_page(page);
+ 	get_page(page);
+ 	spin_unlock(vmf->ptl);
+ alloc:

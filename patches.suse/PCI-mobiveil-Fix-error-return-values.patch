@@ -1,0 +1,50 @@
+From: Hou Zhiqiang <Zhiqiang.Hou@nxp.com>
+Date: Fri, 5 Jul 2019 17:56:44 +0800
+Subject: PCI: mobiveil: Fix error return values
+
+Git-commit: e0a7e56368a4a58488c80693f0b630a0a05f6c8d
+Patch-mainline: v5.3-rc1
+References: fate#326572
+
+Some error return values in the host controller driver are
+either unconventional or plain wrong. Update them all with
+the expected return values.
+
+Signed-off-by: Hou Zhiqiang <Zhinqiang.Hou@nxp.com>
+Signed-off-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
+Reviewed-by: Minghuan Lian <Minghuan.Lian@nxp.com>
+Reviewed-by: Subrahmanya Lingappa <l.subrahmanya@mobiveil.co.in>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ drivers/pci/host/pcie-mobiveil.c |    6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+--- a/drivers/pci/host/pcie-mobiveil.c
++++ b/drivers/pci/host/pcie-mobiveil.c
+@@ -829,7 +829,7 @@ static int mobiveil_pcie_init_irq_domain
+ 
+ 	if (!pcie->intx_domain) {
+ 		dev_err(dev, "Failed to get a INTx IRQ domain\n");
+-		return -ENODEV;
++		return -ENOMEM;
+ 	}
+ 
+ 	raw_spin_lock_init(&pcie->intx_mask_lock);
+@@ -856,7 +856,7 @@ static int mobiveil_pcie_probe(struct pl
+ 	/* allocate the PCIe port */
+ 	bridge = devm_pci_alloc_host_bridge(dev, sizeof(*pcie));
+ 	if (!bridge)
+-		return -ENODEV;
++		return -ENOMEM;
+ 
+ 	pcie = pci_host_bridge_priv(bridge);
+ 	if (!pcie)
+@@ -877,7 +877,7 @@ static int mobiveil_pcie_probe(struct pl
+ 			&pcie->resources, &iobase);
+ 	if (ret) {
+ 		dev_err(dev, "Getting bridge resources failed\n");
+-		return -ENOMEM;
++		return ret;
+ 	}
+ 
+ 	/*

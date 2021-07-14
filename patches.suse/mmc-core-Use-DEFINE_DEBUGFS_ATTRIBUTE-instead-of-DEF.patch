@@ -1,0 +1,48 @@
+From 43170255321f83d8e8a3964f70040c49b3d19df0 Mon Sep 17 00:00:00 2001
+From: Zou Wei <zou_wei@huawei.com>
+Date: Thu, 23 Apr 2020 17:15:19 +0800
+Subject: [PATCH] mmc: core: Use DEFINE_DEBUGFS_ATTRIBUTE instead of
+ DEFINE_SIMPLE_ATTRIBUTE
+Git-commit: 43170255321f83d8e8a3964f70040c49b3d19df0
+Patch-mainline: v5.8-rc1
+REferences: git-fixes
+
+Fixes coccicheck warning:
+
+drivers/mmc/core/debugfs.c:222:0-23: WARNING: mmc_clock_fops should be
+defined with DEFINE_DEBUGFS_ATTRIBUTE
+
+Use DEFINE_DEBUGFS_ATTRIBUTE rather than DEFINE_SIMPLE_ATTRIBUTE
+for debugfs files
+
+Fixes: 703aae3d09a4b ("mmc: add a file to debugfs for changing host clock at runtime")
+Fixes: a04c50aaa916f ("mmc: core: no need to check return value of debugfs_create functions")
+Reported-by: Hulk Robot <hulkci@huawei.com>
+Signed-off-by: Zou Wei <zou_wei@huawei.com>
+Link: https://lore.kernel.org/r/1587633319-19835-1-git-send-email-zou_wei@huawei.com
+Signed-off-by: Ulf Hansson <ulf.hansson@linaro.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/mmc/core/debugfs.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/drivers/mmc/core/debugfs.c
++++ b/drivers/mmc/core/debugfs.c
+@@ -233,7 +233,7 @@ static int mmc_clock_opt_set(void *data,
+ 	return 0;
+ }
+ 
+-DEFINE_SIMPLE_ATTRIBUTE(mmc_clock_fops, mmc_clock_opt_get, mmc_clock_opt_set,
++DEFINE_DEBUGFS_ATTRIBUTE(mmc_clock_fops, mmc_clock_opt_get, mmc_clock_opt_set,
+ 	"%llu\n");
+ 
+ void mmc_add_host_debugfs(struct mmc_host *host)
+@@ -254,7 +254,7 @@ void mmc_add_host_debugfs(struct mmc_hos
+ 	if (!debugfs_create_file("ios", S_IRUSR, root, host, &mmc_ios_fops))
+ 		goto err_node;
+ 
+-	if (!debugfs_create_file("clock", S_IRUSR | S_IWUSR, root, host,
++	if (!debugfs_create_file_unsafe("clock", S_IRUSR | S_IWUSR, root, host,
+ 			&mmc_clock_fops))
+ 		goto err_node;
+ 

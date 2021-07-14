@@ -1,0 +1,39 @@
+From: Bob Pearson <rpearsonhpe@gmail.com>
+Date: Wed, 27 Jan 2021 16:42:04 -0600
+Subject: RDMA/rxe: Remove useless code in rxe_recv.c
+Patch-mainline: v5.12-rc1
+Git-commit: e328197423e09094aff48619ebef6671ff64d3b2
+References: bsc#1103992 FATE#326009
+
+In check_keys() in rxe_recv.c
+
+	if ((...) && pkt->mask) {
+		...
+	}
+
+always has pkt->mask non zero since in rxe_udp_encap_recv() pkt->mask is
+always set to RXE_GRH_MASK (!= 0).  There is no obvious reason for this
+additional test and the original intent is lost. This patch simplifies the
+expression.
+
+Fixes: 8b7b59d030cc ("IB/rxe: remove redudant qpn check")
+Link: https://lore.kernel.org/r/20210127224203.2812-1-rpearson@hpe.com
+Signed-off-by: Bob Pearson <rpearson@hpe.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/infiniband/sw/rxe/rxe_recv.c |    3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+--- a/drivers/infiniband/sw/rxe/rxe_recv.c
++++ b/drivers/infiniband/sw/rxe/rxe_recv.c
+@@ -133,8 +133,7 @@ static int check_keys(struct rxe_dev *rx
+ 		pkt->pkey_index = qp->attr.pkey_index;
+ 	}
+ 
+-	if ((qp_type(qp) == IB_QPT_UD || qp_type(qp) == IB_QPT_GSI) &&
+-	    pkt->mask) {
++	if (qp_type(qp) == IB_QPT_UD || qp_type(qp) == IB_QPT_GSI) {
+ 		u32 qkey = (qpn == 1) ? GSI_QKEY : qp->attr.qkey;
+ 
+ 		if (unlikely(deth_qkey(pkt) != qkey)) {

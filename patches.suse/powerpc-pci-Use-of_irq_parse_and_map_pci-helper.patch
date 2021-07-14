@@ -1,0 +1,65 @@
+From 59f47eff03a08cd2d91310f1c15a5343fa0071e5 Mon Sep 17 00:00:00 2001
+From: Rob Herring <robh@kernel.org>
+Date: Thu, 4 Jan 2018 15:12:14 -0600
+Subject: [PATCH] powerpc/pci: Use of_irq_parse_and_map_pci() helper
+
+References: bsc#1172145 ltc#184630
+Patch-mainline: v4.16-rc1
+Git-commit: 59f47eff03a08cd2d91310f1c15a5343fa0071e5
+
+Instead of calling both of_irq_parse_pci() and irq_create_of_mapping(),
+call of_irq_parse_and_map_pci(), which does the same thing. This will allow
+making of_irq_parse_pci() a private, static function.
+
+This changes the logic slightly in that the fallback path will also be
+taken if irq_create_of_mapping() fails internally.
+
+Signed-off-by: Rob Herring <robh@kernel.org>
+[bhelgaas: fold in virq init from Stephen Rothwell <sfr@canb.auug.org.au>]
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Cc: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+Cc: Paul Mackerras <paulus@samba.org>
+Cc: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kernel/pci-common.c | 10 ++--------
+ 1 file changed, 2 insertions(+), 8 deletions(-)
+
+diff --git a/arch/powerpc/kernel/pci-common.c b/arch/powerpc/kernel/pci-common.c
+index 0ac7aa346c69..344af823c3c4 100644
+--- a/arch/powerpc/kernel/pci-common.c
++++ b/arch/powerpc/kernel/pci-common.c
+@@ -339,8 +339,7 @@ struct pci_controller* pci_find_hose_for_OF_device(struct device_node* node)
+  */
+ static int pci_read_irq_line(struct pci_dev *pci_dev)
+ {
+-	struct of_phandle_args oirq;
+-	unsigned int virq;
++	unsigned int virq = 0;
+ 
+ 	pr_debug("PCI: Try to map irq for %s...\n", pci_name(pci_dev));
+ 
+@@ -348,7 +347,7 @@ static int pci_read_irq_line(struct pci_dev *pci_dev)
+ 	memset(&oirq, 0xff, sizeof(oirq));
+ #endif
+ 	/* Try to get a mapping from the device-tree */
+-	if (of_irq_parse_pci(pci_dev, &oirq)) {
++	if (!of_irq_parse_and_map_pci(pci_dev, 0, 0)) {
+ 		u8 line, pin;
+ 
+ 		/* If that fails, lets fallback to what is in the config
+@@ -372,11 +371,6 @@ static int pci_read_irq_line(struct pci_dev *pci_dev)
+ 		virq = irq_create_mapping(NULL, line);
+ 		if (virq)
+ 			irq_set_irq_type(virq, IRQ_TYPE_LEVEL_LOW);
+-	} else {
+-		pr_debug(" Got one, spec %d cells (0x%08x 0x%08x...) on %pOF\n",
+-			 oirq.args_count, oirq.args[0], oirq.args[1], oirq.np);
+-
+-		virq = irq_create_of_mapping(&oirq);
+ 	}
+ 
+ 	if (!virq) {
+-- 
+2.26.2
+

@@ -1,0 +1,35 @@
+From 16ff7bf6dbcc6f77d2eec1ac9120edf44213c2f1 Mon Sep 17 00:00:00 2001
+From: Zhang Lixu <lixu.zhang@intel.com>
+Date: Wed, 16 Oct 2019 08:15:59 +0800
+Subject: [PATCH] HID: intel-ish-hid: fix wrong error handling in ishtp_cl_alloc_tx_ring()
+Git-commit: 16ff7bf6dbcc6f77d2eec1ac9120edf44213c2f1
+Patch-mainline: v5.4-rc6
+References: git-fixes
+
+When allocating tx ring buffers failed, should free tx buffers, not rx buffers.
+
+Signed-off-by: Zhang Lixu <lixu.zhang@intel.com>
+Acked-by: Srinivas Pandruvada <srinivas.pandruvada@linux.intel.com>
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/hid/intel-ish-hid/ishtp/client-buffers.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/hid/intel-ish-hid/ishtp/client-buffers.c b/drivers/hid/intel-ish-hid/ishtp/client-buffers.c
+index 1b0a0cc605e7..513d7a4a1b8a 100644
+--- a/drivers/hid/intel-ish-hid/ishtp/client-buffers.c
++++ b/drivers/hid/intel-ish-hid/ishtp/client-buffers.c
+@@ -84,7 +84,7 @@ int ishtp_cl_alloc_tx_ring(struct ishtp_cl *cl)
+ 	return	0;
+ out:
+ 	dev_err(&cl->device->dev, "error in allocating Tx pool\n");
+-	ishtp_cl_free_rx_ring(cl);
++	ishtp_cl_free_tx_ring(cl);
+ 	return	-ENOMEM;
+ }
+ 
+-- 
+2.26.2
+

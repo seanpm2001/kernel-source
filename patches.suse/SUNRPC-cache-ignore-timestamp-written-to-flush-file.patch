@@ -1,0 +1,91 @@
+From: NeilBrown <neilb@suse.com>
+Date: Wed, 14 Feb 2018 12:15:06 +1100
+Subject: [PATCH] SUNRPC: cache: ignore timestamp written to 'flush' file.
+Git-commit: 3b68e6ee3cbd4a474bcc7d2ac26812f86cdf333d
+Patch-mainline: v4.17
+References: bsc#1178036
+
+The interface for flushing the sunrpc auth cache was poorly
+designed and has caused problems a number of times.
+
+The design is that you write a timestamp, and all entries
+created before that time are discarded.
+The most obvious problem is that this is not what people
+actually want.  They want to just flush the whole cache.
+The 1-second granularity can be a problem, as can the use
+of wall-clock time.
+
+A current problem is that code will write the current time to
+this file - expecting it to clear everything - and if the
+seconds number ticks over before this timestamp is checked,
+the test "then >= now" fails, and a full flush isn't forced.
+
+So lets just drop the subtleties and always flush the whole
+cache.  The worst this could do is impose an extra cost
+refilling it, but that would require someone to be using
+non-standard tools.
+
+We still report an error if the string written is not a number,
+but we cause any valid number to flush the whole cache.
+
+Reported-by: "Wang, Alan 1. (NSB - CN/Hangzhou)" <alan.1.wang@nokia-sbell.com>
+Signed-off-by: NeilBrown <neilb@suse.com>
+Signed-off-by: J. Bruce Fields <bfields@redhat.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ net/sunrpc/cache.c |   32 ++++++++++++++++----------------
+ 1 file changed, 16 insertions(+), 16 deletions(-)
+
+--- a/net/sunrpc/cache.c
++++ b/net/sunrpc/cache.c
+@@ -1452,8 +1452,8 @@ static ssize_t write_flush(struct file *
+ 			   struct cache_detail *cd)
+ {
+ 	char tbuf[20];
+-	char *bp, *ep;
+-	time_t then, now;
++	char *ep;
++	time_t now;
+ 
+ 	if (*ppos || count > sizeof(tbuf)-1)
+ 		return -EINVAL;
+@@ -1463,24 +1463,24 @@ static ssize_t write_flush(struct file *
+ 	simple_strtoul(tbuf, &ep, 0);
+ 	if (*ep && *ep != '\n')
+ 		return -EINVAL;
++	/* Note that while we check that 'buf' holds a valid number,
++	 * we always ignore the value and just flush everything.
++	 * Making use of the number leads to races.
++	 */
+ 
+-	bp = tbuf;
+-	then = get_expiry(&bp);
+ 	now = seconds_since_boot();
+-	cd->nextcheck = now;
+-	/* Can only set flush_time to 1 second beyond "now", or
+-	 * possibly 1 second beyond flushtime.  This is because
+-	 * flush_time never goes backwards so it mustn't get too far
+-	 * ahead of time.
++	/* Always flush everything, so behave like cache_purge()
++	 * Do this by advancing flush_time to the current time,
++	 * or by one second if it has already reached the current time.
++	 * Newly added cache entries will always have ->last_refresh greater
++	 * that ->flush_time, so they don't get flushed prematurely.
+ 	 */
+-	if (then >= now) {
+-		/* Want to flush everything, so behave like cache_purge() */
+-		if (cd->flush_time >= now)
+-			now = cd->flush_time + 1;
+-		then = now;
+-	}
+ 
+-	cd->flush_time = then;
++	if (cd->flush_time >= now)
++		now = cd->flush_time + 1;
++
++	cd->flush_time = now;
++	cd->nextcheck = now;
+ 	cache_flush();
+ 
+ 	*ppos += count;

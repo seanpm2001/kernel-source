@@ -1,0 +1,40 @@
+From edd06a88d00b8556d73d7854bb85b88c6c576e29 Mon Sep 17 00:00:00 2001
+From: Doug Berger <opendmb@gmail.com>
+Date: Wed, 24 Jun 2020 18:14:54 -0700
+Subject: [PATCH 1/2] net: bcmgenet: use __be16 for htons(ETH_P_IP)
+Patch-mainline: v5.8-rc3
+Git-commit: d966d2efb643a8ba925e910bfc10e19c8b018de7
+References: git-fixes
+
+The 16-bit value that holds a short in network byte order should
+be declared as a restricted big endian type to allow type checks
+to succeed during assignment.
+
+Fixes: 3e370952287c ("net: bcmgenet: add support for ethtool rxnfc flows")
+Reported-by: kbuild test robot <lkp@intel.com>
+Signed-off-by: Doug Berger <opendmb@gmail.com>
+Acked-by: Florian Fainelli <f.fainelli@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/broadcom/genet/bcmgenet.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/broadcom/genet/bcmgenet.c b/drivers/net/ethernet/broadcom/genet/bcmgenet.c
+index 6f5e8b794f55..47d0187fa27f 100644
+--- a/drivers/net/ethernet/broadcom/genet/bcmgenet.c
++++ b/drivers/net/ethernet/broadcom/genet/bcmgenet.c
+@@ -623,8 +623,9 @@ static int bcmgenet_hfb_create_rxnfc_filter(struct bcmgenet_priv *priv,
+ {
+ 	struct ethtool_rx_flow_spec *fs = &rule->fs;
+ 	int err = 0, offset = 0, f_length = 0;
+-	u16 val_16, mask_16;
+ 	u8 val_8, mask_8;
++	__be16 val_16;
++	u16 mask_16;
+ 	size_t size;
+ 	u32 *f_data;
+ 
+-- 
+2.16.4
+
