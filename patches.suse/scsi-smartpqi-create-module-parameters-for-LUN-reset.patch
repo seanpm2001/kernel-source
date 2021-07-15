@@ -1,0 +1,72 @@
+From 379256bb4d199597c0048caf2db5aaee05756753 Mon Sep 17 00:00:00 2001
+From: Enzo Matsumiya <ematsumiya@suse.de>
+Date: Thu, 21 Jan 2021 13:31:33 -0300
+Subject: [PATCH] scsi: smartpqi: create module parameters for LUN reset
+References: bsc#1179195
+Patch-mainline: No, SUSE-specific patch
+
+Commit c2922f174fa0 ("scsi: smartpqi: fix LUN reset when fw bkgnd thread is hung")
+added support for a timeout on LUN resets.
+
+However, when there are 2 or more devices connected to the same
+controller and you hot-remove one of them, I/O will stall on the
+devices still online for PQI_LUN_RESET_RETRIES * PQI_LUN_RESET_RETRY_INTERVAL_MSECS
+miliseconds.
+
+This commit makes those values configurable via module parameters.
+
+Changing the bail out condition on rc in _pqi_device_reset() might be possible,
+but could also break the original purpose of commit c2922f174fa0.
+
+[ ematsumiya: this is a temporary solution while Microchip sort out the
+best/correct way to fix the bail-out condition in _pqi_device_reset() ]
+
+Signed-off-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ drivers/scsi/smartpqi/smartpqi_init.c | 18 ++++++++++++++----
+ 1 file changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/scsi/smartpqi/smartpqi_init.c b/drivers/scsi/smartpqi/smartpqi_init.c
+index a1dacb6e993e..82d96a310efb 100644
+--- a/drivers/scsi/smartpqi/smartpqi_init.c
++++ b/drivers/scsi/smartpqi/smartpqi_init.c
+@@ -156,6 +156,18 @@ module_param_named(hide_vsep,
+ MODULE_PARM_DESC(hide_vsep,
+ 	"Hide the virtual SEP for direct attached drives.");
+ 
++static int pqi_lun_reset_retries = 3;
++module_param_named(lun_reset_retries,
++	pqi_lun_reset_retries, int, 0644);
++MODULE_PARM_DESC(lun_reset_retries,
++	"Number of retries when resetting a LUN");
++
++static int pqi_lun_reset_tmo_interval = 10000;
++module_param_named(lun_reset_tmo_interval,
++	pqi_lun_reset_tmo_interval, int, 0644);
++MODULE_PARM_DESC(lun_reset_tmo_interval,
++	"LUN reset timeout interval (in miliseconds)");
++
+ static char *raid_levels[] = {
+ 	"RAID-0",
+ 	"RAID-4",
+@@ -5686,8 +5698,6 @@ static int pqi_lun_reset(struct pqi_ctrl_info *ctrl_info,
+ 
+ /* Performs a reset at the LUN level. */
+ 
+-#define PQI_LUN_RESET_RETRIES			3
+-#define PQI_LUN_RESET_RETRY_INTERVAL_MSECS	10000
+ #define PQI_LUN_RESET_PENDING_IO_TIMEOUT_SECS	120
+ 
+ static int _pqi_device_reset(struct pqi_ctrl_info *ctrl_info,
+@@ -5699,9 +5709,9 @@ static int _pqi_device_reset(struct pqi_ctrl_info *ctrl_info,
+ 
+ 	for (retries = 0;;) {
+ 		rc = pqi_lun_reset(ctrl_info, device);
+-		if (rc == 0 || ++retries > PQI_LUN_RESET_RETRIES)
++		if (rc == 0 || ++retries > pqi_lun_reset_retries)
+ 			break;
+-		msleep(PQI_LUN_RESET_RETRY_INTERVAL_MSECS);
++		msleep(pqi_lun_reset_tmo_interval);
+ 	}
+ 
+ 	timeout_secs = rc ? PQI_LUN_RESET_PENDING_IO_TIMEOUT_SECS : NO_TIMEOUT;
