@@ -15,11 +15,11 @@ thread context.
 Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
 Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 ---
- include/linux/interrupt.h |    2 ++
- include/linux/irq.h       |    4 +++-
- kernel/irq/manage.c       |   13 ++++++++++++-
- kernel/irq/settings.h     |   12 ++++++++++++
- kernel/softirq.c          |    9 +++++++++
+ include/linux/interrupt.h |  2 ++
+ include/linux/irq.h       |  4 +++-
+ kernel/irq/manage.c       | 13 ++++++++++++-
+ kernel/irq/settings.h     | 12 ++++++++++++
+ kernel/softirq.c          |  9 +++++++++
  5 files changed, 38 insertions(+), 2 deletions(-)
 
 --- a/include/linux/interrupt.h
@@ -68,10 +68,10 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
 --- a/kernel/irq/manage.c
 +++ b/kernel/irq/manage.c
-@@ -902,7 +902,15 @@ irq_forced_thread_fn(struct irq_desc *de
- 		atomic_inc(&desc->threads_handled);
- 
+@@ -915,7 +915,15 @@ irq_forced_thread_fn(struct irq_desc *de
  	irq_finalize_oneshot(desc, action);
+ 	if (!IS_ENABLED(CONFIG_PREEMPT_RT))
+ 		local_irq_enable();
 -	local_bh_enable();
 +	/*
 +	 * Interrupts which have real time requirements can be set up
@@ -85,7 +85,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	return ret;
  }
  
-@@ -1382,6 +1390,9 @@ __setup_irq(unsigned int irq, struct irq
+@@ -1395,6 +1403,9 @@ __setup_irq(unsigned int irq, struct irq
  			irqd_set(&desc->irq_data, IRQD_NO_BALANCING);
  		}
  
@@ -132,7 +132,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	return desc->status_use_accessors & _IRQ_PER_CPU;
 --- a/kernel/softirq.c
 +++ b/kernel/softirq.c
-@@ -590,6 +590,15 @@ void __local_bh_enable(void)
+@@ -594,6 +594,15 @@ void __local_bh_enable(void)
  }
  EXPORT_SYMBOL(__local_bh_enable);
  

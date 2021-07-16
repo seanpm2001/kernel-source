@@ -14,9 +14,9 @@ This patch uses swork_queue() instead.
 Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
 Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 ---
- include/linux/interrupt.h |    6 ++++++
- kernel/irq/manage.c       |   43 ++++++++++++++++++++++++++++++++++++++++---
- 2 files changed, 46 insertions(+), 3 deletions(-)
+ include/linux/interrupt.h |  6 +++++
+ kernel/irq/manage.c       | 52 ++++++++++++++++++++++++++++++++++++---
+ 2 files changed, 55 insertions(+), 3 deletions(-)
 
 --- a/include/linux/interrupt.h
 +++ b/include/linux/interrupt.h
@@ -28,7 +28,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  #include <linux/atomic.h>
  #include <asm/ptrace.h>
-@@ -218,6 +219,7 @@ extern void resume_device_irqs(void);
+@@ -219,6 +220,7 @@ extern void resume_device_irqs(void);
   * struct irq_affinity_notify - context for notification of IRQ affinity changes
   * @irq:		Interrupt to which notification applies
   * @kref:		Reference count, for internal use
@@ -36,7 +36,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
   * @work:		Work item, for internal use
   * @notify:		Function to be called on change.  This will be
   *			called in process context.
-@@ -229,7 +231,11 @@ extern void resume_device_irqs(void);
+@@ -230,7 +232,11 @@ extern void resume_device_irqs(void);
  struct irq_affinity_notify {
  	unsigned int irq;
  	struct kref kref;
@@ -50,7 +50,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  };
 --- a/kernel/irq/manage.c
 +++ b/kernel/irq/manage.c
-@@ -237,7 +237,12 @@ int irq_set_affinity_locked(struct irq_d
+@@ -237,11 +237,16 @@ int irq_set_affinity_locked(struct irq_d
  
  	if (desc->affinity_notify) {
  		kref_get(&desc->affinity_notify->kref);
@@ -58,12 +58,16 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +#ifdef CONFIG_PREEMPT_RT_BASE
 +		swork_queue(&desc->affinity_notify->swork);
 +#else
- 		schedule_work(&desc->affinity_notify->work);
+ 		if (!schedule_work(&desc->affinity_notify->work)) {
+ 			/* Work was already scheduled, drop our extra ref */
+ 			kref_put(&desc->affinity_notify->kref,
+ 				 desc->affinity_notify->release);
+ 		}
 +#endif
  	}
  	irqd_set(data, IRQD_AFFINITY_SET);
  
-@@ -275,10 +280,8 @@ int irq_set_affinity_hint(unsigned int i
+@@ -279,10 +284,8 @@ int irq_set_affinity_hint(unsigned int i
  }
  EXPORT_SYMBOL_GPL(irq_set_affinity_hint);
  
@@ -75,7 +79,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	struct irq_desc *desc = irq_to_desc(notify->irq);
  	cpumask_var_t cpumask;
  	unsigned long flags;
-@@ -300,6 +303,35 @@ static void irq_affinity_notify(struct w
+@@ -304,6 +307,35 @@ out:
  	kref_put(&notify->kref, notify->release);
  }
  
@@ -111,7 +115,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  /**
   *	irq_set_affinity_notifier - control notification of IRQ affinity changes
   *	@irq:		Interrupt for which to enable/disable notification
-@@ -328,7 +360,12 @@ irq_set_affinity_notifier(unsigned int i
+@@ -332,7 +364,12 @@ irq_set_affinity_notifier(unsigned int i
  	if (notify) {
  		notify->irq = irq;
  		kref_init(&notify->kref);
@@ -124,7 +128,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	}
  
  	raw_spin_lock_irqsave(&desc->lock, flags);
-@@ -374,7 +374,16 @@ irq_set_affinity_notifier(unsigned int irq, struct irq_affinity_notify *notify)
+@@ -341,10 +378,19 @@ irq_set_affinity_notifier(unsigned int i
  	raw_spin_unlock_irqrestore(&desc->lock, flags);
  
  	if (old_notify) {
@@ -136,7 +140,10 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +		 * Upstream has not resolved the issue yet and simply
 +		 * reintroduced the potential sleep warning.
 +		 */
- 		cancel_work_sync(&old_notify->work);
+ 		if (cancel_work_sync(&old_notify->work)) {
+ 			/* Pending work had a ref, put that one too */
+ 			kref_put(&old_notify->kref, old_notify->release);
+ 		}
 +#endif
  		kref_put(&old_notify->kref, old_notify->release);
  	}
