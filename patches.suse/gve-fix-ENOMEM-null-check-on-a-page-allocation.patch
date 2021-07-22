@@ -1,0 +1,31 @@
+From: Colin Ian King <colin.king@canonical.com>
+Date: Wed, 3 Jul 2019 17:50:37 +0100
+Subject: gve: fix -ENOMEM null check on a page allocation
+Patch-mainline: v5.3-rc1
+Git-commit: a51df9f8da43e8bf9e508143630849b7d696e053
+References: jsc#SLE-10538
+
+Currently the check to see if a page is allocated is incorrect
+and is checking if the pointer page is null, not *page as
+intended.  Fix this.
+
+Addresses-Coverity: ("Dereference before null check")
+Fixes: f5cedc84a30d ("gve: Add transmit and receive support")
+Signed-off-by: Colin Ian King <colin.king@canonical.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/google/gve/gve_main.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/net/ethernet/google/gve/gve_main.c
++++ b/drivers/net/ethernet/google/gve/gve_main.c
+@@ -518,7 +518,7 @@ int gve_alloc_page(struct device *dev, s
+ 		   enum dma_data_direction dir)
+ {
+ 	*page = alloc_page(GFP_KERNEL);
+-	if (!page)
++	if (!*page)
+ 		return -ENOMEM;
+ 	*dma = dma_map_page(dev, *page, 0, PAGE_SIZE, dir);
+ 	if (dma_mapping_error(dev, *dma)) {

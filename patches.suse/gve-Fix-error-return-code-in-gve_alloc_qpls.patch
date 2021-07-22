@@ -1,0 +1,32 @@
+From: Wei Yongjun <weiyongjun1@huawei.com>
+Date: Fri, 5 Jul 2019 01:16:42 +0000
+Subject: gve: Fix error return code in gve_alloc_qpls()
+Patch-mainline: v5.3-rc1
+Git-commit: 877cb240f6a000078aabcd57f8ef7765d9fdf134
+References: jsc#SLE-10538
+
+Fix to return a negative error code from the error handling
+case instead of 0, as done elsewhere in this function.
+
+Fixes: f5cedc84a30d ("gve: Add transmit and receive support")
+Signed-off-by: Wei Yongjun <weiyongjun1@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/google/gve/gve_main.c |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/ethernet/google/gve/gve_main.c
++++ b/drivers/net/ethernet/google/gve/gve_main.c
+@@ -625,8 +625,10 @@ static int gve_alloc_qpls(struct gve_pri
+ 				     sizeof(unsigned long) * BITS_PER_BYTE;
+ 	priv->qpl_cfg.qpl_id_map = kvzalloc(BITS_TO_LONGS(num_qpls) *
+ 					    sizeof(unsigned long), GFP_KERNEL);
+-	if (!priv->qpl_cfg.qpl_id_map)
++	if (!priv->qpl_cfg.qpl_id_map) {
++		err = -ENOMEM;
+ 		goto free_qpls;
++	}
+ 
+ 	return 0;
+ 
