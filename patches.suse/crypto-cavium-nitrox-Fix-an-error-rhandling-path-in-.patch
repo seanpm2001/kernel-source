@@ -1,0 +1,84 @@
+From 0dc64297c8ac98503a7c7621b3c78e151deb75b6 Mon Sep 17 00:00:00 2001
+From: Christophe JAILLET <christophe.jaillet@wanadoo.fr>
+Date: Sat, 5 Jun 2021 14:55:56 +0200
+Subject: [PATCH] crypto: cavium/nitrox - Fix an error rhandling path in
+ 'nitrox_probe()'
+Git-commit: 0dc64297c8ac98503a7c7621b3c78e151deb75b6
+References: git-fixes
+Patch-mainline: v5.14-rc1
+
+If an error occurs after a successful 'ioremap()' call, it must be undone
+by a corresponding 'iounmap()' call, as already done in the remove
+function.
+Add a 'pf_sw_fail' label in the error handling path and add the missing
+'iounmap()'.
+
+While at it, also add a 'flr_fail' label in the error handling path and use
+it to avoid some code duplication.
+
+Fixes: 14fa93cdcd9b ("crypto: cavium - Add support for CNN55XX adapters.")
+Signed-off-by: Christophe JAILLET <christophe.jaillet@wanadoo.fr>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/crypto/cavium/nitrox/nitrox_main.c |   18 +++++++++---------
+ 1 file changed, 9 insertions(+), 9 deletions(-)
+
+--- a/drivers/crypto/cavium/nitrox/nitrox_main.c
++++ b/drivers/crypto/cavium/nitrox/nitrox_main.c
+@@ -489,8 +489,7 @@ static int nitrox_probe(struct pci_dev *
+ 	err = nitrox_reset_device(pdev);
+ 	if (err) {
+ 		dev_err(&pdev->dev, "FLR failed\n");
+-		pci_disable_device(pdev);
+-		return err;
++		goto flr_fail;
+ 	}
+ 
+ 	if (!dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64))) {
+@@ -499,16 +498,14 @@ static int nitrox_probe(struct pci_dev *
+ 		err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
+ 		if (err) {
+ 			dev_err(&pdev->dev, "DMA configuration failed\n");
+-			pci_disable_device(pdev);
+-			return err;
++			goto flr_fail;
+ 		}
+ 	}
+ 
+ 	err = pci_request_mem_regions(pdev, nitrox_driver_name);
+-	if (err) {
+-		pci_disable_device(pdev);
+-		return err;
+-	}
++	if (err)
++		goto flr_fail;
++
+ 	pci_set_master(pdev);
+ 
+ 	ndev = kzalloc(sizeof(*ndev), GFP_KERNEL);
+@@ -542,7 +539,7 @@ static int nitrox_probe(struct pci_dev *
+ 
+ 	err = nitrox_pf_sw_init(ndev);
+ 	if (err)
+-		goto ioremap_err;
++		goto pf_sw_fail;
+ 
+ 	err = nitrox_pf_hw_init(ndev);
+ 	if (err)
+@@ -569,12 +566,15 @@ crypto_fail:
+ 	smp_mb__after_atomic();
+ pf_hw_fail:
+ 	nitrox_pf_sw_cleanup(ndev);
++pf_sw_fail:
++	iounmap(ndev->bar_addr);
+ ioremap_err:
+ 	nitrox_remove_from_devlist(ndev);
+ 	kfree(ndev);
+ 	pci_set_drvdata(pdev, NULL);
+ ndev_fail:
+ 	pci_release_mem_regions(pdev);
++flr_fail:
+ 	pci_disable_device(pdev);
+ 	return err;
+ }
