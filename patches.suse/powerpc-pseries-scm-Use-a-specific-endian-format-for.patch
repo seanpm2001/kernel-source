@@ -1,0 +1,55 @@
+From 259a948c4ba1829ae4a3c31bb6e40ad458a21254 Mon Sep 17 00:00:00 2001
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.ibm.com>
+Date: Fri, 7 Jun 2019 12:17:05 +0530
+Subject: [PATCH] powerpc/pseries/scm: Use a specific endian format for storing
+ uuid from the device tree
+
+References: FATE#326628, bsc#1113295, git-fixes
+Patch-mainline: v5.3-rc1
+Git-commit: 259a948c4ba1829ae4a3c31bb6e40ad458a21254
+
+We used uuid_parse to convert uuid string from device tree to two u64
+components. We want to make sure we look at the uuid read from device
+tree in an endian-neutral fashion. For now, I am picking little-endian
+to be format so that we don't end up doing an additional conversion.
+
+The reason to store in a specific endian format is to enable reading
+the namespace created with a little-endian kernel config on a
+big-endian kernel. We do store the device tree uuid string as a 64-bit
+little-endian cookie in the label area. When booting the kernel we
+also compare this cookie against what is read from the device tree.
+For this, to work we have to store and compare these values in a CPU
+endian config independent fashion.
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.ibm.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/platforms/pseries/papr_scm.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/arch/powerpc/platforms/pseries/papr_scm.c b/arch/powerpc/platforms/pseries/papr_scm.c
+index 80fbab118ef1..c8ec670ee924 100644
+--- a/arch/powerpc/platforms/pseries/papr_scm.c
++++ b/arch/powerpc/platforms/pseries/papr_scm.c
+@@ -373,8 +373,15 @@ static int papr_scm_probe(struct platform_device *pdev)
+ 
+ 	/* We just need to ensure that set cookies are unique across */
+ 	uuid_parse(uuid_str, (uuid_t *) uuid);
+-	p->nd_set.cookie1 = uuid[0];
+-	p->nd_set.cookie2 = uuid[1];
++	/*
++	 * cookie1 and cookie2 are not really little endian
++	 * we store a little endian representation of the
++	 * uuid str so that we can compare this with the label
++	 * area cookie irrespective of the endian config with which
++	 * the kernel is built.
++	 */
++	p->nd_set.cookie1 = cpu_to_le64(uuid[0]);
++	p->nd_set.cookie2 = cpu_to_le64(uuid[1]);
+ 
+ 	/* might be zero */
+ 	p->metadata_size = metadata_size;
+-- 
+2.26.2
+
