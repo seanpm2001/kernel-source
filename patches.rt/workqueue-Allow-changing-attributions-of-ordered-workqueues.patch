@@ -34,12 +34,12 @@ Frederic: You can pick this patch to your updated patchset before TJ apply it.
 Signed-off-by: Lai Jiangshan <laijs@cn.fujitsu.com>
 Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 ---
- kernel/workqueue.c |   65 ++++++++++++++++++++++++++++++++++-------------------
+ kernel/workqueue.c | 65 ++++++++++++++++++++++++++++++----------------
  1 file changed, 42 insertions(+), 23 deletions(-)
 
 --- a/kernel/workqueue.c
 +++ b/kernel/workqueue.c
-@@ -1430,8 +1430,14 @@ static void __queue_work(int cpu, struct
+@@ -1434,8 +1434,14 @@ retry:
  	 * If @work was previously on a different pool, it might still be
  	 * running there, in which case the work needs to be queued on that
  	 * pool to guarantee non-reentrancy.
@@ -55,7 +55,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	if (last_pool && last_pool != pwq->pool) {
  		struct worker *worker;
  
-@@ -3448,6 +3454,13 @@ static void rcu_free_pwq(struct rcu_head
+@@ -3504,6 +3510,13 @@ static void rcu_free_pwq(struct rcu_head
  			container_of(rcu, struct pool_workqueue, rcu));
  }
  
@@ -69,17 +69,17 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  /*
   * Scheduled on system_wq by put_pwq() when an unbound pwq hits zero refcnt
   * and needs to be destroyed.
-@@ -3466,6 +3479,9 @@ static void pwq_unbound_release_workfn(s
- 	mutex_lock(&wq->mutex);
- 	list_del_rcu(&pwq->pwqs_node);
- 	is_last = list_empty(&wq->pwqs);
-+	/* try to active the oldest pwq when needed */
-+	if (!is_last && (wq->flags & __WQ_ORDERED))
-+		pwq_adjust_max_active(oldest_pwq(wq));
- 	mutex_unlock(&wq->mutex);
+@@ -3527,6 +3540,9 @@ static void pwq_unbound_release_workfn(s
+ 		mutex_lock(&wq->mutex);
+ 		list_del_rcu(&pwq->pwqs_node);
+ 		is_last = list_empty(&wq->pwqs);
++		/* try to active the oldest pwq when needed */
++		if (!is_last && (wq->flags & __WQ_ORDERED))
++			pwq_adjust_max_active(oldest_pwq(wq));
+ 		mutex_unlock(&wq->mutex);
+ 	}
  
- 	mutex_lock(&wq_pool_mutex);
-@@ -3482,6 +3498,16 @@ static void pwq_unbound_release_workfn(s
+@@ -3544,6 +3560,16 @@ static void pwq_unbound_release_workfn(s
  		call_rcu(&wq->rcu, rcu_free_wq);
  }
  
@@ -96,7 +96,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  /**
   * pwq_adjust_max_active - update a pwq's max_active to the current setting
   * @pwq: target pool_workqueue
-@@ -3511,7 +3537,7 @@ static void pwq_adjust_max_active(struct
+@@ -3573,7 +3599,7 @@ static void pwq_adjust_max_active(struct
  	 * this function is called at least once after @workqueue_freezing
  	 * is updated and visible.
  	 */
@@ -105,7 +105,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		pwq->max_active = wq->saved_max_active;
  
  		while (!list_empty(&pwq->delayed_works) &&
-@@ -3562,11 +3588,11 @@ static void link_pwq(struct pool_workque
+@@ -3624,11 +3650,11 @@ static void link_pwq(struct pool_workque
  	/* set the matching work_color */
  	pwq->work_color = wq->work_color;
  
@@ -120,7 +120,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  /* obtain a pool matching @attr and create a pwq associating the pool and @wq */
-@@ -3796,8 +3822,8 @@ static int apply_workqueue_attrs_locked(
+@@ -3865,8 +3891,8 @@ static int apply_workqueue_attrs_locked(
  	if (WARN_ON(!(wq->flags & WQ_UNBOUND)))
  		return -EINVAL;
  
@@ -131,7 +131,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		if (WARN_ON(wq->flags & __WQ_ORDERED_EXPLICIT))
  			return -EINVAL;
  
-@@ -3931,7 +3957,7 @@ static void wq_update_unbound_numa(struc
+@@ -4000,7 +4026,7 @@ out_unlock:
  static int alloc_and_link_pwqs(struct workqueue_struct *wq)
  {
  	bool highpri = wq->flags & WQ_HIGHPRI;
@@ -140,7 +140,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	if (!(wq->flags & WQ_UNBOUND)) {
  		wq->cpu_pwqs = alloc_percpu(struct pool_workqueue);
-@@ -3952,12 +3978,7 @@ static int alloc_and_link_pwqs(struct wo
+@@ -4021,12 +4047,7 @@ static int alloc_and_link_pwqs(struct wo
  		}
  		return 0;
  	} else if (wq->flags & __WQ_ORDERED) {
@@ -154,7 +154,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	} else {
  		return apply_workqueue_attrs(wq, unbound_std_wq_attrs[highpri]);
  	}
-@@ -5214,11 +5235,17 @@ static ssize_t wq_numa_store(struct devi
+@@ -5312,11 +5333,17 @@ static ssize_t wq_numa_store(struct devi
  			     const char *buf, size_t count)
  {
  	struct workqueue_struct *wq = dev_to_wq(dev);
@@ -173,7 +173,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	attrs = wq_sysfs_prep_attrs(wq);
  	if (!attrs)
  		goto out_unlock;
-@@ -5321,14 +5348,6 @@ int workqueue_sysfs_register(struct work
+@@ -5419,14 +5446,6 @@ int workqueue_sysfs_register(struct work
  	struct wq_device *wq_dev;
  	int ret;
  
