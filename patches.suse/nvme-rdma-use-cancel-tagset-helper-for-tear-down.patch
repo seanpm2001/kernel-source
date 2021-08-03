@@ -1,0 +1,50 @@
+From: Chao Leng <lengchao@huawei.com>
+Date: Thu, 21 Jan 2021 11:32:39 +0800
+Subject: [PATCH] nvme-rdma: use cancel tagset helper for tear down
+Patch-mainline: v5.12-rc1
+Git-commit: c4189d680e12f0a41eea94a1f466142b2bf02c3d
+References: bsc#1181161
+
+Use nvme_cancel_tagset and nvme_cancel_admin_tagset to clean code for
+tear down process.
+
+Signed-off-by: Chao Leng <lengchao@huawei.com>
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ drivers/nvme/host/rdma.c | 12 ++----------
+ 1 file changed, 2 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/nvme/host/rdma.c b/drivers/nvme/host/rdma.c
+index d92132cbcbbe..6700d8bab68a 100644
+--- a/drivers/nvme/host/rdma.c
++++ b/drivers/nvme/host/rdma.c
+@@ -1025,11 +1025,7 @@ static void nvme_rdma_teardown_admin_queue(struct nvme_rdma_ctrl *ctrl,
+ 	blk_mq_quiesce_queue(ctrl->ctrl.admin_q);
+ 	blk_sync_queue(ctrl->ctrl.admin_q);
+ 	nvme_rdma_stop_queue(&ctrl->queues[0]);
+-	if (ctrl->ctrl.admin_tagset) {
+-		blk_mq_tagset_busy_iter(ctrl->ctrl.admin_tagset,
+-			nvme_cancel_request, &ctrl->ctrl);
+-		blk_mq_tagset_wait_completed_request(ctrl->ctrl.admin_tagset);
+-	}
++	nvme_cancel_admin_tagset(&ctrl->ctrl);
+ 	if (remove)
+ 		blk_mq_unquiesce_queue(ctrl->ctrl.admin_q);
+ 	nvme_rdma_destroy_admin_queue(ctrl, remove);
+@@ -1043,11 +1039,7 @@ static void nvme_rdma_teardown_io_queues(struct nvme_rdma_ctrl *ctrl,
+ 		nvme_stop_queues(&ctrl->ctrl);
+ 		nvme_sync_io_queues(&ctrl->ctrl);
+ 		nvme_rdma_stop_io_queues(ctrl);
+-		if (ctrl->ctrl.tagset) {
+-			blk_mq_tagset_busy_iter(ctrl->ctrl.tagset,
+-				nvme_cancel_request, &ctrl->ctrl);
+-			blk_mq_tagset_wait_completed_request(ctrl->ctrl.tagset);
+-		}
++		nvme_cancel_tagset(&ctrl->ctrl);
+ 		if (remove)
+ 			nvme_start_queues(&ctrl->ctrl);
+ 		nvme_rdma_destroy_io_queues(ctrl, remove);
+-- 
+2.31.1
+
