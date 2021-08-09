@@ -23,7 +23,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
 
 --- a/drivers/crypto/talitos.c
 +++ b/drivers/crypto/talitos.c
-@@ -988,7 +988,6 @@ static void ipsec_esp_encrypt_done(struc
+@@ -990,7 +990,6 @@ static void ipsec_esp_encrypt_done(struc
  	struct crypto_aead *authenc = crypto_aead_reqtfm(areq);
  	unsigned int authsize = crypto_aead_authsize(authenc);
  	struct talitos_edesc *edesc;
@@ -31,7 +31,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  	void *icvdata;
  
  	edesc = container_of(desc, struct talitos_edesc, desc);
-@@ -1002,9 +1001,8 @@ static void ipsec_esp_encrypt_done(struc
+@@ -1004,9 +1003,8 @@ static void ipsec_esp_encrypt_done(struc
  		else
  			icvdata = &edesc->link_tbl[edesc->src_nents +
  						   edesc->dst_nents + 2];
@@ -43,7 +43,7 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  	}
  
  	kfree(edesc);
-@@ -1020,7 +1018,6 @@ static void ipsec_esp_decrypt_swauth_don
+@@ -1022,7 +1020,6 @@ static void ipsec_esp_decrypt_swauth_don
  	struct crypto_aead *authenc = crypto_aead_reqtfm(req);
  	unsigned int authsize = crypto_aead_authsize(authenc);
  	struct talitos_edesc *edesc;
@@ -51,8 +51,8 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  	char *oicv, *icv;
  	struct talitos_private *priv = dev_get_drvdata(dev);
  	bool is_sec1 = has_ftr_sec1(priv);
-@@ -1030,9 +1027,18 @@ static void ipsec_esp_decrypt_swauth_don
- 	ipsec_esp_unmap(dev, edesc, req);
+@@ -1032,9 +1029,18 @@ static void ipsec_esp_decrypt_swauth_don
+ 	ipsec_esp_unmap(dev, edesc, req, false);
  
  	if (!err) {
 +		char icvdata[SHA512_DIGEST_SIZE];
@@ -72,15 +72,15 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  
  		if (edesc->dma_len) {
  			if (is_sec1)
-@@ -1469,7 +1475,6 @@ static int aead_decrypt(struct aead_requ
+@@ -1468,7 +1474,6 @@ static int aead_decrypt(struct aead_requ
  	struct talitos_ctx *ctx = crypto_aead_ctx(authenc);
  	struct talitos_private *priv = dev_get_drvdata(ctx->dev);
  	struct talitos_edesc *edesc;
 -	struct scatterlist *sg;
  	void *icvdata;
  
- 	req->cryptlen -= authsize;
-@@ -1505,9 +1510,8 @@ static int aead_decrypt(struct aead_requ
+ 	/* allocate extended descriptor */
+@@ -1503,9 +1508,8 @@ static int aead_decrypt(struct aead_requ
  	else
  		icvdata = &edesc->link_tbl[0];
  
@@ -90,5 +90,5 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
 +	sg_pcopy_to_buffer(req->src, edesc->src_nents ? : 1, icvdata, authsize,
 +			   req->assoclen + req->cryptlen - authsize);
  
- 	return ipsec_esp(edesc, req, ipsec_esp_decrypt_swauth_done);
+ 	return ipsec_esp(edesc, req, false, ipsec_esp_decrypt_swauth_done);
  }
