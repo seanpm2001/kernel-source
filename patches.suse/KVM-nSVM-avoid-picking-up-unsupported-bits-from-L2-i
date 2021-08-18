@@ -17,8 +17,8 @@ Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
 Acked-by: Joerg Roedel <jroedel@suse.de>
 ---
  arch/x86/include/asm/svm.h |    2 ++
- arch/x86/kvm/svm.c         |    8 +++++++-
- 2 files changed, 9 insertions(+), 1 deletion(-)
+ arch/x86/kvm/svm.c         |   11 ++++++++++-
+ 2 files changed, 12 insertions(+), 1 deletion(-)
 
 --- a/arch/x86/include/asm/svm.h
 +++ b/arch/x86/include/asm/svm.h
@@ -33,12 +33,22 @@ Acked-by: Joerg Roedel <jroedel@suse.de>
  
 --- a/arch/x86/kvm/svm.c
 +++ b/arch/x86/kvm/svm.c
-@@ -3533,7 +3533,13 @@ static void enter_svm_guest_mode(struct
+@@ -3381,6 +3381,9 @@ static int nested_svm_vmexit(struct vcpu
+ 	nested_vmcb->control.event_inj         = 0;
+ 	nested_vmcb->control.event_inj_err     = 0;
+ 
++	/* Don't leak host V_GIF state into L1 hypervisor */
++	nested_vmcb->control.int_ctl &= ~(V_GIF_ENABLE_MASK | V_GIF_MASK);
++
+ 	/* We always set V_INTR_MASKING and remember the old value in hflags */
+ 	if (!(svm->vcpu.arch.hflags & HF_VINTR_MASK))
+ 		nested_vmcb->control.int_ctl &= ~V_INTR_MASKING_MASK;
+@@ -3533,7 +3536,13 @@ static void enter_svm_guest_mode(struct
  	svm->nested.intercept            = nested_vmcb->control.intercept;
  
  	svm_flush_tlb(&svm->vcpu, true);
 -	svm->vmcb->control.int_ctl = nested_vmcb->control.int_ctl | V_INTR_MASKING_MASK;
-+	
++
 +	svm->vmcb->control.int_ctl &=
 +		        V_INTR_MASKING_MASK | V_GIF_ENABLE_MASK | V_GIF_MASK;
 +
