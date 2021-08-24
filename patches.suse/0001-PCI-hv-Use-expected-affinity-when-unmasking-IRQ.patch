@@ -1,0 +1,44 @@
+From e1fc9911e85251004306fd462b48a6063ca0c3aa Mon Sep 17 00:00:00 2001
+From: Petr Pavlu <petr.pavlu@suse.com>
+Date: Thu, 17 Jun 2021 17:58:52 +0200
+Subject: [PATCH] PCI: hv: Use expected affinity when unmasking IRQ
+Patch-mainline: Never, fix for use of effective affinity
+References: bsc#1185973
+
+Function hv_irq_unmask() in the Hyper-V PCIe MSI driver relies on
+a SLE-specific implementation of irq_data_get_effective_affinity_mask()
+(patches.suse/irq_data_get_effective_affinity_mask.patch) and uses its
+result to unmask a given IRQ on specific CPUs. A problem is that
+irq_data_get_effective_affinity_mask() can incorrectly return an
+effective mask that is not a subset of the originally requested
+affinity. Specifically, if a machine uses the flat APIC driver then the
+effective affinity returned by irq_data_get_effective_affinity_mask() is
+always 0xff. The result is that hv_irq_unmask() can unmask the IRQ on
+a wrong CPU.
+
+Fixing irq_data_get_effective_affinity_mask() would require bringing in
+more backports to implement the functionality properly. However, since
+the function is used only by the Hyper-V PCIe MSI driver, a minimum fix
+is to correct the problem there by additionally doing intersection with
+the original affinity.
+
+Signed-off-by: Petr Pavlu <petr.pavlu@suse.com>
+---
+ drivers/pci/host/pci-hyperv.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/pci/host/pci-hyperv.c b/drivers/pci/host/pci-hyperv.c
+index ccdc7d4b72a6..dd15c3f4057d 100644
+--- a/drivers/pci/host/pci-hyperv.c
++++ b/drivers/pci/host/pci-hyperv.c
+@@ -973,6 +973,7 @@ static void hv_irq_unmask(struct irq_data *data)
+ 		}
+ 
+ 		cpumask_and(tmp, dest, cpu_online_mask);
++		cpumask_and(tmp, tmp, irq_data_get_affinity_mask(data));
+ 		nr_bank = cpumask_to_vpset(&params->int_target.vp_set, tmp);
+ 		free_cpumask_var(tmp);
+ 
+-- 
+2.26.2
+
