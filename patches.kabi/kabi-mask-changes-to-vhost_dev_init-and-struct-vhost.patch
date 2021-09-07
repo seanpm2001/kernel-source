@@ -1,0 +1,139 @@
+From: Michal Kubecek <mkubecek@suse.cz>
+Date: Tue, 7 Sep 2021 01:28:33 +0200
+Subject: kabi: mask changes to vhost_dev_init() and struct vhost_dev
+Patch-mainline: Never, kabi workaround
+References: CVE-2019-3900 bsc#1133374
+
+Backport of mainline commit e82b9b0727ff ("vhost: introduce
+vhost_exceeds_weight()")) adds two new members to struct vhost_dev and two
+new parameters to vhost_dev_init().
+
+Move new members into two 4-byte holes in struct vhost_dev and hide them
+from genksyms. Rename vhost_dev_init() to vhost_dev_init_wt() and create
+a wrapper under the original name which passes 0 for weight and byte_weight
+(and modify the check in the vhost_exceeds_weight() to handle also zero
+dev->weight).
+
+Signed-off-by: Michal Kubecek <mkubecek@suse.cz>
+---
+ drivers/vhost/net.c   |  4 ++--
+ drivers/vhost/scsi.c  |  4 ++--
+ drivers/vhost/vhost.c | 15 +++++++++++----
+ drivers/vhost/vhost.h | 15 +++++++++++----
+ drivers/vhost/vsock.c |  4 ++--
+ 5 files changed, 28 insertions(+), 14 deletions(-)
+
+--- a/drivers/vhost/net.c
++++ b/drivers/vhost/net.c
+@@ -851,8 +851,8 @@ static int vhost_net_open(struct inode *inode, struct file *f)
+ 		n->vqs[i].vhost_hlen = 0;
+ 		n->vqs[i].sock_hlen = 0;
+ 	}
+-	vhost_dev_init(dev, vqs, VHOST_NET_VQ_MAX,
+-		       VHOST_NET_PKT_WEIGHT, VHOST_NET_WEIGHT);
++	vhost_dev_init_wt(dev, vqs, VHOST_NET_VQ_MAX,
++			  VHOST_NET_PKT_WEIGHT, VHOST_NET_WEIGHT);
+ 
+ 	vhost_poll_init(n->poll + VHOST_NET_VQ_TX, handle_tx_net, POLLOUT, dev);
+ 	vhost_poll_init(n->poll + VHOST_NET_VQ_RX, handle_rx_net, POLLIN, dev);
+--- a/drivers/vhost/scsi.c
++++ b/drivers/vhost/scsi.c
+@@ -1438,8 +1438,8 @@ static int vhost_scsi_open(struct inode *inode, struct file *f)
+ 		vqs[i] = &vs->vqs[i].vq;
+ 		vs->vqs[i].vq.handle_kick = vhost_scsi_handle_kick;
+ 	}
+-	vhost_dev_init(&vs->dev, vqs, VHOST_SCSI_MAX_VQ,
+-		       VHOST_SCSI_WEIGHT, 0);
++	vhost_dev_init_wt(&vs->dev, vqs, VHOST_SCSI_MAX_VQ,
++			  VHOST_SCSI_WEIGHT, 0);
+ 
+ 	vhost_scsi_init_inflight(vs, NULL);
+ 
+--- a/drivers/vhost/vhost.c
++++ b/drivers/vhost/vhost.c
+@@ -418,7 +418,7 @@ bool vhost_exceeds_weight(struct vhost_virtqueue *vq,
+ 	struct vhost_dev *dev = vq->dev;
+ 
+ 	if ((dev->byte_weight && total_len >= dev->byte_weight) ||
+-	    pkts >= dev->weight) {
++	    (dev->weight && pkts >= dev->weight)) {
+ 		vhost_poll_queue(&vq->poll);
+ 		return true;
+ 	}
+@@ -427,9 +427,9 @@ bool vhost_exceeds_weight(struct vhost_virtqueue *vq,
+ }
+ EXPORT_SYMBOL_GPL(vhost_exceeds_weight);
+ 
+-void vhost_dev_init(struct vhost_dev *dev,
+-		    struct vhost_virtqueue **vqs, int nvqs,
+-		    int weight, int byte_weight)
++void vhost_dev_init_wt(struct vhost_dev *dev,
++		       struct vhost_virtqueue **vqs, int nvqs,
++		       int weight, int byte_weight)
+ {
+ 	struct vhost_virtqueue *vq;
+ 	int i;
+@@ -465,6 +465,13 @@ void vhost_dev_init(struct vhost_dev *dev,
+ 					POLLIN, dev);
+ 	}
+ }
++EXPORT_SYMBOL_GPL(vhost_dev_init_wt);
++
++void vhost_dev_init(struct vhost_dev *dev,
++		    struct vhost_virtqueue **vqs, int nvqs)
++{
++	vhost_dev_init_wt(dev, vqs, nvqs, 0, 0);
++}
+ EXPORT_SYMBOL_GPL(vhost_dev_init);
+ 
+ /* Caller should have device mutex */
+--- a/drivers/vhost/vhost.h
++++ b/drivers/vhost/vhost.h
+@@ -165,6 +165,10 @@ struct vhost_dev {
+ 	struct mutex mutex;
+ 	struct vhost_virtqueue **vqs;
+ 	int nvqs;
++#ifndef __GENKSYMS__
++	/* filling a 4-byte hole */
++	int weight;
++#endif
+ 	struct file *log_file;
+ 	struct eventfd_ctx *log_ctx;
+ 	struct llist_head work_list;
+@@ -172,16 +176,19 @@ struct vhost_dev {
+ 	struct vhost_umem *umem;
+ 	struct vhost_umem *iotlb;
+ 	spinlock_t iotlb_lock;
++#ifndef __GENKSYMS__
++	/* filling a 4-byte hole */
++	int byte_weight;
++#endif
+ 	struct list_head read_list;
+ 	struct list_head pending_list;
+ 	wait_queue_head_t wait;
+-	int weight;
+-	int byte_weight;
+ };
+ 
+ bool vhost_exceeds_weight(struct vhost_virtqueue *vq, int pkts, int total_len);
+-void vhost_dev_init(struct vhost_dev *, struct vhost_virtqueue **vqs,
+-		    int nvqs, int weight, int byte_weight);
++void vhost_dev_init(struct vhost_dev *, struct vhost_virtqueue **vqs, int nvqs);
++void vhost_dev_init_wt(struct vhost_dev *, struct vhost_virtqueue **vqs,
++		       int nvqs, int weight, int byte_weight);
+ long vhost_dev_set_owner(struct vhost_dev *dev);
+ bool vhost_dev_has_owner(struct vhost_dev *dev);
+ long vhost_dev_check_owner(struct vhost_dev *);
+--- a/drivers/vhost/vsock.c
++++ b/drivers/vhost/vsock.c
+@@ -543,8 +543,8 @@ static int vhost_vsock_dev_open(struct inode *inode, struct file *file)
+ 	vsock->vqs[VSOCK_VQ_TX].handle_kick = vhost_vsock_handle_tx_kick;
+ 	vsock->vqs[VSOCK_VQ_RX].handle_kick = vhost_vsock_handle_rx_kick;
+ 
+-	vhost_dev_init(&vsock->dev, vqs, ARRAY_SIZE(vsock->vqs),
+-		       VHOST_VSOCK_PKT_WEIGHT, VHOST_VSOCK_WEIGHT);
++	vhost_dev_init_wt(&vsock->dev, vqs, ARRAY_SIZE(vsock->vqs),
++			  VHOST_VSOCK_PKT_WEIGHT, VHOST_VSOCK_WEIGHT);
+ 
+ 	file->private_data = vsock;
+ 	spin_lock_init(&vsock->send_pkt_list_lock);

@@ -29,14 +29,14 @@ Acked-by: Michael S. Tsirkin <mst@redhat.com>
 Signed-off-by: David S. Miller <davem@davemloft.net>
 Signed-off-by: Jiri Slaby <jslaby@suse.cz>
 ---
- drivers/vhost/net.c   |    3 +
- drivers/vhost/vhost.c |   97 ++++++++++++++++++++++++++++++++++++++++++--------
- drivers/vhost/vhost.h |    3 +
+ drivers/vhost/net.c   |  3 +-
+ drivers/vhost/vhost.c | 97 ++++++++++++++++++++++++++++++++++++-------
+ drivers/vhost/vhost.h |  3 +-
  3 files changed, 87 insertions(+), 16 deletions(-)
 
 --- a/drivers/vhost/net.c
 +++ b/drivers/vhost/net.c
-@@ -771,7 +771,8 @@ static void handle_rx(struct vhost_net *
+@@ -786,7 +786,8 @@ static void handle_rx(struct vhost_net *net)
  		vhost_add_used_and_signal_n(&net->dev, vq, vq->heads,
  					    headcount);
  		if (unlikely(vq_log))
@@ -44,11 +44,11 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
 +			vhost_log_write(vq, vq_log, log, vhost_len,
 +					vq->iov, in);
  		total_len += vhost_len;
- 		if (unlikely(total_len >= VHOST_NET_WEIGHT)) {
+ 		if (unlikely(vhost_exceeds_weight(++recv_pkts, total_len))) {
  			vhost_poll_queue(&vq->poll);
 --- a/drivers/vhost/vhost.c
 +++ b/drivers/vhost/vhost.c
-@@ -1730,13 +1730,87 @@ static int log_write(void __user *log_ba
+@@ -1730,13 +1730,87 @@ static int log_write(void __user *log_base,
  	return r;
  }
  
@@ -137,7 +137,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  	for (i = 0; i < log_num; ++i) {
  		u64 l = min(log[i].len, len);
  		r = log_write(vq->log_base, log[i].addr, l);
-@@ -1766,9 +1840,8 @@ static int vhost_update_used_flags(struc
+@@ -1766,9 +1840,8 @@ static int vhost_update_used_flags(struct vhost_virtqueue *vq)
  		smp_wmb();
  		/* Log used flag write. */
  		used = &vq->used->flags;
@@ -149,7 +149,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  		if (vq->log_ctx)
  			eventfd_signal(vq->log_ctx, 1);
  	}
-@@ -1786,9 +1859,8 @@ static int vhost_update_avail_event(stru
+@@ -1786,9 +1859,8 @@ static int vhost_update_avail_event(struct vhost_virtqueue *vq, u16 avail_event)
  		smp_wmb();
  		/* Log avail event write */
  		used = vhost_avail_event(vq);
@@ -161,7 +161,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  		if (vq->log_ctx)
  			eventfd_signal(vq->log_ctx, 1);
  	}
-@@ -2193,10 +2265,8 @@ static int __vhost_add_used_n(struct vho
+@@ -2193,10 +2265,8 @@ static int __vhost_add_used_n(struct vhost_virtqueue *vq,
  		/* Make sure data is seen before log. */
  		smp_wmb();
  		/* Log used ring entry write. */
@@ -174,7 +174,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  	}
  	old = vq->last_used_idx;
  	new = (vq->last_used_idx += count);
-@@ -2238,9 +2308,8 @@ int vhost_add_used_n(struct vhost_virtqu
+@@ -2238,9 +2308,8 @@ int vhost_add_used_n(struct vhost_virtqueue *vq, struct vring_used_elem *heads,
  		/* Make sure used idx is seen before log. */
  		smp_wmb();
  		/* Log used index update. */
@@ -188,7 +188,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  	}
 --- a/drivers/vhost/vhost.h
 +++ b/drivers/vhost/vhost.h
-@@ -210,7 +210,8 @@ bool vhost_vq_avail_empty(struct vhost_d
+@@ -210,7 +210,8 @@ bool vhost_vq_avail_empty(struct vhost_dev *, struct vhost_virtqueue *);
  bool vhost_enable_notify(struct vhost_dev *, struct vhost_virtqueue *);
  
  int vhost_log_write(struct vhost_virtqueue *vq, struct vhost_log *log,
