@@ -33,16 +33,14 @@ Acked-by: Joerg Roedel <jroedel@suse.de>
 
 --- a/arch/x86/kernel/apic/msi.c
 +++ b/arch/x86/kernel/apic/msi.c
-@@ -25,15 +25,13 @@
+@@ -25,13 +25,11 @@
  
  static struct irq_domain *msi_default_domain;
  
--static void irq_msi_compose_msg(struct irq_data *data, struct msi_msg *msg)
-+static void __irq_msi_compose_msg(struct irq_data *data, struct msi_msg *msg,
+-static void irq_msi_compose_msg(struct irq_cfg *cfg, struct msi_msg *msg)
++static void __irq_msi_compose_msg(struct irq_cfg *cfg, struct msi_msg *msg,
 +				  bool dmar)
  {
- 	struct irq_cfg *cfg = irqd_cfg(data);
- 
  	msg->address_hi = MSI_ADDR_BASE_HI;
  
 -	if (x2apic_enabled())
@@ -51,7 +49,7 @@ Acked-by: Joerg Roedel <jroedel@suse.de>
  	msg->address_lo =
  		MSI_ADDR_BASE_LO |
  		((apic->irq_dest_mode == 0) ?
-@@ -51,6 +49,34 @@ static void irq_msi_compose_msg(struct i
+@@ -49,6 +47,34 @@ static void irq_msi_compose_msg(struct i
  			MSI_DATA_DELIVERY_FIXED :
  			MSI_DATA_DELIVERY_LOWPRI) |
  		MSI_DATA_VECTOR(cfg->vector);
@@ -85,8 +83,8 @@ Acked-by: Joerg Roedel <jroedel@suse.de>
 +	__irq_msi_compose_msg(data, msg, true);
  }
  
- /*
-@@ -186,7 +212,7 @@ static struct irq_chip dmar_msi_controll
+ static void irq_msi_update_msg(struct irq_data *irqd, struct irq_cfg *cfg)
+@@ -301,7 +327,7 @@ static struct irq_chip dmar_msi_controll
  	.irq_ack		= irq_chip_ack_parent,
  	.irq_set_affinity	= msi_domain_set_affinity,
  	.irq_retrigger		= irq_chip_retrigger_hierarchy,
