@@ -1,9 +1,11 @@
+From 6f1a4891a5928a5969c87fa5a584844c983ec823 Mon Sep 17 00:00:00 2001
 From: Thomas Gleixner <tglx@linutronix.de>
-Date: Fri Jan 31 15:26:52 2020 +0100
+Date: Fri, 31 Jan 2020 15:26:52 +0100
 Subject: [PATCH] x86/apic/msi: Plug non-maskable MSI affinity race
+
+References: bsc#1184439
 Patch-mainline: v5.6-rc1
 Git-commit: 6f1a4891a5928a5969c87fa5a584844c983ec823
-References: bsc#1184439
 
 Evan tracked down a subtle race between the update of the MSI message and
 the device raising an interrupt internally on PCI devices which do not
@@ -106,9 +108,11 @@ Link: https://lore.kernel.org/r/87imkr4s7n.fsf@nanos.tec.linutronix.de
  kernel/irq/msi.c            |    2 
  5 files changed, 153 insertions(+), 3 deletions(-)
 
+diff --git a/arch/x86/include/asm/apic.h b/arch/x86/include/asm/apic.h
+index be0b9cf941c4..19e94af9cc5d 100644
 --- a/arch/x86/include/asm/apic.h
 +++ b/arch/x86/include/asm/apic.h
-@@ -444,6 +444,14 @@ static inline void ack_APIC_irq(void)
+@@ -454,6 +454,14 @@ static inline void ack_APIC_irq(void)
  	apic_eoi();
  }
  
@@ -123,29 +127,35 @@ Link: https://lore.kernel.org/r/87imkr4s7n.fsf@nanos.tec.linutronix.de
  static inline unsigned default_get_apic_id(unsigned long x)
  {
  	unsigned int ver = GET_APIC_VERSION(apic_read(APIC_LVR));
+diff --git a/arch/x86/kernel/apic/msi.c b/arch/x86/kernel/apic/msi.c
 --- a/arch/x86/kernel/apic/msi.c
 +++ b/arch/x86/kernel/apic/msi.c
-@@ -25,10 +25,8 @@
+@@ -23,10 +23,8 @@
  
  static struct irq_domain *msi_default_domain;
  
 -static void irq_msi_compose_msg(struct irq_data *data, struct msi_msg *msg)
-+static void irq_msi_compose_msg(struct irq_cfg *cfg, struct msi_msg *msg)
++static void __irq_msi_compose_msg(struct irq_cfg *cfg, struct msi_msg *msg)
  {
 -	struct irq_cfg *cfg = irqd_cfg(data);
 -
  	msg->address_hi = MSI_ADDR_BASE_HI;
  
  	if (x2apic_enabled())
-@@ -53,6 +51,120 @@ static void irq_msi_compose_msg(struct i
+@@ -47,6 +45,125 @@ static void irq_msi_compose_msg(struct irq_data *data, struct msi_msg *msg)
  		MSI_DATA_VECTOR(cfg->vector);
  }
  
++static void irq_msi_compose_msg(struct irq_data *data, struct msi_msg *msg)
++{
++	__irq_msi_compose_msg(irqd_cfg(data), msg);
++}
++
 +static void irq_msi_update_msg(struct irq_data *irqd, struct irq_cfg *cfg)
 +{
 +	struct msi_msg msg[2] = { [1] = { }, };
 +
-+	__irq_msi_compose_msg(cfg, msg, false);
++	__irq_msi_compose_msg(cfg, msg);
 +	irq_data_get_irq_chip(irqd)->irq_write_msi_msg(irqd, msg);
 +}
 +
@@ -258,7 +268,7 @@ Link: https://lore.kernel.org/r/87imkr4s7n.fsf@nanos.tec.linutronix.de
  /*
   * IRQ Chip for MSI PCI/PCI-X/PCI-Express Devices,
   * which implement the MSI or MSI-X Capability Structure.
-@@ -64,6 +176,7 @@ static struct irq_chip pci_msi_controlle
+@@ -58,6 +177,7 @@ static struct irq_chip pci_msi_controller = {
  	.irq_ack		= irq_chip_ack_parent,
  	.irq_retrigger		= irq_chip_retrigger_hierarchy,
  	.irq_compose_msi_msg	= irq_msi_compose_msg,
@@ -275,6 +285,7 @@ Link: https://lore.kernel.org/r/87imkr4s7n.fsf@nanos.tec.linutronix.de
  }
  
  #ifdef CONFIG_IRQ_REMAP
+diff --git a/include/linux/irq.h b/include/linux/irq.h
 --- a/include/linux/irq.h
 +++ b/include/linux/irq.h
 @@ -201,6 +201,8 @@ struct irq_data {
@@ -316,22 +327,25 @@ Link: https://lore.kernel.org/r/87imkr4s7n.fsf@nanos.tec.linutronix.de
  #undef __irqd_to_state
  
  static inline irq_hw_number_t irqd_to_hwirq(struct irq_data *d)
+diff --git a/include/linux/irqdomain.h b/include/linux/irqdomain.h
+index 3c340dbc5a1f..4da8df57618a 100644
 --- a/include/linux/irqdomain.h
 +++ b/include/linux/irqdomain.h
-@@ -190,6 +190,13 @@ enum {
+@@ -206,6 +206,13 @@ enum {
+ 	/* Irq domain implements MSI remapping */
  	IRQ_DOMAIN_FLAG_MSI_REMAP	= (1 << 5),
  
- 	/*
++	/*
 +	 * Quirk to handle MSI implementations which do not provide
 +	 * masking. Currently known to affect x86, but partially
 +	 * handled in core code.
 +	 */
 +	IRQ_DOMAIN_MSI_NOMASK_QUIRK	= (1 << 6),
 +
-+	/*
+ 	/*
  	 * Flags starting from IRQ_DOMAIN_FLAG_NONCORE are reserved
  	 * for implementation specific purposes and ignored by the
- 	 * core code.
+diff --git a/kernel/irq/msi.c b/kernel/irq/msi.c
 --- a/kernel/irq/msi.c
 +++ b/kernel/irq/msi.c
 @@ -396,6 +396,8 @@ int msi_domain_alloc_irqs(struct irq_dom
