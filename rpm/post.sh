@@ -29,7 +29,12 @@ done
 wm2_rc=0
 wm2=/usr/lib/module-init-tools/weak-modules2
 if [ -x $wm2 ]; then
-    /bin/bash -${-/e/} $wm2 --add-kernel @KERNELRELEASE@-@FLAVOR@
+    if [ @BASE_PACKAGE@ = 1 ]; then
+        /bin/bash -${-/e/} $wm2 --add-kernel @KERNELRELEASE@-@FLAVOR@
+    else
+        nvr=@SUBPACKAGE@-@RPM_VERSION_RELEASE@
+        rpm -ql $nvr | /bin/bash -${-/e/} $wm2 --add-kernel-modules @KERNELRELEASE@-@FLAVOR@
+    fi
     wm2_rc=$?
 else
     echo "$wm2 does not exist, please run depmod and mkinitrd manually" >&2
