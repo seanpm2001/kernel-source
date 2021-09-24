@@ -1,0 +1,28 @@
+From: Ilya Leoshkevich <iii@linux.ibm.com>
+Subject: s390/bpf: Fix 64-bit subtraction of the -0x80000000 constant
+Patch-mainline: Not yet, embargoed
+References: bsc#1190601
+Signed-off-by: Tony Jones <tonyj@suse.de>
+
+---
+ arch/s390/net/bpf_jit_comp.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+--- a/arch/s390/net/bpf_jit_comp.c	
++++ a/arch/s390/net/bpf_jit_comp.c	
+@@ -794,8 +794,13 @@ static noinline int bpf_jit_insn(struct bpf_jit *jit, struct bpf_prog *fp,
+ 	case BPF_ALU64 | BPF_SUB | BPF_K: /* dst = dst - imm */
+ 		if (!imm)
+ 			break;
+-		/* agfi %dst,-imm */
+-		EMIT6_IMM(0xc2080000, dst_reg, -imm);
++		if (imm == -0x80000000) {
++			/* algfi %dst,0x80000000 */
++			EMIT6_IMM(0xc20a0000, dst_reg, 0x80000000);
++		} else {
++			/* agfi %dst,-imm */
++			EMIT6_IMM(0xc2080000, dst_reg, -imm);
++		}
+ 		break;
+ 	/*
+ 	 * BPF_MUL
+-- 
