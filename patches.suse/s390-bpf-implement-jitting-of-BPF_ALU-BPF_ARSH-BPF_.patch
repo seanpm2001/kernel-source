@@ -1,0 +1,46 @@
+From: Jiong Wang <jiong.wang@netronome.com>
+Date: Wed, 5 Dec 2018 13:52:32 -0500
+Subject: s390: bpf: implement jitting of BPF_ALU | BPF_ARSH | BPF_*
+Git-commit: f860203b010ab11995b3073a96cc0d04e520129e
+Patch-mainline: v5.0-rc1
+References: bsc#1190601
+
+This patch implements code-gen for BPF_ALU | BPF_ARSH | BPF_*.
+
+Cc: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Cc: Heiko Carstens <heiko.carstens@de.ibm.com>
+Signed-off-by: Jiong Wang <jiong.wang@netronome.com>
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Signed-off-by: Tony Jones <tonyj@suse.de>
+---
+ arch/s390/net/bpf_jit_comp.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/arch/s390/net/bpf_jit_comp.c b/arch/s390/net/bpf_jit_comp.c
+index d7052cbe984f..3ff758eeb71d 100644
+--- a/arch/s390/net/bpf_jit_comp.c
++++ b/arch/s390/net/bpf_jit_comp.c
+@@ -821,10 +821,22 @@ static noinline int bpf_jit_insn(struct bpf_jit *jit, struct bpf_prog *fp, int i
+ 	/*
+ 	 * BPF_ARSH
+ 	 */
++	case BPF_ALU | BPF_ARSH | BPF_X: /* ((s32) dst) >>= src */
++		/* sra %dst,%dst,0(%src) */
++		EMIT4_DISP(0x8a000000, dst_reg, src_reg, 0);
++		EMIT_ZERO(dst_reg);
++		break;
+ 	case BPF_ALU64 | BPF_ARSH | BPF_X: /* ((s64) dst) >>= src */
+ 		/* srag %dst,%dst,0(%src) */
+ 		EMIT6_DISP_LH(0xeb000000, 0x000a, dst_reg, dst_reg, src_reg, 0);
+ 		break;
++	case BPF_ALU | BPF_ARSH | BPF_K: /* ((s32) dst >> imm */
++		if (imm == 0)
++			break;
++		/* sra %dst,imm(%r0) */
++		EMIT4_DISP(0x8a000000, dst_reg, REG_0, imm);
++		EMIT_ZERO(dst_reg);
++		break;
+ 	case BPF_ALU64 | BPF_ARSH | BPF_K: /* ((s64) dst) >>= imm */
+ 		if (imm == 0)
+ 			break;
+

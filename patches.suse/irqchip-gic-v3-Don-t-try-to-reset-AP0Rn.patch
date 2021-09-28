@@ -1,0 +1,48 @@
+From 66569052fe5328729ff696c1ec17913907d00b5f Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <marc.zyngier@arm.com>
+Date: Tue, 20 Mar 2018 18:21:37 +0000
+Subject: [PATCH] irqchip/gic-v3: Don't try to reset AP0Rn
+Patch-mainline: v4.17-rc1
+Git-commit: 66569052fe5328729ff696c1ec17913907d00b5f
+References: bsc#1189407
+
+Clearing AP0Rn has created a number of regressions, due to systems
+that have SCR_EL3.FIQ set. Even when addressing some obvious bugs,
+GIC500 platforms seem to act bizarrely (we are supposed to have
+5 bits of priority, but PMR seems to behave as if we had 6...).
+
+Drop the AP0Rn reset for the time being, it is unlikely to have any
+effect if kexec-ing.
+
+Fixes: d6062a6d62c6 irqchip/gic-v3: Reset APgRn registers at boot time
+Reported-by: Shawn Lin <shawn.lin@rock-chips.com>
+Signed-off-by: Marc Zyngier <marc.zyngier@arm.com>
+Signed-off-by: Petr Pavlu <petr.pavlu@suse.com>
+---
+ drivers/irqchip/irq-gic-v3.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/drivers/irqchip/irq-gic-v3.c b/drivers/irqchip/irq-gic-v3.c
+index 0d8e326ebf19..e2b90bec1473 100644
+--- a/drivers/irqchip/irq-gic-v3.c
++++ b/drivers/irqchip/irq-gic-v3.c
+@@ -570,16 +570,12 @@ static void gic_cpu_sys_reg_init(void)
+ 	switch(val + 1) {
+ 	case 8:
+ 	case 7:
+-		write_gicreg(0, ICC_AP0R3_EL1);
+ 		write_gicreg(0, ICC_AP1R3_EL1);
+-		write_gicreg(0, ICC_AP0R2_EL1);
+ 		write_gicreg(0, ICC_AP1R2_EL1);
+ 	case 6:
+-		write_gicreg(0, ICC_AP0R1_EL1);
+ 		write_gicreg(0, ICC_AP1R1_EL1);
+ 	case 5:
+ 	case 4:
+-		write_gicreg(0, ICC_AP0R0_EL1);
+ 		write_gicreg(0, ICC_AP1R0_EL1);
+ 	}
+ 
+-- 
+2.26.2
+
