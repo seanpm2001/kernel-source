@@ -1,0 +1,54 @@
+From: Trond Myklebust <trondmy@gmail.com>
+Date: Sun, 7 Apr 2019 13:58:57 -0400
+Subject: [PATCH] SUNRPC: Ensure to ratelimit the "server not responding"
+ syslog messages
+Git-commit: 0729d995f2a2726598642d552ebe916b43aef73d
+Patch-mainline: v5.2
+References: bsc#1191136
+
+In particular, the timeout messages can be very noisy, so we ought to
+ratelimit them in order to avoid spamming the syslog.
+
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ net/sunrpc/clnt.c |   12 +++++++-----
+ 1 file changed, 7 insertions(+), 5 deletions(-)
+
+--- a/net/sunrpc/clnt.c
++++ b/net/sunrpc/clnt.c
+@@ -2245,7 +2245,8 @@ call_timeout(struct rpc_task *task)
+ 	}
+ 	if (RPC_IS_SOFT(task)) {
+ 		if (clnt->cl_chatty) {
+-			printk(KERN_NOTICE "%s: server %s not responding, timed out\n",
++			pr_notice_ratelimited(
++				"%s: server %s not responding, timed out\n",
+ 				clnt->cl_program->name,
+ 				task->tk_xprt->servername);
+ 		}
+@@ -2259,9 +2260,10 @@ call_timeout(struct rpc_task *task)
+ 	if (!(task->tk_flags & RPC_CALL_MAJORSEEN)) {
+ 		task->tk_flags |= RPC_CALL_MAJORSEEN;
+ 		if (clnt->cl_chatty) {
+-			printk(KERN_NOTICE "%s: server %s not responding, still trying\n",
+-			clnt->cl_program->name,
+-			task->tk_xprt->servername);
++			pr_notice_ratelimited(
++				"%s: server %s not responding, still trying\n",
++				clnt->cl_program->name,
++				task->tk_xprt->servername);
+ 		}
+ 	}
+ 	rpc_force_rebind(clnt);
+@@ -2291,7 +2293,7 @@ call_decode(struct rpc_task *task)
+ 
+ 	if (task->tk_flags & RPC_CALL_MAJORSEEN) {
+ 		if (clnt->cl_chatty) {
+-			printk(KERN_NOTICE "%s: server %s OK\n",
++			pr_notice_ratelimited("%s: server %s OK\n",
+ 				clnt->cl_program->name,
+ 				task->tk_xprt->servername);
+ 		}
