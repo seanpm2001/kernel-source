@@ -1,0 +1,37 @@
+From 8cc1da96d1c92aad27b7dfd689b3cdcc6a2bcc18 Mon Sep 17 00:00:00 2001
+From: Ben Dooks <ben.dooks@codethink.co.uk>
+Date: Thu, 11 Oct 2018 14:03:32 +0100
+Subject: [PATCH] net: cdc_ncm: use tasklet_init() for tasklet_struct init
+Git-commit: 8cc1da96d1c92aad27b7dfd689b3cdcc6a2bcc18
+References: git-fixes
+Patch-mainline: v4.20-rc1
+
+The tasklet initialisation would be better done by tasklet_init()
+instead of assuming all the fields are in an ok state by default.
+
+This does not fix any actual know bug.
+
+Signed-off-by: Ben Dooks <ben.dooks@codethink.co.uk>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/net/usb/cdc_ncm.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/net/usb/cdc_ncm.c b/drivers/net/usb/cdc_ncm.c
+index 1eaec648bd1f..35a7d61453d5 100644
+--- a/drivers/net/usb/cdc_ncm.c
++++ b/drivers/net/usb/cdc_ncm.c
+@@ -779,8 +779,7 @@ int cdc_ncm_bind_common(struct usbnet *dev, struct usb_interface *intf, u8 data_
+ 
+ 	hrtimer_init(&ctx->tx_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+ 	ctx->tx_timer.function = &cdc_ncm_tx_timer_cb;
+-	ctx->bh.data = (unsigned long)dev;
+-	ctx->bh.func = cdc_ncm_txpath_bh;
++	tasklet_init(&ctx->bh, cdc_ncm_txpath_bh, (unsigned long)dev);
+ 	atomic_set(&ctx->stop, 0);
+ 	spin_lock_init(&ctx->mtx);
+ 
+-- 
+2.26.2
+
