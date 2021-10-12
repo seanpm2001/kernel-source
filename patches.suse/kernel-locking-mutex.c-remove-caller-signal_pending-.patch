@@ -1,0 +1,39 @@
+From 3bb5f4ac55dd91d516e7e36b45c94bd57efbb068 Mon Sep 17 00:00:00 2001
+From: Davidlohr Bueso <dave@stgolabs.net>
+Date: Thu, 3 Jan 2019 15:28:44 -0800
+Subject: [PATCH] kernel/locking/mutex.c: remove caller signal_pending branch predictions
+Git-commit: 3bb5f4ac55dd91d516e7e36b45c94bd57efbb068
+Patch-mainline: v5.0-rc1
+References: bsc#1050549
+
+This is already done for us internally by the signal machinery.
+
+Link: http://lkml.kernel.org/r/20181116002713.8474-2-dave@stgolabs.net
+Signed-off-by: Davidlohr Bueso <dave@stgolabs.net>
+Reviewed-by: Andrew Morton <akpm@linux-foundation.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Ingo Molnar <mingo@elte.hu>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Davidlohr Bueso <dbueso@suse.de>
+
+---
+ kernel/locking/mutex.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/locking/mutex.c b/kernel/locking/mutex.c
+index 3f8a35104285..db578783dd36 100644
+--- a/kernel/locking/mutex.c
++++ b/kernel/locking/mutex.c
+@@ -987,7 +987,7 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
+ 		 * wait_lock. This ensures the lock cancellation is ordered
+ 		 * against mutex_unlock() and wake-ups do not go missing.
+ 		 */
+-		if (unlikely(signal_pending_state(state, current))) {
++		if (signal_pending_state(state, current)) {
+ 			ret = -EINTR;
+ 			goto err;
+ 		}
+-- 
+2.26.2
+
