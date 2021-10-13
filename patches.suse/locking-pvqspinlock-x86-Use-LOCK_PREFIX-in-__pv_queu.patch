@@ -1,0 +1,42 @@
+From c0dc373a780f4ec63e45a573b9551763abd8cd1a Mon Sep 17 00:00:00 2001
+From: Waiman Long <longman@redhat.com>
+Date: Tue, 17 Jul 2018 16:16:00 -0400
+Subject: [PATCH] locking/pvqspinlock/x86: Use LOCK_PREFIX in __pv_queued_spin_unlock() assembly code
+Git-commit: c0dc373a780f4ec63e45a573b9551763abd8cd1a
+Patch-mainline: v4.18-rc8
+References: bsc#1050549
+
+The LOCK_PREFIX macro should be used in the __raw_callee_save___pv_queued_spin_unlock()
+assembly code, so that the lock prefix can be patched out on UP systems.
+
+Signed-off-by: Waiman Long <longman@redhat.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Cc: Joe Mario <jmario@redhat.com>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: Will Deacon <will.deacon@arm.com>
+Link: http://lkml.kernel.org/r/1531858560-21547-1-git-send-email-longman@redhat.com
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+Signed-off-by: Davidlohr Bueso <dbueso@suse.de> 
+
+---
+ arch/x86/include/asm/qspinlock_paravirt.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/x86/include/asm/qspinlock_paravirt.h b/arch/x86/include/asm/qspinlock_paravirt.h
+index 9ef5ee03d2d7..159622ee0674 100644
+--- a/arch/x86/include/asm/qspinlock_paravirt.h
++++ b/arch/x86/include/asm/qspinlock_paravirt.h
+@@ -43,7 +43,7 @@ asm    (".pushsection .text;"
+ 	"push  %rdx;"
+ 	"mov   $0x1,%eax;"
+ 	"xor   %edx,%edx;"
+-	"lock cmpxchg %dl,(%rdi);"
++	LOCK_PREFIX "cmpxchg %dl,(%rdi);"
+ 	"cmp   $0x1,%al;"
+ 	"jne   .slowpath;"
+ 	"pop   %rdx;"
+-- 
+2.26.2
+
