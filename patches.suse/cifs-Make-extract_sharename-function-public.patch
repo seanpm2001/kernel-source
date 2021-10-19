@@ -1,0 +1,114 @@
+From: Samuel Cabrero <scabrero@suse.de>
+Date: Mon, 30 Nov 2020 19:02:48 +0100
+Subject: [PATCH] cifs: Make extract_sharename function public
+Git-commit: e73a42e07a2246ecd8b0cad70824d26ab07985c2
+References: bsc#1190317
+Patch-mainline: v5.11-rc1
+
+Move the function to misc.c
+
+[ ematsumiya: context adjustment, include cifsproto.h in cache.c ]
+
+Signed-off-by: Samuel Cabrero <scabrero@suse.de>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/cache.c     | 24 ------------------------
+ fs/cifs/cifsproto.h |  1 +
+ fs/cifs/fscache.c   |  1 +
+ fs/cifs/fscache.h   |  1 -
+ fs/cifs/misc.c      | 24 ++++++++++++++++++++++++
+ 5 files changed, 26 insertions(+), 25 deletions(-)
+
+--- a/fs/cifs/cache.c
++++ b/fs/cifs/cache.c
+@@ -20,6 +20,7 @@
+  */
+ #include "fscache.h"
+ #include "cifs_debug.h"
++#include "cifsproto.h"
+ 
+ /*
+  * CIFS filesystem definition for FS-Cache
+@@ -116,30 +117,6 @@ struct cifs_fscache_super_auxdata {
+ 	u64	resource_id;		/* unique server resource id */
+ };
+ 
+-static char *extract_sharename(const char *treename)
+-{
+-	const char *src;
+-	char *delim, *dst;
+-	int len;
+-
+-	/* skip double chars at the beginning */
+-	src = treename + 2;
+-
+-	/* share name is always preceded by '\\' now */
+-	delim = strchr(src, '\\');
+-	if (!delim)
+-		return ERR_PTR(-EINVAL);
+-	delim++;
+-	len = strlen(delim);
+-
+-	/* caller has to free the memory */
+-	dst = kstrndup(delim, len, GFP_KERNEL);
+-	if (!dst)
+-		return ERR_PTR(-ENOMEM);
+-
+-	return dst;
+-}
+-
+ /*
+  * Superblock object currently keyed by share name
+  */
+--- a/fs/cifs/cifsproto.h
++++ b/fs/cifs/cifsproto.h
+@@ -606,6 +606,7 @@ struct super_block *cifs_get_tcp_super(s
+ void cifs_put_tcp_super(struct super_block *sb);
+ int update_super_prepath(struct cifs_tcon *tcon, char *prefix);
+ char *extract_hostname(const char *unc);
++char *extract_sharename(const char *unc);
+ 
+ #ifdef CONFIG_CIFS_DFS_UPCALL
+ static inline int get_dfs_path(const unsigned int xid, struct cifs_ses *ses,
+--- a/fs/cifs/misc.c
++++ b/fs/cifs/misc.c
+@@ -1230,3 +1230,27 @@ char *extract_hostname(const char *unc)
+ 
+ 	return dst;
+ }
++
++char *extract_sharename(const char *unc)
++{
++	const char *src;
++	char *delim, *dst;
++	int len;
++
++	/* skip double chars at the beginning */
++	src = unc + 2;
++
++	/* share name is always preceded by '\\' now */
++	delim = strchr(src, '\\');
++	if (!delim)
++		return ERR_PTR(-EINVAL);
++	delim++;
++	len = strlen(delim);
++
++	/* caller has to free the memory */
++	dst = kstrndup(delim, len, GFP_KERNEL);
++	if (!dst)
++		return ERR_PTR(-ENOMEM);
++
++	return dst;
++}
+--- a/fs/cifs/fscache.c
++++ b/fs/cifs/fscache.c
+@@ -22,6 +22,7 @@
+ #include "cifsglob.h"
+ #include "cifs_debug.h"
+ #include "cifs_fs_sb.h"
++#include "cifsproto.h"
+ 
+ void cifs_fscache_get_client_cookie(struct TCP_Server_Info *server)
+ {

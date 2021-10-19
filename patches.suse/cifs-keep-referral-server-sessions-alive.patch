@@ -14,6 +14,8 @@ structures that will be indexed by a randomly generated uuid at mount
 time, so we can put all the sessions related to specific dfs mounts
 and avoid leaking them.
 
+[ ematsumiya: patch refreshed for context adjustment ]
+
 Signed-off-by: Paulo Alcantara (SUSE) <pc@cjr.nz>
 Reviewed-by: Aurelien Aptel <aaptel@suse.com>
 Signed-off-by: Steve French <stfrench@microsoft.com>
@@ -38,7 +40,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	 * (cifs_autodisable_serverino) in order to match new mounts.
 --- a/fs/cifs/connect.c
 +++ b/fs/cifs/connect.c
-@@ -608,13 +608,7 @@ cifs_reconnect(struct TCP_Server_Info *s
+@@ -611,13 +611,7 @@ cifs_reconnect(struct TCP_Server_Info *s
  			cifs_server_dbg(VFS, "%s: failed to update DFS target hint: rc = %d\n",
  				 __func__, rc);
  		}
@@ -52,7 +54,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	}
  
  	cifs_put_tcp_super(sb);
-@@ -2990,7 +2984,6 @@ void cifs_put_smb_ses(struct cifs_ses *s
+@@ -2973,7 +2967,6 @@ void cifs_put_smb_ses(struct cifs_ses *s
  {
  	unsigned int rc, xid;
  	struct TCP_Server_Info *server = ses->server;
@@ -60,7 +62,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	cifs_dbg(FYI, "%s: ses_count=%d\n", __func__, ses->ses_count);
  
  	spin_lock(&cifs_tcp_ses_lock);
-@@ -2998,6 +2991,10 @@ void cifs_put_smb_ses(struct cifs_ses *s
+@@ -2981,6 +2974,10 @@ void cifs_put_smb_ses(struct cifs_ses *s
  		spin_unlock(&cifs_tcp_ses_lock);
  		return;
  	}
@@ -71,7 +73,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	if (--ses->ses_count > 0) {
  		spin_unlock(&cifs_tcp_ses_lock);
  		return;
-@@ -4676,25 +4673,23 @@ static int is_path_remote(struct cifs_sb
+@@ -4697,25 +4694,23 @@ static int is_path_remote(struct cifs_sb
  }
  
  #ifdef CONFIG_CIFS_DFS_UPCALL
@@ -103,7 +105,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  /* Set up next dfs prefix path in @dfs_path */
  static int next_dfs_prepath(struct cifs_sb_info *cifs_sb, struct smb_vol *vol,
  			    const unsigned int xid, struct TCP_Server_Info *server,
-@@ -4774,9 +4769,9 @@ int cifs_mount(struct cifs_sb_info *cifs
+@@ -4795,9 +4790,9 @@ int cifs_mount(struct cifs_sb_info *cifs
  	struct cifs_ses *ses = NULL, *root_ses = NULL;
  	struct cifs_tcon *tcon = NULL;
  	int count = 0;
@@ -114,7 +116,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	bool ref_server = false;
  
  	rc = mount_get_conns(vol, cifs_sb, &xid, &server, &ses, &tcon);
-@@ -4799,12 +4794,7 @@ int cifs_mount(struct cifs_sb_info *cifs
+@@ -4820,12 +4815,7 @@ int cifs_mount(struct cifs_sb_info *cifs
  		if (rc != -EREMOTE)
  			goto error;
  	}
@@ -128,7 +130,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	/* Get path of DFS root */
  	ref_path = build_unc_path_to_root(vol, cifs_sb, false);
  	if (IS_ERR(ref_path)) {
-@@ -4813,7 +4803,8 @@ int cifs_mount(struct cifs_sb_info *cifs
+@@ -4834,7 +4824,8 @@ int cifs_mount(struct cifs_sb_info *cifs
  		goto error;
  	}
  
@@ -138,7 +140,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	do {
  		/* Save full path of last DFS path we used to resolve final target server */
  		kfree(full_path);
-@@ -4847,10 +4838,8 @@ int cifs_mount(struct cifs_sb_info *cifs
+@@ -4868,10 +4859,8 @@ int cifs_mount(struct cifs_sb_info *cifs
  		rc = is_referral_server(ref_path + 1, tcon, &ref_server);
  		if (rc)
  			break;
@@ -151,7 +153,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  
  		/* Get next dfs path and then continue chasing them if -EREMOTE */
  		rc = next_dfs_prepath(cifs_sb, vol, xid, server, tcon, &ref_path);
-@@ -4861,8 +4850,7 @@ int cifs_mount(struct cifs_sb_info *cifs
+@@ -4882,8 +4871,7 @@ int cifs_mount(struct cifs_sb_info *cifs
  
  	if (rc)
  		goto error;
@@ -161,7 +163,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	kfree(ref_path);
  	ref_path = NULL;
  	/*
-@@ -4884,10 +4872,6 @@ int cifs_mount(struct cifs_sb_info *cifs
+@@ -4905,10 +4893,6 @@ int cifs_mount(struct cifs_sb_info *cifs
  	tcon->remap = cifs_remap(cifs_sb);
  	spin_unlock(&cifs_tcp_ses_lock);
  
@@ -172,7 +174,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	/*
  	 * After reconnecting to a different server, unique ids won't
  	 * match anymore, so we disable serverino. This prevents
-@@ -4902,6 +4886,7 @@ int cifs_mount(struct cifs_sb_info *cifs
+@@ -4923,6 +4907,7 @@ int cifs_mount(struct cifs_sb_info *cifs
  	kfree(cifs_sb->prepath);
  	cifs_sb->prepath = vol->prepath;
  	vol->prepath = NULL;
@@ -180,7 +182,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  
  out:
  	free_xid(xid);
-@@ -4910,9 +4895,8 @@ out:
+@@ -4931,9 +4916,8 @@ out:
  error:
  	kfree(ref_path);
  	kfree(full_path);
@@ -191,7 +193,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	mount_put_conns(cifs_sb, xid, server, ses, tcon);
  	return rc;
  }
-@@ -5142,7 +5126,7 @@ cifs_umount(struct cifs_sb_info *cifs_sb
+@@ -5162,7 +5146,7 @@ cifs_umount(struct cifs_sb_info *cifs_sb
  	kfree(cifs_sb->mountdata);
  	kfree(cifs_sb->prepath);
  #ifdef CONFIG_CIFS_DFS_UPCALL
@@ -561,7 +563,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	if (rc)
  		goto out_free_path;
  
-@@ -1117,184 +1158,52 @@ out_unlock:
+@@ -1117,185 +1158,52 @@ out_unlock:
  	return rc;
  }
  
@@ -763,7 +765,8 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 -	vi = find_vol(fullpath);
 -	spin_unlock(&vol_list_lock);
 -
--	kref_put(&vi->refcnt, vol_release);
+-	if (!IS_ERR(vi))
+-		kref_put(&vi->refcnt, vol_release);
 +	mutex_lock(&mount_group_list_lock);
 +	mg = find_mount_group_locked(mount_id);
 +	if (IS_ERR(mg)) {
@@ -775,7 +778,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  }
  
  /**
-@@ -1363,278 +1272,136 @@ int dfs_cache_get_tgt_share(char *path,
+@@ -1364,278 +1272,136 @@ int dfs_cache_get_tgt_share(char *path,
  	return 0;
  }
  
