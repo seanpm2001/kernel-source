@@ -1,0 +1,40 @@
+From: Michal Kubecek <mkubecek@suse.cz>
+Date: Thu, 28 Oct 2021 19:12:42 +0200
+Subject: kabi: mask new member "empty" of struct Qdisc
+Patch-mainline: Never, kabi workaround
+References: bsc#1183405
+
+Backport of mainline commit 9f9db9165dab ("net: sched: add empty status
+flag for NOLOCK qdisc") adds a new member "empty" to struct Qdisc which is
+a part of kABI.
+
+To preserve the layout, put empty into a union with existing member "rcu"
+which is only used when qdisc is destroyed so that there will be no
+collision. As bool shorter than struct rcu_head, the layout and struct size
+will be preserved and we can hide the change from genksyms safely.
+
+Signed-off-by: Michal Kubecek <mkubecek@suse.cz>
+---
+ include/net/sch_generic.h | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+--- a/include/net/sch_generic.h
++++ b/include/net/sch_generic.h
+@@ -109,9 +109,15 @@ struct Qdisc {
+ 	spinlock_t		busylock ____cacheline_aligned_in_smp;
+ 	spinlock_t		seqlock;
+ 
+-	/* for NOLOCK qdisc, true if there are no enqueued skbs */
+-	bool			empty;
++#ifndef __GENKSYMS__
++	union {
++		/* for NOLOCK qdisc, true if there are no enqueued skbs */
++		bool			empty;
++		struct rcu_head		rcu;
++	};
++#else
+ 	struct rcu_head		rcu;
++#endif
+ };
+ 
+ static inline void qdisc_refcount_inc(struct Qdisc *qdisc)
