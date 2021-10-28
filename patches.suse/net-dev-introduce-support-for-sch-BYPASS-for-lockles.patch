@@ -1,0 +1,75 @@
+From: Paolo Abeni <pabeni@redhat.com>
+Date: Fri, 22 Mar 2019 16:01:56 +0100
+Subject: net: dev: introduce support for sch BYPASS for lockless qdisc
+Patch-mainline: v5.2-rc1
+Git-commit: ba27b4cdaaa66561aaedb2101876e563738d36fe
+References: bsc#1183405
+
+With commit c5ad119fb6c0 ("net: sched: pfifo_fast use skb_array")
+pfifo_fast no longer benefit from the TCQ_F_CAN_BYPASS optimization.
+Due to retpolines the cost of the enqueue()/dequeue() pair has become
+relevant and we observe measurable regression for the uncontended
+scenario when the packet-rate is below line rate.
+
+After commit 46b1c18f9deb ("net: sched: put back q.qlen into a
+single location") we can check for empty qdisc with a reasonably
+fast operation even for nolock qdiscs.
+
+This change extends TCQ_F_CAN_BYPASS support to nolock qdisc.
+The new chunk of code mirrors closely the existing one for traditional
+qdisc, leveraging a newly introduced helper to read atomically the
+qdisc length.
+
+Tested with pktgen in queue xmit mode, with pfifo_fast, a MQ
+device, and MQ root qdisc:
+
+threads         vanilla         patched
+                kpps            kpps
+1               2465            2889
+2               4304            5188
+4               7898            9589
+
+Same as above, but with a single queue device:
+
+threads         vanilla         patched
+                kpps            kpps
+1               2556            2827
+2               2900            2900
+4               5000            5000
+8               4700            4700
+
+No mesaurable changes in the contended scenarios, and more 10%
+improvement in the uncontended ones.
+
+ v1 -> v2:
+  - rebased after flag name change
+
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+Tested-by: Ivan Vecera <ivecera@redhat.com>
+Reviewed-by: Eric Dumazet <edumazet@google.com>
+Reviewed-by: Ivan Vecera <ivecera@redhat.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Michal Kubecek <mkubecek@suse.cz>
+
+---
+ net/core/dev.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -3422,6 +3422,15 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
+ 		if (unlikely(test_bit(__QDISC_STATE_DEACTIVATED, &q->state))) {
+ 			__qdisc_drop(skb, &to_free);
+ 			rc = NET_XMIT_DROP;
++		} else if ((q->flags & TCQ_F_CAN_BYPASS) && q->empty &&
++			   qdisc_run_begin(q)) {
++			qdisc_bstats_cpu_update(q, skb);
++
++			if (sch_direct_xmit(skb, q, dev, txq, NULL, true))
++				__qdisc_run(q);
++
++			qdisc_run_end(q);
++			rc = NET_XMIT_SUCCESS;
+ 		} else {
+ 			rc = q->enqueue(skb, q, &to_free) & NET_XMIT_MASK;
+ 			qdisc_run(q);
