@@ -48,13 +48,13 @@ Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
 Acked-by: Daniel Wagner <dwagner@suse.de>
 ---
  drivers/scsi/lpfc/lpfc_crtn.h      |    2 
- drivers/scsi/lpfc/lpfc_disc.h      |    3 
+ drivers/scsi/lpfc/lpfc_disc.h      |    9 -
  drivers/scsi/lpfc/lpfc_els.c       |   66 +++++++-----
  drivers/scsi/lpfc/lpfc_hbadisc.c   |  197 +++++++++++++++++++++++++++----------
  drivers/scsi/lpfc/lpfc_nportdisc.c |    9 -
  drivers/scsi/lpfc/lpfc_nvme.c      |   10 -
  drivers/scsi/lpfc/lpfc_nvme.h      |    4 
- 7 files changed, 204 insertions(+), 87 deletions(-)
+ 7 files changed, 207 insertions(+), 90 deletions(-)
 
 --- a/drivers/scsi/lpfc/lpfc_crtn.h
 +++ b/drivers/scsi/lpfc/lpfc_crtn.h
@@ -69,18 +69,22 @@ Acked-by: Daniel Wagner <dwagner@suse.de>
  int  lpfc_can_disctmo(struct lpfc_vport *);
 --- a/drivers/scsi/lpfc/lpfc_disc.h
 +++ b/drivers/scsi/lpfc/lpfc_disc.h
-@@ -137,9 +137,10 @@ struct lpfc_nodelist {
- 	uint32_t fc4_prli_sent;
- 	uint32_t fc4_xpt_flags;
- 	uint32_t upcall_flags;
--#define NLP_WAIT_FOR_UNREG    0x1
-+#define NLP_XPT_REGD          0x1
- #define SCSI_XPT_REGD         0x2
- #define NVME_XPT_REGD         0x4
-+#define NVME_XPT_UNREG_WAIT   0x8	
- #define NLP_WAIT_FOR_LOGO     0x2
+@@ -78,10 +78,11 @@ struct lpfc_node_rrqs {
+ };
  
+ enum lpfc_fc4_xpt_flags {
+-	NLP_WAIT_FOR_UNREG = 0x1,
+-	SCSI_XPT_REGD      = 0x2,
+-	NVME_XPT_REGD      = 0x4,
+-	NLP_XPT_HAS_HH     = 0x8,
++	NLP_XPT_REGD		= 0x1,
++	SCSI_XPT_REGD		= 0x2,
++	NVME_XPT_REGD		= 0x4,
++	NVME_XPT_UNREG_WAIT	= 0x8,
++	NLP_XPT_HAS_HH		= 0x10
+ };
  
+ struct lpfc_nodelist {
 --- a/drivers/scsi/lpfc/lpfc_els.c
 +++ b/drivers/scsi/lpfc/lpfc_els.c
 @@ -1641,6 +1641,12 @@ lpfc_plogi_confirm_nport(struct lpfc_hba
