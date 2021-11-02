@@ -1,0 +1,62 @@
+From: James Smart <jsmart2021@gmail.com>
+Date: Mon, 4 Jan 2021 10:02:37 -0800
+Subject: scsi: lpfc: Fix crash when nvmet transport calls host_release
+Patch-mainline: v5.12-rc1
+Git-commit: 243156c0108d6f0a61c24547248fc68e5464b4bb
+References: bsc#1192145
+
+When lpfc is running in NVMET mode and supports the NVME-1 addendum
+changes, a LIP on a bound NVME Initiator or lipping the lpfc NVMET's link
+resulted in an Oops in lpfc_nvmet_host_release.
+
+The fix requires lpfc NVMET to maintain an additional reference on any node
+structure that acts as the hosthandle for the NVMET transport.  This
+reference get is a one-time addition, is taken prior to the upcall of an
+unsolicited LS_REQ, and is released when the NVMET transport releases the
+hosthandle during the host_release downcall.
+
+Link: https://lore.kernel.org/r/20210104180240.46824-13-jsmart2021@gmail.com
+Co-developed-by: Dick Kennedy <dick.kennedy@broadcom.com>
+Signed-off-by: Dick Kennedy <dick.kennedy@broadcom.com>
+Signed-off-by: James Smart <jsmart2021@gmail.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+[dwagner: dropped lpfc_nvmet.c and lpfc_sli.c changes as we don't have
+          the LS refactoring changes]
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/lpfc/lpfc_disc.h |   16 ++++++++++------
+ 1 file changed, 10 insertions(+), 6 deletions(-)
+
+--- a/drivers/scsi/lpfc/lpfc_disc.h
++++ b/drivers/scsi/lpfc/lpfc_disc.h
+@@ -77,6 +77,13 @@ struct lpfc_node_rrqs {
+ 	unsigned long xri_bitmap[XRI_BITMAP_ULONGS];
+ };
+ 
++enum lpfc_fc4_xpt_flags {
++	NLP_WAIT_FOR_UNREG = 0x1,
++	SCSI_XPT_REGD      = 0x2,
++	NVME_XPT_REGD      = 0x4,
++	NLP_XPT_HAS_HH     = 0x8,
++};
++
+ struct lpfc_nodelist {
+ 	struct list_head nlp_listp;
+ 	struct lpfc_name nlp_portname;
+@@ -134,13 +141,10 @@ struct lpfc_nodelist {
+ 	unsigned long *active_rrqs_xri_bitmap;
+ 	struct lpfc_scsicmd_bkt *lat_data;	/* Latency data */
+ 	uint32_t fc4_prli_sent;
+-	uint32_t fc4_xpt_flags;
+-	uint32_t upcall_flags;
+-#define NLP_WAIT_FOR_UNREG    0x1
+-#define SCSI_XPT_REGD         0x2
+-#define NVME_XPT_REGD         0x4
+-#define NLP_WAIT_FOR_LOGO     0x2
++	u32 upcall_flags;
++#define	NLP_WAIT_FOR_LOGO 0x2
+ 
++	enum lpfc_fc4_xpt_flags fc4_xpt_flags;
+ 
+ 	uint32_t nvme_fb_size; /* NVME target's supported byte cnt */
+ #define NVME_FB_BIT_SHIFT 9    /* PRLI Rsp first burst in 512B units. */
