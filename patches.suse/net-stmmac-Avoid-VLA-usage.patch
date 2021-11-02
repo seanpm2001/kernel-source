@@ -1,0 +1,43 @@
+From 8286e4312947de21387a6181d2bc8a7352f59e83 Mon Sep 17 00:00:00 2001
+From: Kees Cook <keescook@chromium.org>
+Date: Tue, 1 May 2018 14:01:30 -0700
+Subject: [PATCH 01/21] net: stmmac: Avoid VLA usage
+Git-commit: 8ac60ffb9a83c8f0f6b3bab5c205d75a32914904
+Patch-mainline: v4.18-rc1
+References: git-fixes
+
+In the quest to remove all stack VLAs from the kernel[1], this switches
+the "status" stack buffer to use the existing small (8) upper bound on
+how many queues can be checked for DMA, and adds a sanity-check just to
+make sure it doesn't operate under pathological conditions.
+
+[1] http://lkml.kernel.org/r/CA+55aFzCG-zNmZwX4A2FQpadafLfEzK6CC=qPXydAacU1RqZWA@mail.gmail.com
+
+Signed-off-by: Kees Cook <keescook@chromium.org>
+Reviewed-by: Jose Abreu <joabreu@synopsys.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/stmmac_main.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+index f2e778d210ed..df0786c88fdb 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+@@ -1995,7 +1995,11 @@ static void stmmac_dma_interrupt(struct stmmac_priv *priv)
+ 		tx_channel_count : rx_channel_count;
+ 	u32 chan;
+ 	bool poll_scheduled = false;
+-	int status[channels_to_check];
++	int status[max_t(u32, MTL_MAX_TX_QUEUES, MTL_MAX_RX_QUEUES)];
++
++	/* Make sure we never check beyond our status buffer. */
++	if (WARN_ON_ONCE(channels_to_check > ARRAY_SIZE(status)))
++		channels_to_check = ARRAY_SIZE(status);
+ 
+ 	/* Each DMA channel can be used for rx and tx simultaneously, yet
+ 	 * napi_struct is embedded in struct stmmac_rx_queue rather than in a
+-- 
+2.16.4
+
