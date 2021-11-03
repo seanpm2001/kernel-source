@@ -1,0 +1,160 @@
+From 2d8f6481c17db9fa5238b277cdbc392084060b09 Mon Sep 17 00:00:00 2001
+From: Georg Kohmann <geokohma@cisco.com>
+Date: Thu, 19 Nov 2020 10:58:33 +0100
+Subject: [PATCH] ipv6: Remove dependency of ipv6_frag_thdr_truncated on ipv6
+ module
+Git-commit: 2d8f6481c17db9fa5238b277cdbc392084060b09
+Patch-mainline: v5.10-rc5
+References: bsc#1191241
+
+IPV6=m
+NF_DEFRAG_IPV6=y
+
+Ld: net/ipv6/netfilter/nf_conntrack_reasm.o: in function
+`nf_ct_frag6_gather': 
+net/ipv6/netfilter/nf_conntrack_reasm.c:462: undefined reference to
+`ipv6_frag_thdr_truncated'
+
+Netfilter is depending on ipv6 symbol ipv6_frag_thdr_truncated. This
+dependency is forcing IPV6=y.
+
+Remove this dependency by moving ipv6_frag_thdr_truncated out of ipv6. This
+is the same solution as used with a similar issues: Referring to
+commit 70b095c843266 ("ipv6: remove dependency of nf_defrag_ipv6 on ipv6
+module")
+
+Fixes: 9d9e937b1c8b ("ipv6/netfilter: Discard first fragment not including all headers")
+Reported-by: Randy Dunlap <rdunlap@infradead.org>
+Reported-by: kernel test robot <lkp@intel.com>
+Signed-off-by: Georg Kohmann <geokohma@cisco.com>
+Acked-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Acked-by: Randy Dunlap <rdunlap@infradead.org> # build-tested
+Link: https://lore.kernel.org/r/20201119095833.8409-1-geokohma@cisco.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+Acked-by: Varad Gautam <varad.gautam@suse.com>
+
+---
+ include/net/ipv6.h                      |  2 --
+ include/net/ipv6_frag.h                 | 30 ++++++++++++++++++++++++
+ net/ipv6/netfilter/nf_conntrack_reasm.c |  2 +-
+ net/ipv6/reassembly.c                   | 31 +------------------------
+ 4 files changed, 32 insertions(+), 33 deletions(-)
+
+diff --git a/include/net/ipv6.h b/include/net/ipv6.h
+index 637cc6dd12b7d..bd1f396cc9c72 100644
+--- a/include/net/ipv6.h
++++ b/include/net/ipv6.h
+@@ -1064,8 +1064,6 @@ int ipv6_skip_exthdr(const struct sk_buff *, int start, u8 *nexthdrp,
+ 
+ bool ipv6_ext_hdr(u8 nexthdr);
+ 
+-bool ipv6_frag_thdr_truncated(struct sk_buff *skb, int start, u8 *nexthdrp);
+-
+ enum {
+ 	IP6_FH_F_FRAG		= (1 << 0),
+ 	IP6_FH_F_AUTH		= (1 << 1),
+diff --git a/include/net/ipv6_frag.h b/include/net/ipv6_frag.h
+index a21e8b1381a10..851029ecff13c 100644
+--- a/include/net/ipv6_frag.h
++++ b/include/net/ipv6_frag.h
+@@ -108,5 +108,35 @@ ip6frag_expire_frag_queue(struct net *net, struct frag_queue *fq)
+ 	rcu_read_unlock();
+ 	inet_frag_put(&fq->q);
+ }
++
++/* Check if the upper layer header is truncated in the first fragment. */
++static inline bool
++ipv6frag_thdr_truncated(struct sk_buff *skb, int start, u8 *nexthdrp)
++{
++	u8 nexthdr = *nexthdrp;
++	__be16 frag_off;
++	int offset;
++
++	offset = ipv6_skip_exthdr(skb, start, &nexthdr, &frag_off);
++	if (offset < 0 || (frag_off & htons(IP6_OFFSET)))
++		return false;
++	switch (nexthdr) {
++	case NEXTHDR_TCP:
++		offset += sizeof(struct tcphdr);
++		break;
++	case NEXTHDR_UDP:
++		offset += sizeof(struct udphdr);
++		break;
++	case NEXTHDR_ICMP:
++		offset += sizeof(struct icmp6hdr);
++		break;
++	default:
++		offset += 1;
++	}
++	if (offset > skb->len)
++		return true;
++	return false;
++}
++
+ #endif
+ #endif
+diff --git a/net/ipv6/netfilter/nf_conntrack_reasm.c b/net/ipv6/netfilter/nf_conntrack_reasm.c
+index b9cc0b330dbef..c129ad334eb39 100644
+--- a/net/ipv6/netfilter/nf_conntrack_reasm.c
++++ b/net/ipv6/netfilter/nf_conntrack_reasm.c
+@@ -459,7 +459,7 @@ int nf_ct_frag6_gather(struct net *net, struct sk_buff *skb, u32 user)
+ 	/* Discard the first fragment if it does not include all headers
+ 	 * RFC 8200, Section 4.5
+ 	 */
+-	if (ipv6_frag_thdr_truncated(skb, fhoff, &nexthdr)) {
++	if (ipv6frag_thdr_truncated(skb, fhoff, &nexthdr)) {
+ 		pr_debug("Drop incomplete fragment\n");
+ 		return 0;
+ 	}
+diff --git a/net/ipv6/reassembly.c b/net/ipv6/reassembly.c
+index e3869bac9c886..47a0dc46cbdb0 100644
+--- a/net/ipv6/reassembly.c
++++ b/net/ipv6/reassembly.c
+@@ -318,35 +318,6 @@ static int ip6_frag_reasm(struct frag_queue *fq, struct sk_buff *skb,
+ 	return -1;
+ }
+ 
+-/* Check if the upper layer header is truncated in the first fragment. */
+-bool ipv6_frag_thdr_truncated(struct sk_buff *skb, int start, u8 *nexthdrp)
+-{
+-	u8 nexthdr = *nexthdrp;
+-	__be16 frag_off;
+-	int offset;
+-
+-	offset = ipv6_skip_exthdr(skb, start, &nexthdr, &frag_off);
+-	if (offset < 0 || (frag_off & htons(IP6_OFFSET)))
+-		return false;
+-	switch (nexthdr) {
+-	case NEXTHDR_TCP:
+-		offset += sizeof(struct tcphdr);
+-		break;
+-	case NEXTHDR_UDP:
+-		offset += sizeof(struct udphdr);
+-		break;
+-	case NEXTHDR_ICMP:
+-		offset += sizeof(struct icmp6hdr);
+-		break;
+-	default:
+-		offset += 1;
+-	}
+-	if (offset > skb->len)
+-		return true;
+-	return false;
+-}
+-EXPORT_SYMBOL(ipv6_frag_thdr_truncated);
+-
+ static int ipv6_frag_rcv(struct sk_buff *skb)
+ {
+ 	struct frag_hdr *fhdr;
+@@ -390,7 +361,7 @@ static int ipv6_frag_rcv(struct sk_buff *skb)
+ 	 * the source of the fragment, with the Pointer field set to zero.
+ 	 */
+ 	nexthdr = hdr->nexthdr;
+-	if (ipv6_frag_thdr_truncated(skb, skb_transport_offset(skb), &nexthdr)) {
++	if (ipv6frag_thdr_truncated(skb, skb_transport_offset(skb), &nexthdr)) {
+ 		__IP6_INC_STATS(net, __in6_dev_get_safely(skb->dev),
+ 				IPSTATS_MIB_INHDRERRORS);
+ 		icmpv6_param_prob(skb, ICMPV6_HDR_INCOMP, 0);
+-- 
+2.32.0
+
