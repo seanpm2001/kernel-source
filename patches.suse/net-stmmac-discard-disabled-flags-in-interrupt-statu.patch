@@ -1,0 +1,50 @@
+From 406ee81630263e64691235cf2800116fee087ae3 Mon Sep 17 00:00:00 2001
+From: Niklas Cassel <niklas.cassel@axis.com>
+Date: Fri, 9 Feb 2018 17:22:45 +0100
+Subject: [PATCH 12/21] net: stmmac: discard disabled flags in interrupt status
+ register
+Git-commit: 1b84ca187510f60f00f4e15255043ce19bb30410
+Patch-mainline: v4.16-rc1
+References: git-fixes
+
+The interrupt status register in both dwmac1000 and dwmac4 ignores
+interrupt enable (for dwmac4) / interrupt mask (for dwmac1000).
+Therefore, if we want to check only the bits that can actually trigger
+an irq, we have to filter the interrupt status register manually.
+
+Commit 0a764db10337 ("stmmac: Discard masked flags in interrupt status
+register") fixed this for dwmac1000. Fix the same issue for dwmac4.
+
+Just like commit 0a764db10337 ("stmmac: Discard masked flags in
+interrupt status register"), this makes sure that we do not get
+spurious link up/link down prints.
+
+Signed-off-by: Niklas Cassel <niklas.cassel@axis.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/dwmac4_core.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/dwmac4_core.c b/drivers/net/ethernet/stmicro/stmmac/dwmac4_core.c
+index c49efc2379ac..6fa64d0b0fac 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/dwmac4_core.c
++++ b/drivers/net/ethernet/stmicro/stmmac/dwmac4_core.c
+@@ -567,10 +567,12 @@ static int dwmac4_irq_status(struct mac_device_info *hw,
+ 			     struct stmmac_extra_stats *x)
+ {
+ 	void __iomem *ioaddr = hw->pcsr;
+-	u32 intr_status;
++	u32 intr_status = readl(ioaddr + GMAC_INT_STATUS);
++	u32 intr_enable = readl(ioaddr + GMAC_INT_EN);
+ 	int ret = 0;
+ 
+-	intr_status = readl(ioaddr + GMAC_INT_STATUS);
++	/* Discard disabled bits */
++	intr_status &= intr_enable;
+ 
+ 	/* Not used events (e.g. MMC interrupts) are not handled. */
+ 	if ((intr_status & mmc_tx_irq))
+-- 
+2.16.4
+

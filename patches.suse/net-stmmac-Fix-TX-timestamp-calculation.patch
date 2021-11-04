@@ -1,0 +1,48 @@
+From 9b477f00c55f8476728dc87079ee52a37ec4e406 Mon Sep 17 00:00:00 2001
+From: Fredrik Hallenberg <megahallon@gmail.com>
+Date: Mon, 18 Dec 2017 23:33:59 +0100
+Subject: [PATCH 10/21] net: stmmac: Fix TX timestamp calculation
+Git-commit: 200922c93f008e03ddc804c6dacdf26ca1ba86d7
+Patch-mainline: v4.15-rc5
+References: git-fixes
+
+When using GMAC4 the value written in PTP_SSIR should be shifted however
+the shifted value is also used in subsequent calculations which results
+in a bad timestamp value.
+
+Signed-off-by: Fredrik Hallenberg <megahallon@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/stmmac_hwtstamp.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/stmmac_hwtstamp.c b/drivers/net/ethernet/stmicro/stmmac/stmmac_hwtstamp.c
+index bcbc992edf11..41d528fbebb4 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac_hwtstamp.c
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_hwtstamp.c
+@@ -34,6 +34,7 @@ static u32 stmmac_config_sub_second_increment(void __iomem *ioaddr,
+ {
+ 	u32 value = readl(ioaddr + PTP_TCR);
+ 	unsigned long data;
++	u32 reg_value;
+ 
+ 	/* For GMAC3.x, 4.x versions, convert the ptp_clock to nano second
+ 	 *	formula = (1/ptp_clock) * 1000000000
+@@ -50,10 +51,11 @@ static u32 stmmac_config_sub_second_increment(void __iomem *ioaddr,
+ 
+ 	data &= PTP_SSIR_SSINC_MASK;
+ 
++	reg_value = data;
+ 	if (gmac4)
+-		data = data << GMAC4_PTP_SSIR_SSINC_SHIFT;
++		reg_value <<= GMAC4_PTP_SSIR_SSINC_SHIFT;
+ 
+-	writel(data, ioaddr + PTP_SSIR);
++	writel(reg_value, ioaddr + PTP_SSIR);
+ 
+ 	return data;
+ }
+-- 
+2.16.4
+
