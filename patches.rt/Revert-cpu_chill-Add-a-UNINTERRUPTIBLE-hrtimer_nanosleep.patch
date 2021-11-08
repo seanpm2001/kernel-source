@@ -14,12 +14,12 @@ Cc: stable-rt@vger.kernel.org
 Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
 Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 ---
- kernel/time/hrtimer.c |   22 ++++++----------------
+ kernel/time/hrtimer.c | 22 ++++++----------------
  1 file changed, 6 insertions(+), 16 deletions(-)
 
 --- a/kernel/time/hrtimer.c
 +++ b/kernel/time/hrtimer.c
-@@ -1720,11 +1720,10 @@ EXPORT_SYMBOL_GPL(hrtimer_init_sleeper_o
+@@ -1723,13 +1723,12 @@ EXPORT_SYMBOL_GPL(hrtimer_init_sleeper_o
  #endif
  
  
@@ -27,45 +27,44 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 -				unsigned long state)
 +static int __sched do_nanosleep(struct hrtimer_sleeper *t, enum hrtimer_mode mode)
  {
+ 	struct timespec __user *rmtp;
+ 
  	do {
 -		set_current_state(state);
 +		set_current_state(TASK_INTERRUPTIBLE);
  		hrtimer_start_expires(&t->timer, mode);
  
  		if (likely(t->task))
-@@ -1766,8 +1765,7 @@ long __sched hrtimer_nanosleep_restart(s
+@@ -1768,16 +1767,13 @@ long __sched hrtimer_nanosleep_restart(s
  				      HRTIMER_MODE_ABS, current);
  	hrtimer_set_expires_tv64(&t.timer, restart->nanosleep.expires);
  
 -	/* cpu_chill() does not care about restart state. */
--	if (do_nanosleep(&t, HRTIMER_MODE_ABS, TASK_INTERRUPTIBLE))
-+	if (do_nanosleep(&t, HRTIMER_MODE_ABS))
- 		goto out;
- 
- 	rmtp = restart->nanosleep.rmtp;
-@@ -1784,10 +1782,8 @@ long __sched hrtimer_nanosleep_restart(s
+-	ret = do_nanosleep(&t, HRTIMER_MODE_ABS, TASK_INTERRUPTIBLE);
++	ret = do_nanosleep(&t, HRTIMER_MODE_ABS);
+ 	destroy_hrtimer_on_stack(&t.timer);
  	return ret;
  }
  
 -static long
--__hrtimer_nanosleep(struct timespec64 *rqtp, struct timespec __user *rmtp,
+-__hrtimer_nanosleep(struct timespec64 *rqtp,
 -		    const enum hrtimer_mode mode, const clockid_t clockid,
 -		    unsigned long state)
-+long hrtimer_nanosleep(struct timespec64 *rqtp, struct timespec __user *rmtp,
++long hrtimer_nanosleep(struct timespec64 *rqtp,
 +		       const enum hrtimer_mode mode, const clockid_t clockid)
  {
  	struct restart_block *restart;
  	struct hrtimer_sleeper t;
-@@ -1801,7 +1797,7 @@ __hrtimer_nanosleep(struct timespec64 *r
+@@ -1791,7 +1787,7 @@ __hrtimer_nanosleep(struct timespec64 *r
  	hrtimer_init_sleeper_on_stack(&t, clockid, mode, current);
  	hrtimer_set_expires_range_ns(&t.timer, timespec64_to_ktime(*rqtp), slack);
  
--	if (do_nanosleep(&t, mode, state))
-+	if (do_nanosleep(&t, mode))
+-	ret = do_nanosleep(&t, mode, state);
++	ret = do_nanosleep(&t, mode);
+ 	if (ret != -ERESTART_RESTARTBLOCK)
  		goto out;
  
- 	/* Absolute timers do not update the rmtp value and restart: */
-@@ -1828,12 +1824,6 @@ __hrtimer_nanosleep(struct timespec64 *r
+@@ -1810,12 +1806,6 @@ out:
  	return ret;
  }
  

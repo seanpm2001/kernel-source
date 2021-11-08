@@ -1,0 +1,51 @@
+From 4631cd11e2904ae4a3eb58f54b9bd73a673b0c9d Mon Sep 17 00:00:00 2001
+From: Niklas Cassel <niklas.cassel@axis.com>
+Date: Mon, 26 Feb 2018 22:47:09 +0100
+Subject: [PATCH 21/21] net: stmmac: make dwmac4_release_tx_desc() clear all
+ descriptor fields
+Git-commit: 1e88f6e01bc094c9fc7021cc1944d14a63257703
+Patch-mainline: v4.17-rc1
+References: git-fixes
+
+Make dwmac4_release_tx_desc() clear all descriptor fields, not just
+TDES2 and TDES3.
+
+I'm suspecting that TDES0 and TDES1 wasn't cleared because the DMA
+engine uses them to store the tx hardware timestamp (if PTP is enabled).
+
+However, stmmac_tx_clean() calls stmmac_get_tx_hwtstamp(), which reads
+and saves the timestamp, before it calls release_tx_desc(), so this
+is not an issue.
+
+stmmac_xmit() and stmmac_tso_xmit() both always overwrite TDES0,
+however, stmmac_tso_xmit() sometimes sets TDES1, and since neither
+stmmac_xmit() nor stmmac_tso_xmit() explicitly clears TDES1, both
+functions might reuse a DMA descriptor with old TDES1 data.
+
+I haven't observed any misbehavior even though TDES1 sometimes
+point to an old skb, however, explicitly clearing both TDES0 and TDES1
+in dwmac4_release_tx_desc() minimizes the chances of undefined behavior.
+
+Signed-off-by: Niklas Cassel <niklas.cassel@axis.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/dwmac4_descs.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/dwmac4_descs.c b/drivers/net/ethernet/stmicro/stmmac/dwmac4_descs.c
+index 37b77e7da132..5dd9f015407d 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/dwmac4_descs.c
++++ b/drivers/net/ethernet/stmicro/stmmac/dwmac4_descs.c
+@@ -392,6 +392,8 @@ static void dwmac4_rd_prepare_tso_tx_desc(struct dma_desc *p, int is_fs,
+ 
+ static void dwmac4_release_tx_desc(struct dma_desc *p, int mode)
+ {
++	p->des0 = 0;
++	p->des1 = 0;
+ 	p->des2 = 0;
+ 	p->des3 = 0;
+ }
+-- 
+2.16.4
+
