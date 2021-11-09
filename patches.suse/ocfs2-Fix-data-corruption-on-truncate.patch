@@ -1,0 +1,60 @@
+From 567617a72703950def4737a4db91e42172a1c33c Mon Sep 17 00:00:00 2001
+From: Jan Kara <jack@suse.cz>
+Date: Mon, 25 Oct 2021 16:01:42 +0200
+Subject: [PATCH] ocfs2: Fix data corruption on truncate
+Patch-mainline: v5.16-rc1
+Git-commit: 839b63860eb3835da165642923120d305925561d
+References: bsc#1190795
+
+ocfs2_truncate_file() did unmap invalidate page cache pages before
+zeroing partial tail cluster and setting i_size. Thus some pages could
+be left (and likely have left if the cluster zeroing happened) in the
+page cache beyond i_size after truncate finished letting user possibly
+see stale data once the file was extended again. Also the tail cluster
+zeroing was not guaranteed to finish before truncate finished causing
+possible stale data exposure. The problem started to be particularly
+easy to hit after commit 6dbf7bb55598 "fs: Don't invalidate page buffers
+in block_write_full_page()" stopped invalidation of pages beyond i_size
+from page writeback path.
+
+Fix these problems by unmapping and invalidating pages in the page cache
+after the i_size is reduced and tail cluster is zeroed out.
+
+CC: stable@vger.kernel.org
+Fixes: ccd979bdbce9 ("[PATCH] OCFS2: The Second Oracle Cluster Filesystem")
+Signed-off-by: Jan Kara <jack@suse.cz>
+---
+ fs/ocfs2/file.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ocfs2/file.c b/fs/ocfs2/file.c
+index 54d7843c0211..fc5f780fa235 100644
+--- a/fs/ocfs2/file.c
++++ b/fs/ocfs2/file.c
+@@ -476,10 +476,11 @@ int ocfs2_truncate_file(struct inode *inode,
+ 	 * greater than page size, so we have to truncate them
+ 	 * anyway.
+ 	 */
+-	unmap_mapping_range(inode->i_mapping, new_i_size + PAGE_SIZE - 1, 0, 1);
+-	truncate_inode_pages(inode->i_mapping, new_i_size);
+ 
+ 	if (OCFS2_I(inode)->ip_dyn_features & OCFS2_INLINE_DATA_FL) {
++		unmap_mapping_range(inode->i_mapping,
++				    new_i_size + PAGE_SIZE - 1, 0, 1);
++		truncate_inode_pages(inode->i_mapping, new_i_size);
+ 		status = ocfs2_truncate_inline(inode, di_bh, new_i_size,
+ 					       i_size_read(inode), 1);
+ 		if (status)
+@@ -498,6 +499,9 @@ int ocfs2_truncate_file(struct inode *inode,
+ 		goto bail_unlock_sem;
+ 	}
+ 
++	unmap_mapping_range(inode->i_mapping, new_i_size + PAGE_SIZE - 1, 0, 1);
++	truncate_inode_pages(inode->i_mapping, new_i_size);
++
+ 	status = ocfs2_commit_truncate(osb, inode, di_bh);
+ 	if (status < 0) {
+ 		mlog_errno(status);
+-- 
+2.26.2
+
