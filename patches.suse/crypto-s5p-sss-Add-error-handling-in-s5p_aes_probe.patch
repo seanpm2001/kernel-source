@@ -1,0 +1,33 @@
+From a472cc0dde3eb057db71c80f102556eeced03805 Mon Sep 17 00:00:00 2001
+From: Tang Bin <tangbin@cmss.chinamobile.com>
+Date: Thu, 21 Oct 2021 09:34:22 +0800
+Subject: [PATCH] crypto: s5p-sss - Add error handling in s5p_aes_probe()
+Git-commit: a472cc0dde3eb057db71c80f102556eeced03805
+References: git-fixes
+Patch-mainline: v5.16-rc1
+
+The function s5p_aes_probe() does not perform sufficient error
+checking after executing platform_get_resource(), thus fix it.
+
+Fixes: c2afad6c6105 ("crypto: s5p-sss - Add HASH support for Exynos")
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Tang Bin <tangbin@cmss.chinamobile.com>
+Reviewed-by: Krzysztof Kozlowski <krzysztof.kozlowski@canonical.com>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/crypto/s5p-sss.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/drivers/crypto/s5p-sss.c
++++ b/drivers/crypto/s5p-sss.c
+@@ -844,6 +844,9 @@ static int s5p_aes_probe(struct platform
+ 		return -ENOMEM;
+ 
+ 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	if (!res)
++		return -EINVAL;
++
+ 	pdata->ioaddr = devm_ioremap_resource(&pdev->dev, res);
+ 	if (IS_ERR(pdata->ioaddr))
+ 		return PTR_ERR(pdata->ioaddr);
