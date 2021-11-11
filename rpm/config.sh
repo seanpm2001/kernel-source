@@ -5,7 +5,7 @@ VARIANT=
 # Use old style livepatch package names
 LIVEPATCH=kgraft
 # buildservice projects to build the kernel against
-OBS_PROJECT=SUSE:SLE-12-SP4:Update
+OBS_PROJECT=SUSE:SLE-12-SP5:Update
 IBS_PROJECT=SUSE:SLE-12-SP5:Update
 # Bugzilla info
 BUGZILLA_SERVER="apibugzilla.suse.com"
