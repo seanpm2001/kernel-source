@@ -1,0 +1,36 @@
+From: Jiri Bohac <jbohac@suse.cz>
+Patch-mainline: Never, problem no longer present in v5.14
+References: bsc#1192802
+Subject: osst: fix spectre issue in osst_verify_frame
+
+Found by Smatch:
+	drivers/scsi/osst.c:711 osst_verify_frame() warn: potential spectre issue
+ 	    'STp->header_cache->dat_fm_tab.fm_tab_ent' [w] (local cap)
+
+---
+ drivers/scsi/osst.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/scsi/osst.c b/drivers/scsi/osst.c
+index 40fb1bd0f129..759b265ca31d 100644
+--- a/drivers/scsi/osst.c
++++ b/drivers/scsi/osst.c
+@@ -54,6 +54,7 @@ static const char * osst_version = "0.99.4";
+ #include <linux/mutex.h>
+ #include <linux/uaccess.h>
+ #include <asm/dma.h>
++#include <linux/nospec.h>
+ 
+ /* The driver prints some debugging information on the console if DEBUG
+    is defined and non-zero. */
+@@ -701,6 +702,7 @@ static int osst_verify_frame(struct osst_tape * STp, int frame_seq_number, int q
+ 		STps->eof = ST_FM_HIT;
+ 
+ 		i = ntohl(aux->filemark_cnt);
++		i = array_index_nospec(i, OS_FM_TAB_MAX);
+ 		if (STp->header_cache != NULL && i < OS_FM_TAB_MAX && (i > STp->filemark_cnt ||
+ 		    STp->first_frame_position - 1 != ntohl(STp->header_cache->dat_fm_tab.fm_tab_ent[i]))) {
+ #if DEBUG
+-- 
+2.33.0
+
