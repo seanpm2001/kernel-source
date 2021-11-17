@@ -1,0 +1,38 @@
+
+From: Jiri Bohac <jbohac@suse.cz>
+Patch-mainline: Never, problem no longer present in v5.14
+References: bsc#1192802
+Subject: iwlwifi: fix spectre issue in iwl_dbgfs_update_pm
+
+Found by Smatch:
+	drivers/net/wireless/intel/iwlwifi/mvm/debugfs-vif.c
+		iwl_dbgfs_tof_range_request_write() warn: potential spectre issue 
+		'mvm->tof_data.range_req.ap' [w] (local cap)
+
+---
+ drivers/net/wireless/intel/iwlwifi/mvm/debugfs-vif.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/net/wireless/intel/iwlwifi/mvm/debugfs-vif.c b/drivers/net/wireless/intel/iwlwifi/mvm/debugfs-vif.c
+index b685e8281ca0..7b3b381b01ac 100644
+--- a/drivers/net/wireless/intel/iwlwifi/mvm/debugfs-vif.c
++++ b/drivers/net/wireless/intel/iwlwifi/mvm/debugfs-vif.c
+@@ -67,6 +67,7 @@
+ #include "mvm.h"
+ #include "fw/api/tof.h"
+ #include "debugfs.h"
++#include <linux/nospec.h>
+ 
+ static void iwl_dbgfs_update_pm(struct iwl_mvm *mvm,
+ 				 struct ieee80211_vif *vif,
+@@ -981,6 +982,7 @@ static ssize_t iwl_dbgfs_tof_range_request_write(struct ieee80211_vif *vif,
+ 			ret = -EINVAL;
+ 			goto out;
+ 		}
++		i = array_index_nospec(i, IWL_MVM_TOF_MAX_APS);
+ 
+ 		ap.burst_period = cpu_to_le16(burst_period);
+ 
+-- 
+2.32.0
+
