@@ -1,0 +1,45 @@
+From: Jiri Bohac <jbohac@suse.cz>
+Patch-mainline: Never, problem no longer present in v5.14
+References: bsc#1192802
+Subject: drm: fix spectre issue in vmw_execbuf_ioctl
+
+Found by Smatch:
+  drivers/gpu/drm/vmwgfx/vmwgfx_execbuf.c:4531 vmw_execbuf_ioctl() warn: potential spectre issue 'copy_offset' [w]
+
+Upstream no longer has this problem, the code has been removed by commit cbfbe47fc5391852bd426e07aad7f5cf026e94c5.
+
+---
+ drivers/gpu/drm/vmwgfx/vmwgfx_execbuf.c |    5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/drivers/gpu/drm/vmwgfx/vmwgfx_execbuf.c
++++ b/drivers/gpu/drm/vmwgfx/vmwgfx_execbuf.c
+@@ -31,6 +31,7 @@
+ #include <drm/ttm/ttm_placement.h>
+ #include "vmwgfx_so.h"
+ #include "vmwgfx_binding.h"
++#include <linux/nospec.h>
+ 
+ #define VMW_RES_HT_ORDER 12
+ 
+@@ -4370,6 +4371,7 @@ int vmw_execbuf_ioctl(struct drm_device
+ 	struct vmw_private *dev_priv = vmw_priv(dev);
+ 	struct drm_vmw_execbuf_arg arg;
+ 	int ret;
++	int index;
+ 	static const size_t copy_offset[] = {
+ 		offsetof(struct drm_vmw_execbuf_arg, context_handle),
+ 		sizeof(struct drm_vmw_execbuf_arg)};
+@@ -4396,10 +4398,11 @@ int vmw_execbuf_ioctl(struct drm_device
+ 		return -EINVAL;
+ 	}
+ 
++	index = array_index_nospec(arg.version - 1, DRM_VMW_EXECBUF_VERSION);
+ 	if (arg.version > 1 &&
+ 	    copy_from_user(&arg.context_handle,
+ 			   (void __user *) (data + copy_offset[0]),
+-			   copy_offset[arg.version - 1] -
++			   copy_offset[index] -
+ 			   copy_offset[0]) != 0)
+ 		return -EFAULT;
+ 

@@ -1,0 +1,46 @@
+From: Jeremy Cline <jcline@redhat.com>
+Subject: net: sock_diag: Fix spectre v1 gadget in __sock_diag_cmd()
+Git-commit: 66b51b0a0341fd42ce657739bdae0561b0410a85
+Patch-mainline: v4.19
+References: bsc#1192802
+Acked-by: Jiri Bohac <jbohac@suse.cz>
+
+req->sdiag_family is a user-controlled value that's used as an array
+index. Sanitize it after the bounds check to avoid speculative
+out-of-bounds array access.
+
+This also protects the sock_is_registered() call, so this removes the
+sanitize call there.
+
+Fixes: e978de7a6d38 ("net: socket: Fix potential spectre v1 gadget in sock_is_registered")
+Cc: Josh Poimboeuf <jpoimboe@redhat.com>
+Cc: konrad.wilk@oracle.com
+Cc: jamie.iles@oracle.com
+Cc: liran.alon@oracle.com
+Cc: stable@vger.kernel.org
+Signed-off-by: Jeremy Cline <jcline@redhat.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+
+diff --git a/net/core/sock_diag.c b/net/core/sock_diag.c
+index c37b5be7c5e4..3312a5849a97 100644
+--- a/net/core/sock_diag.c
++++ b/net/core/sock_diag.c
+@@ -10,6 +10,7 @@
+ #include <linux/kernel.h>
+ #include <linux/tcp.h>
+ #include <linux/workqueue.h>
++#include <linux/nospec.h>
+ 
+ #include <linux/inet_diag.h>
+ #include <linux/sock_diag.h>
+@@ -218,6 +219,7 @@ static int __sock_diag_cmd(struct sk_buff *skb, struct nlmsghdr *nlh)
+ 
+ 	if (req->sdiag_family >= AF_MAX)
+ 		return -EINVAL;
++	req->sdiag_family = array_index_nospec(req->sdiag_family, AF_MAX);
+ 
+ 	if (sock_diag_handlers[req->sdiag_family] == NULL)
+ 		sock_load_diag_module(req->sdiag_family, 0);
+-- 
+2.32.0
+
