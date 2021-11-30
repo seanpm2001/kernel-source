@@ -1,0 +1,127 @@
+From: NeilBrown <neilb@suse.de>
+Date: Wed, 27 Oct 2021 15:12:30 +1100
+Subject: [PATCH] SUNRPC/auth: async tasks mustn't block waiting for memory
+Patch-mainline: Not yet - undergoing review
+References: bsc#1191876 bsc#1192866
+
+When memory is short, new worker threads cannot be created and we depend
+on the minimum one rpciod thread to be able to handle everything.  So it
+must not block waiting for memory.
+
+mempools are particularly a problem as memory can only be released back
+to the mempool by an async rpc task running.  If all available workqueue
+threads are waiting on the mempool, no thread is available to return
+anything.
+
+lookup_cred() can block on a mempool or kmalloc - and this can cause
+deadlocks.  So add a new RPCAUTH_LOOKUP flag for async lookups and don't
+block on memory.  If the -ENOMEM gets back to call_refreshresult(), wait
+a short while and try again.  HZ>>4 is chosen as it is used elsewhere
+for -ENOMEM retries.
+
+Signed-off-by: NeilBrown <neilb@suse.de>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ include/linux/sunrpc/auth.h    |    1 +
+ net/sunrpc/auth.c              |    6 +++++-
+ net/sunrpc/auth_generic.c      |    5 ++++-
+ net/sunrpc/auth_gss/auth_gss.c |    6 +++++-
+ net/sunrpc/auth_unix.c         |    5 ++++-
+ net/sunrpc/clnt.c              |    3 +++
+ 6 files changed, 22 insertions(+), 4 deletions(-)
+
+--- a/include/linux/sunrpc/auth.h
++++ b/include/linux/sunrpc/auth.h
+@@ -116,6 +116,7 @@ struct rpc_auth_create_args {
+ /* Flags for rpcauth_lookupcred() */
+ #define RPCAUTH_LOOKUP_NEW		0x01	/* Accept an uninitialised cred */
+ #define RPCAUTH_LOOKUP_RCU		0x02	/* lock-less lookup */
++#define RPCAUTH_LOOKUP_ASYNC		0x04	/* Don't block waiting for memory */
+ 
+ /*
+  * Client authentication ops
+--- a/net/sunrpc/auth.c
++++ b/net/sunrpc/auth.c
+@@ -673,6 +673,8 @@ rpcauth_bind_root_cred(struct rpc_task *
+ 
+ 	dprintk("RPC: %5u looking up %s cred\n",
+ 		task->tk_pid, task->tk_client->cl_auth->au_ops->au_name);
++	if (RPC_IS_ASYNC(task))
++		lookupflags |= RPCAUTH_LOOKUP_ASYNC;
+ 	return auth->au_ops->lookup_cred(auth, &acred, lookupflags);
+ }
+ 
+@@ -683,6 +685,8 @@ rpcauth_bind_new_cred(struct rpc_task *t
+ 
+ 	dprintk("RPC: %5u looking up %s cred\n",
+ 		task->tk_pid, auth->au_ops->au_name);
++	if (RPC_IS_ASYNC(task))
++		lookupflags |= RPCAUTH_LOOKUP_ASYNC;
+ 	return rpcauth_lookupcred(auth, lookupflags);
+ }
+ 
+@@ -694,7 +698,7 @@ rpcauth_bindcred(struct rpc_task *task,
+ 	int lookupflags = 0;
+ 
+ 	if (flags & RPC_TASK_ASYNC)
+-		lookupflags |= RPCAUTH_LOOKUP_NEW;
++		lookupflags |= RPCAUTH_LOOKUP_NEW | RPCAUTH_LOOKUP_ASYNC;
+ 	if (cred != NULL)
+ 		new = cred->cr_ops->crbind(task, cred, lookupflags);
+ 	else if (flags & RPC_TASK_ROOTCREDS)
+--- a/net/sunrpc/auth_generic.c
++++ b/net/sunrpc/auth_generic.c
+@@ -103,7 +103,10 @@ generic_hash_cred(struct auth_cred *acre
+ static struct rpc_cred *
+ generic_lookup_cred(struct rpc_auth *auth, struct auth_cred *acred, int flags)
+ {
+-	return rpcauth_lookup_credcache(&generic_auth, acred, flags, GFP_KERNEL);
++	gfp_t gfp = GFP_NOFS;
++	if (flags & RPCAUTH_LOOKUP_ASYNC)
++		gfp = GFP_NOWAIT | __GFP_NOWARN;
++	return rpcauth_lookup_credcache(&generic_auth, acred, flags, gfp);
+ }
+ 
+ static struct rpc_cred *
+--- a/net/sunrpc/auth_gss/auth_gss.c
++++ b/net/sunrpc/auth_gss/auth_gss.c
+@@ -1315,7 +1315,11 @@ gss_hash_cred(struct auth_cred *acred, u
+ static struct rpc_cred *
+ gss_lookup_cred(struct rpc_auth *auth, struct auth_cred *acred, int flags)
+ {
+-	return rpcauth_lookup_credcache(auth, acred, flags, GFP_NOFS);
++	gfp_t gfp = GFP_NOFS;
++
++	if (flags & RPCAUTH_LOOKUP_ASYNC)
++		gfp = GFP_NOWAIT | __GFP_NOWARN;
++	return rpcauth_lookup_credcache(auth, acred, flags, gfp);
+ }
+ 
+ static struct rpc_cred *
+--- a/net/sunrpc/auth_unix.c
++++ b/net/sunrpc/auth_unix.c
+@@ -69,7 +69,10 @@ unx_hash_cred(struct auth_cred *acred, u
+ static struct rpc_cred *
+ unx_lookup_cred(struct rpc_auth *auth, struct auth_cred *acred, int flags)
+ {
+-	return rpcauth_lookup_credcache(auth, acred, flags, GFP_NOFS);
++	gfp_t gfp = GFP_NOFS;
++	if (flags & RPCAUTH_LOOKUP_ASYNC)
++		gfp = GFP_NOWAIT | __GFP_NOWARN;
++	return rpcauth_lookup_credcache(auth, acred, flags, gfp);
+ }
+ 
+ static struct rpc_cred *
+--- a/net/sunrpc/clnt.c
++++ b/net/sunrpc/clnt.c
+@@ -1708,6 +1708,9 @@ call_refreshresult(struct rpc_task *task
+ 		dprintk("RPC: %5u %s: retry refresh creds\n",
+ 				task->tk_pid, __func__);
+ 		return;
++	case -ENOMEM:
++		rpc_delay(task, HZ >> 4);
++		return;
+ 	}
+ 	dprintk("RPC: %5u %s: refresh creds failed with error %d\n",
+ 				task->tk_pid, __func__, status);
