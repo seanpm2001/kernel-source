@@ -1,0 +1,79 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Wed, 10 Nov 2021 01:47:48 -0600
+Subject: [PATCH] smb3: do not error on fsync when readonly
+Git-commit: 71e6864eacbef0b2645ca043cdfbac272cb6cea3
+References: bsc#1190317
+Patch-mainline: v5.16-rc1
+
+Linux allows doing a flush/fsync on a file open for read-only,
+but the protocol does not allow that.  If the file passed in
+on the flush is read-only try to find a writeable handle for
+the same inode, if that is not possible skip sending the
+fsync call to the server to avoid breaking the apps.
+
+Reported-by: Julian Sikorski <belegdol@gmail.com>
+Tested-by: Julian Sikorski <belegdol@gmail.com>
+Suggested-by: Jeremy Allison <jra@samba.org>
+Reviewed-by: Paulo Alcantara (SUSE) <pc@cjr.nz>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/file.c |   34 ++++++++++++++++++++++++++++------
+ 1 file changed, 28 insertions(+), 6 deletions(-)
+
+--- a/fs/cifs/file.c
++++ b/fs/cifs/file.c
+@@ -2643,12 +2643,23 @@ int cifs_strict_fsync(struct file *file,
+ 	tcon = tlink_tcon(smbfile->tlink);
+ 	if (!(cifs_sb->mnt_cifs_flags & CIFS_MOUNT_NOSSYNC)) {
+ 		server = tcon->ses->server;
+-		if (server->ops->flush)
+-			rc = server->ops->flush(xid, tcon, &smbfile->fid);
+-		else
++		if (server->ops->flush == NULL) {
+ 			rc = -ENOSYS;
++			goto strict_fsync_exit;
++		}
++
++		if ((OPEN_FMODE(smbfile->f_flags) & FMODE_WRITE) == 0) {
++			smbfile = find_writable_file(CIFS_I(inode), FIND_WR_ANY);
++			if (smbfile) {
++				rc = server->ops->flush(xid, tcon, &smbfile->fid);
++				cifsFileInfo_put(smbfile);
++			} else
++				cifs_dbg(FYI, "ignore fsync for file not open for write\n");
++		} else
++			rc = server->ops->flush(xid, tcon, &smbfile->fid);
+ 	}
+ 
++strict_fsync_exit:
+ 	free_xid(xid);
+ 	inode_unlock(inode);
+ 	return rc;
+@@ -2679,12 +2690,23 @@ int cifs_fsync(struct file *file, loff_t
+ 	tcon = tlink_tcon(smbfile->tlink);
+ 	if (!(cifs_sb->mnt_cifs_flags & CIFS_MOUNT_NOSSYNC)) {
+ 		server = tcon->ses->server;
+-		if (server->ops->flush)
+-			rc = server->ops->flush(xid, tcon, &smbfile->fid);
+-		else
++		if (server->ops->flush == NULL) {
+ 			rc = -ENOSYS;
++			goto fsync_exit;
++		}
++
++		if ((OPEN_FMODE(smbfile->f_flags) & FMODE_WRITE) == 0) {
++			smbfile = find_writable_file(CIFS_I(inode), FIND_WR_ANY);
++			if (smbfile) {
++				rc = server->ops->flush(xid, tcon, &smbfile->fid);
++				cifsFileInfo_put(smbfile);
++			} else
++				cifs_dbg(FYI, "ignore fsync for file not open for write\n");
++		} else
++			rc = server->ops->flush(xid, tcon, &smbfile->fid);
+ 	}
+ 
++fsync_exit:
+ 	free_xid(xid);
+ 	inode_unlock(inode);
+ 	return rc;

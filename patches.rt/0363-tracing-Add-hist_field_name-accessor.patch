@@ -14,9 +14,11 @@ Signed-off-by: Tom Zanussi <tom.zanussi@linux.intel.com>
 Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
 Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 ---
- kernel/trace/trace_events_hist.c |   68 ++++++++++++++++++++++++++-------------
- 1 file changed, 46 insertions(+), 22 deletions(-)
+ kernel/trace/trace_events_hist.c | 62 ++++++++++++++++++++++----------
+ 1 file changed, 43 insertions(+), 19 deletions(-)
 
+diff --git a/kernel/trace/trace_events_hist.c b/kernel/trace/trace_events_hist.c
+index 539e6ef9d6e7..5ec89626a265 100644
 --- a/kernel/trace/trace_events_hist.c
 +++ b/kernel/trace/trace_events_hist.c
 @@ -146,6 +146,23 @@ struct hist_trigger_data {
@@ -43,7 +45,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  static hist_field_fn_t select_value_fn(int field_size, int field_is_signed)
  {
  	hist_field_fn_t fn = NULL;
-@@ -653,7 +670,6 @@ static int is_descending(const char *str
+@@ -655,7 +672,6 @@ static int is_descending(const char *str)
  static int create_sort_keys(struct hist_trigger_data *hist_data)
  {
  	char *fields_str = hist_data->attrs->sort_key_str;
@@ -51,7 +53,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	struct tracing_map_sort_key *sort_key;
  	int descending, ret = 0;
  	unsigned int i, j;
-@@ -670,7 +686,9 @@ static int create_sort_keys(struct hist_
+@@ -672,7 +688,9 @@ static int create_sort_keys(struct hist_trigger_data *hist_data)
  	}
  
  	for (i = 0; i < TRACING_MAP_SORT_KEYS_MAX; i++) {
@@ -61,7 +63,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  		sort_key = &hist_data->sort_keys[i];
  
-@@ -703,8 +721,11 @@ static int create_sort_keys(struct hist_
+@@ -705,8 +723,11 @@ static int create_sort_keys(struct hist_trigger_data *hist_data)
  		}
  
  		for (j = 1; j < hist_data->n_fields; j++) {
@@ -75,15 +77,15 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  				sort_key->field_idx = j;
  				descending = is_descending(field_str);
  				if (descending < 0) {
-@@ -952,6 +973,7 @@ hist_trigger_entry_print(struct seq_file
+@@ -950,6 +971,7 @@ hist_trigger_entry_print(struct seq_file *m,
+ {
  	struct hist_field *key_field;
- 	char str[KSYM_SYMBOL_LEN];
  	bool multiline = false;
 +	const char *field_name;
  	unsigned int i;
  	u64 uval;
  
-@@ -963,26 +985,27 @@ hist_trigger_entry_print(struct seq_file
+@@ -961,26 +983,27 @@ hist_trigger_entry_print(struct seq_file *m,
  		if (i > hist_data->n_vals)
  			seq_puts(m, ", ");
  
@@ -96,30 +98,27 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +			seq_printf(m, "%s: %llx", field_name, uval);
  		} else if (key_field->flags & HIST_FIELD_FL_SYM) {
  			uval = *(u64 *)(key + key_field->offset);
- 			sprint_symbol_no_offset(str, uval);
--			seq_printf(m, "%s: [%llx] %-45s",
--				   key_field->field->name, uval, str);
-+			seq_printf(m, "%s: [%llx] %-45s", field_name,
-+				   uval, str);
+ 			seq_printf(m, "%s: [%llx] %-45ps",
+-				   key_field->field->name, uval,
++				   field_name, uval,
+ 				   (void *)(uintptr_t)uval);
  		} else if (key_field->flags & HIST_FIELD_FL_SYM_OFFSET) {
  			uval = *(u64 *)(key + key_field->offset);
- 			sprint_symbol(str, uval);
--			seq_printf(m, "%s: [%llx] %-55s",
--				   key_field->field->name, uval, str);
-+			seq_printf(m, "%s: [%llx] %-55s", field_name,
-+				   uval, str);
+ 			seq_printf(m, "%s: [%llx] %-55pS",
+-				   key_field->field->name, uval,
++				   field_name, uval,
+ 				   (void *)(uintptr_t)uval);
  		} else if (key_field->flags & HIST_FIELD_FL_EXECNAME) {
  			char *comm = elt->private_data;
  
  			uval = *(u64 *)(key + key_field->offset);
--			seq_printf(m, "%s: %-16s[%10llu]",
+ 			seq_printf(m, "%s: %-16s[%10llu]",
 -				   key_field->field->name, comm, uval);
-+			seq_printf(m, "%s: %-16s[%10llu]", field_name,
-+				   comm, uval);
++				   field_name, comm, uval);
  		} else if (key_field->flags & HIST_FIELD_FL_SYSCALL) {
  			const char *syscall_name;
  
-@@ -991,8 +1014,8 @@ hist_trigger_entry_print(struct seq_file
+@@ -989,8 +1012,8 @@ hist_trigger_entry_print(struct seq_file *m,
  			if (!syscall_name)
  				syscall_name = "unknown_syscall";
  
@@ -130,7 +129,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		} else if (key_field->flags & HIST_FIELD_FL_STACKTRACE) {
  			seq_puts(m, "stacktrace:\n");
  			hist_trigger_stacktrace_print(m,
-@@ -1000,15 +1023,14 @@ hist_trigger_entry_print(struct seq_file
+@@ -998,15 +1021,14 @@ hist_trigger_entry_print(struct seq_file *m,
  						      HIST_STACKTRACE_DEPTH);
  			multiline = true;
  		} else if (key_field->flags & HIST_FIELD_FL_LOG2) {
@@ -149,7 +148,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		}
  	}
  
-@@ -1021,13 +1043,13 @@ hist_trigger_entry_print(struct seq_file
+@@ -1019,13 +1041,13 @@ hist_trigger_entry_print(struct seq_file *m,
  		   tracing_map_read_sum(elt, HITCOUNT_IDX));
  
  	for (i = 1; i < hist_data->n_vals; i++) {
@@ -167,7 +166,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  				   tracing_map_read_sum(elt, i));
  		}
  	}
-@@ -1142,7 +1164,9 @@ static const char *get_hist_field_flags(
+@@ -1140,7 +1162,9 @@ static const char *get_hist_field_flags(struct hist_field *hist_field)
  
  static void hist_field_print(struct seq_file *m, struct hist_field *hist_field)
  {
@@ -178,3 +177,6 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	if (hist_field->flags) {
  		const char *flags_str = get_hist_field_flags(hist_field);
  
+-- 
+2.26.2
+

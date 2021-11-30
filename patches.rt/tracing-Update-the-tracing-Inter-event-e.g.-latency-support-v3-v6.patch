@@ -50,24 +50,32 @@ includes the following patches:
 Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
 Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 ---
- Documentation/trace/events.txt                                                                    | 1979 ---------
- Documentation/trace/histogram.txt                                                                 | 1998 ++++++++++
- kernel/trace/ring_buffer.c                                                                        |   15 
- kernel/trace/trace.c                                                                              |   59 
- kernel/trace/trace_events_hist.c                                                                  |  751 ++-
- tools/testing/selftests/ftrace/test.d/functions                                                   |    7 
- tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-extended-error-support.tc       |   39 
- tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-field-variable-support.tc       |   54 
- tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-inter-event-combined-hist.tc    |   58 
- tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-onmatch-action-hist.tc          |   50 
- tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-onmatch-onmax-action-hist.tc    |   50 
- tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-onmax-action-hist.tc            |   48 
- tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-synthetic-event-createremove.tc |   54 
+ Documentation/trace/events.txt                | 1979 +---------------
+ Documentation/trace/histogram.txt             | 1998 +++++++++++++++++
+ kernel/trace/ring_buffer.c                    |   15 +-
+ kernel/trace/trace.c                          |   59 +-
+ kernel/trace/trace_events_hist.c              |  751 +++++--
+ .../testing/selftests/ftrace/test.d/functions |    7 +
+ .../trigger-extended-error-support.tc         |   39 +
+ .../trigger-field-variable-support.tc         |   54 +
+ .../trigger-inter-event-combined-hist.tc      |   58 +
+ .../trigger-onmatch-action-hist.tc            |   50 +
+ .../trigger-onmatch-onmax-action-hist.tc      |   50 +
+ .../inter-event/trigger-onmax-action-hist.tc  |   48 +
+ .../trigger-synthetic-event-createremove.tc   |   54 +
  13 files changed, 2952 insertions(+), 2210 deletions(-)
+ create mode 100644 Documentation/trace/histogram.txt
+ create mode 100644 tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-extended-error-support.tc
+ create mode 100644 tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-field-variable-support.tc
+ create mode 100644 tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-inter-event-combined-hist.tc
+ create mode 100644 tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-onmatch-action-hist.tc
+ create mode 100644 tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-onmatch-onmax-action-hist.tc
+ create mode 100644 tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-onmax-action-hist.tc
+ create mode 100644 tools/testing/selftests/ftrace/test.d/trigger/inter-event/trigger-synthetic-event-createremove.tc
 
 --- a/Documentation/trace/events.txt
 +++ b/Documentation/trace/events.txt
-@@ -517,1981 +517,4 @@ triggers (you have to use '!' for each o
+@@ -517,1981 +517,4 @@ The following commands are supported:
    totals derived from one or more trace event format fields and/or
    event counts (hitcount).
  
@@ -4053,7 +4061,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +          Dropped: 0
 --- a/kernel/trace/ring_buffer.c
 +++ b/kernel/trace/ring_buffer.c
-@@ -2246,7 +2246,7 @@ rb_move_tail(struct ring_buffer_per_cpu
+@@ -2279,7 +2279,7 @@ rb_move_tail(struct ring_buffer_per_cpu
  }
  
  /* Slow path, do not inline */
@@ -4062,7 +4070,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  rb_add_time_stamp(struct ring_buffer_event *event, u64 delta, bool abs)
  {
  	if (abs)
-@@ -2519,10 +2519,6 @@ rb_update_write_stamp(struct ring_buffer
+@@ -2552,10 +2552,6 @@ rb_update_write_stamp(struct ring_buffer
  {
  	u64 delta;
  
@@ -4073,7 +4081,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	/*
  	 * The event first in the commit queue updates the
  	 * time stamp.
-@@ -2538,6 +2534,9 @@ rb_update_write_stamp(struct ring_buffer
+@@ -2571,6 +2567,9 @@ rb_update_write_stamp(struct ring_buffer
  		else if (event->type_len == RINGBUF_TYPE_TIME_EXTEND) {
  			delta = ring_buffer_event_time_stamp(event);
  			cpu_buffer->write_stamp += delta;
@@ -4083,7 +4091,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		} else
  			cpu_buffer->write_stamp += event->time_delta;
  	}
-@@ -3459,7 +3458,8 @@ rb_update_read_stamp(struct ring_buffer_
+@@ -3512,7 +3511,8 @@ rb_update_read_stamp(struct ring_buffer_
  		return;
  
  	case RINGBUF_TYPE_TIME_STAMP:
@@ -4093,7 +4101,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		return;
  
  	case RINGBUF_TYPE_DATA:
-@@ -3488,7 +3488,8 @@ rb_update_iter_read_stamp(struct ring_bu
+@@ -3541,7 +3541,8 @@ rb_update_iter_read_stamp(struct ring_bu
  		return;
  
  	case RINGBUF_TYPE_TIME_STAMP:
@@ -4105,7 +4113,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	case RINGBUF_TYPE_DATA:
 --- a/kernel/trace/trace.c
 +++ b/kernel/trace/trace.c
-@@ -4410,6 +4410,9 @@ static const char readme_msg[] =
+@@ -4436,6 +4436,9 @@ static const char readme_msg[] =
  #ifdef CONFIG_X86_64
  	"     x86-tsc:   TSC cycle counter\n"
  #endif
@@ -4115,7 +4123,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	"\n  trace_marker\t\t- Writes into this file writes into the kernel buffer\n"
  	"\n  trace_marker_raw\t\t- Writes into this file writes binary data into the kernel buffer\n"
  	"  tracing_cpumask\t- Limit which CPUs to trace\n"
-@@ -4585,8 +4588,9 @@ static const char readme_msg[] =
+@@ -4611,8 +4614,9 @@ static const char readme_msg[] =
  	"\t            .sym        display an address as a symbol\n"
  	"\t            .sym-offset display an address as a symbol and offset\n"
  	"\t            .execname   display a common_pid as a program name\n"
@@ -4127,7 +4135,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	"\t    The 'pause' parameter can be used to pause an existing hist\n"
  	"\t    trigger or to start a hist trigger but not log any events\n"
  	"\t    until told to do so.  'continue' can be used to start or\n"
-@@ -6099,6 +6103,40 @@ static int tracing_clock_open(struct ino
+@@ -6125,6 +6129,40 @@ static int tracing_clock_open(struct ino
  	return ret;
  }
  
@@ -4168,7 +4176,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  int tracing_set_time_stamp_abs(struct trace_array *tr, bool abs)
  {
  	int ret = 0;
-@@ -6120,16 +6158,9 @@ int tracing_set_time_stamp_abs(struct tr
+@@ -6146,16 +6184,9 @@ int tracing_set_time_stamp_abs(struct tr
  
  	ring_buffer_set_time_stamp_abs(tr->trace_buffer.buffer, abs);
  
@@ -4185,7 +4193,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  #endif
   out:
  	mutex_unlock(&trace_types_lock);
-@@ -6384,6 +6415,13 @@ static const struct file_operations trac
+@@ -6412,6 +6443,13 @@ static const struct file_operations trac
  	.write		= tracing_clock_write,
  };
  
@@ -4199,7 +4207,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  #ifdef CONFIG_TRACER_SNAPSHOT
  static const struct file_operations snapshot_fops = {
  	.open		= tracing_snapshot_open,
-@@ -7727,6 +7765,9 @@ init_tracer_tracefs(struct trace_array *
+@@ -7775,6 +7813,9 @@ init_tracer_tracefs(struct trace_array *
  	trace_create_file("tracing_on", 0644, d_tracer,
  			  tr, &rb_simple_fops);
  
@@ -4777,7 +4785,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			ret = -EINVAL;
  			goto out;
  		}
-@@ -2178,34 +2294,60 @@ static void destroy_hist_fields(struct h
+@@ -2179,34 +2295,60 @@ static void destroy_hist_fields(struct h
  }
  
  static int init_var_ref(struct hist_field *ref_field,
@@ -4846,7 +4854,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			destroy_hist_field(ref_field, 0);
  			return NULL;
  		}
-@@ -2262,7 +2404,7 @@ static char *local_field_var_ref(struct
+@@ -2263,7 +2405,7 @@ static char *local_field_var_ref(struct
  	return field_name_from_var(hist_data, var_name);
  }
  
@@ -4855,7 +4863,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  					char *system, char *event_name,
  					char *var_name)
  {
-@@ -2273,9 +2415,9 @@ static struct hist_field *parse_var_ref(
+@@ -2274,9 +2416,9 @@ static struct hist_field *parse_var_ref(
  
  	var_name++;
  
@@ -4867,7 +4875,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	if (!ref_field)
  		hist_err_event("Couldn't find variable: $",
-@@ -2343,8 +2485,7 @@ static struct hist_field *create_alias(s
+@@ -2344,8 +2486,7 @@ static struct hist_field *create_alias(s
  				       char *var_name)
  {
  	struct hist_field *alias = NULL;
@@ -4877,7 +4885,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	alias = create_hist_field(hist_data, NULL, flags, var_name);
  	if (!alias)
-@@ -2353,7 +2494,7 @@ static struct hist_field *create_alias(s
+@@ -2354,7 +2495,7 @@ static struct hist_field *create_alias(s
  	alias->fn = var_ref->fn;
  	alias->operands[0] = var_ref;
  
@@ -4886,7 +4894,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		destroy_hist_field(alias, 0);
  		return NULL;
  	}
-@@ -2366,7 +2507,6 @@ struct hist_field *parse_atom(struct his
+@@ -2367,7 +2508,6 @@ struct hist_field *parse_atom(struct his
  			      unsigned long *flags, char *var_name)
  {
  	char *s, *ref_system = NULL, *ref_event = NULL, *ref_var = str;
@@ -4894,7 +4902,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	struct ftrace_event_field *field = NULL;
  	struct hist_field *hist_field = NULL;
  	int ret = 0;
-@@ -2391,7 +2531,7 @@ struct hist_field *parse_atom(struct his
+@@ -2392,7 +2532,7 @@ struct hist_field *parse_atom(struct his
  
  	s = local_field_var_ref(hist_data, ref_var);
  	if (!s) {
@@ -4903,7 +4911,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		if (hist_field) {
  			hist_data->var_refs[hist_data->n_var_refs] = hist_field;
  			hist_field->var_ref_idx = hist_data->n_var_refs++;
-@@ -2496,6 +2636,7 @@ static struct hist_field *parse_unary(st
+@@ -2497,6 +2637,7 @@ static struct hist_field *parse_unary(st
  
  	return expr;
   free:
@@ -4911,7 +4919,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	return ERR_PTR(ret);
  }
  
-@@ -2715,8 +2856,54 @@ static struct trace_event_file *event_fi
+@@ -2716,8 +2857,54 @@ static struct trace_event_file *event_fi
  }
  
  static struct hist_field *
@@ -4967,7 +4975,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	struct trace_array *tr = target_hist_data->event_file->tr;
  	struct hist_field *event_var = ERR_PTR(-EINVAL);
-@@ -2731,26 +2918,38 @@ create_field_var_hist(struct hist_trigge
+@@ -2732,26 +2919,38 @@ create_field_var_hist(struct hist_trigge
  
  	if (target_hist_data->n_field_var_hists >= SYNTH_FIELDS_MAX) {
  		hist_err_event("onmatch: Too many field variables defined: ",
@@ -5010,7 +5018,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	var_hist = kzalloc(sizeof(*var_hist), GFP_KERNEL);
  	if (!var_hist)
  		return ERR_PTR(-ENOMEM);
-@@ -2761,6 +2960,7 @@ create_field_var_hist(struct hist_trigge
+@@ -2762,6 +2961,7 @@ create_field_var_hist(struct hist_trigge
  		return ERR_PTR(-ENOMEM);
  	}
  
@@ -5018,7 +5026,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	strcat(cmd, "keys=");
  
  	for_each_hist_key_field(i, hist_data) {
-@@ -2771,11 +2971,13 @@ create_field_var_hist(struct hist_trigge
+@@ -2772,11 +2972,13 @@ create_field_var_hist(struct hist_trigge
  		first = false;
  	}
  
@@ -5032,7 +5040,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	saved_filter = find_trigger_filter(hist_data, file);
  	if (saved_filter) {
  		strcat(cmd, " if ");
-@@ -2789,8 +2991,10 @@ create_field_var_hist(struct hist_trigge
+@@ -2790,8 +2992,10 @@ create_field_var_hist(struct hist_trigge
  		return ERR_PTR(-ENOMEM);
  	}
  
@@ -5043,7 +5051,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	ret = event_hist_trigger_func(&trigger_hist_cmd, file,
  				      "", "hist", cmd);
  	if (ret) {
-@@ -2798,20 +3002,21 @@ create_field_var_hist(struct hist_trigge
+@@ -2799,20 +3003,21 @@ create_field_var_hist(struct hist_trigge
  		kfree(var_hist->cmd);
  		kfree(var_hist);
  		hist_err_event("onmatch: Couldn't create histogram for field: ",
@@ -5071,7 +5079,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		return ERR_PTR(-EINVAL);
  	}
  
-@@ -2824,12 +3029,12 @@ create_field_var_hist(struct hist_trigge
+@@ -2825,12 +3030,12 @@ create_field_var_hist(struct hist_trigge
  
  static struct hist_field *
  find_target_event_var(struct hist_trigger_data *hist_data,
@@ -5086,7 +5094,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		struct trace_event_call *call;
  
  		if (!event_name)
-@@ -2837,7 +3042,7 @@ find_target_event_var(struct hist_trigge
+@@ -2838,7 +3043,7 @@ find_target_event_var(struct hist_trigge
  
  		call = file->event_call;
  
@@ -5095,7 +5103,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			return NULL;
  
  		if (strcmp(event_name, trace_event_name(call)) != 0)
-@@ -2904,7 +3109,7 @@ static struct hist_field *create_var(str
+@@ -2905,7 +3110,7 @@ static struct hist_field *create_var(str
  	struct hist_field *var;
  	int idx;
  
@@ -5104,7 +5112,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		var = ERR_PTR(-EINVAL);
  		goto out;
  	}
-@@ -2985,13 +3190,33 @@ static struct field_var *create_field_va
+@@ -2986,13 +3191,33 @@ static struct field_var *create_field_va
  	goto out;
  }
  
@@ -5142,7 +5150,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		struct trace_event_call *call;
  
  		if (!event_name)
-@@ -2999,14 +3224,14 @@ create_target_field_var(struct hist_trig
+@@ -3000,14 +3225,14 @@ create_target_field_var(struct hist_trig
  
  		call = file->event_call;
  
@@ -5159,7 +5167,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  static void onmax_print(struct seq_file *m,
-@@ -3105,7 +3330,7 @@ static int onmax_create(struct hist_trig
+@@ -3106,7 +3331,7 @@ static int onmax_create(struct hist_trig
  	if (!ref_field)
  		return -ENOMEM;
  
@@ -5168,7 +5176,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		destroy_hist_field(ref_field, 0);
  		ret = -ENOMEM;
  		goto out;
-@@ -3145,8 +3370,6 @@ static int onmax_create(struct hist_trig
+@@ -3146,8 +3371,6 @@ static int onmax_create(struct hist_trig
  
  		kfree(param);
  	}
@@ -5177,7 +5185,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
   out:
  	return ret;
  }
-@@ -3327,7 +3550,6 @@ static struct hist_field *
+@@ -3328,7 +3551,6 @@ static struct hist_field *
  onmatch_find_var(struct hist_trigger_data *hist_data, struct action_data *data,
  		 char *system, char *event, char *var)
  {
@@ -5185,7 +5193,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	struct hist_field *hist_field;
  
  	var++; /* skip '$' */
-@@ -3339,7 +3561,7 @@ onmatch_find_var(struct hist_trigger_dat
+@@ -3340,7 +3562,7 @@ onmatch_find_var(struct hist_trigger_dat
  			event = data->onmatch.match_event;
  		}
  
@@ -5194,7 +5202,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	}
  
  	if (!hist_field)
-@@ -3356,19 +3578,36 @@ onmatch_create_field_var(struct hist_tri
+@@ -3357,19 +3579,36 @@ onmatch_create_field_var(struct hist_tri
  	struct hist_field *hist_field = NULL;
  	struct field_var *field_var;
  
@@ -5234,7 +5242,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		hist_field = create_field_var_hist(hist_data, system, event, var);
  		if (IS_ERR(hist_field))
  			goto free;
-@@ -3441,7 +3680,7 @@ static int onmatch_create(struct hist_tr
+@@ -3442,7 +3681,7 @@ static int onmatch_create(struct hist_tr
  		}
  
  		if (check_synth_field(event, hist_field, field_pos) == 0) {
@@ -5243,7 +5251,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			if (!var_ref) {
  				kfree(p);
  				ret = -ENOMEM;
-@@ -3470,7 +3709,6 @@ static int onmatch_create(struct hist_tr
+@@ -3471,7 +3710,6 @@ static int onmatch_create(struct hist_tr
  	data->fn = action_trace;
  	data->onmatch.synth_event = event;
  	data->onmatch.var_ref_idx = var_ref_idx;
@@ -5251,7 +5259,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	event->ref++;
   out:
  	return ret;
-@@ -3588,9 +3826,6 @@ static int __create_val_field(struct his
+@@ -3589,9 +3827,6 @@ static int __create_val_field(struct his
  	++hist_data->n_vals;
  	++hist_data->n_fields;
  
@@ -5261,7 +5269,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	if (WARN_ON(hist_data->n_vals > TRACING_MAP_VALS_MAX + TRACING_MAP_VARS_MAX))
  		ret = -EINVAL;
   out:
-@@ -3618,19 +3853,15 @@ static int create_var_field(struct hist_
+@@ -3619,19 +3854,15 @@ static int create_var_field(struct hist_
  	if (WARN_ON(val_idx >= TRACING_MAP_VALS_MAX + TRACING_MAP_VARS_MAX))
  		return -EINVAL;
  
@@ -5283,7 +5291,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	return __create_val_field(hist_data, val_idx, file, var_name, expr_str, flags);
  }
-@@ -3704,6 +3935,7 @@ static int create_key_field(struct hist_
+@@ -3705,6 +3936,7 @@ static int create_key_field(struct hist_
  		}
  
  		if (hist_field->flags & HIST_FIELD_FL_VAR_REF) {
@@ -5291,7 +5299,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			destroy_hist_field(hist_field, 0);
  			ret = -EINVAL;
  			goto out;
-@@ -3822,6 +4054,12 @@ static int parse_var_defs(struct hist_tr
+@@ -3823,6 +4055,12 @@ static int parse_var_defs(struct hist_tr
  				goto free;
  			}
  
@@ -5304,7 +5312,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			s = kstrdup(var_name, GFP_KERNEL);
  			if (!s) {
  				ret = -ENOMEM;
-@@ -3831,15 +4069,13 @@ static int parse_var_defs(struct hist_tr
+@@ -3832,15 +4070,13 @@ static int parse_var_defs(struct hist_tr
  
  			s = kstrdup(field_str, GFP_KERNEL);
  			if (!s) {
@@ -5321,7 +5329,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		}
  	}
  
-@@ -3947,7 +4183,7 @@ static int create_sort_keys(struct hist_
+@@ -3948,7 +4184,7 @@ static int create_sort_keys(struct hist_
  			unsigned int idx;
  
  			hist_field = hist_data->fields[j];
@@ -5330,7 +5338,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  				continue;
  
  			idx = k++;
-@@ -3992,8 +4228,7 @@ static void destroy_actions(struct hist_
+@@ -3993,8 +4229,7 @@ static void destroy_actions(struct hist_
  	}
  }
  
@@ -5340,7 +5348,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	struct trace_array *tr = hist_data->event_file->tr;
  	struct action_data *data;
-@@ -4008,26 +4243,49 @@ static int create_actions(struct hist_tr
+@@ -4009,26 +4244,49 @@ static int create_actions(struct hist_tr
  			char *action_str = str + strlen("onmatch(");
  
  			data = onmatch_parse(tr, action_str);
@@ -5402,7 +5410,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		}
  	}
  
-@@ -4191,6 +4449,10 @@ create_hist_data(unsigned int map_bits,
+@@ -4192,6 +4450,10 @@ create_hist_data(unsigned int map_bits,
  	hist_data->remove = remove;
  	hist_data->event_file = file;
  
@@ -5413,7 +5421,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	ret = create_hist_fields(hist_data, file);
  	if (ret)
  		goto free;
-@@ -4243,8 +4505,7 @@ static void hist_trigger_elt_update(stru
+@@ -4244,8 +4506,7 @@ static void hist_trigger_elt_update(stru
  		if (hist_field->flags & HIST_FIELD_FL_VAR) {
  			var_idx = hist_field->var.idx;
  			tracing_map_set_var(elt, var_idx, hist_val);
@@ -5423,8 +5431,8 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		}
  		tracing_map_update_sum(elt, i, hist_val);
  	}
-@@ -4414,7 +4675,12 @@ hist_trigger_entry_print(struct seq_file
- 				   uval, str);
+@@ -4411,7 +4672,12 @@ hist_trigger_entry_print(struct seq_file
+ 				   (void *)(uintptr_t)uval);
  		} else if (key_field->flags & HIST_FIELD_FL_EXECNAME) {
  			struct hist_elt_data *elt_data = elt->private_data;
 -			char *comm = elt_data->comm;
@@ -5436,8 +5444,8 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +			comm = elt_data->comm;
  
  			uval = *(u64 *)(key + key_field->offset);
- 			seq_printf(m, "%s: %-16s[%10llu]", field_name,
-@@ -4459,8 +4725,7 @@ hist_trigger_entry_print(struct seq_file
+ 			seq_printf(m, "%s: %-16s[%10llu]",
+@@ -4456,8 +4722,7 @@ hist_trigger_entry_print(struct seq_file
  		field_name = hist_field_name(hist_data->fields[i], 0);
  
  		if (hist_data->fields[i]->flags & HIST_FIELD_FL_VAR ||
@@ -5447,7 +5455,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			continue;
  
  		if (hist_data->fields[i]->flags & HIST_FIELD_FL_HEX) {
-@@ -4579,7 +4844,8 @@ static void hist_field_print(struct seq_
+@@ -4576,7 +4841,8 @@ static void hist_field_print(struct seq_
  	else if (hist_field->flags & HIST_FIELD_FL_CPU)
  		seq_puts(m, "cpu");
  	else if (field_name) {
@@ -5457,7 +5465,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			seq_putc(m, '$');
  		seq_printf(m, "%s", field_name);
  	}
-@@ -4597,8 +4863,8 @@ static int event_hist_trigger_print(stru
+@@ -4594,8 +4860,8 @@ static int event_hist_trigger_print(stru
  				    struct event_trigger_data *data)
  {
  	struct hist_trigger_data *hist_data = data->private_data;
@@ -5467,7 +5475,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	unsigned int i;
  
  	seq_puts(m, "hist:");
-@@ -4624,8 +4890,8 @@ static int event_hist_trigger_print(stru
+@@ -4621,8 +4887,8 @@ static int event_hist_trigger_print(stru
  
  	for_each_hist_val_field(i, hist_data) {
  		field = hist_data->fields[i];
@@ -5478,7 +5486,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			continue;
  		}
  
-@@ -4637,7 +4903,7 @@ static int event_hist_trigger_print(stru
+@@ -4634,7 +4900,7 @@ static int event_hist_trigger_print(stru
  		}
  	}
  
@@ -5487,7 +5495,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		unsigned int n = 0;
  
  		seq_puts(m, ":");
-@@ -4645,7 +4911,7 @@ static int event_hist_trigger_print(stru
+@@ -4642,7 +4908,7 @@ static int event_hist_trigger_print(stru
  		for_each_hist_val_field(i, hist_data) {
  			field = hist_data->fields[i];
  
@@ -5496,7 +5504,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  				if (n++)
  					seq_puts(m, ",");
  				hist_field_print(m, field);
-@@ -4659,8 +4925,8 @@ static int event_hist_trigger_print(stru
+@@ -4656,8 +4922,8 @@ static int event_hist_trigger_print(stru
  		struct tracing_map_sort_key *sort_key;
  		unsigned int idx, first_key_idx;
  
@@ -5507,7 +5515,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  		sort_key = &hist_data->sort_keys[i];
  		idx = sort_key->field_idx;
-@@ -4675,7 +4941,7 @@ static int event_hist_trigger_print(stru
+@@ -4672,7 +4938,7 @@ static int event_hist_trigger_print(stru
  			seq_puts(m, "hitcount");
  		else {
  			if (idx >= first_key_idx)
@@ -5516,7 +5524,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			hist_field_print(m, hist_data->fields[idx]);
  		}
  
-@@ -4969,7 +5235,7 @@ static int hist_trigger_enable(struct ev
+@@ -4966,7 +5232,7 @@ static int hist_trigger_enable(struct ev
  {
  	int ret = 0;
  
@@ -5525,7 +5533,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	update_cond_flag(file);
  
-@@ -4982,6 +5248,28 @@ static int hist_trigger_enable(struct ev
+@@ -4979,6 +5245,28 @@ static int hist_trigger_enable(struct ev
  	return ret;
  }
  
@@ -5554,7 +5562,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  static bool hist_trigger_check_refs(struct event_trigger_data *data,
  				    struct trace_event_file *file)
  {
-@@ -5072,18 +5360,32 @@ static bool hist_file_check_refs(struct
+@@ -5069,18 +5357,32 @@ static bool hist_file_check_refs(struct
  static void hist_unreg_all(struct trace_event_file *file)
  {
  	struct event_trigger_data *test, *n;
@@ -5588,7 +5596,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		}
  	}
  }
-@@ -5118,19 +5420,33 @@ static int event_hist_trigger_func(struc
+@@ -5115,19 +5417,33 @@ static int event_hist_trigger_func(struc
  	 * separate the trigger from the filter (k:v [if filter])
  	 * allowing for whitespace in the trigger
  	 */
@@ -5633,7 +5641,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	attrs = parse_hist_trigger_attrs(trigger);
  	if (IS_ERR(attrs))
-@@ -5147,10 +5463,11 @@ static int event_hist_trigger_func(struc
+@@ -5144,10 +5460,11 @@ static int event_hist_trigger_func(struc
  
  	trigger_ops = cmd_ops->get_trigger_ops(cmd, trigger);
  
@@ -5647,7 +5655,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	trigger_data->count = -1;
  	trigger_data->ops = trigger_ops;
-@@ -5169,6 +5486,9 @@ static int event_hist_trigger_func(struc
+@@ -5166,6 +5483,9 @@ static int event_hist_trigger_func(struc
  	}
  
  	if (remove) {
@@ -5657,7 +5665,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		if (hist_trigger_check_refs(trigger_data, file)) {
  			ret = -EBUSY;
  			goto out_free;
-@@ -5188,7 +5508,6 @@ static int event_hist_trigger_func(struc
+@@ -5185,7 +5505,6 @@ static int event_hist_trigger_func(struc
  	}
  
  	ret = cmd_ops->reg(glob, trigger_ops, trigger_data, file);
@@ -5665,7 +5673,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	/*
  	 * The above returns on success the # of triggers registered,
  	 * but if it didn't register any it returns zero.  Consider no
-@@ -5201,13 +5520,6 @@ static int event_hist_trigger_func(struc
+@@ -5198,13 +5517,6 @@ static int event_hist_trigger_func(struc
  	} else if (ret < 0)
  		goto out_free;
  
@@ -5679,7 +5687,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	if (get_named_trigger_data(trigger_data))
  		goto enable;
  
-@@ -5226,6 +5538,13 @@ static int event_hist_trigger_func(struc
+@@ -5223,6 +5535,13 @@ enable:
  	if (ret)
  		goto out_unreg;
  
