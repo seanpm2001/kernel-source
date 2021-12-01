@@ -28,8 +28,8 @@ CPUs with higher APIC IDs unless x2apic is enabled anyway.
 Signed-off-by: David Woodhouse <dwmw@amazon.co.uk>
 Acked-by: Joerg Roedel <jroedel@suse.de>
 ---
- arch/x86/kernel/apic/msi.c |   36 +++++++++++++++++++++++++++++++-----
- 1 file changed, 31 insertions(+), 5 deletions(-)
+ arch/x86/kernel/apic/msi.c |   34 +++++++++++++++++++++++++++-------
+ 1 file changed, 27 insertions(+), 7 deletions(-)
 
 --- a/arch/x86/kernel/apic/msi.c
 +++ b/arch/x86/kernel/apic/msi.c
@@ -81,7 +81,7 @@ Acked-by: Joerg Roedel <jroedel@suse.de>
  	irq_data_get_irq_chip(irqd)->irq_write_msi_msg(irqd, msg);
  }
  
-@@ -301,6 +310,17 @@ static void dmar_msi_write_msg(struct ir
+@@ -303,6 +312,17 @@ static void dmar_msi_write_msg(struct ir
  	dmar_msi_write(data->irq, msg);
  }
  
@@ -99,12 +99,12 @@ Acked-by: Joerg Roedel <jroedel@suse.de>
  static struct irq_chip dmar_msi_controller = {
  	.name			= "DMAR-MSI",
  	.irq_unmask		= dmar_msi_unmask,
-@@ -308,7 +328,7 @@ static struct irq_chip dmar_msi_controll
+@@ -310,7 +330,7 @@ static struct irq_chip dmar_msi_controll
  	.irq_ack		= irq_chip_ack_parent,
  	.irq_set_affinity	= msi_domain_set_affinity,
  	.irq_retrigger		= irq_chip_retrigger_hierarchy,
 -	.irq_compose_msi_msg	= irq_msi_compose_msg,
 +	.irq_compose_msi_msg	= dmar_msi_compose_msg,
  	.irq_write_msi_msg	= dmar_msi_write_msg,
- 	.flags			= IRQCHIP_SKIP_SET_WAKE,
- };
+ 	.flags			= IRQCHIP_SKIP_SET_WAKE |
+ 				  IRQCHIP_AFFINITY_PRE_STARTUP,
