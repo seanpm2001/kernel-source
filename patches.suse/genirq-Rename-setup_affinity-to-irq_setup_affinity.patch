@@ -1,0 +1,72 @@
+From 43564bd97d0e6182bbd43b51b33254c728832551 Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Tue, 20 Jun 2017 01:37:22 +0200
+Subject: [PATCH] genirq: Rename setup_affinity() to irq_setup_affinity()
+Git-commit: 43564bd97d0e6182bbd43b51b33254c728832551
+Patch-mainline: v4.13-rc1
+References: bsc#1193231
+
+Rename it with a proper irq_ prefix and make it available for other files
+in the core code. Preparatory patch for moving the irq affinity setup
+around.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Cc: Jens Axboe <axboe@kernel.dk>
+Cc: Marc Zyngier <marc.zyngier@arm.com>
+Cc: Michael Ellerman <mpe@ellerman.id.au>
+Cc: Keith Busch <keith.busch@intel.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Christoph Hellwig <hch@lst.de>
+Link: http://lkml.kernel.org/r/20170619235444.928501004@linutronix.de
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ kernel/irq/internals.h | 6 ++++++
+ kernel/irq/manage.c    | 7 +------
+ 2 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/kernel/irq/internals.h b/kernel/irq/internals.h
+index 33ca83816b8c..2d7927d9fb57 100644
+--- a/kernel/irq/internals.h
++++ b/kernel/irq/internals.h
+@@ -116,6 +116,12 @@ extern void irq_set_thread_affinity(struct irq_desc *desc);
+ extern int irq_do_set_affinity(struct irq_data *data,
+ 			       const struct cpumask *dest, bool force);
+ 
++#ifdef CONFIG_SMP
++extern int irq_setup_affinity(struct irq_desc *desc);
++#else
++static inline int irq_setup_affinity(struct irq_desc *desc) { return 0; }
++#endif
++
+ /* Inline functions for support of irq chips on slow busses */
+ static inline void chip_bus_lock(struct irq_desc *desc)
+ {
+diff --git a/kernel/irq/manage.c b/kernel/irq/manage.c
+index e2f20d553d60..907fb791ff63 100644
+--- a/kernel/irq/manage.c
++++ b/kernel/irq/manage.c
+@@ -345,7 +345,7 @@ EXPORT_SYMBOL_GPL(irq_set_affinity_notifier);
+ /*
+  * Generic version of the affinity autoselector.
+  */
+-static int irq_setup_affinity(struct irq_desc *desc)
++int irq_setup_affinity(struct irq_desc *desc)
+ {
+ 	struct cpumask *set = irq_default_affinity;
+ 	int ret, node = irq_desc_get_node(desc);
+@@ -404,11 +404,6 @@ int irq_select_affinity_usr(unsigned int irq)
+ 	raw_spin_unlock_irqrestore(&desc->lock, flags);
+ 	return ret;
+ }
+-#else
+-static inline int setup_affinity(struct irq_desc *desc)
+-{
+-	return 0;
+-}
+ #endif
+ 
+ /**
+-- 
+2.31.1
+
