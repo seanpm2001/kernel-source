@@ -1,0 +1,30 @@
+From: Trond Myklebust <trond.myklebust@hammerspace.com>
+Date: Thu, 18 Jul 2019 01:10:51 -0400
+Subject: [PATCH] SUNRPC: Fix initialisation of struct rpc_xprt_switch
+Git-commit: 9f98effc19bd490a375c4e764a56a2c015d27c3c
+Patch-mainline: v5.3
+References: bnc#1192729
+
+Ensure that we do initialise the fields xps_nactive, xps_queuelen
+and xps_net.
+
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ net/sunrpc/xprtmultipath.c |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+--- a/net/sunrpc/xprtmultipath.c
++++ b/net/sunrpc/xprtmultipath.c
+@@ -102,7 +102,9 @@ struct rpc_xprt_switch *xprt_switch_allo
+ 	if (xps != NULL) {
+ 		spin_lock_init(&xps->xps_lock);
+ 		kref_init(&xps->xps_kref);
+-		xps->xps_nxprts = 0;
++		xps->xps_nxprts = xps->xps_nactive = 0;
++		atomic_long_set(&xps->xps_queuelen, 0);
++		xps->xps_net = NULL;
+ 		INIT_LIST_HEAD(&xps->xps_xprt_list);
+ 		xps->xps_iter_ops = &rpc_xprt_iter_singular;
+ 		xprt_switch_add_xprt_locked(xps, xprt);
