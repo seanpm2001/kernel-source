@@ -1,0 +1,68 @@
+From: Trond Myklebust <trond.myklebust@hammerspace.com>
+Date: Tue, 16 Jul 2019 07:07:28 -0400
+Subject: [PATCH] SUNRPC: Skip zero-refcount transports
+Git-commit: 163f88211c147d96b46e376337190a02203ace02
+Patch-mainline: v5.3
+References: bnc#1192729
+
+When looking for the next transport to use for an RPC call, skip those
+that are in the process of being destroyed and that have a zero refcount.
+
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ net/sunrpc/xprtmultipath.c |   20 +++++++++++++++++++-
+ 1 file changed, 19 insertions(+), 1 deletion(-)
+
+--- a/net/sunrpc/xprtmultipath.c
++++ b/net/sunrpc/xprtmultipath.c
+@@ -193,9 +193,21 @@ void xprt_iter_default_rewind(struct rpc
+ }
+ 
+ static
++bool xprt_is_active(const struct rpc_xprt *xprt)
++{
++	return kref_read(&xprt->kref) != 0;
++}
++
++static
+ struct rpc_xprt *xprt_switch_find_first_entry(struct list_head *head)
+ {
+-	return list_first_or_null_rcu(head, struct rpc_xprt, xprt_switch);
++	struct rpc_xprt *pos;
++
++	list_for_each_entry_rcu(pos, head, xprt_switch) {
++		if (xprt_is_active(pos))
++			return pos;
++	}
++	return NULL;
+ }
+ 
+ static
+@@ -213,9 +225,12 @@ struct rpc_xprt *xprt_switch_find_curren
+ 		const struct rpc_xprt *cur)
+ {
+ 	struct rpc_xprt *pos;
++	bool found = false;
+ 
+ 	list_for_each_entry_rcu(pos, head, xprt_switch) {
+ 		if (cur == pos)
++			found = true;
++		if (found && xprt_is_active(pos))
+ 			return pos;
+ 	}
+ 	return NULL;
+@@ -260,9 +275,12 @@ struct rpc_xprt *xprt_switch_find_next_e
+ 		const struct rpc_xprt *cur)
+ {
+ 	struct rpc_xprt *pos, *prev = NULL;
++	bool found = false;
+ 
+ 	list_for_each_entry_rcu(pos, head, xprt_switch) {
+ 		if (cur == prev)
++			found = true;
++		if (found && xprt_is_active(pos))
+ 			return pos;
+ 		prev = pos;
+ 	}
