@@ -19,14 +19,16 @@ Signed-off-by: Tom Zanussi <tom.zanussi@linux.intel.com>
 Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
 Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 ---
- include/linux/trace_events.h        |    3 +++
- kernel/trace/trace.h                |   13 ++++++++++---
- kernel/trace/trace_events_trigger.c |   16 +++++++++++++---
- 3 files changed, 26 insertions(+), 6 deletions(-)
+ include/linux/trace_events.h        |  3 +++
+ kernel/trace/trace.h                |  3 +++
+ kernel/trace/trace_events_trigger.c | 16 +++++++++++++---
+ 3 files changed, 19 insertions(+), 3 deletions(-)
 
+diff --git a/include/linux/trace_events.h b/include/linux/trace_events.h
+index f2c926c65961..0f26132487b4 100644
 --- a/include/linux/trace_events.h
 +++ b/include/linux/trace_events.h
-@@ -300,6 +300,7 @@ enum {
+@@ -324,6 +324,7 @@ enum {
  	EVENT_FILE_FL_TRIGGER_MODE_BIT,
  	EVENT_FILE_FL_TRIGGER_COND_BIT,
  	EVENT_FILE_FL_PID_FILTER_BIT,
@@ -34,7 +36,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  };
  
  /*
-@@ -314,6 +315,7 @@ enum {
+@@ -338,6 +339,7 @@ enum {
   *  TRIGGER_MODE  - When set, invoke the triggers associated with the event
   *  TRIGGER_COND  - When set, one or more triggers has an associated filter
   *  PID_FILTER    - When set, the event is filtered based on pid
@@ -42,7 +44,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
   */
  enum {
  	EVENT_FILE_FL_ENABLED		= (1 << EVENT_FILE_FL_ENABLED_BIT),
-@@ -325,6 +327,7 @@ enum {
+@@ -349,6 +351,7 @@ enum {
  	EVENT_FILE_FL_TRIGGER_MODE	= (1 << EVENT_FILE_FL_TRIGGER_MODE_BIT),
  	EVENT_FILE_FL_TRIGGER_COND	= (1 << EVENT_FILE_FL_TRIGGER_COND_BIT),
  	EVENT_FILE_FL_PID_FILTER	= (1 << EVENT_FILE_FL_PID_FILTER_BIT),
@@ -50,31 +52,25 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  };
  
  struct trace_event_file {
+diff --git a/kernel/trace/trace.h b/kernel/trace/trace.h
+index 556489096116..12ee5e0018e6 100644
 --- a/kernel/trace/trace.h
 +++ b/kernel/trace/trace.h
-@@ -1273,9 +1273,16 @@ __event_trigger_test_discard(struct trac
- 	if (eflags & EVENT_FILE_FL_TRIGGER_COND)
- 		*tt = event_triggers_call(file, entry, event);
+@@ -1324,6 +1324,9 @@ __event_trigger_test_discard(struct trace_event_file *file,
+ 	    !filter_match_preds(file->filter, entry))
+ 		goto discard;
  
--	if (test_bit(EVENT_FILE_FL_SOFT_DISABLED_BIT, &file->flags) ||
--	    (unlikely(file->flags & EVENT_FILE_FL_FILTERED) &&
--	     !filter_match_preds(file->filter, entry))) {
-+	if (unlikely(file->flags & EVENT_FILE_FL_FILTERED) &&
-+	    !filter_match_preds(file->filter, entry)) {
-+		__trace_event_discard_commit(buffer, event);
-+		return true;
-+	}
-+
 +	if (test_bit(EVENT_FILE_FL_NO_DISCARD_BIT, &file->flags))
 +		return false;
 +
-+	if (test_bit(EVENT_FILE_FL_SOFT_DISABLED_BIT, &file->flags)) {
- 		__trace_event_discard_commit(buffer, event);
- 		return true;
- 	}
+ 	if ((file->flags & EVENT_FILE_FL_PID_FILTER) &&
+ 	    trace_event_ignore_this_pid(file))
+ 		goto discard;
+diff --git a/kernel/trace/trace_events_trigger.c b/kernel/trace/trace_events_trigger.c
+index 35297a27ea38..1ad9b9b7e1c3 100644
 --- a/kernel/trace/trace_events_trigger.c
 +++ b/kernel/trace/trace_events_trigger.c
-@@ -505,20 +505,30 @@ clear_event_triggers(struct trace_array
+@@ -512,20 +512,30 @@ clear_event_triggers(struct trace_array *tr)
  void update_cond_flag(struct trace_event_file *file)
  {
  	struct event_trigger_data *data;
@@ -108,3 +104,6 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  /**
+-- 
+2.26.2
+

@@ -13,15 +13,15 @@ Signed-off-by: Tom Zanussi <tom.zanussi@linux.intel.com>
 Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
 Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 ---
- include/linux/trace_events.h        |   14 ++++++----
- kernel/trace/trace.h                |    9 +++---
- kernel/trace/trace_events_hist.c    |   11 +++++---
- kernel/trace/trace_events_trigger.c |   47 ++++++++++++++++++++++--------------
+ include/linux/trace_events.h        | 14 +++++----
+ kernel/trace/trace.h                |  9 +++---
+ kernel/trace/trace_events_hist.c    | 11 ++++---
+ kernel/trace/trace_events_trigger.c | 47 ++++++++++++++++++-----------
  4 files changed, 49 insertions(+), 32 deletions(-)
 
 --- a/include/linux/trace_events.h
 +++ b/include/linux/trace_events.h
-@@ -395,11 +395,13 @@ enum event_trigger_type {
+@@ -418,11 +418,13 @@ enum event_trigger_type {
  
  extern int filter_match_preds(struct event_filter *filter, void *rec);
  
@@ -40,7 +40,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  bool trace_event_ignore_this_pid(struct trace_event_file *trace_file);
  
-@@ -419,7 +421,7 @@ trace_trigger_soft_disabled(struct trace
+@@ -442,7 +444,7 @@ trace_trigger_soft_disabled(struct trace
  
  	if (!(eflags & EVENT_FILE_FL_TRIGGER_COND)) {
  		if (eflags & EVENT_FILE_FL_TRIGGER_MODE)
@@ -51,16 +51,16 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		if (eflags & EVENT_FILE_FL_PID_FILTER)
 --- a/kernel/trace/trace.h
 +++ b/kernel/trace/trace.h
-@@ -1271,7 +1271,7 @@ __event_trigger_test_discard(struct trac
+@@ -1310,7 +1310,7 @@ __event_trigger_test_discard(struct trac
  	unsigned long eflags = file->flags;
  
  	if (eflags & EVENT_FILE_FL_TRIGGER_COND)
 -		*tt = event_triggers_call(file, entry);
 +		*tt = event_triggers_call(file, entry, event);
  
- 	if (test_bit(EVENT_FILE_FL_SOFT_DISABLED_BIT, &file->flags) ||
- 	    (unlikely(file->flags & EVENT_FILE_FL_FILTERED) &&
-@@ -1308,7 +1308,7 @@ event_trigger_unlock_commit(struct trace
+ 	if (likely(!(file->flags & (EVENT_FILE_FL_SOFT_DISABLED |
+ 				    EVENT_FILE_FL_FILTERED |
+@@ -1359,7 +1359,7 @@ event_trigger_unlock_commit(struct trace
  		trace_buffer_unlock_commit(file->tr, buffer, event, irq_flags, pc);
  
  	if (tt)
@@ -69,7 +69,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  /**
-@@ -1341,7 +1341,7 @@ event_trigger_unlock_commit_regs(struct
+@@ -1392,7 +1392,7 @@ event_trigger_unlock_commit_regs(struct
  						irq_flags, pc, regs);
  
  	if (tt)
@@ -78,7 +78,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  #define FILTER_PRED_INVALID	((unsigned short)-1)
-@@ -1564,7 +1564,8 @@ extern int register_trigger_hist_enable_
+@@ -1615,7 +1615,8 @@ extern int register_trigger_hist_enable_
   */
  struct event_trigger_ops {
  	void			(*func)(struct event_trigger_data *data,
@@ -100,7 +100,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	struct hist_trigger_data *hist_data = data->private_data;
  	bool use_compound_key = (hist_data->n_keys > 1);
-@@ -1673,7 +1674,8 @@ __init int register_trigger_hist_cmd(voi
+@@ -1670,7 +1671,8 @@ __init int register_trigger_hist_cmd(voi
  }
  
  static void
@@ -110,7 +110,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	struct enable_trigger_data *enable_data = data->private_data;
  	struct event_trigger_data *test;
-@@ -1689,7 +1691,8 @@ hist_enable_trigger(struct event_trigger
+@@ -1686,7 +1688,8 @@ hist_enable_trigger(struct event_trigger
  }
  
  static void
@@ -120,7 +120,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	if (!data->count)
  		return;
-@@ -1697,7 +1700,7 @@ hist_enable_count_trigger(struct event_t
+@@ -1694,7 +1697,7 @@ hist_enable_count_trigger(struct event_t
  	if (data->count != -1)
  		(data->count)--;
  
@@ -177,7 +177,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	}
  }
  EXPORT_SYMBOL_GPL(event_triggers_post_call);
-@@ -915,7 +916,8 @@ void set_named_trigger_data(struct event
+@@ -927,7 +928,8 @@ void set_named_trigger_data(struct event
  }
  
  static void
@@ -187,7 +187,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	if (tracing_is_on())
  		return;
-@@ -924,7 +926,8 @@ traceon_trigger(struct event_trigger_dat
+@@ -936,7 +938,8 @@ traceon_trigger(struct event_trigger_dat
  }
  
  static void
@@ -197,7 +197,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	if (tracing_is_on())
  		return;
-@@ -939,7 +942,8 @@ traceon_count_trigger(struct event_trigg
+@@ -951,7 +954,8 @@ traceon_count_trigger(struct event_trigg
  }
  
  static void
@@ -207,7 +207,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	if (!tracing_is_on())
  		return;
-@@ -948,7 +952,8 @@ traceoff_trigger(struct event_trigger_da
+@@ -960,7 +964,8 @@ traceoff_trigger(struct event_trigger_da
  }
  
  static void
@@ -217,7 +217,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	if (!tracing_is_on())
  		return;
-@@ -1045,7 +1050,8 @@ static struct event_command trigger_trac
+@@ -1057,7 +1062,8 @@ static struct event_command trigger_trac
  
  #ifdef CONFIG_TRACER_SNAPSHOT
  static void
@@ -227,7 +227,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	struct trace_event_file *file = data->private_data;
  
-@@ -1056,7 +1062,8 @@ snapshot_trigger(struct event_trigger_da
+@@ -1068,7 +1074,8 @@ snapshot_trigger(struct event_trigger_da
  }
  
  static void
@@ -237,7 +237,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	if (!data->count)
  		return;
-@@ -1064,7 +1071,7 @@ snapshot_count_trigger(struct event_trig
+@@ -1076,7 +1083,7 @@ snapshot_count_trigger(struct event_trig
  	if (data->count != -1)
  		(data->count)--;
  
@@ -246,7 +246,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  static int
-@@ -1152,13 +1159,15 @@ static __init int register_trigger_snaps
+@@ -1160,13 +1167,15 @@ static __init int register_trigger_snaps
  #endif
  
  static void
@@ -264,7 +264,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	if (!data->count)
  		return;
-@@ -1166,7 +1175,7 @@ stacktrace_count_trigger(struct event_tr
+@@ -1174,7 +1183,7 @@ stacktrace_count_trigger(struct event_tr
  	if (data->count != -1)
  		(data->count)--;
  
@@ -273,7 +273,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  static int
-@@ -1228,7 +1237,8 @@ static __init void unregister_trigger_tr
+@@ -1236,7 +1245,8 @@ static __init void unregister_trigger_tr
  }
  
  static void
@@ -283,7 +283,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	struct enable_trigger_data *enable_data = data->private_data;
  
-@@ -1239,7 +1249,8 @@ event_enable_trigger(struct event_trigge
+@@ -1247,7 +1257,8 @@ event_enable_trigger(struct event_trigge
  }
  
  static void
@@ -293,7 +293,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	struct enable_trigger_data *enable_data = data->private_data;
  
-@@ -1253,7 +1264,7 @@ event_enable_count_trigger(struct event_
+@@ -1261,7 +1272,7 @@ event_enable_count_trigger(struct event_
  	if (data->count != -1)
  		(data->count)--;
  
