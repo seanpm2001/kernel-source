@@ -1,0 +1,46 @@
+From: Shyam Prasad N <sprasad@microsoft.com>
+Date: Sun, 21 Nov 2021 16:45:44 +0000
+Subject: [PATCH] cifs: nosharesock should be set on new server
+Git-commit: b9ad6b5b687e798746024e5fc4574d8fa8bdfade
+References: git-fixes
+Patch-mainline: v5.16-rc3
+
+Recent fix to maintain a nosharesock state on the
+server struct caused a regression. It updated this
+field in the old tcp session, and not the new one.
+
+This caused the multichannel scenario to misbehave.
+
+Fixes: c9f1c19cf7c5 (cifs: nosharesock should not share socket with future sessions)
+Signed-off-by: Shyam Prasad N <sprasad@microsoft.com>
+Reviewed-by: Paulo Alcantara (SUSE) <pc@cjr.nz>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/connect.c |    7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -2710,10 +2710,8 @@ static int match_server(struct TCP_Serve
+ {
+ 	struct sockaddr *addr = (struct sockaddr *)&vol->dstaddr;
+ 
+-	if (vol->nosharesock) {
+-		server->nosharesock = true;
++	if (vol->nosharesock)
+ 		return 0;
+-	}
+ 
+ 	/* this server does not share socket */
+ 	if (server->nosharesock)
+@@ -2865,6 +2863,9 @@ cifs_get_tcp_session(struct smb_vol *vol
+ 		goto out_err;
+ 	}
+ 
++	if (volume_info->nosharesock)
++		tcp_ses->nosharesock = true;
++
+ 	tcp_ses->ops = volume_info->ops;
+ 	tcp_ses->vals = volume_info->vals;
+ 	cifs_set_net_ns(tcp_ses, get_net(current->nsproxy->net_ns));
