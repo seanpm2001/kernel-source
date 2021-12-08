@@ -1,0 +1,31 @@
+From: Takashi Iwai <tiwai@suse.de>
+Subject: nouveau: Suppress sysfs bind
+Patch-mainline: Never, SLE-specific workaround
+References: CVE-2020-27820 bsc#1179599
+
+As of this kernel branch, the dynamic bind/unbind of Nouveau DRM
+driver may lead to use-after-free.  Although the upstream kernel
+papered over the bug, it's pretty much difficult to backport the fixes
+to the old kernels, especially without breaking kABI.
+
+As an alternative workaround, this patch just disables the dynamic
+bind/unbind via sysfs for nouveau driver, instead.  The feature
+shouldn't be used for this driver on the supported products, in
+anyway.
+
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/gpu/drm/nouveau/nouveau_drm.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/drivers/gpu/drm/nouveau/nouveau_drm.c
++++ b/drivers/gpu/drm/nouveau/nouveau_drm.c
+@@ -1064,6 +1064,7 @@ nouveau_drm_pci_driver = {
+ 	.probe = nouveau_drm_probe,
+ 	.remove = nouveau_drm_remove,
+ 	.driver.pm = &nouveau_pm_ops,
++	.driver.suppress_bind_attrs = true,
+ };
+ 
+ struct drm_device *
