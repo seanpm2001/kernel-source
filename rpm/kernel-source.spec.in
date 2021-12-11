@@ -26,6 +26,11 @@
 
 %define src_install_dir usr/src/linux-%kernelrelease%variant
 
+# if undefined use legacy location of before SLE15
+%if %{undefined _rpmmacrodir}
+%define _rpmmacrodir /etc/rpm
+%endif
+
 Name:           kernel-source@VARIANT@
 Summary:        The Linux Kernel Sources
 License:        GPL-2.0-only
@@ -47,14 +52,7 @@ Provides:       %name-srchash-@COMMIT_FULL@
 Provides:       linux
 Provides:       multiversion(kernel)
 Source0:        @TARBALL_URL@linux-%srcversion.tar.xz
-Source2:        source-post.sh
 Source3:        kernel-source.rpmlintrc
-Source8:        devel-pre.sh
-Source9:        devel-post.sh
-Source10:       preun.sh
-Source11:       postun.sh
-Source12:       pre.sh
-Source13:       post.sh
 Source14:       series.conf
 Source16:       guards
 Source17:       apply-patches
@@ -120,7 +118,6 @@ Source113:      patches.kabi.tar.bz2
 Source114:      patches.drm.tar.bz2
 Source120:      kabi.tar.bz2
 Source121:      sysctl.tar.bz2
-BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 BuildArch:      noarch
 Prefix:         /usr/src
 # Source is only complete with devel files.
@@ -131,6 +128,10 @@ Recommends:     bison
 Recommends:     flex
 Recommends:     libelf-devel
 Recommends:     openssl-devel
+# dracut no longer carries installkernel
+%if 0%{?suse_version} > 1500 || 0%{?sle_version} > 150300
+Recommends:     kernel-install-tools
+%endif
 %obsolete_rebuilds %name
 
 %(chmod +x %_sourcedir/{@SCRIPTS@})
@@ -210,6 +211,10 @@ tar -xf %{S:0}
 if test "%srcversion" != "%kernelrelease%variant"; then
 	mv linux-%srcversion linux-%kernelrelease%variant
 fi
+%if 0%{?usrmerged}
+# fix MODLIB so kmps install to /usr
+sed -ie 's,/lib/modules/,%{kernel_module_directory}/,' linux-%kernelrelease%variant/Makefile
+%endif
 
 %if %do_vanilla
 %if %vanilla_only
@@ -247,26 +252,26 @@ cp %_sourcedir/README.SUSE %_sourcedir/config-options.changes.txt %buildroot/$DO
 ln -s $DOC/README.SUSE %buildroot/%src_install_dir/
 
 %if "%variant" == ""
-install -m 755 -d $RPM_BUILD_ROOT/etc/rpm
-install -m 644 %_sourcedir/macros.kernel-source $RPM_BUILD_ROOT/etc/rpm/
+install -m 755 -d $RPM_BUILD_ROOT%{_rpmmacrodir}
+install -m 644 %_sourcedir/macros.kernel-source $RPM_BUILD_ROOT%{_rpmmacrodir}
+echo "%%kernel_module_directory %{kernel_module_directory}" >> $RPM_BUILD_ROOT%{_rpmmacrodir}/macros.kernel-source
+
 install -m 755 -d $RPM_BUILD_ROOT/usr/lib/rpm
 install -m 644 %_sourcedir/kernel-{module,cert}-subpackage \
     $RPM_BUILD_ROOT/usr/lib/rpm/
 install -m 755 -d $RPM_BUILD_ROOT/usr/lib/rpm/kernel
 install -m 755 %_sourcedir/{splitflist,mergedep,moddep,modflist,kernel-subpackage-build} $RPM_BUILD_ROOT/usr/lib/rpm/kernel
 install -m 644 %_sourcedir/kernel-subpackage-spec $RPM_BUILD_ROOT/usr/lib/rpm/kernel
+install -m 644 %_sourcedir/kernel-spec-macros $RPM_BUILD_ROOT/usr/lib/rpm/kernel
 install -m 644 -T %_sourcedir/kernel-default-base.spec.txt $RPM_BUILD_ROOT/usr/lib/rpm/kernel/kernel-default-base.spec
 %endif
-
-sed -e "s:@KERNELRELEASE@:%kernelrelease:g" \
-	-e "s:@SRCVARIANT@:%variant:g" \
-	%_sourcedir/source-post.sh > %name-post.sh
 
 pushd "%buildroot"
 perl "%_sourcedir/group-source-files.pl" \
 	-D "$OLDPWD/devel.files" -N "$OLDPWD/nondevel.files" \
 	-L "%src_install_dir"
 popd
+%endif
 
 find %{buildroot}/usr/src/linux* -type f -name '*.[ch]' -perm /0111 -exec chmod -v a-x {} +
 # OBS checks don't like /usr/bin/env in script interpreter lines
@@ -281,9 +286,16 @@ done
 ts="$(head -n1 %_sourcedir/source-timestamp)"
 find %buildroot/usr/src/linux* ! -type l | xargs touch -d "$ts"
 
-%post -f %name-post.sh
+%if ! %vanilla_only
+%post
+%relink_function
 
-%post -n kernel-devel%variant -f %name-post.sh
+relink linux-%kernelrelease%variant /usr/src/linux%variant
+
+%post -n kernel-devel%variant
+%relink_function
+
+relink linux-%kernelrelease%variant /usr/src/linux%variant
 
 %files -f nondevel.files
 %defattr(-, root, root)
@@ -296,7 +308,7 @@ find %buildroot/usr/src/linux* ! -type l | xargs touch -d "$ts"
 %if "%variant" == ""
 %files -n kernel-macros
 %defattr(-,root,root)
-/etc/rpm/macros.kernel-source
+%{_rpmmacrodir}/macros.kernel-source
 /usr/lib/rpm/kernel-*-subpackage
 %dir /usr/lib/rpm/kernel
 /usr/lib/rpm/kernel/*
