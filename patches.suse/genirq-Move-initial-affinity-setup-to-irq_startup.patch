@@ -1,0 +1,73 @@
+From 2e051552df69af6d134c2592d0d6f1ac80f01190 Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Tue, 20 Jun 2017 01:37:23 +0200
+Subject: [PATCH] genirq: Move initial affinity setup to irq_startup()
+Git-commit: 2e051552df69af6d134c2592d0d6f1ac80f01190
+Patch-mainline: v4.13-rc1
+References: bsc#1193231
+
+The startup vs. setaffinity ordering of interrupts depends on the
+IRQF_NOAUTOEN flag. Chained interrupts are not getting any affinity
+assignment at all.
+
+A regular interrupt is started up and then the affinity is set. A
+IRQF_NOAUTOEN marked interrupt is not started up, but the affinity is set
+nevertheless.
+
+Move the affinity setup to startup_irq() so the ordering is always the same
+and chained interrupts get the proper default affinity assigned as well.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Cc: Jens Axboe <axboe@kernel.dk>
+Cc: Marc Zyngier <marc.zyngier@arm.com>
+Cc: Michael Ellerman <mpe@ellerman.id.au>
+Cc: Keith Busch <keith.busch@intel.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Christoph Hellwig <hch@lst.de>
+Link: http://lkml.kernel.org/r/20170619235445.020534783@linutronix.de
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ kernel/irq/chip.c   |    2 ++
+ kernel/irq/manage.c |   13 +++++--------
+ 2 files changed, 7 insertions(+), 8 deletions(-)
+
+--- a/kernel/irq/chip.c
++++ b/kernel/irq/chip.c
+@@ -213,6 +213,8 @@ int irq_startup(struct irq_desc *desc, b
+ 			irq_enable(desc);
+ 		}
+ 		irq_state_set_started(desc);
++		/* Set default affinity mask once everything is setup */
++		irq_setup_affinity(desc);
+ 	}
+ 
+ 	if (resend)
+--- a/kernel/irq/manage.c
++++ b/kernel/irq/manage.c
+@@ -1372,20 +1372,17 @@ __setup_irq(unsigned int irq, struct irq
+ 		if (new->flags & IRQF_ONESHOT)
+ 			desc->istate |= IRQS_ONESHOT;
+ 
+-		if (irq_settings_can_autoenable(desc))
+-			irq_startup(desc, true);
+-		else
+-			/* Undo nested disables: */
+-			desc->depth = 1;
+-
+ 		/* Exclude IRQ from balancing if requested */
+ 		if (new->flags & IRQF_NOBALANCING) {
+ 			irq_settings_set_no_balancing(desc);
+ 			irqd_set(&desc->irq_data, IRQD_NO_BALANCING);
+ 		}
+ 
+-		/* Set default affinity mask once everything is setup */
+-		irq_setup_affinity(desc);
++		if (irq_settings_can_autoenable(desc))
++			irq_startup(desc, true);
++		else
++			/* Undo nested disables: */
++			desc->depth = 1;
+ 
+ 	} else if (new->flags & IRQF_TRIGGER_MASK) {
+ 		unsigned int nmsk = new->flags & IRQF_TRIGGER_MASK;

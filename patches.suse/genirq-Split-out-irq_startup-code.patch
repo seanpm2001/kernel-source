@@ -1,0 +1,77 @@
+From 708d174b6c32bffc5d73793bc7a267bcafeb6558 Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Tue, 20 Jun 2017 01:37:48 +0200
+Subject: [PATCH] genirq: Split out irq_startup() code
+Git-commit: 708d174b6c32bffc5d73793bc7a267bcafeb6558
+Patch-mainline: v4.13-rc1
+References: bsc#1193231
+
+Split out the inner workings of irq_startup() so it can be reused to handle
+managed interrupts gracefully.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Cc: Jens Axboe <axboe@kernel.dk>
+Cc: Marc Zyngier <marc.zyngier@arm.com>
+Cc: Michael Ellerman <mpe@ellerman.id.au>
+Cc: Keith Busch <keith.busch@intel.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Christoph Hellwig <hch@lst.de>
+Link: http://lkml.kernel.org/r/20170619235447.033235144@linutronix.de
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ kernel/irq/chip.c | 29 ++++++++++++++++++-----------
+ 1 file changed, 18 insertions(+), 11 deletions(-)
+
+diff --git a/kernel/irq/chip.c b/kernel/irq/chip.c
+index e290d73b88e2..1163089aa245 100644
+--- a/kernel/irq/chip.c
++++ b/kernel/irq/chip.c
+@@ -195,6 +195,23 @@ static void irq_state_set_started(struct irq_desc *desc)
+ 	irqd_set(&desc->irq_data, IRQD_IRQ_STARTED);
+ }
+ 
++static int __irq_startup(struct irq_desc *desc)
++{
++	struct irq_data *d = irq_desc_get_irq_data(desc);
++	int ret = 0;
++
++	irq_domain_activate_irq(d);
++	if (d->chip->irq_startup) {
++		ret = d->chip->irq_startup(d);
++		irq_state_clr_disabled(desc);
++		irq_state_clr_masked(desc);
++	} else {
++		irq_enable(desc);
++	}
++	irq_state_set_started(desc);
++	return ret;
++}
++
+ int irq_startup(struct irq_desc *desc, bool resend)
+ {
+ 	int ret = 0;
+@@ -204,19 +221,9 @@ int irq_startup(struct irq_desc *desc, bool resend)
+ 	if (irqd_is_started(&desc->irq_data)) {
+ 		irq_enable(desc);
+ 	} else {
+-		irq_domain_activate_irq(&desc->irq_data);
+-		if (desc->irq_data.chip->irq_startup) {
+-			ret = desc->irq_data.chip->irq_startup(&desc->irq_data);
+-			irq_state_clr_disabled(desc);
+-			irq_state_clr_masked(desc);
+-		} else {
+-			irq_enable(desc);
+-		}
+-		irq_state_set_started(desc);
+-		/* Set default affinity mask once everything is setup */
++		ret = __irq_startup(desc);
+ 		irq_setup_affinity(desc);
+ 	}
+-
+ 	if (resend)
+ 		check_irq_resend(desc);
+ 
+-- 
+2.31.1
+

@@ -22,6 +22,8 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  kernel/softirq.c          |  9 +++++++++
  5 files changed, 38 insertions(+), 2 deletions(-)
 
+diff --git a/include/linux/interrupt.h b/include/linux/interrupt.h
+index b6e8164cd1b1..2d6d4806b666 100644
 --- a/include/linux/interrupt.h
 +++ b/include/linux/interrupt.h
 @@ -62,6 +62,7 @@
@@ -40,6 +42,8 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  #define IRQF_TIMER		(__IRQF_TIMER | IRQF_NO_SUSPEND | IRQF_NO_THREAD)
  
+diff --git a/include/linux/irq.h b/include/linux/irq.h
+index 066f8d5cd5c4..1084a499374b 100644
 --- a/include/linux/irq.h
 +++ b/include/linux/irq.h
 @@ -72,6 +72,7 @@ enum irqchip_irq_state;
@@ -66,9 +70,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  #define IRQ_NO_BALANCING_MASK	(IRQ_PER_CPU | IRQ_NO_BALANCING)
  
+diff --git a/kernel/irq/manage.c b/kernel/irq/manage.c
+index 5c0472687ce2..4f7690eecbb2 100644
 --- a/kernel/irq/manage.c
 +++ b/kernel/irq/manage.c
-@@ -915,7 +915,15 @@ irq_forced_thread_fn(struct irq_desc *de
+@@ -912,7 +912,15 @@ irq_forced_thread_fn(struct irq_desc *desc, struct irqaction *action)
  	irq_finalize_oneshot(desc, action);
  	if (!IS_ENABLED(CONFIG_PREEMPT_RT))
  		local_irq_enable();
@@ -85,16 +91,18 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	return ret;
  }
  
-@@ -1395,6 +1403,9 @@ __setup_irq(unsigned int irq, struct irq
+@@ -1380,6 +1388,9 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
  			irqd_set(&desc->irq_data, IRQD_NO_BALANCING);
  		}
  
 +		if (new->flags & IRQF_NO_SOFTIRQ_CALL)
 +			irq_settings_set_no_softirq_call(desc);
 +
- 		/* Set default affinity mask once everything is setup */
- 		setup_affinity(desc, mask);
- 
+ 		if (irq_settings_can_autoenable(desc))
+ 			irq_startup(desc, true);
+ 		else
+diff --git a/kernel/irq/settings.h b/kernel/irq/settings.h
+index 320579d89091..2df2d4445b1e 100644
 --- a/kernel/irq/settings.h
 +++ b/kernel/irq/settings.h
 @@ -16,6 +16,7 @@ enum {
@@ -113,7 +121,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  #undef IRQF_MODIFY_MASK
  #define IRQF_MODIFY_MASK	GOT_YOU_MORON
  
-@@ -40,6 +42,16 @@ irq_settings_clr_and_set(struct irq_desc
+@@ -40,6 +42,16 @@ irq_settings_clr_and_set(struct irq_desc *desc, u32 clr, u32 set)
  	desc->status_use_accessors |= (set & _IRQF_MODIFY_MASK);
  }
  
@@ -130,6 +138,8 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  static inline bool irq_settings_is_per_cpu(struct irq_desc *desc)
  {
  	return desc->status_use_accessors & _IRQ_PER_CPU;
+diff --git a/kernel/softirq.c b/kernel/softirq.c
+index 6c431f0ca1c9..fb0625824682 100644
 --- a/kernel/softirq.c
 +++ b/kernel/softirq.c
 @@ -594,6 +594,15 @@ void __local_bh_enable(void)
@@ -148,3 +158,6 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  int in_serving_softirq(void)
  {
  	return current->flags & PF_IN_SOFTIRQ;
+-- 
+2.26.2
+
