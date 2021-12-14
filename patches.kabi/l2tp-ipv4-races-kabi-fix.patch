@@ -1,0 +1,29 @@
+From: Denis Kirjanov <denis.kirjanov@suse.com>
+Subject: kABI compatibility for struct l2tp_tunnel
+Patch-mainline: Never, kABI compatibility
+References: bsc#1192032 CVE-2021-0935
+
+patches.suse/l2tp-fix-races-with-ipv4-mapped-ipv6-addresses.patch
+removes the element from struct l2tp_tunnel.
+The patch preserves the field to avoid KABI breakage
+
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+
+---
+
+--- a/net/l2tp/l2tp_core.h
++++ b/net/l2tp/l2tp_core.h
+@@ -192,6 +192,13 @@ struct l2tp_tunnel {
+ 	struct sock		*sock;		/* Parent socket */
+ 	int			fd;		/* Parent fd, if tunnel socket
+ 						 * was created by userspace */
++#ifdef __GENKSYMS__
++#if IS_ENABLED(CONFIG_IPV6)
++	bool                    v4mapped;
++#endif
++#else
++	bool                    padding;
++#endif
+ 
+ 	struct work_struct	del_work;
+ 
