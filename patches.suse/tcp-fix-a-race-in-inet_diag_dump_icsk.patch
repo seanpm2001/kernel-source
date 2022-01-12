@@ -3,7 +3,7 @@ Date: Thu, 20 Dec 2018 15:28:56 -0800
 Subject: tcp: fix a race in inet_diag_dump_icsk()
 Git-commit: f0c928d878e7d01b613c9ae5c971a6b1e473a938
 Patch-mainline: v4.20
-References: networking-stable-19_01_04
+References: networking-stable-19_01_04 bsc#1186222
 
 Alexei reported use after frees in inet_diag_dump_icsk() [1]
 
@@ -104,24 +104,19 @@ Acked-by: Jonathan Lemon <jonathan.lemon@gmail.com>
 Signed-off-by: David S. Miller <davem@davemloft.net>
 Signed-off-by: Jiri Slaby <jslaby@suse.cz>
 ---
- net/ipv4/inet_diag.c | 4 +++-
+ net/ipv4/inet_diag.c |    4 +++-
  1 file changed, 3 insertions(+), 1 deletion(-)
 
-diff --git a/net/ipv4/inet_diag.c b/net/ipv4/inet_diag.c
-index 4e5bc4b2f14e..1a4e9ff02762 100644
 --- a/net/ipv4/inet_diag.c
 +++ b/net/ipv4/inet_diag.c
-@@ -998,7 +998,9 @@ void inet_diag_dump_icsk(struct inet_hashinfo *hashinfo, struct sk_buff *skb,
+@@ -965,7 +965,9 @@ next_chunk:
  			if (!inet_diag_bc_sk(bc, sk))
  				goto next_normal;
  
 -			sock_hold(sk);
-+			if (!atomic_add_unless(&sk->sk_refcnt, 1, -1))
++			if (!atomic_inc_not_zero(&sk->sk_refcnt))
 +				goto next_normal;
 +
  			num_arr[accum] = num;
  			sk_arr[accum] = sk;
  			if (++accum == SKARR_SZ)
--- 
-2.20.1
-
