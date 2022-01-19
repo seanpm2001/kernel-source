@@ -1,0 +1,86 @@
+From f42b0e18f2e5cf34f73ef1b6327b49040b307a33 Mon Sep 17 00:00:00 2001
+From: Rob Herring <robh@kernel.org>
+Date: Mon, 27 Aug 2018 07:50:47 -0500
+Subject: [PATCH] of: add node name compare helper functions
+
+References: bsc#1065729
+Patch-mainline: v4.19-rc2
+Git-commit: f42b0e18f2e5cf34f73ef1b6327b49040b307a33
+
+In preparation to remove device_node.name pointer, add helper functions
+for node name comparisons which are a common pattern throughout the kernel.
+
+Cc: Frank Rowand <frowand.list@gmail.com>
+Signed-off-by: Rob Herring <robh@kernel.org>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ drivers/of/base.c  | 22 ++++++++++++++++++++++
+ include/linux/of.h | 13 +++++++++++++
+ 2 files changed, 35 insertions(+)
+
+diff --git a/drivers/of/base.c b/drivers/of/base.c
+--- a/drivers/of/base.c
++++ b/drivers/of/base.c
+@@ -54,6 +54,28 @@ DEFINE_MUTEX(of_mutex);
+  */
+ DEFINE_RAW_SPINLOCK(devtree_lock);
+ 
++bool of_node_name_eq(const struct device_node *np, const char *name)
++{
++	const char *node_name;
++	size_t len;
++
++	if (!np)
++		return false;
++
++	node_name = kbasename(np->full_name);
++	len = strchrnul(node_name, '@') - node_name;
++
++	return (strlen(name) == len) && (strncmp(node_name, name, len) == 0);
++}
++
++bool of_node_name_prefix(const struct device_node *np, const char *prefix)
++{
++	if (!np)
++		return false;
++
++	return strncmp(kbasename(np->full_name), prefix, strlen(prefix)) == 0;
++}
++
+ int of_n_addr_cells(struct device_node *np)
+ {
+ 	const __be32 *ip;
+diff --git a/include/linux/of.h b/include/linux/of.h
+index b99a1a8c2952..688c52dd7b3e 100644
+--- a/include/linux/of.h
++++ b/include/linux/of.h
+@@ -256,6 +256,9 @@ static inline unsigned long of_read_ulong(const __be32 *cell, int size)
+ #define OF_IS_DYNAMIC(x) test_bit(OF_DYNAMIC, &x->_flags)
+ #define OF_MARK_DYNAMIC(x) set_bit(OF_DYNAMIC, &x->_flags)
+ 
++extern bool of_node_name_eq(const struct device_node *np, const char *name);
++extern bool of_node_name_prefix(const struct device_node *np, const char *prefix);
++
+ static inline const char *of_node_full_name(const struct device_node *np)
+ {
+ 	return np ? np->full_name : "<no-node>";
+@@ -563,6 +566,16 @@ static inline struct device_node *to_of_node(const struct fwnode_handle *fwnode)
+ 	return NULL;
+ }
+ 
++static inline bool of_node_name_eq(const struct device_node *np, const char *name)
++{
++	return false;
++}
++
++static inline bool of_node_name_prefix(const struct device_node *np, const char *prefix)
++{
++	return false;
++}
++
+ static inline const char* of_node_full_name(const struct device_node *np)
+ {
+ 	return "<no-node>";
+-- 
+2.31.1
+
