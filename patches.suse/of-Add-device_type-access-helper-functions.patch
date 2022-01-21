@@ -1,0 +1,46 @@
+From 0413bedabc886c3a56804d1c80a58e99077b1d91 Mon Sep 17 00:00:00 2001
+From: Rob Herring <robh@kernel.org>
+Date: Tue, 28 Aug 2018 15:10:48 -0500
+Subject: [PATCH] of: Add device_type access helper functions
+
+References: bsc#1065729
+Patch-mainline: v4.19-rc2
+Git-commit: 0413bedabc886c3a56804d1c80a58e99077b1d91
+
+In preparation to remove direct access to device_node.type, add
+of_node_is_type() and of_node_get_device_type() helpers to check and
+retrieve the device type.
+
+Cc: Frank Rowand <frowand.list@gmail.com>
+Signed-off-by: Rob Herring <robh@kernel.org>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ include/linux/of.h | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/include/linux/of.h b/include/linux/of.h
+index 688c52dd7b3e..99b0ebf49632 100644
+--- a/include/linux/of.h
++++ b/include/linux/of.h
+@@ -988,6 +988,18 @@ static inline struct device_node *of_find_matching_node(
+ 	return of_find_matching_node_and_match(from, matches, NULL);
+ }
+ 
++static inline const char *of_node_get_device_type(const struct device_node *np)
++{
++	return of_get_property(np, "type", NULL);
++}
++
++static inline bool of_node_is_type(const struct device_node *np, const char *type)
++{
++	const char *match = of_node_get_device_type(np);
++
++	return np && match && type && !strcmp(match, type);
++}
++
+ /**
+  * of_property_count_u8_elems - Count the number of u8 elements in a property
+  *
+-- 
+2.31.1
+
