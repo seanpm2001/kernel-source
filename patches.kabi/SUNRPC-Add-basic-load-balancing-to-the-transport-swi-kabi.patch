@@ -1,0 +1,70 @@
+From: NeilBrown <neilb@suse.de>
+Subject: [kabi PATCH for] SUNRPC: Add basic load balancing to the transport switch
+Patch-mainline: Never, kabi
+References: bnc#1192729
+
+These new field are never modified without a strong reference, so once
+the kfree_rcu() is started, they are dead.
+So we can union them with the rcu handle to hide them from any modules.
+
+Signed-off-by: NeilBrown <neilb@suse.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ include/linux/sunrpc/xprt.h          |    8 +++++++-
+ include/linux/sunrpc/xprtmultipath.h |   12 ++++++++++--
+ 2 files changed, 17 insertions(+), 3 deletions(-)
+
+--- a/include/linux/sunrpc/xprt.h
++++ b/include/linux/sunrpc/xprt.h
+@@ -242,7 +242,6 @@ struct rpc_xprt {
+ 	/*
+ 	 * Send stuff
+ 	 */
+-	atomic_long_t		queuelen;
+ 	spinlock_t		transport_lock;	/* lock transport info */
+ 	spinlock_t		reserve_lock;	/* lock slot table */
+ 	spinlock_t		recv_lock;	/* lock receive list */
+@@ -284,7 +283,14 @@ struct rpc_xprt {
+ 	struct dentry		*debugfs;		/* debugfs directory */
+ 	atomic_t		inject_disconnect;
+ #endif
++#ifndef __GENKSYMS__
++	union {
++		struct rcu_head		rcu;
++		atomic_long_t		queuelen;
++	};
++#else
+ 	struct rcu_head		rcu;
++#endif
+ };
+ 
+ #if defined(CONFIG_SUNRPC_BACKCHANNEL)
+--- a/include/linux/sunrpc/xprtmultipath.h
++++ b/include/linux/sunrpc/xprtmultipath.h
+@@ -14,15 +14,23 @@ struct rpc_xprt_switch {
+ 	struct kref		xps_kref;
+ 
+ 	unsigned int		xps_nxprts;
+-	unsigned int		xps_nactive;
+-	atomic_long_t		xps_queuelen;
+ 	struct list_head	xps_xprt_list;
+ 
+ 	struct net *		xps_net;
+ 
+ 	const struct rpc_xprt_iter_ops *xps_iter_ops;
+ 
++#ifndef __GENKSYMS__
++	union {
++		struct {
++			unsigned int		xps_nactive;
++			atomic_long_t		xps_queuelen;
++		};
++		struct rcu_head		xps_rcu;
++	};
++#else
+ 	struct rcu_head		xps_rcu;
++#endif
+ };
+ 
+ struct rpc_xprt_iter {
