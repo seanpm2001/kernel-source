@@ -1,0 +1,43 @@
+From 0c54d7b027ce6820469b7bbf3f242e042def9dba Mon Sep 17 00:00:00 2001
+From: Varad Gautam <varad.gautam@suse.com>
+Date: Fri, 14 Jan 2022 10:27:16 +0100
+Subject: [PATCH] EB: epoll: Use write_lock in ep_poll_callback to avoid prio
+ inversion
+Patch-mainline: Never, downstream fix.
+References: bsc#1188272
+
+EB reported a prio inversion in epoll (bsc#1188272) which is mitigated
+by converting the read_lock in ep_poll_callback to a write_lock.
+
+Link: https://bugzilla.suse.com/show_bug.cgi?id=1188272#c17
+Suggested-by: Frederic Weisbecker <fweisbecker@suse.com>
+
+---
+ fs/eventpoll.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/eventpoll.c b/fs/eventpoll.c
+index c1616a342120..5ead0b241e34 100644
+--- a/fs/eventpoll.c
++++ b/fs/eventpoll.c
+@@ -1221,7 +1221,7 @@ static int ep_poll_callback(wait_queue_entry_t *wait, unsigned mode, int sync, v
+ 	unsigned long flags;
+ 	int ewake = 0;
+ 
+-	read_lock_irqsave(&ep->lock, flags);
++	write_lock_irqsave(&ep->lock, flags);
+ 
+ 	ep_set_busy_poll_napi_id(epi);
+ 
+@@ -1285,7 +1285,7 @@ static int ep_poll_callback(wait_queue_entry_t *wait, unsigned mode, int sync, v
+ 		pwake++;
+ 
+ out_unlock:
+-	read_unlock_irqrestore(&ep->lock, flags);
++	write_unlock_irqrestore(&ep->lock, flags);
+ 
+ 	/* We have to call this outside the lock */
+ 	if (pwake)
+-- 
+2.32.0
+
