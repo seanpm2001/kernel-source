@@ -1,0 +1,69 @@
+From c5e1035c9687025373b7c48a08efb37f5329916b Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <marc.zyngier@arm.com>
+Date: Fri, 9 Mar 2018 14:53:19 +0000
+Subject: [PATCH] irqchip/gic-v2: Reset APRn registers at boot time
+Patch-mainline: v4.17-rc1
+Git-commit: c5e1035c9687025373b7c48a08efb37f5329916b
+References: bsc#1189407
+
+Booting a crash kernel while in an interrupt handler is likely
+to leave the Active Priority Registers with some state that
+is not relevant to the new kernel, and is likely to lead
+to erratic behaviours such as interrupts not firing as their
+priority is already active.
+
+As a sanity measure, wipe the APRs clean on startup.
+
+Signed-off-by: Marc Zyngier <marc.zyngier@arm.com>
+Signed-off-by: Petr Pavlu <petr.pavlu@suse.com>
+---
+ drivers/irqchip/irq-gic.c | 17 +++++++++++------
+ 1 file changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/irqchip/irq-gic.c b/drivers/irqchip/irq-gic.c
+index 121af5cf688f..79801c24800b 100644
+--- a/drivers/irqchip/irq-gic.c
++++ b/drivers/irqchip/irq-gic.c
+@@ -453,15 +453,26 @@ static u8 gic_get_cpumask(struct gic_chip_data *gic)
+ 	return mask;
+ }
+ 
++static bool gic_check_gicv2(void __iomem *base)
++{
++	u32 val = readl_relaxed(base + GIC_CPU_IDENT);
++	return (val & 0xff0fff) == 0x02043B;
++}
++
+ static void gic_cpu_if_up(struct gic_chip_data *gic)
+ {
+ 	void __iomem *cpu_base = gic_data_cpu_base(gic);
+ 	u32 bypass = 0;
+ 	u32 mode = 0;
++	int i;
+ 
+ 	if (gic == &gic_data[0] && static_key_true(&supports_deactivate))
+ 		mode = GIC_CPU_CTRL_EOImodeNS;
+ 
++	if (gic_check_gicv2(cpu_base))
++		for (i = 0; i < 4; i++)
++			writel_relaxed(0, cpu_base + GIC_CPU_ACTIVEPRIO + i * 4);
++
+ 	/*
+ 	* Preserve bypass disable bits to be written back later
+ 	*/
+@@ -1264,12 +1275,6 @@ static int __init gicv2_force_probe_cfg(char *buf)
+ }
+ early_param("irqchip.gicv2_force_probe", gicv2_force_probe_cfg);
+ 
+-static bool gic_check_gicv2(void __iomem *base)
+-{
+-	u32 val = readl_relaxed(base + GIC_CPU_IDENT);
+-	return (val & 0xff0fff) == 0x02043B;
+-}
+-
+ static bool gic_check_eoimode(struct device_node *node, void __iomem **base)
+ {
+ 	struct resource cpuif_res;
+-- 
+2.26.2
+

@@ -88,14 +88,14 @@ Acked-by: Aurelien Aptel <aaptel@suse.com>
  #define   CIFSSEC_MAY_SIGN	0x00001
 --- a/fs/cifs/smb2inode.c
 +++ b/fs/cifs/smb2inode.c
-@@ -308,6 +308,7 @@ smb2_compound_op(const unsigned int xid,
+@@ -310,6 +310,7 @@ smb2_compound_op(const unsigned int xid,
  	if (cfile)
  		goto after_close;
  	/* Close */
 +	flags |= CIFS_CP_CREATE_CLOSE_OP;
- 	memset(&close_iov, 0, sizeof(close_iov));
- 	rqst[num_rqst].rq_iov = close_iov;
+ 	rqst[num_rqst].rq_iov = &vars->close_iov[0];
  	rqst[num_rqst].rq_nvec = 1;
+ 	rc = SMB2_close_init(tcon, &rqst[num_rqst], COMPOUND_FID,
 --- a/fs/cifs/smb2misc.c
 +++ b/fs/cifs/smb2misc.c
 @@ -822,14 +822,14 @@ smb2_handle_cancelled_close(struct cifs_

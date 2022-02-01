@@ -32,27 +32,25 @@ Fixes: 3b24d854cb35 ("tcp/dccp: do not touch listener sk_refcnt under synflood")
 Signed-off-by: Firo Yang <firo.yang@suse.com>
 Signed-off-by: Michal Kubecek <mkubecek@suse.cz>
 ---
- net/ipv4/inet_diag.c       |  5 +++++
- net/ipv4/inet_hashtables.c | 21 ++++++++++++++++++---
- 2 files changed, 23 insertions(+), 3 deletions(-)
+ net/ipv4/inet_diag.c       |  2 ++
+ net/ipv4/inet_hashtables.c | 17 ++++++++++++++---
+ net/ipv4/tcp_ipv4.c        | 13 +++++++++++++
+ 3 files changed, 29 insertions(+), 3 deletions(-)
 
 --- a/net/ipv4/inet_diag.c
 +++ b/net/ipv4/inet_diag.c
-@@ -884,6 +884,11 @@ void inet_diag_dump_icsk(struct inet_hashinfo *hashinfo, struct sk_buff *skb,
+@@ -886,6 +886,8 @@ void inet_diag_dump_icsk(struct inet_hashinfo *hashinfo, struct sk_buff *skb,
  			sk_for_each(sk, &ilb->head) {
  				struct inet_sock *inet = inet_sk(sk);
  
-+				if (unlikely(is_a_nulls(&sk->sk_nulls_node))) {
-+					pr_info("%s: bsc#1180624 race encountered\n",
-+						__func__);
++				if (unlikely(is_a_nulls(&sk->sk_nulls_node)))
 +					break;
-+				}
  				if (!net_eq(sock_net(sk), net))
  					continue;
  
 --- a/net/ipv4/inet_hashtables.c
 +++ b/net/ipv4/inet_hashtables.c
-@@ -212,12 +212,23 @@ struct sock *__inet_lookup_listener(struct net *net,
+@@ -213,12 +213,21 @@ struct sock *__inet_lookup_listener(struct net *net,
  {
  	unsigned int hash = inet_lhashfn(net, hnum);
  	struct inet_listen_hashbucket *ilb = &hashinfo->listening_hash[hash];
@@ -72,21 +70,67 @@ Signed-off-by: Michal Kubecek <mkubecek@suse.cz>
 +	phash = 0;
  
  	sk_for_each_rcu(sk, &ilb->head) {
-+		if (unlikely(is_a_nulls(&sk->sk_nulls_node))) {
-+			pr_info("%s: bsc#1180624 race encountered\n", __func__);
++		if (unlikely(is_a_nulls(&sk->sk_nulls_node)))
 +			goto begin;
-+		}
  		score = compute_score(sk, net, hnum, daddr, dif, exact_dif);
  		if (score > hiscore) {
  			reuseport = sk->sk_reuseport;
-@@ -283,6 +294,10 @@ struct sock *__inet_lookup_established(struct net *net,
+@@ -284,6 +293,8 @@ struct sock *__inet_lookup_established(struct net *net,
  
  begin:
  	sk_nulls_for_each_rcu(sk, node, &head->chain) {
-+		if (unlikely(!node)) {
-+			pr_info("%s: bsc#1151794 race encountered\n", __func__);
++		if (unlikely(!node))
 +			goto begin;
-+		}
  		if (sk->sk_hash != hash)
  			continue;
  		if (likely(INET_MATCH(sk, net, acookie,
+--- a/net/ipv4/tcp_ipv4.c
++++ b/net/ipv4/tcp_ipv4.c
+@@ -1924,13 +1924,18 @@ static void *listening_get_next(struct seq_file *seq, void *cur)
+ 	++st->offset;
+ 
+ 	sk = sk_next(sk);
++	if (unlikely(is_a_nulls(&sk->sk_nulls_node)))
++		goto next;
+ get_sk:
+ 	sk_for_each_from(sk) {
++		if (unlikely(is_a_nulls(&sk->sk_nulls_node)))
++			break;
+ 		if (!net_eq(sock_net(sk), net))
+ 			continue;
+ 		if (sk->sk_family == st->family)
+ 			return sk;
+ 	}
++next:
+ 	spin_unlock(&ilb->lock);
+ 	st->offset = 0;
+ 	if (++st->bucket < INET_LHTABLE_SIZE)
+@@ -1980,7 +1985,10 @@ static void *established_get_first(struct seq_file *seq)
+ 			continue;
+ 
+ 		spin_lock_bh(lock);
++retry:
+ 		sk_nulls_for_each(sk, node, &tcp_hashinfo.ehash[st->bucket].chain) {
++			if (unlikely(!node))
++				goto retry;
+ 			if (sk->sk_family != st->family ||
+ 			    !net_eq(sock_net(sk), net)) {
+ 				continue;
+@@ -2005,12 +2013,17 @@ static void *established_get_next(struct seq_file *seq, void *cur)
+ 	++st->offset;
+ 
+ 	sk = sk_nulls_next(sk);
++	if (!&sk->sk_node)
++		goto next;
+ 
+ 	sk_nulls_for_each_from(sk, node) {
++		if (unlikely(!node))
++			break;
+ 		if (sk->sk_family == st->family && net_eq(sock_net(sk), net))
+ 			return sk;
+ 	}
+ 
++next:
+ 	spin_unlock_bh(inet_ehash_lockp(&tcp_hashinfo, st->bucket));
+ 	++st->bucket;
+ 	return established_get_first(seq);

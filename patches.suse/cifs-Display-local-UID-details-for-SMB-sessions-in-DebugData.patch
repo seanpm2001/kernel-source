@@ -1,0 +1,34 @@
+From: Paul Aurich <paul@darkrain42.org>
+Date: Fri, 26 Jun 2020 12:58:04 -0700
+Subject: [PATCH] cifs: Display local UID details for SMB sessions in DebugData
+Git-commit: aadd69cad07b4afe9e4c260bfcfcd954c6e696e1
+References: bsc#1190317
+Patch-mainline: v5.8-rc4
+
+This is useful for distinguishing SMB sessions on a multiuser mount.
+
+[ ematsumiya: refresh for context adjustment ]
+
+Signed-off-by: Paul Aurich <paul@darkrain42.org>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/cifs_debug.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -391,7 +391,11 @@ skip_rdma:
+ 			if (ses->sign)
+ 				seq_puts(m, " signed");
+ 
+-			seq_puts(m, "\n\tShares:");
++			seq_printf(m, "\n\tUser: %d Cred User: %d",
++				   from_kuid(&init_user_ns, ses->linux_uid),
++				   from_kuid(&init_user_ns, ses->cred_uid));
++
++			seq_puts(m, "\n\n\tShares:");
+ 			j = 0;
+ 
+ 			seq_printf(m, "\n\t%d) IPC: ", j);

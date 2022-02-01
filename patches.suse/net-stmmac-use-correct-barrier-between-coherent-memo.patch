@@ -1,0 +1,57 @@
+From 1d8fccab29cab59dd75518f5f61209080e1443c7 Mon Sep 17 00:00:00 2001
+From: Niklas Cassel <niklas.cassel@axis.com>
+Date: Mon, 26 Feb 2018 22:47:07 +0100
+Subject: [PATCH 20/21] net: stmmac: use correct barrier between coherent
+ memory and MMIO
+Git-commit: 95eb930a40a0973f9b984d87a4986bb81f897ede
+Patch-mainline: v4.17-rc1
+References: git-fixes
+
+The last memory barrier in stmmac_xmit()/stmmac_tso_xmit() is placed
+between a coherent memory write and a MMIO write:
+
+The own bit is written in First Desc (TSO: MSS desc or First Desc).
+<barrier>
+The DMA engine is started by a write to the tx desc tail pointer/
+enable dma transmission register, i.e. a MMIO write.
+
+This barrier cannot be a simple dma_wmb(), since a dma_wmb() is only
+used to guarantee the ordering, with respect to other writes,
+to cache coherent DMA memory.
+
+To guarantee that the cache coherent memory writes have completed
+before we attempt to write to the cache incoherent MMIO region,
+we need to use the more heavyweight barrier wmb().
+
+Signed-off-by: Niklas Cassel <niklas.cassel@axis.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/stmmac_main.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+index cd54ca7ebe06..23fd6c22778c 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+@@ -2985,7 +2985,7 @@ static netdev_tx_t stmmac_tso_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	 * descriptor and then barrier is needed to make sure that
+ 	 * all is coherent before granting the DMA engine.
+ 	 */
+-	dma_wmb();
++	wmb();
+ 
+ 	if (netif_msg_pktdata(priv)) {
+ 		pr_info("%s: curr=%d dirty=%d f=%d, e=%d, f_p=%p, nfrags %d\n",
+@@ -3214,7 +3214,7 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
+ 		 * descriptor and then barrier is needed to make sure that
+ 		 * all is coherent before granting the DMA engine.
+ 		 */
+-		dma_wmb();
++		wmb();
+ 	}
+ 
+ 	netdev_tx_sent_queue(netdev_get_tx_queue(dev, queue), skb->len);
+-- 
+2.16.4
+

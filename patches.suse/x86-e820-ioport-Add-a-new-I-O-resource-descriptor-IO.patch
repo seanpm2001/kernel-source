@@ -1,0 +1,84 @@
+From: Lianbo Jiang <lijiang@redhat.com>
+Date: Tue, 23 Apr 2019 09:30:05 +0800
+Subject: [PATCH] x86/e820, ioport: Add a new I/O resource descriptor
+ IORES_DESC_RESERVED
+Patch-mainline: v5.3-rc1
+Git-commit: ae9e13d621d6795ec1ad6bf10bd2549c6c3feca4 
+References: bsc#1181193
+
+When executing the kexec_file_load() syscall, the first kernel needs to
+pass the e820 reserved ranges to the second kernel because some devices
+(PCI, for example) need them present in the kdump kernel for proper
+initialization.
+
+But the kernel can not exactly match the e820 reserved ranges when
+walking through the iomem resources using the default IORES_DESC_NONE
+descriptor, because there are several types of e820 ranges which are
+marked IORES_DESC_NONE, see e820_type_to_iores_desc().
+
+Therefore, add a new I/O resource descriptor called IORES_DESC_RESERVED
+to mark exactly those ranges. It will be used to match the reserved
+resource ranges when walking through iomem resources.
+
+ [ bp: Massage commit message. ]
+
+Suggested-by: Borislav Petkov <bp@suse.de>
+Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Cc: Andrew Morton <akpm@linux-foundation.org>
+Cc: Andy Lutomirski <luto@amacapital.net>
+Cc: bhe@redhat.com
+Cc: dave.hansen@linux.intel.com
+Cc: dyoung@redhat.com
+Cc: "H. Peter Anvin" <hpa@zytor.com>
+Cc: Huang Zijiang <huang.zijiang@zte.com.cn>
+Cc: Ingo Molnar <mingo@redhat.com>
+Cc: Joe Perches <joe@perches.com>
+Cc: Juergen Gross <jgross@suse.com>
+Cc: kexec@lists.infradead.org
+Cc: Masayoshi Mizuma <m.mizuma@jp.fujitsu.com>
+Cc: Michal Hocko <mhocko@suse.com>
+Cc: Mike Rapoport <rppt@linux.ibm.com>
+Cc: Naoya Horiguchi <n-horiguchi@ah.jp.nec.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: Tom Lendacky <thomas.lendacky@amd.com>
+Cc: x86-ml <x86@kernel.org>
+Link: https://lkml.kernel.org/r/20190423013007.17838-2-lijiang@redhat.com
+Acked-by: Lee, Chun-Yi <jlee@suse.com>
+---
+ arch/x86/kernel/e820.c | 2 +-
+ include/linux/ioport.h | 1 +
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kernel/e820.c b/arch/x86/kernel/e820.c
+index 8f32e705a980..e69408bf664b 100644
+--- a/arch/x86/kernel/e820.c
++++ b/arch/x86/kernel/e820.c
+@@ -1063,10 +1063,10 @@ static unsigned long __init e820_type_to_iores_desc(struct e820_entry *entry)
+ 	case E820_TYPE_NVS:		return IORES_DESC_ACPI_NV_STORAGE;
+ 	case E820_TYPE_PMEM:		return IORES_DESC_PERSISTENT_MEMORY;
+ 	case E820_TYPE_PRAM:		return IORES_DESC_PERSISTENT_MEMORY_LEGACY;
++	case E820_TYPE_RESERVED:	return IORES_DESC_RESERVED;
+ 	case E820_TYPE_RESERVED_KERN:	/* Fall-through: */
+ 	case E820_TYPE_RAM:		/* Fall-through: */
+ 	case E820_TYPE_UNUSABLE:	/* Fall-through: */
+-	case E820_TYPE_RESERVED:	/* Fall-through: */
+ 	default:			return IORES_DESC_NONE;
+ 	}
+ }
+diff --git a/include/linux/ioport.h b/include/linux/ioport.h
+index da0ebaec25f0..6ed59de48bd5 100644
+--- a/include/linux/ioport.h
++++ b/include/linux/ioport.h
+@@ -133,6 +133,7 @@ enum {
+ 	IORES_DESC_PERSISTENT_MEMORY_LEGACY	= 5,
+ 	IORES_DESC_DEVICE_PRIVATE_MEMORY	= 6,
+ 	IORES_DESC_DEVICE_PUBLIC_MEMORY		= 7,
++	IORES_DESC_RESERVED			= 8,
+ };
+ 
+ /* helpers to define resources */
+-- 
+2.26.2
+

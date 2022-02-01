@@ -1,0 +1,64 @@
+From: Shyam Prasad N <sprasad@microsoft.com>
+Date: Sat, 6 Nov 2021 11:31:53 +0000
+Subject: [PATCH] cifs: nosharesock should not share socket with future
+ sessions
+Git-commit: c9f1c19cf7c50949885fa5afdb2cb242d61a7fac
+References: bsc#1190317
+Patch-mainline: v5.16-rc1
+
+Today, when a new mount is done with nosharesock, we ensure
+that we don't select an existing matching session. However,
+we don't mark the connection as nosharesock, which means that
+those could be shared with future sessions.
+
+Fixed it with this commit. Also printing this info in DebugData.
+
+Signed-off-by: Shyam Prasad N <sprasad@microsoft.com>
+Reviewed-by: Paulo Alcantara (SUSE) <pc@cjr.nz>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/cifs_debug.c |    2 ++
+ fs/cifs/cifsglob.h   |    1 +
+ fs/cifs/connect.c    |    8 +++++++-
+ 3 files changed, 10 insertions(+), 1 deletion(-)
+
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -336,6 +336,8 @@ skip_rdma:
+ 			seq_printf(m, " signed");
+ 		if (server->posix_ext_supported)
+ 			seq_printf(m, " posix");
++		if (server->nosharesock)
++			seq_printf(m, " nosharesock");
+ 
+ 		i++;
+ 		list_for_each(tmp2, &server->smb_ses_list) {
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -696,6 +696,7 @@ struct TCP_Server_Info {
+ 	struct list_head pending_mid_q;
+ 	bool noblocksnd;		/* use blocking sendmsg */
+ 	bool noautotune;		/* do not autotune send buf sizes */
++	bool nosharesock;
+ 	bool tcp_nodelay;
+ 	unsigned int credits;  /* send no more requests at once */
+ 	unsigned int max_credits; /* can override large 32000 default at mnt */
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -2658,8 +2658,14 @@ static int match_server(struct TCP_Serve
+ {
+ 	struct sockaddr *addr = (struct sockaddr *)&vol->dstaddr;
+ 
+-	if (vol->nosharesock)
++	if (vol->nosharesock) {
++		server->nosharesock = true;
+ 		return 0;
++	}
++
++	/* this server does not share socket */
++	if (server->nosharesock)
++ 		return 0;
+ 
+ 	/* If multidialect negotiation see if existing sessions match one */
+ 	if (strcmp(vol->vals->version_string, SMB3ANY_VERSION_STRING) == 0) {

@@ -30,15 +30,18 @@ Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
 Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
 Acked-by: Borislav Petkov <bp@suse.de>
 ---
- kernel/resource.c |   19 +++++++++----------
- 1 file changed, 9 insertions(+), 10 deletions(-)
+ kernel/resource.c |   18 +++++++++---------
+ 1 file changed, 9 insertions(+), 9 deletions(-)
 
 --- a/kernel/resource.c
 +++ b/kernel/resource.c
-@@ -389,17 +389,16 @@ static int find_next_iomem_res(struct re
+@@ -392,16 +392,16 @@ static int find_next_iomem_res(resource_
  			break;
  	}
  
+-	read_unlock(&resource_lock);
+-	if (!p)
+-		return -1;
 +	if (p) {
 +		/* copy data */
 +		res->start = max(start, p->start);
@@ -46,19 +49,15 @@ Acked-by: Borislav Petkov <bp@suse.de>
 +		res->flags = p->flags;
 +		res->desc = p->desc;
 +	}
-+
- 	read_unlock(&resource_lock);
--	if (!p)
--		return -1;
+ 
 -	/* copy data */
--	if (res->start < p->start)
--		res->start = p->start;
--	if (res->end > p->end)
--		res->end = p->end;
+-	res->start = max(start, p->start);
+-	res->end = min(end, p->end);
 -	res->flags = p->flags;
 -	res->desc = p->desc;
 -	return 0;
++	read_unlock(&resource_lock);
 +	return p ? 0 : -ENODEV;
  }
  
- static int __walk_iomem_res_desc(struct resource *res, unsigned long desc,
+ static int __walk_iomem_res_desc(resource_size_t start, resource_size_t end,

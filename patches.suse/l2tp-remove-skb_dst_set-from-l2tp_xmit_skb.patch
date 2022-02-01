@@ -37,13 +37,13 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
 
 --- a/net/l2tp/l2tp_core.c
 +++ b/net/l2tp/l2tp_core.c
-@@ -1065,6 +1065,7 @@ static int l2tp_xmit_core(struct l2tp_se
+@@ -1072,6 +1072,7 @@ static int l2tp_xmit_core(struct l2tp_se
  
  	/* Queue the packet to IP for output */
  	skb->ignore_df = 1;
 +	skb_dst_drop(skb);
  #if IS_ENABLED(CONFIG_IPV6)
- 	if (tunnel->sock->sk_family == PF_INET6 && !tunnel->v4mapped)
+ 	if (l2tp_sk_is_v6(tunnel->sock))
  		error = inet6_csk_xmit(tunnel->sock, skb, NULL);
 @@ -1129,10 +1130,6 @@ int l2tp_xmit_skb(struct l2tp_session *s
  		goto out_unlock;

@@ -1,0 +1,125 @@
+From: Paolo Abeni <pabeni@redhat.com>
+Date: Wed, 10 Apr 2019 14:32:40 +0200
+Subject: net: sched: when clearing NOLOCK, clear TCQ_F_CPUSTATS, too
+Patch-mainline: v5.2-rc1
+Git-commit: 8a53e616de294873fec1a75ddb77ecb3d225cee0
+References: bsc#1183405
+
+Since stats updating is always consistent with TCQ_F_CPUSTATS flag,
+we can disable it at qdisc creation time flipping such bit.
+
+In my experiments, if the NOLOCK flag is cleared, per CPU stats
+accounting does not give any measurable performance gain, but it
+waste some memory.
+
+Let's clear TCQ_F_CPUSTATS together with NOLOCK, when enslaving
+a NOLOCK qdisc to 'lock' one.
+
+Use stats update helper inside pfifo_fast, to cope correctly with
+TCQ_F_CPUSTATS flag change.
+
+As a side effect, q.qlen value for any child qdiscs is always
+consistent for all lock classfull qdiscs.
+
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Michal Kubecek <mkubecek@suse.cz>
+
+---
+ include/net/sch_generic.h | 26 ++++++++++++++++++++++++++
+ net/sched/sch_api.c       | 15 ++++++++++++++-
+ net/sched/sch_generic.c   | 10 ++--------
+ 3 files changed, 42 insertions(+), 9 deletions(-)
+
+--- a/include/net/sch_generic.h
++++ b/include/net/sch_generic.h
+@@ -1011,6 +1011,32 @@ static inline struct sk_buff *qdisc_peek_dequeued(struct Qdisc *sch)
+ 	return skb;
+ }
+ 
++static inline void qdisc_update_stats_at_dequeue(struct Qdisc *sch,
++						 struct sk_buff *skb)
++{
++	if (qdisc_is_percpu_stats(sch)) {
++		qdisc_qstats_cpu_backlog_dec(sch, skb);
++		qdisc_bstats_cpu_update(sch, skb);
++		qdisc_qstats_atomic_qlen_dec(sch);
++	} else {
++		qdisc_qstats_backlog_dec(sch, skb);
++		qdisc_bstats_update(sch, skb);
++		sch->q.qlen--;
++	}
++}
++
++static inline void qdisc_update_stats_at_enqueue(struct Qdisc *sch,
++						 unsigned int pkt_len)
++{
++	if (qdisc_is_percpu_stats(sch)) {
++		qdisc_qstats_atomic_qlen_inc(sch);
++		this_cpu_add(sch->cpu_qstats->backlog, pkt_len);
++	} else {
++		sch->qstats.backlog += pkt_len;
++		sch->q.qlen++;
++	}
++}
++
+ /* use instead of qdisc->dequeue() for all qdiscs queried with ->peek() */
+ static inline struct sk_buff *qdisc_dequeue_peeked(struct Qdisc *sch)
+ {
+--- a/net/sched/sch_api.c
++++ b/net/sched/sch_api.c
+@@ -941,6 +941,19 @@ static void notify_and_destroy(struct net *net, struct sk_buff *skb,
+ 		qdisc_put(old);
+ }
+ 
++static void qdisc_clear_nolock(struct Qdisc *sch)
++{
++	sch->flags &= ~TCQ_F_NOLOCK;
++	if (!(sch->flags & TCQ_F_CPUSTATS))
++		return;
++
++	free_percpu(sch->cpu_bstats);
++	free_percpu(sch->cpu_qstats);
++	sch->cpu_bstats = NULL;
++	sch->cpu_qstats = NULL;
++	sch->flags &= ~TCQ_F_CPUSTATS;
++}
++
+ /* Graft qdisc "new" to class "classid" of qdisc "parent" or
+  * to device "dev".
+  *
+@@ -1016,7 +1029,7 @@ static int qdisc_graft(struct net_device *dev, struct Qdisc *parent,
+ 		/* Only support running class lockless if parent is lockless */
+ 		if (new && (new->flags & TCQ_F_NOLOCK) &&
+ 		    parent && !(parent->flags & TCQ_F_NOLOCK))
+-			new->flags &= ~TCQ_F_NOLOCK;
++			qdisc_clear_nolock(new);
+ 
+ 		err = -EOPNOTSUPP;
+ 		if (cops && cops->graft) {
+--- a/net/sched/sch_generic.c
++++ b/net/sched/sch_generic.c
+@@ -631,11 +631,7 @@ static int pfifo_fast_enqueue(struct sk_buff *skb, struct Qdisc *qdisc,
+ 	if (unlikely(err))
+ 		return qdisc_drop_cpu(skb, qdisc, to_free);
+ 
+-	qdisc_qstats_atomic_qlen_inc(qdisc);
+-	/* Note: skb can not be used after skb_array_produce(),
+-	 * so we better not use qdisc_qstats_cpu_backlog_inc()
+-	 */
+-	this_cpu_add(qdisc->cpu_qstats->backlog, pkt_len);
++	qdisc_update_stats_at_enqueue(qdisc, pkt_len);
+ 	return NET_XMIT_SUCCESS;
+ }
+ 
+@@ -654,9 +650,7 @@ static struct sk_buff *pfifo_fast_dequeue(struct Qdisc *qdisc)
+ 		skb = __skb_array_consume(q);
+ 	}
+ 	if (likely(skb)) {
+-		qdisc_qstats_cpu_backlog_dec(qdisc, skb);
+-		qdisc_bstats_cpu_update(qdisc, skb);
+-		qdisc_qstats_atomic_qlen_dec(qdisc);
++		qdisc_update_stats_at_dequeue(qdisc, skb);
+ 	} else {
+ 		qdisc->empty = true;
+ 	}

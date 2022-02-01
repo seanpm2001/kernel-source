@@ -1,0 +1,99 @@
+From: Baokun Li <libaokun1@huawei.com>
+Date: Thu, 17 Jun 2021 19:36:40 +0800
+Subject: [PATCH] cifs: convert list_for_each to entry variant in cifs_debug.c
+Git-commit: a506ccb47c9e93fde843532670a7805452bf699b
+References: bsc#1190317
+Patch-mainline: v5.13
+
+convert list_for_each() to list_for_each_entry() where
+applicable.
+
+Reported-by: Hulk Robot <hulkci@huawei.com>
+Signed-off-by: Baokun Li <libaokun1@huawei.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/cifs_debug.c | 24 +++++++-----------------
+ 1 file changed, 7 insertions(+), 17 deletions(-)
+
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -61,7 +61,6 @@ void cifs_dump_detail(void *buf, struct
+ void cifs_dump_mids(struct TCP_Server_Info *server)
+ {
+ #ifdef CONFIG_CIFS_DEBUG2
+-	struct list_head *tmp;
+ 	struct mid_q_entry *mid_entry;
+ 
+ 	if (server == NULL)
+@@ -69,8 +68,7 @@ void cifs_dump_mids(struct TCP_Server_In
+ 
+ 	cifs_dbg(VFS, "Dump pending requests:\n");
+ 	spin_lock(&GlobalMid_Lock);
+-	list_for_each(tmp, &server->pending_mid_q) {
+-		mid_entry = list_entry(tmp, struct mid_q_entry, qhead);
++	list_for_each_entry(mid_entry, &server->pending_mid_q, qhead) {
+ 		cifs_dbg(VFS, "State: %d Cmd: %d Pid: %d Cbdata: %p Mid %llu\n",
+ 			 mid_entry->mid_state,
+ 			 le16_to_cpu(mid_entry->command),
+@@ -155,7 +153,7 @@ cifs_dump_iface(struct seq_file *m, stru
+ 
+ static int cifs_debug_files_proc_show(struct seq_file *m, void *v)
+ {
+-	struct list_head *stmp, *tmp, *tmp1, *tmp2;
++	struct list_head *tmp, *tmp1, *tmp2;
+ 	struct TCP_Server_Info *server;
+ 	struct cifs_ses *ses;
+ 	struct cifs_tcon *tcon;
+@@ -170,9 +168,7 @@ static int cifs_debug_files_proc_show(st
+ 	seq_printf(m, " <filename>\n");
+ #endif /* CIFS_DEBUG2 */
+ 	spin_lock(&cifs_tcp_ses_lock);
+-	list_for_each(stmp, &cifs_tcp_ses_list) {
+-		server = list_entry(stmp, struct TCP_Server_Info,
+-				    tcp_ses_list);
++	list_for_each_entry(server, &cifs_tcp_ses_list, tcp_ses_list) {
+ 		list_for_each(tmp, &server->smb_ses_list) {
+ 			ses = list_entry(tmp, struct cifs_ses, smb_ses_list);
+ 			list_for_each(tmp1, &ses->tcon_list) {
+@@ -207,7 +203,7 @@ static int cifs_debug_files_proc_show(st
+ 
+ static int cifs_debug_data_proc_show(struct seq_file *m, void *v)
+ {
+-	struct list_head *tmp1, *tmp2, *tmp3;
++	struct list_head *tmp2, *tmp3;
+ 	struct mid_q_entry *mid_entry;
+ 	struct TCP_Server_Info *server;
+ 	struct cifs_ses *ses;
+@@ -261,10 +257,7 @@ static int cifs_debug_data_proc_show(str
+ 
+ 	i = 0;
+ 	spin_lock(&cifs_tcp_ses_lock);
+-	list_for_each(tmp1, &cifs_tcp_ses_list) {
+-		server = list_entry(tmp1, struct TCP_Server_Info,
+-				    tcp_ses_list);
+-
++	list_for_each_entry(server, &cifs_tcp_ses_list, tcp_ses_list) {
+ #ifdef CONFIG_CIFS_SMB_DIRECT
+ 		if (!server->rdma)
+ 			goto skip_rdma;
+@@ -528,7 +521,7 @@ static int cifs_stats_proc_show(struct s
+ #ifdef CONFIG_CIFS_STATS2
+ 	int j;
+ #endif /* STATS2 */
+-	struct list_head *tmp1, *tmp2, *tmp3;
++	struct list_head *tmp2, *tmp3;
+ 	struct TCP_Server_Info *server;
+ 	struct cifs_ses *ses;
+ 	struct cifs_tcon *tcon;
+@@ -559,9 +552,7 @@ static int cifs_stats_proc_show(struct s
+ 
+ 	i = 0;
+ 	spin_lock(&cifs_tcp_ses_lock);
+-	list_for_each(tmp1, &cifs_tcp_ses_list) {
+-		server = list_entry(tmp1, struct TCP_Server_Info,
+-				    tcp_ses_list);
++	list_for_each_entry(server, &cifs_tcp_ses_list, tcp_ses_list) {
+ 		seq_printf(m, "\nMax requests in flight: %d", server->max_in_flight);
+ #ifdef CONFIG_CIFS_STATS2
+ 		seq_puts(m, "\nTotal time spent processing by command. Time ");

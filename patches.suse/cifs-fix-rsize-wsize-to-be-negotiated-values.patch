@@ -1,0 +1,38 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Tue, 15 Dec 2020 13:28:50 -0600
+Subject: [PATCH] cifs: fix rsize/wsize to be negotiated values
+Git-commit: 0c2b5f7ce50c24099e8ed7d35936e89fe9ca26ff
+References: bsc#1190317
+Patch-mainline: v5.11-rc1
+
+Also make sure these are displayed in /proc/mounts
+
+[ ematsumiya: context adjustment, remove changes to cifsfs.c ]
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -4281,8 +4281,18 @@ static int mount_get_conns(struct smb_vo
+ 		}
+ 	}
+ 
+-	cifs_sb->wsize = server->ops->negotiate_wsize(tcon, vol);
+-	cifs_sb->rsize = server->ops->negotiate_rsize(tcon, vol);
++
++ 	/*
++ 	 * Clamp the rsize/wsize mount arguments if they are too big for the server
++	 * and set the rsize/wsize to the negotiated values if not passed in by
++	 * the user on mount
++ 	 */
++	if ((cifs_sb->wsize == 0) ||
++	    (cifs_sb->wsize > server->ops->negotiate_wsize(tcon, vol)))
++		cifs_sb->wsize = server->ops->negotiate_wsize(tcon, vol);
++	if ((cifs_sb->rsize == 0) ||
++	    (cifs_sb->rsize > server->ops->negotiate_rsize(tcon, vol)))
++		cifs_sb->rsize = server->ops->negotiate_rsize(tcon, vol);
+ 
+ 	return 0;
+ }

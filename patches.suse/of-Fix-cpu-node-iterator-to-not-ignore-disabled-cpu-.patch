@@ -1,0 +1,44 @@
+From c961cb3be9064d1097ccc019390f8b5739daafc6 Mon Sep 17 00:00:00 2001
+From: Rob Herring <robh@kernel.org>
+Date: Wed, 31 Oct 2018 09:28:06 -0500
+Subject: [PATCH] of: Fix cpu node iterator to not ignore disabled cpu nodes
+
+References: bsc#1065729
+Patch-mainline: v4.20-rc1
+Git-commit: c961cb3be9064d1097ccc019390f8b5739daafc6
+
+In most cases, nodes with 'status = "disabled";' are treated as if the
+node is not present though it is a common bug to forget to check that.
+However, cpu nodes are different in that "disabled" simply means offline
+and the OS can bring the CPU core online. Commit f1f207e43b8a ("of: Add
+cpu node iterator for_each_of_cpu_node()") followed the common behavior
+of ignoring disabled cpu nodes. This breaks some powerpc systems (at
+least NXP P50XX/e5500). Fix this by dropping the status check.
+
+Fixes: 651d44f9679c ("of: use for_each_of_cpu_node iterator")
+Fixes: f1f207e43b8a ("of: Add cpu node iterator for_each_of_cpu_node()")
+Reported-by: Christian Zigotzky <chzigotzky@xenosoft.de>
+Tested-by: Michael Ellerman <mpe@ellerman.id.au>
+Cc: Frank Rowand <frowand.list@gmail.com>
+Signed-off-by: Rob Herring <robh@kernel.org>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ drivers/of/base.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/drivers/of/base.c b/drivers/of/base.c
+index cc62da278663..e47c5ce6cd58 100644
+--- a/drivers/of/base.c
++++ b/drivers/of/base.c
+@@ -776,8 +776,6 @@ struct device_node *of_get_next_cpu_node(struct device_node *prev)
+ 		if (!(of_node_name_eq(next, "cpu") ||
+ 		      (next->type && !of_node_cmp(next->type, "cpu"))))
+ 			continue;
+-		if (!__of_device_is_available(next))
+-			continue;
+ 		if (of_node_get(next))
+ 			break;
+ 	}
+-- 
+2.31.1
+

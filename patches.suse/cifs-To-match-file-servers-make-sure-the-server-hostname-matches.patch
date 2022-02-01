@@ -1,0 +1,104 @@
+From: Shyam Prasad N <sprasad@microsoft.com>
+Date: Thu, 14 Oct 2021 11:52:39 +0000
+Subject: [PATCH] cifs: To match file servers, make sure the server hostname
+ matches
+Git-commit: 7be3248f313930ff3d3436d4e9ddbe9fccc1f541
+References: bsc#1190317
+Patch-mainline: v5.16-rc1
+
+We generally rely on a bunch of factors to differentiate between servers.
+For example, IP address, port etc.
+
+For certain server types (like Azure), it is important to make sure
+that the server hostname matches too, even if the both hostnames currently
+resolve to the same IP address.
+
+Signed-off-by: Shyam Prasad N <sprasad@microsoft.com>
+Cc: stable@vger.kernel.org
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/cifsglob.h |    1 +
+ fs/cifs/connect.c  |   23 +++++++++++++++--------
+ 2 files changed, 16 insertions(+), 8 deletions(-)
+
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -545,6 +545,7 @@ struct smb_version_values {
+ struct smb_vol {
+ 	char *username;
+ 	char *password;
++	char *server_hostname;
+ 	char *domainname;
+ 	char *UNC;
+ 	char *iocharset;  /* local code page for mapping to and from Unicode */
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -1041,7 +1041,6 @@ static void clean_demultiplex_info(struc
+ 		 */
+ 	}
+ 
+-	kfree(server->hostname);
+ 	kfree(server);
+ 
+ 	length = atomic_dec_return(&tcpSesAllocCount);
+@@ -1584,6 +1583,10 @@ cifs_parse_devname(const char *devname,
+ 	if (!pos)
+ 		return -EINVAL;
+ 
++	vol->server_hostname = kstrndup(devname + 2, pos - devname - 2, GFP_KERNEL);
++	if (!vol->server_hostname)
++		return -ENOMEM;
++
+ 	/* skip past delimiter */
+ 	++pos;
+ 
+@@ -2672,6 +2675,9 @@ static int match_server(struct TCP_Serve
+ 	if (!net_eq(cifs_net_ns(server), current->nsproxy->net_ns))
+ 		return 0;
+ 
++	if (strcasecmp(server->hostname, vol->server_hostname))
++		return 0;
++
+ 	if (!match_address(server, addr,
+ 			   (struct sockaddr *)&vol->srcaddr))
+ 		return 0;
+@@ -2769,6 +2775,7 @@ cifs_put_tcp_session(struct TCP_Server_I
+ 	kfree(server->session_key.response);
+ 	server->session_key.response = NULL;
+ 	server->session_key.len = 0;
++	kfree(server->hostname);
+ 
+ 	task = xchg(&server->tsk, NULL);
+ 	if (task)
+@@ -2794,14 +2801,15 @@ cifs_get_tcp_session(struct smb_vol *vol
+ 		goto out_err;
+ 	}
+ 
++	tcp_ses->hostname = kstrdup(volume_info->server_hostname, GFP_KERNEL);
++	if (!tcp_ses->hostname) {
++		rc = -ENOMEM;
++		goto out_err;
++	}
++
+ 	tcp_ses->ops = volume_info->ops;
+ 	tcp_ses->vals = volume_info->vals;
+ 	cifs_set_net_ns(tcp_ses, get_net(current->nsproxy->net_ns));
+-	tcp_ses->hostname = extract_hostname(volume_info->UNC);
+-	if (IS_ERR(tcp_ses->hostname)) {
+-		rc = PTR_ERR(tcp_ses->hostname);
+-		goto out_err_crypto_release;
+-	}
+ 
+ 	tcp_ses->noblocksnd = volume_info->noblocksnd;
+ 	tcp_ses->noautotune = volume_info->noautotune;
+@@ -2919,8 +2927,7 @@ out_err_crypto_release:
+ 
+ out_err:
+ 	if (tcp_ses) {
+-		if (!IS_ERR(tcp_ses->hostname))
+-			kfree(tcp_ses->hostname);
++		kfree(tcp_ses->hostname);
+ 		if (tcp_ses->ssocket)
+ 			sock_release(tcp_ses->ssocket);
+ 		kfree(tcp_ses);

@@ -1,0 +1,60 @@
+From: Mauro Carvalho Chehab <mchehab+huawei@kernel.org>
+Subject: media: wl128x: get rid of a potential spectre issue
+Git-commit: e4969cff95fb85bd242cd74905065a41e3d04ab9
+Patch-mainline: v5.10
+References: bsc#1192802
+Acked-by: Jiri Bohac <jbohac@suse.cz>
+
+As reported by smatch:
+	drivers/media/radio/wl128x/fmdrv_common.c:736 fm_irq_handle_rdsdata_getcmd_resp() warn: potential spectre issue 'rds_fmt.data.groupdatabuff.buff>
+
+Address it by using array_index_nospec().
+
+While here, reorder the linux/ includes.
+
+Signed-off-by: Mauro Carvalho Chehab <mchehab+huawei@kernel.org>
+
+---
+ drivers/media/radio/wl128x/fmdrv_common.c |   16 ++++++++++------
+ 1 file changed, 10 insertions(+), 6 deletions(-)
+
+--- a/drivers/media/radio/wl128x/fmdrv_common.c
++++ b/drivers/media/radio/wl128x/fmdrv_common.c
+@@ -28,9 +28,11 @@
+  *
+  */
+ 
+-#include <linux/module.h>
+-#include <linux/firmware.h>
+ #include <linux/delay.h>
++#include <linux/firmware.h>
++#include <linux/module.h>
++#include <linux/nospec.h>
++
+ #include "fmdrv.h"
+ #include "fmdrv_v4l2.h"
+ #include "fmdrv_common.h"
+@@ -709,7 +711,7 @@ static void fm_irq_handle_rdsdata_getcmd
+ 	struct fm_rds *rds = &fmdev->rx.rds;
+ 	unsigned long group_idx, flags;
+ 	u8 *rds_data, meta_data, tmpbuf[FM_RDS_BLK_SIZE];
+-	u8 type, blk_idx;
++	u8 type, blk_idx, idx;
+ 	u16 cur_picode;
+ 	u32 rds_len;
+ 
+@@ -742,9 +744,11 @@ static void fm_irq_handle_rdsdata_getcmd
+ 		}
+ 
+ 		/* Skip checkword (control) byte and copy only data byte */
+-		memcpy(&rds_fmt.data.groupdatabuff.
+-				buff[blk_idx * (FM_RDS_BLK_SIZE - 1)],
+-				rds_data, (FM_RDS_BLK_SIZE - 1));
++		idx = array_index_nospec(blk_idx * (FM_RDS_BLK_SIZE - 1),
++					 FM_RX_RDS_INFO_FIELD_MAX - (FM_RDS_BLK_SIZE - 1));
++
++		memcpy(&rds_fmt.data.groupdatabuff.buff[idx], rds_data,
++		       FM_RDS_BLK_SIZE - 1);
+ 
+ 		rds->last_blk_idx = blk_idx;
+ 

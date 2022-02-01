@@ -1,0 +1,51 @@
+From 90be9b86da9039fe6cf2880dc16fd0b0899603a5 Mon Sep 17 00:00:00 2001
+From: Julia Lawall <Julia.Lawall@lip6.fr>
+Date: Sun, 23 Dec 2018 14:52:12 -0800
+Subject: [PATCH] xfs: xfs_fsops: drop useless LIST_HEAD
+Git-commit: 90be9b86da9039fe6cf2880dc16fd0b0899603a5
+Patch-mainline: v5.0-rc1
+References: bsc#1191500, git-fixes
+
+Drop LIST_HEAD where the variable it declares is never used.
+
+Commit 0410c3bb2b88 ("xfs: factor ag btree root block
+initialisation") stopped using buffer_list and started using a
+buffer list in an aghdr_init_data structure, but the declaration
+of buffer_list was not removed.
+
+The semantic patch that fixes this problem is as follows:
+(http://coccinelle.lip6.fr/)
+
+// <smpl>
+@@
+identifier x;
+@@
+- LIST_HEAD(x);
+  ... when != x
+// </smpl>
+
+Fixes: 0410c3bb2b88 ("xfs: factor ag btree root block initialisation")
+Signed-off-by: Julia Lawall <Julia.Lawall@lip6.fr>
+Reviewed-by: Darrick J. Wong <darrick.wong@oracle.com>
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Acked-by: Anthony Iliopoulos <ailiop@suse.com>
+
+---
+ fs/xfs/xfs_fsops.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/fs/xfs/xfs_fsops.c b/fs/xfs/xfs_fsops.c
+index ec2e63a7963b..f3ef70c542e1 100644
+--- a/fs/xfs/xfs_fsops.c
++++ b/fs/xfs/xfs_fsops.c
+@@ -40,7 +40,6 @@ xfs_growfs_data_private(
+ 	xfs_rfsblock_t		new;
+ 	xfs_agnumber_t		oagcount;
+ 	xfs_trans_t		*tp;
+-	LIST_HEAD		(buffer_list);
+ 	struct aghdr_init_data	id = {};
+ 
+ 	nb = in->newblocks;
+-- 
+2.33.0
+

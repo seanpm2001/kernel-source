@@ -1,0 +1,62 @@
+From: Catherine Sullivan <csully@google.com>
+Date: Tue, 2 Jul 2019 15:46:57 -0700
+Subject: gve: Fix u64_stats_sync to initialize start
+Patch-mainline: v5.3-rc1
+Git-commit: 3c13ce74b6f885c2dcb2537b7f61a8e5afab002e
+References: jsc#SLE-10538
+
+u64_stats_fetch_begin needs to initialize start.
+
+Signed-off-by: Catherine Sullivan <csully@google.com>
+Reported-by: kbuild test robot <lkp@intel.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/google/gve/gve_ethtool.c |    6 ++++--
+ drivers/net/ethernet/google/gve/gve_main.c    |    6 ++++--
+ 2 files changed, 8 insertions(+), 4 deletions(-)
+
+--- a/drivers/net/ethernet/google/gve/gve_ethtool.c
++++ b/drivers/net/ethernet/google/gve/gve_ethtool.c
+@@ -102,7 +102,8 @@ gve_get_ethtool_stats(struct net_device
+ 	     ring < priv->rx_cfg.num_queues; ring++) {
+ 		if (priv->rx) {
+ 			do {
+-				u64_stats_fetch_begin(&priv->rx[ring].statss);
++				start =
++				  u64_stats_fetch_begin(&priv->rx[ring].statss);
+ 				rx_pkts += priv->rx[ring].rpackets;
+ 				rx_bytes += priv->rx[ring].rbytes;
+ 			} while (u64_stats_fetch_retry(&priv->rx[ring].statss,
+@@ -113,7 +114,8 @@ gve_get_ethtool_stats(struct net_device
+ 	     ring < priv->tx_cfg.num_queues; ring++) {
+ 		if (priv->tx) {
+ 			do {
+-				u64_stats_fetch_begin(&priv->tx[ring].statss);
++				start =
++				  u64_stats_fetch_begin(&priv->tx[ring].statss);
+ 				tx_pkts += priv->tx[ring].pkt_done;
+ 				tx_bytes += priv->tx[ring].bytes_done;
+ 			} while (u64_stats_fetch_retry(&priv->tx[ring].statss,
+--- a/drivers/net/ethernet/google/gve/gve_main.c
++++ b/drivers/net/ethernet/google/gve/gve_main.c
+@@ -35,7 +35,8 @@ static void gve_get_stats(struct net_dev
+ 	if (priv->rx) {
+ 		for (ring = 0; ring < priv->rx_cfg.num_queues; ring++) {
+ 			do {
+-				u64_stats_fetch_begin(&priv->rx[ring].statss);
++				start =
++				  u64_stats_fetch_begin(&priv->rx[ring].statss);
+ 				s->rx_packets += priv->rx[ring].rpackets;
+ 				s->rx_bytes += priv->rx[ring].rbytes;
+ 			} while (u64_stats_fetch_retry(&priv->rx[ring].statss,
+@@ -45,7 +46,8 @@ static void gve_get_stats(struct net_dev
+ 	if (priv->tx) {
+ 		for (ring = 0; ring < priv->tx_cfg.num_queues; ring++) {
+ 			do {
+-				u64_stats_fetch_begin(&priv->tx[ring].statss);
++				start =
++				  u64_stats_fetch_begin(&priv->tx[ring].statss);
+ 				s->tx_packets += priv->tx[ring].pkt_done;
+ 				s->tx_bytes += priv->tx[ring].bytes_done;
+ 			} while (u64_stats_fetch_retry(&priv->rx[ring].statss,

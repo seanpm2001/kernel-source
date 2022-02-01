@@ -1,0 +1,36 @@
+From: Dan Carpenter <dan.carpenter@oracle.com>
+Date: Tue, 22 Jun 2021 13:59:55 +0300
+Subject: [PATCH] cifs: fix NULL dereference in smb2_check_message()
+Git-commit: 1689b0b554defd5a7863bbd434ae911b8869504a
+References: bsc#1190317
+Patch-mainline: v5.13
+
+This code sets "ses" to NULL which will lead to a NULL dereference on
+the second iteration through the loop.
+
+[ ematsumiya: replace list_entry_is_head() with its definition to avoid extra backport ]
+
+Fixes: 85346c17e425 ("cifs: convert list_for_each to entry variant in smb2misc.c")
+Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
+Reviewed-by: Aurelien Aptel <aaptel@suse.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/smb2misc.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+--- a/fs/cifs/smb2misc.c
++++ b/fs/cifs/smb2misc.c
+@@ -169,11 +169,9 @@ smb2_check_message(char *buf, unsigned i
+ 		list_for_each_entry(ses, &srvr->smb_ses_list, smb_ses_list) {
+ 			if (ses->Suid == thdr->SessionId)
+ 				break;
+-
+-			ses = NULL;
+ 		}
+ 		spin_unlock(&cifs_tcp_ses_lock);
+-		if (ses == NULL) {
++		if (&ses->smb_ses_list == &srvr->smb_ses_list) {
+ 			cifs_dbg(VFS, "no decryption - session id not found\n");
+ 			return 1;
+ 		}

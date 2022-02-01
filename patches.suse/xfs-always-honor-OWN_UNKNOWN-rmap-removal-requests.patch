@@ -1,0 +1,163 @@
+From 33df3a9cf925183a6a169bc3eff2bd0febd1298a Mon Sep 17 00:00:00 2001
+From: "Darrick J. Wong" <darrick.wong@oracle.com>
+Date: Thu, 7 Dec 2017 19:07:27 -0800
+Subject: [PATCH] xfs: always honor OWN_UNKNOWN rmap removal requests
+Git-commit: 33df3a9cf925183a6a169bc3eff2bd0febd1298a
+Patch-mainline: v4.15-rc5
+References: bsc#1191500
+
+Calling xfs_rmap_free with an unknown owner is supposed to remove any
+rmaps covering that range regardless of owner.  This is used by the EFI
+recovery code to say "we're freeing this, it mustn't be owned by
+anything anymore", but for whatever reason xfs_free_ag_extent filters
+them out.
+
+Therefore, remove the filter and make xfs_rmap_unmap actually treat it
+as a wildcard owner -- free anything that's already there, and if
+there's no owner at all then that's fine too.
+
+There are two existing callers of bmap_add_free that take care the rmap
+deferred ops themselves and use OWN_UNKNOWN to skip the EFI-based rmap
+cleanup; convert these to use OWN_NULL (via helpers), and now we really
+require that an RUI (if any) gets added to the defer ops before any EFI.
+
+Lastly, now that xfs_free_extent filters out OWN_NULL rmap free requests,
+growfs will have to consult directly with the rmap to ensure that there
+aren't any rmaps in the grown region.
+
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Acked-by: Anthony Iliopoulos <ailiop@suse.com>
+
+---
+ fs/xfs/libxfs/xfs_alloc.c |  4 ++--
+ fs/xfs/libxfs/xfs_rmap.c  | 25 +++++++++++++++++++++++++
+ fs/xfs/libxfs/xfs_rmap.h  | 16 +++++++++++++++-
+ fs/xfs/xfs_extfree_item.c |  2 +-
+ fs/xfs/xfs_fsops.c        |  5 +++++
+ 5 files changed, 48 insertions(+), 4 deletions(-)
+
+diff --git a/fs/xfs/libxfs/xfs_alloc.c b/fs/xfs/libxfs/xfs_alloc.c
+index 0da80019a917..83ed7715f856 100644
+--- a/fs/xfs/libxfs/xfs_alloc.c
++++ b/fs/xfs/libxfs/xfs_alloc.c
+@@ -702,7 +702,7 @@ xfs_alloc_ag_vextent(
+ 	ASSERT(args->agbno % args->alignment == 0);
+ 
+ 	/* if not file data, insert new block into the reverse map btree */
+-	if (args->oinfo.oi_owner != XFS_RMAP_OWN_UNKNOWN) {
++	if (!xfs_rmap_should_skip_owner_update(&args->oinfo)) {
+ 		error = xfs_rmap_alloc(args->tp, args->agbp, args->agno,
+ 				       args->agbno, args->len, &args->oinfo);
+ 		if (error)
+@@ -1682,7 +1682,7 @@ xfs_free_ag_extent(
+ 	bno_cur = cnt_cur = NULL;
+ 	mp = tp->t_mountp;
+ 
+-	if (oinfo->oi_owner != XFS_RMAP_OWN_UNKNOWN) {
++	if (!xfs_rmap_should_skip_owner_update(oinfo)) {
+ 		error = xfs_rmap_free(tp, agbp, agno, bno, len, oinfo);
+ 		if (error)
+ 			goto error0;
+diff --git a/fs/xfs/libxfs/xfs_rmap.c b/fs/xfs/libxfs/xfs_rmap.c
+index dd019cee1b3b..7465cfb39276 100644
+--- a/fs/xfs/libxfs/xfs_rmap.c
++++ b/fs/xfs/libxfs/xfs_rmap.c
+@@ -444,6 +444,30 @@ xfs_rmap_unmap(
+ 		goto out_done;
+ 	}
+ 
++	/*
++	 * If we're doing an unknown-owner removal for EFI recovery, we expect
++	 * to find the full range in the rmapbt or nothing at all.  If we
++	 * don't find any rmaps overlapping either end of the range, we're
++	 * done.  Hopefully this means that the EFI creator already queued
++	 * (and finished) a RUI to remove the rmap.
++	 */
++	if (owner == XFS_RMAP_OWN_UNKNOWN &&
++	    ltrec.rm_startblock + ltrec.rm_blockcount <= bno) {
++		struct xfs_rmap_irec    rtrec;
++
++		error = xfs_btree_increment(cur, 0, &i);
++		if (error)
++			goto out_error;
++		if (i == 0)
++			goto out_done;
++		error = xfs_rmap_get_rec(cur, &rtrec, &i);
++		if (error)
++			goto out_error;
++		XFS_WANT_CORRUPTED_GOTO(mp, i == 1, out_error);
++		if (rtrec.rm_startblock >= bno + len)
++			goto out_done;
++	}
++
+ 	/* Make sure the unwritten flag matches. */
+ 	XFS_WANT_CORRUPTED_GOTO(mp, (flags & XFS_RMAP_UNWRITTEN) ==
+ 			(ltrec.rm_flags & XFS_RMAP_UNWRITTEN), out_error);
+@@ -664,6 +688,7 @@ xfs_rmap_map(
+ 		flags |= XFS_RMAP_UNWRITTEN;
+ 	trace_xfs_rmap_map(mp, cur->bc_private.a.agno, bno, len,
+ 			unwritten, oinfo);
++	ASSERT(!xfs_rmap_should_skip_owner_update(oinfo));
+ 
+ 	/*
+ 	 * For the initial lookup, look for an exact match or the left-adjacent
+diff --git a/fs/xfs/libxfs/xfs_rmap.h b/fs/xfs/libxfs/xfs_rmap.h
+index 466ede637080..0fcd5b1ba729 100644
+--- a/fs/xfs/libxfs/xfs_rmap.h
++++ b/fs/xfs/libxfs/xfs_rmap.h
+@@ -61,7 +61,21 @@ static inline void
+ xfs_rmap_skip_owner_update(
+ 	struct xfs_owner_info	*oi)
+ {
+-	oi->oi_owner = XFS_RMAP_OWN_UNKNOWN;
++	xfs_rmap_ag_owner(oi, XFS_RMAP_OWN_NULL);
++}
++
++static inline bool
++xfs_rmap_should_skip_owner_update(
++	struct xfs_owner_info	*oi)
++{
++	return oi->oi_owner == XFS_RMAP_OWN_NULL;
++}
++
++static inline void
++xfs_rmap_any_owner_update(
++	struct xfs_owner_info	*oi)
++{
++	xfs_rmap_ag_owner(oi, XFS_RMAP_OWN_UNKNOWN);
+ }
+ 
+ /* Reverse mapping functions. */
+diff --git a/fs/xfs/xfs_extfree_item.c b/fs/xfs/xfs_extfree_item.c
+index 44f8c5451210..64da90655e95 100644
+--- a/fs/xfs/xfs_extfree_item.c
++++ b/fs/xfs/xfs_extfree_item.c
+@@ -538,7 +538,7 @@ xfs_efi_recover(
+ 		return error;
+ 	efdp = xfs_trans_get_efd(tp, efip, efip->efi_format.efi_nextents);
+ 
+-	xfs_rmap_skip_owner_update(&oinfo);
++	xfs_rmap_any_owner_update(&oinfo);
+ 	for (i = 0; i < efip->efi_format.efi_nextents; i++) {
+ 		extp = &efip->efi_format.efi_extents[i];
+ 		error = xfs_trans_free_extent(tp, efdp, extp->ext_start,
+diff --git a/fs/xfs/xfs_fsops.c b/fs/xfs/xfs_fsops.c
+index 8f22fc579dbb..60a2e128cb6a 100644
+--- a/fs/xfs/xfs_fsops.c
++++ b/fs/xfs/xfs_fsops.c
+@@ -571,6 +571,11 @@ xfs_growfs_data_private(
+ 		 * this doesn't actually exist in the rmap btree.
+ 		 */
+ 		xfs_rmap_ag_owner(&oinfo, XFS_RMAP_OWN_NULL);
++		error = xfs_rmap_free(tp, bp, agno,
++				be32_to_cpu(agf->agf_length) - new,
++				new, &oinfo);
++		if (error)
++			goto error0;
+ 		error = xfs_free_extent(tp,
+ 				XFS_AGB_TO_FSB(mp, agno,
+ 					be32_to_cpu(agf->agf_length) - new),
+-- 
+2.33.0
+

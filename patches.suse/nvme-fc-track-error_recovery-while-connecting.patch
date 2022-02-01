@@ -1,0 +1,87 @@
+From: James Smart <james.smart@broadcom.com>
+Date: Fri, 23 Oct 2020 15:26:04 -0700
+Subject: nvme-fc: track error_recovery while connecting
+Patch-mainline: v5.10-rc2
+Git-commit: caf1cbe3677576ef860f7bbba9074d0e6a0bcabb
+References: bsc#1187076
+
+Whenever there are errors during CONNECTING, the driver recovers by
+aborting all outstanding ios and counts on the io completion to fail them
+and thus the connection/association they are on.  However, the connection
+failure depends on a failure state from the core routines.  Not all
+commands that are issued by the core routine are guaranteed to cause a
+failure of the core routine. They may be treated as a failure status and
+the status is then ignored.
+
+As such, whenever the transport enters error_recovery while CONNECTING,
+it will set a new flag indicating an association failed. The
+create_association routine which creates and initializes the controller,
+will monitor the state of the flag as well as the core routine error
+status and ensure the association fails if there was an error.
+
+Signed-off-by: James Smart <james.smart@broadcom.com>
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/nvme/host/fc.c |   14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+--- a/drivers/nvme/host/fc.c
++++ b/drivers/nvme/host/fc.c
+@@ -140,7 +140,8 @@ struct nvme_fc_rport {
+ 
+ /* fc_ctrl flags values - specified as bit positions */
+ #define ASSOC_ACTIVE		0
+-#define FCCTRL_TERMIO		1
++#define ASSOC_FAILED		1
++#define FCCTRL_TERMIO		2
+ 
+ struct nvme_fc_ctrl {
+ 	spinlock_t		lock;
+@@ -2660,6 +2661,8 @@ nvme_fc_create_association(struct nvme_f
+ 	if (nvme_fc_ctlr_active_on_rport(ctrl))
+ 		return -ENOTUNIQ;
+ 
++	clear_bit(ASSOC_FAILED, &ctrl->flags);
++
+ 	/*
+ 	 * Create the admin queue
+ 	 */
+@@ -2698,7 +2701,7 @@ nvme_fc_create_association(struct nvme_f
+ 		min_t(int, NVME_CAP_MQES(ctrl->ctrl.cap), ctrl->ctrl.sqsize);
+ 
+ 	ret = nvme_enable_ctrl(&ctrl->ctrl, ctrl->ctrl.cap);
+-	if (ret)
++	if (ret || test_bit(ASSOC_FAILED, &ctrl->flags))
+ 		goto out_disconnect_admin_queue;
+ 
+ 	ctrl->ctrl.max_segments = ctrl->lport->ops->max_sgl_segments;
+@@ -2708,7 +2711,7 @@ nvme_fc_create_association(struct nvme_f
+ 	blk_mq_unquiesce_queue(ctrl->ctrl.admin_q);
+ 
+ 	ret = nvme_init_identify(&ctrl->ctrl);
+-	if (ret)
++	if (ret || test_bit(ASSOC_FAILED, &ctrl->flags))
+ 		goto out_disconnect_admin_queue;
+ 
+ 	/* sanity checks */
+@@ -2752,9 +2755,9 @@ nvme_fc_create_association(struct nvme_f
+ 			ret = nvme_fc_create_io_queues(ctrl);
+ 		else
+ 			ret = nvme_fc_recreate_io_queues(ctrl);
+-		if (ret)
+-			goto out_term_aen_ops;
+ 	}
++	if (ret || test_bit(ASSOC_FAILED, &ctrl->flags))
++		goto out_term_aen_ops;
+ 
+ 	changed = nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_LIVE);
+ 
+@@ -2961,6 +2964,7 @@ static void
+ 	 */
+ 	if (ctrl->ctrl.state == NVME_CTRL_CONNECTING) {
+ 		__nvme_fc_abort_outstanding_ios(ctrl, true);
++		set_bit(ASSOC_FAILED, &ctrl->flags);
+ 		return;
+ 	}
+ 

@@ -1,0 +1,217 @@
+From: James Smart <james.smart@broadcom.com>
+Date: Fri, 16 Oct 2020 14:06:27 -0700
+Subject: nvme-fc: fix io timeout to abort I/O
+Patch-mainline: v5.10-rc1
+Git-commit: 52793d62a696e9188092eb0817fb1219ee5729ff
+References: bsc#1187076
+
+Currently, an I/O timeout unconditionally invokes
+nvme_fc_error_recovery() which checks for LIVE or CONNECTING state.  If
+live, the routine resets the controller which initiates a reconnect -
+which is valid.  If CONNECTING, err_work is scheduled.  Err_work then
+calls the terminate_io routine, which also checks for CONNECTING and
+noops any further action on outstanding I/O.  The result is nothing
+happened to the timed out io.  As such, if the command was dropped on
+the wire, it will never timeout / complete, and the connect process
+will hang.
+
+Change the behavior of the io timeout routine to unconditionally abort
+the I/O.  I/O completion handling will note that an io failed due to an
+abort and will terminate the connection / association as needed.  If the
+abort was unable to happen, continue with a call to
+nvme_fc_error_recovery(). To ensure something different happens in
+nvme_fc_error_recovery() rework it so at it will abort all I/Os on the
+association to force a failure.
+
+As I/O aborts now may occur outside of delete_association, counting for
+completion must be wary and only count those aborted during
+delete_association when TERMIO is set on the controller.
+
+Signed-off-by: James Smart <james.smart@broadcom.com>
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+[dwagner: - updated context for __nvme_fc_abort_outstanding_ios
+          - adapted cdw10 usage in nvme_fc_timeout
+          - removed unused disls in nvme_fc_delete_association]
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/nvme/host/fc.c |  105 +++++++++++++++++++++++++++++++------------------
+ 1 file changed, 67 insertions(+), 38 deletions(-)
+
+--- a/drivers/nvme/host/fc.c
++++ b/drivers/nvme/host/fc.c
+@@ -1516,8 +1516,10 @@ static int
+ 	opstate = atomic_xchg(&op->state, FCPOP_STATE_ABORTED);
+ 	if (opstate != FCPOP_STATE_ACTIVE)
+ 		atomic_set(&op->state, opstate);
+-	else if (test_bit(FCCTRL_TERMIO, &ctrl->flags))
++	else if (test_bit(FCCTRL_TERMIO, &ctrl->flags)) {
++		op->flags |= FCOP_FLAGS_TERMIO;
+ 		ctrl->iocnt++;
++	}
+ 	spin_unlock_irqrestore(&ctrl->lock, flags);
+ 
+ 	if (opstate != FCPOP_STATE_ACTIVE)
+@@ -1553,7 +1555,8 @@ static inline void
+ 
+ 	if (opstate == FCPOP_STATE_ABORTED) {
+ 		spin_lock_irqsave(&ctrl->lock, flags);
+-		if (test_bit(FCCTRL_TERMIO, &ctrl->flags)) {
++		if (test_bit(FCCTRL_TERMIO, &ctrl->flags) &&
++		    op->flags & FCOP_FLAGS_TERMIO) {
+ 			if (!--ctrl->iocnt)
+ 				wake_up(&ctrl->ioabort_wait);
+ 		}
+@@ -2119,15 +2122,20 @@ nvme_fc_timeout(struct request *rq, bool
+ {
+ 	struct nvme_fc_fcp_op *op = blk_mq_rq_to_pdu(rq);
+ 	struct nvme_fc_ctrl *ctrl = op->ctrl;
++	struct nvme_fc_cmd_iu *cmdiu = &op->cmd_iu;
++	struct nvme_command *sqe = &cmdiu->sqe;
+ 
+ 	/*
+-	 * we can't individually ABTS an io without affecting the queue,
+-	 * thus killing the queue, and thus the association.
+-	 * So resolve by performing a controller reset, which will stop
+-	 * the host/io stack, terminate the association on the link,
+-	 * and recreate an association on the link.
++	 * Attempt to abort the offending command. Command completion
++	 * will detect the aborted io and will fail the connection.
+ 	 */
+-	nvme_fc_error_recovery(ctrl, "io timeout error");
++	dev_info(ctrl->ctrl.device,
++		"NVME-FC{%d.%d}: io timeout: opcode %d fctype %d w10/11: "
++		"x%08x/x%08x\n",
++		ctrl->cnum, op->queue->qnum, sqe->common.opcode,
++		sqe->connect.fctype, sqe->common.cdw10[0], sqe->common.cdw10[0]);
++	if (__nvme_fc_abort_op(ctrl, op))
++		nvme_fc_error_recovery(ctrl, "io timeout abort failed");
+ 
+ 	/*
+ 	 * the io abort has been initiated. Have the reset timer
+@@ -2413,6 +2421,7 @@ nvme_fc_complete_rq(struct request *rq)
+ 	struct nvme_fc_ctrl *ctrl = op->ctrl;
+ 
+ 	atomic_set(&op->state, FCPOP_STATE_IDLE);
++	op->flags &= ~FCOP_FLAGS_TERMIO;
+ 
+ 	nvme_fc_unmap_data(ctrl, rq, op);
+ 	nvme_complete_rq(rq);
+@@ -2772,24 +2781,17 @@ nvme_fc_create_association(struct nvme_f
+ }
+ 
+ /*
+- * This routine stops operation of the controller on the host side.
+- * On the host os stack side: Admin and IO queues are stopped,
+- *   outstanding ios on them terminated via FC ABTS.
+- * On the link side: the association is terminated.
++ * This routine runs through all outstanding commands on the association
++ * and aborts them.  This routine is typically be called by the
++ * delete_association routine. It is also called due to an error during
++ * reconnect. In that scenario, it is most likely a command that initializes
++ * the controller, including fabric Connect commands on io queues, that
++ * may have timed out or failed thus the io must be killed for the connect
++ * thread to see the error.
+  */
+ static void
+-nvme_fc_delete_association(struct nvme_fc_ctrl *ctrl)
++__nvme_fc_abort_outstanding_ios(struct nvme_fc_ctrl *ctrl, bool start_queues)
+ {
+-	unsigned long flags;
+-
+-	if (!test_and_clear_bit(ASSOC_ACTIVE, &ctrl->flags))
+-		return;
+-
+-	spin_lock_irqsave(&ctrl->lock, flags);
+-	set_bit(FCCTRL_TERMIO, &ctrl->flags);
+-	ctrl->iocnt = 0;
+-	spin_unlock_irqrestore(&ctrl->lock, flags);
+-
+ 	/*
+ 	 * If io queues are present, stop them and terminate all outstanding
+ 	 * ios on them. As FC allocates FC exchange for each io, the
+@@ -2807,6 +2809,8 @@ nvme_fc_delete_association(struct nvme_f
+ 		blk_mq_tagset_busy_iter(&ctrl->tag_set,
+ 				nvme_fc_terminate_exchange, &ctrl->ctrl);
+ 		blk_mq_tagset_wait_completed_request(&ctrl->tag_set);
++		if (start_queues)
++			nvme_start_queues(&ctrl->ctrl);
+ 	}
+ 
+ 	/*
+@@ -2823,13 +2827,33 @@ nvme_fc_delete_association(struct nvme_f
+ 
+ 	/*
+ 	 * clean up the admin queue. Same thing as above.
+-	 * use blk_mq_tagset_busy_itr() and the transport routine to
+-	 * terminate the exchanges.
+ 	 */
+ 	blk_mq_quiesce_queue(ctrl->ctrl.admin_q);
+ 	blk_mq_tagset_busy_iter(&ctrl->admin_tag_set,
+ 				nvme_fc_terminate_exchange, &ctrl->ctrl);
+ 	blk_mq_tagset_wait_completed_request(&ctrl->admin_tag_set);
++}
++
++/*
++ * This routine stops operation of the controller on the host side.
++ * On the host os stack side: Admin and IO queues are stopped,
++ *   outstanding ios on them terminated via FC ABTS.
++ * On the link side: the association is terminated.
++ */
++static void
++nvme_fc_delete_association(struct nvme_fc_ctrl *ctrl)
++{
++	unsigned long flags;
++
++	if (!test_and_clear_bit(ASSOC_ACTIVE, &ctrl->flags))
++		return;
++
++	spin_lock_irqsave(&ctrl->lock, flags);
++	set_bit(FCCTRL_TERMIO, &ctrl->flags);
++	ctrl->iocnt = 0;
++	spin_unlock_irqrestore(&ctrl->lock, flags);
++
++	__nvme_fc_abort_outstanding_ios(ctrl, false);
+ 
+ 	/* kill the aens as they are a separate path */
+ 	nvme_fc_abort_aen_ops(ctrl);
+@@ -2931,22 +2955,27 @@ static void
+ __nvme_fc_terminate_io(struct nvme_fc_ctrl *ctrl)
+ {
+ 	/*
+-	 * if state is connecting - the error occurred as part of a
+-	 * reconnect attempt. The create_association error paths will
+-	 * clean up any outstanding io.
+-	 *
+-	 * if it's a different state - ensure all pending io is
+-	 * terminated. Given this can delay while waiting for the
+-	 * aborted io to return, we recheck adapter state below
+-	 * before changing state.
++	 * if state is CONNECTING - the error occurred as part of a
++	 * reconnect attempt. Abort any ios on the association and
++	 * let the create_association error paths resolve things.
+ 	 */
+-	if (ctrl->ctrl.state != NVME_CTRL_CONNECTING) {
+-		nvme_stop_keep_alive(&ctrl->ctrl);
+-
+-		/* will block will waiting for io to terminate */
+-		nvme_fc_delete_association(ctrl);
++	if (ctrl->ctrl.state == NVME_CTRL_CONNECTING) {
++		__nvme_fc_abort_outstanding_ios(ctrl, true);
++		return;
+ 	}
+ 
++	/*
++	 * For any other state, kill the association. As this routine
++	 * is a common io abort routine for resetting and such, after
++	 * the association is terminated, ensure that the state is set
++	 * to CONNECTING.
++	 */
++
++	nvme_stop_keep_alive(&ctrl->ctrl);
++
++	/* will block will waiting for io to terminate */
++	nvme_fc_delete_association(ctrl);
++
+ 	if (ctrl->ctrl.state != NVME_CTRL_CONNECTING &&
+ 	    !nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_CONNECTING))
+ 		dev_err(ctrl->ctrl.device,

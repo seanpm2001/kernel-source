@@ -1,0 +1,129 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Tue, 23 Feb 2021 15:50:57 -0600
+Subject: [PATCH] cifs: Add new mount parameter "acdirmax" to allow caching
+ directory metadata
+Git-commit: 4c9f948142a550af416a2bfb5e56d29ce29e92cf
+References: bsc#1190317
+Patch-mainline: v5.12-rc1
+
+nfs and cifs on Linux currently have a mount parameter "actimeo" to control
+metadata (attribute) caching but cifs does not have additional mount
+parameters to allow distinguishing between caching directory metadata
+(e.g. needed to revalidate paths) and that for files.
+
+Add new mount parameter "acdirmax" to allow caching metadata for
+directories more loosely than file data.  NFS adjusts metadata
+caching from acdirmin to acdirmax (and another two mount parms
+for files) but to reduce complexity, it is safer to just introduce
+the one mount parm to allow caching directories longer. The
+defaults for acdirmax and actimeo (for cifs.ko) are conservative,
+1 second (NFS defaults acdirmax to 60 seconds). For many workloads,
+setting acdirmax to a higher value is safe and will improve
+performance.  This patch leaves unchanged the default values
+for caching metadata for files and directories but gives the
+user more flexibility in adjusting them safely for their workload
+via the new mount parm.
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Reviewed-By: Tom Talpey <tom@talpey.com>
+Acked-by: Paulo Alcantara <palcantara@suse.de>
+---
+ fs/cifs/cifs_fs_sb.h |    3 ++-
+ fs/cifs/cifsfs.c     |    3 ++-
+ fs/cifs/cifsglob.h   |    3 ++-
+ fs/cifs/connect.c    |   18 +++++++++++++++++-
+ 4 files changed, 23 insertions(+), 4 deletions(-)
+
+--- a/fs/cifs/cifs_fs_sb.h
++++ b/fs/cifs/cifs_fs_sb.h
+@@ -64,7 +64,8 @@ struct cifs_sb_info {
+ 	unsigned int bsize;
+ 	unsigned int rsize;
+ 	unsigned int wsize;
+-	unsigned long actimeo; /* attribute cache timeout (jiffies) */
++	unsigned long actimeo; /* attribute cache timeout for files (jiffies) */
++	unsigned long acdirmax; /* attribute cache timeout for directories (jiffies) */
+ 	atomic_t active;
+ 	kuid_t	mnt_uid;
+ 	kgid_t	mnt_gid;
+--- a/fs/cifs/cifsfs.c
++++ b/fs/cifs/cifsfs.c
+@@ -600,8 +600,9 @@ cifs_show_options(struct seq_file *s, st
+ 		seq_printf(s, ",snapshot=%llu", tcon->snapshot_time);
+ 	if (tcon->handle_timeout)
+ 		seq_printf(s, ",handletimeout=%u", tcon->handle_timeout);
+-	/* convert actimeo and display it in seconds */
++	/* convert actimeo and directory attribute timeout and display in seconds */
+ 	seq_printf(s, ",actimeo=%lu", cifs_sb->actimeo / HZ);
++	seq_printf(s, ",acdirmax=%lu", cifs_sb->acdirmax / HZ);
+ 
+ 	return 0;
+ }
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -610,7 +610,8 @@ struct smb_vol {
+ 	unsigned int wsize;
+ 	unsigned int min_offload;
+ 	bool sockopt_tcp_nodelay:1;
+-	unsigned long actimeo; /* attribute cache timeout (jiffies) */
++	unsigned long actimeo; /* attribute cache timeout for files (jiffies) */
++	unsigned long acdirmax; /* attribute cache timeout for directories (jiffies) */
+ 	struct smb_version_operations *ops;
+ 	struct smb_version_values *vals;
+ 	char *prepath;
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -107,7 +107,7 @@ enum {
+ 	Opt_cruid, Opt_gid, Opt_file_mode,
+ 	Opt_dirmode, Opt_port,
+ 	Opt_min_enc_offload,
+-	Opt_blocksize, Opt_rsize, Opt_wsize, Opt_actimeo,
++	Opt_blocksize, Opt_rsize, Opt_wsize, Opt_actimeo, Opt_acdirmax,
+ 	Opt_echo_interval, Opt_max_credits, Opt_handletimeout,
+ 	Opt_snapshot,
+ 
+@@ -218,6 +218,7 @@ static const match_table_t cifs_mount_op
+ 	{ Opt_rsize, "rsize=%s" },
+ 	{ Opt_wsize, "wsize=%s" },
+ 	{ Opt_actimeo, "actimeo=%s" },
++	{ Opt_acdirmax, "acdirmax=%s" },
+ 	{ Opt_handletimeout, "handletimeout=%s" },
+ 	{ Opt_echo_interval, "echo_interval=%s" },
+ 	{ Opt_max_credits, "max_credits=%s" },
+@@ -1645,6 +1646,7 @@ cifs_parse_mount_options(const char *mou
+ 	vol->strict_io = true;
+ 
+ 	vol->actimeo = CIFS_DEF_ACTIMEO;
++	vol->acdirmax = CIFS_DEF_ACTIMEO;
+ 
+ 	/* Most clients set timeout to 0, allows server to use its default */
+ 	vol->handle_timeout = 0; /* See MS-SMB2 spec section 2.2.14.2.12 */
+@@ -2072,6 +2074,18 @@ cifs_parse_mount_options(const char *mou
+ 				goto cifs_parse_mount_err;
+ 			}
+ 			break;
++		case Opt_acdirmax:
++			if (get_option_ul(args, &option)) {
++				cifs_dbg(VFS, "%s: Invalid acdirmax value\n",
++					 __func__);
++				goto cifs_parse_mount_err;
++			}
++			vol->acdirmax = HZ * option;
++			if (vol->acdirmax > CIFS_MAX_ACTIMEO) {
++				cifs_dbg(VFS, "acdirmax too large\n");
++				goto cifs_parse_mount_err;
++			}
++			break;
+ 		case Opt_handletimeout:
+ 			if (get_option_ul(args, &option)) {
+ 				cifs_dbg(VFS, "%s: Invalid handletimeout value\n",
+@@ -3610,6 +3624,8 @@ compare_mount_options(struct super_block
+ 
+ 	if (old->actimeo != new->actimeo)
+ 		return 0;
++	if (old->acdirmax != new->acdirmax)
++		return 0;
+ 
+ 	return 1;
+ }

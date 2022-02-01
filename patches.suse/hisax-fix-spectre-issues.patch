@@ -1,0 +1,84 @@
+From: Jiri Bohac <jbohac@suse.cz>
+Patch-mainline: Never, problem no longer present in v5.14
+References: bsc#1192802
+Subject: hisax: fix spectre issues
+
+Found by Smatch:
+	drivers/isdn/hisax/l3ni1.c:2936 ni1up() warn: potential spectre issue 'skb->data' [r]
+	drivers/isdn/hisax/l3ni1.c:2945 ni1up() warn: possible spectre second half.  'mt'
+	drivers/isdn/hisax/l3ni1.c:2968 ni1up() warn: possible spectre second half.  'mt'
+	drivers/isdn/hisax/l3ni1.c:2975 ni1up() warn: possible spectre second half.  'mt'
+	drivers/isdn/hisax/l3ni1.c:3039 ni1up() warn: possible spectre second half.  'mt'
+	drivers/isdn/hisax/l3dss1.c:2988 dss1up() warn: potential spectre issue 'skb->data' [r]
+	drivers/isdn/hisax/l3dss1.c:2997 dss1up() warn: possible spectre second half.  'mt'
+	drivers/isdn/hisax/l3dss1.c:3012 dss1up() warn: possible spectre second half.  'mt'
+	drivers/isdn/hisax/l3dss1.c:3019 dss1up() warn: possible spectre second half.  'mt'
+	drivers/isdn/hisax/l3dss1.c:3083 dss1up() warn: possible spectre second half.  'mt'
+---
+ drivers/isdn/hisax/l3dss1.c | 5 ++++-
+ drivers/isdn/hisax/l3ni1.c  | 5 ++++-
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/isdn/hisax/l3dss1.c b/drivers/isdn/hisax/l3dss1.c
+index 18a3484b1f7e..8bef2afcba71 100644
+--- a/drivers/isdn/hisax/l3dss1.c
++++ b/drivers/isdn/hisax/l3dss1.c
+@@ -24,6 +24,7 @@
+ #include "l3dss1.h"
+ #include <linux/ctype.h>
+ #include <linux/slab.h>
++#include <linux/nospec.h>
+ 
+ extern char *HiSax_getrev(const char *revision);
+ static const char *dss1_revision = "$Revision: 2.32.2.3 $";
+@@ -2948,6 +2949,7 @@ dss1up(struct PStack *st, int pr, void *arg)
+ 	u_char *p;
+ 	struct sk_buff *skb = arg;
+ 	struct l3_process *proc;
++	int index;
+ 
+ 	switch (pr) {
+ 	case (DL_DATA | INDICATION):
+@@ -2985,7 +2987,8 @@ dss1up(struct PStack *st, int pr, void *arg)
+ 		dev_kfree_skb(skb);
+ 		return;
+ 	}
+-	mt = skb->data[skb->data[1] + 2];
++	index = array_index_nospec(skb->data[1] + 2, skb->len);
++	mt = skb->data[index];
+ 	if (st->l3.debug & L3_DEB_STATE)
+ 		l3_debug(st, "dss1up cr %d", cr);
+ 	if (cr == -2) {  /* wrong Callref */
+diff --git a/drivers/isdn/hisax/l3ni1.c b/drivers/isdn/hisax/l3ni1.c
+index ea311e7df48e..38018b0f1c23 100644
+--- a/drivers/isdn/hisax/l3ni1.c
++++ b/drivers/isdn/hisax/l3ni1.c
+@@ -23,6 +23,7 @@
+ #include "l3ni1.h"
+ #include <linux/ctype.h>
+ #include <linux/slab.h>
++#include <linux/nospec.h>
+ 
+ extern char *HiSax_getrev(const char *revision);
+ static const char *ni1_revision = "$Revision: 2.8.2.3 $";
+@@ -2892,6 +2893,7 @@ ni1up(struct PStack *st, int pr, void *arg)
+ 	u_char *p;
+ 	struct sk_buff *skb = arg;
+ 	struct l3_process *proc;
++	int index;
+ 
+ 	switch (pr) {
+ 	case (DL_DATA | INDICATION):
+@@ -2933,7 +2935,8 @@ ni1up(struct PStack *st, int pr, void *arg)
+ 		dev_kfree_skb(skb);
+ 		return;
+ 	}
+-	mt = skb->data[skb->data[1] + 2];
++	index = array_index_nospec(skb->data[1] + 2, skb->len);
++	mt = skb->data[index];
+ 	if (st->l3.debug & L3_DEB_STATE)
+ 		l3_debug(st, "ni1up cr %d", cr);
+ 	if (cr == -2) {  /* wrong Callref */
+-- 
+2.33.0
+

@@ -1,0 +1,50 @@
+From: Sagi Grimberg <sagi@grimberg.me>
+Date: Thu, 30 Jul 2020 13:24:45 -0700
+Subject: [PATCH] nvme: have nvme_wait_freeze_timeout return if it timed out
+Patch-mainline: v5.9-rc4
+Git-commit: 7cf0d7c0f3c3b0203aaf81c1bc884924d8fdb9bd
+References: bsc#1181161
+
+Users can detect if the wait has completed or not and take appropriate
+actions based on this information (e.g. weather to continue
+initialization or rather fail and schedule another initialization
+attempt).
+
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Sagi Grimberg <sagi@grimberg.me>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ drivers/nvme/host/core.c | 3 ++-
+ drivers/nvme/host/nvme.h | 2 +-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+--- a/drivers/nvme/host/core.c
++++ b/drivers/nvme/host/core.c
+@@ -3771,7 +3771,7 @@ void nvme_unfreeze(struct nvme_ctrl *ctr
+ }
+ EXPORT_SYMBOL_GPL(nvme_unfreeze);
+ 
+-void nvme_wait_freeze_timeout(struct nvme_ctrl *ctrl, long timeout)
++int nvme_wait_freeze_timeout(struct nvme_ctrl *ctrl, long timeout)
+ {
+ 	struct nvme_ns *ns;
+ 
+@@ -3782,6 +3782,7 @@ void nvme_wait_freeze_timeout(struct nvm
+ 			break;
+ 	}
+ 	up_read(&ctrl->namespaces_rwsem);
++	return timeout;
+ }
+ EXPORT_SYMBOL_GPL(nvme_wait_freeze_timeout);
+ 
+--- a/drivers/nvme/host/nvme.h
++++ b/drivers/nvme/host/nvme.h
+@@ -452,7 +452,7 @@ void nvme_kill_queues(struct nvme_ctrl *
+ void nvme_sync_queues(struct nvme_ctrl *ctrl);
+ void nvme_unfreeze(struct nvme_ctrl *ctrl);
+ void nvme_wait_freeze(struct nvme_ctrl *ctrl);
+-void nvme_wait_freeze_timeout(struct nvme_ctrl *ctrl, long timeout);
++int nvme_wait_freeze_timeout(struct nvme_ctrl *ctrl, long timeout);
+ void nvme_start_freeze(struct nvme_ctrl *ctrl);
+ 
+ #define NVME_QID_ANY -1

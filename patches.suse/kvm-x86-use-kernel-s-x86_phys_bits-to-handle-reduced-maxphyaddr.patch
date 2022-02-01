@@ -1,0 +1,56 @@
+From: Sean Christopherson <seanjc@google.com>
+Date: Wed, 23 Jun 2021 16:05:47 -0700
+Subject: KVM: x86: Use kernel's x86_phys_bits to handle reduced MAXPHYADDR
+Git-commit: e39f00f60ebd2e7b295c37a05e6349df656d3eb8
+Patch-mainline: v5.14-rc2
+References: bsc#1114648
+
+Use boot_cpu_data.x86_phys_bits instead of the raw CPUID information to
+enumerate the MAXPHYADDR for KVM guests when TDP is disabled (the guest
+version is only relevant to NPT/TDP).
+
+When using shadow paging, any reductions to the host's MAXPHYADDR apply
+to KVM and its guests as well, i.e. using the raw CPUID info will cause
+KVM to misreport the number of PA bits available to the guest.
+
+Unconditionally zero out the "Physical Address bit reduction" entry.
+For !TDP, the adjustment is already done, and for TDP enumerating the
+host's reduction is wrong as the reduction does not apply to GPAs.
+
+Fixes: 9af9b94068fb ("x86/cpu/AMD: Handle SME reduction in physical address size")
+Cc: stable@vger.kernel.org
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-Id: <20210623230552.4027702-3-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+[ bp: Remove second hunk about 0x8000001F leaf as this kernel doesn't have it
+  and SLE12 is out of scope for SME anyway. ]
+Acked-by: Borislav Petkov <bp@suse.de>
+---
+ arch/x86/kvm/cpuid.c |   15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+--- a/arch/x86/kvm/cpuid.c
++++ b/arch/x86/kvm/cpuid.c
+@@ -652,8 +652,21 @@ static inline int __do_cpuid_ent(struct
+ 		unsigned virt_as = max((entry->eax >> 8) & 0xff, 48U);
+ 		unsigned phys_as = entry->eax & 0xff;
+ 
+-		if (!g_phys_as)
++		/*
++		 * If TDP (NPT) is disabled use the adjusted host MAXPHYADDR as
++		 * the guest operates in the same PA space as the host, i.e.
++		 * reductions in MAXPHYADDR for memory encryption affect shadow
++		 * paging, too.
++		 *
++		 * If TDP is enabled but an explicit guest MAXPHYADDR is not
++		 * provided, use the raw bare metal MAXPHYADDR as reductions to
++		 * the HPAs do not affect GPAs.
++		 */
++		if (!tdp_enabled)
++			g_phys_as = boot_cpu_data.x86_phys_bits;
++		else if (!g_phys_as)
+ 			g_phys_as = phys_as;
++
+ 		entry->eax = g_phys_as | (virt_as << 8);
+ 		entry->edx = 0;
+ 		/*

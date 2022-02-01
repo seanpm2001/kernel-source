@@ -1,0 +1,59 @@
+From: Jason Wang <jasowang@redhat.com>
+Date: Fri, 17 May 2019 00:29:52 -0400
+Subject: vhost: scsi: add weight support
+Patch-mainline: v5.2-rc4
+Git-commit: c1ea02f15ab5efb3e93fc3144d895410bf79fcf2
+References: CVE-2019-3900 bsc#1133374
+
+This patch will check the weight and exit the loop if we exceeds the
+weight. This is useful for preventing scsi kthread from hogging cpu
+which is guest triggerable.
+
+This addresses CVE-2019-3900.
+
+Cc: Paolo Bonzini <pbonzini@redhat.com>
+Cc: Stefan Hajnoczi <stefanha@redhat.com>
+Fixes: 057cbf49a1f0 ("tcm_vhost: Initial merge for vhost level target fabric driver")
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Acked-by: Michal Kubecek <mkubecek@suse.cz>
+
+SLE(4.12 based): omitted part patching code added by mainline commit
+0d02dbd68c47 ("vhost/scsi: Respond to control queue operations") which has
+not bee backported into any 4.12 based SLE branch.
+
+---
+ drivers/vhost/scsi.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+--- a/drivers/vhost/scsi.c
++++ b/drivers/vhost/scsi.c
+@@ -851,7 +851,7 @@ vhost_scsi_handle_vq(struct vhost_scsi *vs, struct vhost_virtqueue *vq)
+ 	u64 tag;
+ 	u32 exp_data_len, data_direction;
+ 	unsigned int out = 0, in = 0;
+-	int head, ret, prot_bytes;
++	int head, ret, prot_bytes, c = 0;
+ 	size_t req_size, rsp_size = sizeof(struct virtio_scsi_cmd_resp);
+ 	size_t out_size, in_size;
+ 	u16 lun;
+@@ -870,7 +870,7 @@ vhost_scsi_handle_vq(struct vhost_scsi *vs, struct vhost_virtqueue *vq)
+ 
+ 	vhost_disable_notify(&vs->dev, vq);
+ 
+-	for (;;) {
++	do {
+ 		head = vhost_get_vq_desc(vq, vq->iov,
+ 					 ARRAY_SIZE(vq->iov), &out, &in,
+ 					 NULL, NULL);
+@@ -1085,7 +1085,7 @@ vhost_scsi_handle_vq(struct vhost_scsi *vs, struct vhost_virtqueue *vq)
+ 		 */
+ 		INIT_WORK(&cmd->work, vhost_scsi_submission_work);
+ 		queue_work(vhost_scsi_workqueue, &cmd->work);
+-	}
++	} while (likely(!vhost_exceeds_weight(vq, ++c, 0)));
+ out:
+ 	mutex_unlock(&vq->mutex);
+ }

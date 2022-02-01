@@ -1,0 +1,40 @@
+From: Jiri Bohac <jbohac@suse.cz>
+Patch-mainline: Never, problem no longer present in v5.14
+References: bsc#1192802
+Subject: infiniband: fix spectre issue in ib_uverbs_write
+
+Found by Smatch:
+	drivers/infiniband/core/uverbs_main.c:767 ib_uverbs_write() warn: potential spectre issue 'uverbs_cmd_table' [r]
+	drivers/infiniband/core/uverbs_main.c:786 ib_uverbs_write() warn: potential spectre issue 'uverbs_ex_cmd_table' [r]
+
+Upstream does not have this code, it has been replaced by d120c3c91871650699ac8e71795925cc98358c3d.
+---
+ drivers/infiniband/core/uverbs_main.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/drivers/infiniband/core/uverbs_main.c
++++ b/drivers/infiniband/core/uverbs_main.c
+@@ -46,6 +46,7 @@
+ #include <linux/anon_inodes.h>
+ #include <linux/slab.h>
+ #include <linux/sched/mm.h>
++#include <linux/nospec.h>
+ 
+ #include <linux/uaccess.h>
+ 
+@@ -765,6 +766,7 @@ static ssize_t ib_uverbs_write(struct fi
+ 	buf += sizeof(hdr);
+ 
+ 	if (!extended) {
++		command = array_index_nospec(command, ARRAY_SIZE(uverbs_cmd_table));
+ 		ret = uverbs_cmd_table[command](file, buf,
+ 						hdr.in_words * 4,
+ 						hdr.out_words * 4);
+@@ -784,6 +786,7 @@ static ssize_t ib_uverbs_write(struct fi
+ 					ex_hdr.provider_in_words * 8,
+ 					ex_hdr.provider_out_words * 8);
+ 
++		command = array_index_nospec(command, ARRAY_SIZE(uverbs_ex_cmd_table));
+ 		ret = uverbs_ex_cmd_table[command](file, &ucore, &uhw);
+ 		ret = (ret) ? : count;
+ 	}

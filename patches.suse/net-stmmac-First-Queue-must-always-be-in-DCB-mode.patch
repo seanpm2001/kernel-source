@@ -1,0 +1,47 @@
+From b225999294c5ddfa4eb92248c7ec941038fdead2 Mon Sep 17 00:00:00 2001
+From: Jose Abreu <Jose.Abreu@synopsys.com>
+Date: Thu, 26 Oct 2017 10:07:12 +0100
+Subject: [PATCH 05/21] net: stmmac: First Queue must always be in DCB mode
+Git-commit: 6d9f0790af8d33476f936ac84a07cac42f808f6c
+Patch-mainline: v4.14-rc7
+References: git-fixes
+
+According to DWMAC databook the first queue operating mode
+must always be in DCB.
+
+As MTL_QUEUE_DCB = 1, we need to always set the first queue
+operating mode to DCB otherwise driver will think that queue
+is in AVB mode (because MTL_QUEUE_AVB = 0).
+
+Signed-off-by: Jose Abreu <joabreu@synopsys.com>
+Cc: Joao Pinto <jpinto@synopsys.com>
+Cc: David S. Miller <davem@davemloft.net>
+Cc: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Cc: Alexandre Torgue <alexandre.torgue@st.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/stmmac_platform.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/stmmac_platform.c b/drivers/net/ethernet/stmicro/stmmac/stmmac_platform.c
+index 9aa60d85fe65..eb11dcccf529 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac_platform.c
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_platform.c
+@@ -150,6 +150,13 @@ static void stmmac_mtl_setup(struct platform_device *pdev,
+ 	plat->rx_queues_to_use = 1;
+ 	plat->tx_queues_to_use = 1;
+ 
++	/* First Queue must always be in DCB mode. As MTL_QUEUE_DCB = 1 we need
++	 * to always set this, otherwise Queue will be classified as AVB
++	 * (because MTL_QUEUE_AVB = 0).
++	 */
++	plat->rx_queues_cfg[0].mode_to_use = MTL_QUEUE_DCB;
++	plat->tx_queues_cfg[0].mode_to_use = MTL_QUEUE_DCB;
++
+ 	rx_node = of_parse_phandle(pdev->dev.of_node, "snps,mtl-rx-config", 0);
+ 	if (!rx_node)
+ 		return;
+-- 
+2.16.4
+

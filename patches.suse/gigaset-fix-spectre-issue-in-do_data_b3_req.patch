@@ -1,0 +1,31 @@
+From: Jiri Bohac <jbohac@suse.cz>
+Patch-mainline: Never, problem no longer present in v5.14
+References: bsc#1192802
+Subject: gigaset: fix spectre issue in do_data_b3_req
+
+Found by Smatch:
+  drivers/isdn/gigaset/capi.c:2088 do_data_b3_req() warn: potential spectre issue 'cs->bcs' [r]
+
+diff --git a/drivers/isdn/gigaset/capi.c b/drivers/isdn/gigaset/capi.c
+index ccec7778cad2..92dfff65fa35 100644
+--- a/drivers/isdn/gigaset/capi.c
++++ b/drivers/isdn/gigaset/capi.c
+@@ -19,6 +19,7 @@
+ #include <linux/isdn/capicmd.h>
+ #include <linux/isdn/capiutil.h>
+ #include <linux/export.h>
++#include <linux/nospec.h>
+ 
+ /* missing from kernelcapi.h */
+ #define CapiNcpiNotSupportedByProtocol	0x0001
+@@ -2085,6 +2086,7 @@ static void do_data_b3_req(struct gigaset_capi_ctr *iif,
+ 		send_conf(iif, ap, skb, CapiIllContrPlciNcci);
+ 		return;
+ 	}
++	channel = array_index_nospec(channel, cs->channels + 1);
+ 	bcs = &cs->bcs[channel - 1];
+ 	if (msglen != CAPI_DATA_B3_REQ_LEN && msglen != CAPI_DATA_B3_REQ_LEN64)
+ 		dev_notice(cs->dev, "%s: unexpected length %d\n",
+-- 
+2.33.0
+

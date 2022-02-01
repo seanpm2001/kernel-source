@@ -20,7 +20,7 @@ Signed-off-by: Hannes Reinecke <hare@suse.com>
 
 --- a/drivers/nvme/host/core.c
 +++ b/drivers/nvme/host/core.c
-@@ -1588,6 +1588,9 @@ static int nvme_revalidate_disk(struct g
+@@ -1640,6 +1640,9 @@ static int nvme_revalidate_disk(struct g
  		return -ENODEV;
  	}
  
@@ -30,7 +30,7 @@ Signed-off-by: Hannes Reinecke <hare@suse.com>
  	ret = nvme_identify_ns(ctrl, ns->head->ns_id, &id);
  	if (ret)
  		goto out;
-@@ -3311,6 +3314,8 @@ static int nvme_scan_ns_list(struct nvme
+@@ -3379,6 +3382,8 @@ static int nvme_scan_ns_list(struct nvme
  		return -ENOMEM;
  
  	for (i = 0; i < num_lists; i++) {
@@ -39,7 +39,7 @@ Signed-off-by: Hannes Reinecke <hare@suse.com>
  		ret = nvme_identify_ns_list(ctrl, prev, ns_list);
  		if (ret)
  			goto free;
-@@ -3389,6 +3394,8 @@ static void nvme_scan_work(struct work_s
+@@ -3457,6 +3462,8 @@ static void nvme_scan_work(struct work_s
  	if (test_and_clear_bit(NVME_AER_NOTICE_NS_CHANGED, &ctrl->events)) {
  		dev_info(ctrl->device, "rescanning namespaces.\n");
  		nvme_clear_changed_ns_log(ctrl);
@@ -50,17 +50,17 @@ Signed-off-by: Hannes Reinecke <hare@suse.com>
  	if (nvme_identify_ctrl(ctrl, &id))
 --- a/drivers/nvme/host/fc.c
 +++ b/drivers/nvme/host/fc.c
-@@ -2959,6 +2959,7 @@ nvme_fc_reset_ctrl_work(struct work_stru
- 
- 	__nvme_fc_terminate_io(ctrl);
+@@ -2965,6 +2965,7 @@ nvme_fc_reset_ctrl_work(struct work_stru
+ 	struct nvme_fc_ctrl *ctrl =
+ 		container_of(work, struct nvme_fc_ctrl, ctrl.reset_work);
  
 +	flush_work(&ctrl->ctrl.scan_work);
  	nvme_stop_ctrl(&ctrl->ctrl);
  
- 	if (ctrl->rport->remoteport.port_state == FC_OBJSTATE_ONLINE)
+ 	/* will block will waiting for io to terminate */
 --- a/drivers/nvme/host/rdma.c
 +++ b/drivers/nvme/host/rdma.c
-@@ -1845,6 +1845,7 @@ static void nvme_rdma_reset_ctrl_work(st
+@@ -1908,6 +1908,7 @@ static void nvme_rdma_reset_ctrl_work(st
  
  	nvme_stop_ctrl(&ctrl->ctrl);
  	nvme_rdma_shutdown_ctrl(ctrl, false);

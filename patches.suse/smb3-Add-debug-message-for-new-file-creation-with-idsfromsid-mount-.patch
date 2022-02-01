@@ -1,0 +1,56 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Fri, 12 Jun 2020 14:49:47 -0500
+Subject: [PATCH] smb3: Add debug message for new file creation with idsfromsid
+ mount option
+Git-commit: a7a519a4926214ba4161bc30109f4a8d69defb8d
+References: bsc#1190317
+Patch-mainline: v5.8-rc1
+
+Pavel noticed that a debug message (disabled by default) in creating the security
+descriptor context could be useful for new file creation owner fields
+(as we already have for the mode) when using mount parm idsfromsid.
+
+[38120.392272] CIFS: FYI: owner S-1-5-88-1-0, group S-1-5-88-2-0
+[38125.792637] CIFS: FYI: owner S-1-5-88-1-1000, group S-1-5-88-2-1000
+
+Also cleans up a typo in a comment
+
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Reviewed-by: Pavel Shilovsky <pshilov@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/inode.c   | 4 ++--
+ fs/cifs/smb2pdu.c | 2 ++
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+--- a/fs/cifs/inode.c
++++ b/fs/cifs/inode.c
+@@ -942,7 +942,7 @@ cifs_get_inode_info(struct inode **inode
+ 	cifs_set_fattr_ino(xid, tcon, sb, inode, full_path, data, &fattr);
+ 
+ 	/*
+-	 * 4. Tweak fattr based on mount options
++	 * 3. Tweak fattr based on mount options
+ 	 */
+ 
+ handle_mnt_opt:
+@@ -986,7 +986,7 @@ handle_mnt_opt:
+ 	}
+ 
+ 	/*
+-	 * 5. Update inode with final fattr data
++	 * 4. Update inode with final fattr data
+ 	 */
+ 
+ 	if (!*inode) {
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -2289,6 +2289,8 @@ static void setup_owner_group_sids(char
+ 	sids->group.SubAuthorities[0] = cpu_to_le32(88);
+ 	sids->group.SubAuthorities[1] = cpu_to_le32(2);
+ 	sids->group.SubAuthorities[2] = cpu_to_le32(current_fsgid().val);
++
++	cifs_dbg(FYI, "owner S-1-5-88-1-%d, group S-1-5-88-2-%d\n", current_fsuid().val, current_fsgid().val);
+ }
+ 
+ /* See MS-SMB2 2.2.13.2.2 and MS-DTYP 2.4.6 */

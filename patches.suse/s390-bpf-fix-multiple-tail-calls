@@ -39,20 +39,20 @@ Signed-off-by: Petr Tesarik <ptesarik@suse.com>
  };
  
  #define BPF_SIZE_MAX	0xffff	/* Max size for program (16 bit branches) */
-@@ -194,6 +193,12 @@ static inline void reg_set_seen(struct b
- 	_EMIT4(op | __pcrel);					\
- })
+@@ -120,6 +120,12 @@ static inline void reg_set_seen(struct b
+ 		jit->seen_reg[r1] = 1;
+ }
  
-+#define EMIT4_PCREL_RIC(op, mask, target)			\
-+({								\
-+	int __rel = ((target) - jit->prg) / 2;			\
-+	_EMIT4((op) | (mask) << 20 | (__rel & 0xffff));		\
++#define EMIT4_PCREL_RIC(op, mask, target)                      \
++({                                                             \
++       int __rel = ((target) - jit->prg) / 2;                  \
++       _EMIT4((op) | (mask) << 20 | (__rel & 0xffff));         \
 +})
 +
- #define _EMIT6(op1, op2)					\
+ #define REG_SET_SEEN(b1)					\
  ({								\
- 	if (jit->prg_buf) {					\
-@@ -226,18 +231,18 @@ static inline void reg_set_seen(struct b
+ 	reg_set_seen(jit, b1);					\
+@@ -226,18 +232,18 @@ static inline void reg_set_seen(struct b
  	REG_SET_SEEN(b3);					\
  })
  
@@ -61,8 +61,8 @@ Signed-off-by: Petr Tesarik <ptesarik@suse.com>
  ({								\
 -	int rel = (jit->labels[label] - jit->prg) >> 1;		\
 +	unsigned int rel = (int)((target) - jit->prg) / 2;	\
- 	_EMIT6(op1 | reg(b1, b2) << 16 | (rel & 0xffff),	\
- 	       op2 | mask << 12);				\
+ 	_EMIT6((op1) | reg(b1, b2) << 16 | (rel & 0xffff),	\
+ 	       (op2) | (mask) << 12);				\
  	REG_SET_SEEN(b1);					\
  	REG_SET_SEEN(b2);					\
  })
@@ -72,8 +72,8 @@ Signed-off-by: Petr Tesarik <ptesarik@suse.com>
  ({								\
 -	int rel = (jit->labels[label] - jit->prg) >> 1;		\
 +	unsigned int rel = (int)((target) - jit->prg) / 2;	\
- 	_EMIT6(op1 | (reg_high(b1) | mask) << 16 |		\
- 		(rel & 0xffff), op2 | (imm & 0xff) << 8);	\
+ 	_EMIT6((op1) | (reg_high(b1) | (mask)) << 16 |		\
+ 		(rel & 0xffff), (op2) | ((imm) & 0xff) << 8);	\
  	REG_SET_SEEN(b1);					\
 @@ -1046,7 +1051,9 @@ static noinline int bpf_jit_insn(struct
  		}
