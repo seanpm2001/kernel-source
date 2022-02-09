@@ -1,0 +1,29 @@
+From: Michal Kubecek <mkubecek@suse.cz>
+Date: Wed, 14 Apr 2021 23:31:55 +0200
+Subject: kabi: revert drop of Qdisc::atomic_qlen
+Patch-mainline: Never, kabi workaround
+References: bsc#1183405
+
+Backport of mainline commit 73eb628ddfd3 ("Revert: "net: sched: put back
+q.qlen into a single location"") dropped member atomic_qlen of struct Qdisc
+and got rid of an anonymous union. Revert these changes to preserve kABI.
+
+Signed-off-by: Michal Kubecek <mkubecek@suse.cz>
+---
+ include/net/sch_generic.h | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/include/net/sch_generic.h
++++ b/include/net/sch_generic.h
+@@ -47,7 +47,10 @@ struct qdisc_size_table {
+ struct qdisc_skb_head {
+ 	struct sk_buff	*head;
+ 	struct sk_buff	*tail;
+-	__u32		qlen;
++	union {
++		u32		qlen;
++		atomic_t	atomic_qlen;
++	};
+ 	spinlock_t	lock;
+ };
+ 

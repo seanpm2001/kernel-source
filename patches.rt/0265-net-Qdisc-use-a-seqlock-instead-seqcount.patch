@@ -14,20 +14,22 @@ the lock while writer is active.
 Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
 Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 ---
- include/linux/seqlock.h    |    9 +++++++++
- include/net/gen_stats.h    |   11 ++++++-----
- include/net/net_seq_lock.h |   15 +++++++++++++++
- include/net/sch_generic.h  |   19 +++++++++++++++++--
- net/core/gen_estimator.c   |    6 +++---
- net/core/gen_stats.c       |   12 ++++++------
- net/sched/sch_api.c        |    2 +-
- net/sched/sch_generic.c    |   12 ++++++++++++
+ include/linux/seqlock.h    |  9 +++++++++
+ include/net/gen_stats.h    | 11 ++++++-----
+ include/net/net_seq_lock.h | 15 +++++++++++++++
+ include/net/sch_generic.h  | 19 +++++++++++++++++--
+ net/core/gen_estimator.c   |  6 +++---
+ net/core/gen_stats.c       | 12 ++++++------
+ net/sched/sch_api.c        |  2 +-
+ net/sched/sch_generic.c    | 12 ++++++++++++
  8 files changed, 69 insertions(+), 17 deletions(-)
  create mode 100644 include/net/net_seq_lock.h
 
+diff --git a/include/linux/seqlock.h b/include/linux/seqlock.h
+index 17a872117585..3d7223ffdd3b 100644
 --- a/include/linux/seqlock.h
 +++ b/include/linux/seqlock.h
-@@ -481,6 +481,15 @@ static inline void write_seqlock(seqlock
+@@ -481,6 +481,15 @@ static inline void write_seqlock(seqlock_t *sl)
  	__raw_write_seqcount_begin(&sl->seqcount);
  }
  
@@ -43,6 +45,8 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  static inline void write_sequnlock(seqlock_t *sl)
  {
  	__raw_write_seqcount_end(&sl->seqcount);
+diff --git a/include/net/gen_stats.h b/include/net/gen_stats.h
+index afea89895713..8a5d0135d362 100644
 --- a/include/net/gen_stats.h
 +++ b/include/net/gen_stats.h
 @@ -5,6 +5,7 @@
@@ -53,7 +57,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  struct gnet_stats_basic_cpu {
  	struct gnet_stats_basic_packed bstats;
-@@ -35,15 +36,15 @@ int gnet_stats_start_copy_compat(struct
+@@ -35,15 +36,15 @@ int gnet_stats_start_copy_compat(struct sk_buff *skb, int type,
  				 spinlock_t *lock, struct gnet_dump *d,
  				 int padattr);
  
@@ -72,7 +76,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			     struct gnet_dump *d,
  			     struct gnet_stats_basic_cpu __percpu *cpu,
  			     struct gnet_stats_basic_packed *b);
-@@ -63,13 +64,13 @@ int gen_new_estimator(struct gnet_stats_
+@@ -63,13 +64,13 @@ int gen_new_estimator(struct gnet_stats_basic_packed *bstats,
  		      struct gnet_stats_basic_cpu __percpu *cpu_bstats,
  		      struct net_rate_estimator __rcu **rate_est,
  		      spinlock_t *lock,
@@ -88,6 +92,9 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  bool gen_estimator_active(struct net_rate_estimator __rcu **ptr);
  bool gen_estimator_read(struct net_rate_estimator __rcu **ptr,
  			struct gnet_stats_rate_est64 *sample);
+diff --git a/include/net/net_seq_lock.h b/include/net/net_seq_lock.h
+new file mode 100644
+index 000000000000..a7034298a82a
 --- /dev/null
 +++ b/include/net/net_seq_lock.h
 @@ -0,0 +1,15 @@
@@ -106,6 +113,8 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +#endif
 +
 +#endif
+diff --git a/include/net/sch_generic.h b/include/net/sch_generic.h
+index 45e4ee119e5f..7c0d2d70369a 100644
 --- a/include/net/sch_generic.h
 +++ b/include/net/sch_generic.h
 @@ -13,6 +13,7 @@
@@ -116,7 +125,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  struct Qdisc_ops;
  struct qdisc_walker;
-@@ -97,7 +98,7 @@ struct Qdisc {
+@@ -98,7 +99,7 @@ struct Qdisc {
  	struct sk_buff_head	gso_skb ____cacheline_aligned_in_smp;
  	struct qdisc_skb_head	q;
  	struct gnet_stats_basic_packed bstats;
@@ -125,7 +134,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	struct gnet_stats_queue	qstats;
  	unsigned long		state;
  	struct Qdisc            *next_sched;
-@@ -132,13 +133,22 @@ static inline struct Qdisc *qdisc_refcou
+@@ -142,9 +143,13 @@ static inline struct Qdisc *qdisc_refcount_inc_nz(struct Qdisc *qdisc)
  
  static inline bool qdisc_is_running(struct Qdisc *qdisc)
  {
@@ -138,6 +147,9 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +#endif
  }
  
+ static inline bool qdisc_is_percpu_stats(const struct Qdisc *q)
+@@ -161,6 +166,11 @@ static inline bool qdisc_is_empty(const struct Qdisc *qdisc)
+ 
  static inline bool qdisc_run_begin(struct Qdisc *qdisc)
  {
 +#ifdef CONFIG_PREEMPT_RT_BASE
@@ -146,9 +158,9 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +	return false;
 +#else
  	if (qdisc->flags & TCQ_F_NOLOCK) {
- 		if (!spin_trylock(&qdisc->seqlock))
- 			return false;
-@@ -151,13 +161,18 @@ static inline bool qdisc_run_begin(struc
+ 		if (spin_trylock(&qdisc->seqlock))
+ 			goto nolock_empty;
+@@ -212,10 +222,14 @@ static inline bool qdisc_run_begin(struct Qdisc *qdisc)
  	raw_write_seqcount_begin(&qdisc->running);
  	seqcount_acquire(&qdisc->running.dep_map, 0, 1, _RET_IP_);
  	return true;
@@ -160,14 +172,18 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +#ifdef CONFIG_PREEMPT_RT_BASE
 +	write_sequnlock(&qdisc->running);
 +#else
- 	write_seqcount_end(&qdisc->running);
- 	if (qdisc->flags & TCQ_F_NOLOCK)
+ 	if (qdisc->flags & TCQ_F_NOLOCK) {
  		spin_unlock(&qdisc->seqlock);
+ 
+@@ -227,6 +241,7 @@ static inline void qdisc_run_end(struct Qdisc *qdisc)
+ 	} else {
+ 		write_seqcount_end(&qdisc->running);
+ 	}
 +#endif
  }
  
  static inline bool qdisc_may_bulk(const struct Qdisc *qdisc)
-@@ -467,7 +482,7 @@ static inline spinlock_t *qdisc_root_sle
+@@ -544,7 +559,7 @@ static inline spinlock_t *qdisc_root_sleeping_lock(const struct Qdisc *qdisc)
  	return qdisc_lock(root);
  }
  
@@ -176,6 +192,8 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	struct Qdisc *root = qdisc_root_sleeping(qdisc);
  
+diff --git a/net/core/gen_estimator.c b/net/core/gen_estimator.c
+index 0969d93cb782..946190d7e1a3 100644
 --- a/net/core/gen_estimator.c
 +++ b/net/core/gen_estimator.c
 @@ -46,7 +46,7 @@
@@ -187,7 +205,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	struct gnet_stats_basic_cpu __percpu *cpu_bstats;
  	u8			ewma_log;
  	u8			intvl_log; /* period : (250ms << intvl_log) */
-@@ -129,7 +129,7 @@ int gen_new_estimator(struct gnet_stats_
+@@ -129,7 +129,7 @@ int gen_new_estimator(struct gnet_stats_basic_packed *bstats,
  		      struct gnet_stats_basic_cpu __percpu *cpu_bstats,
  		      struct net_rate_estimator __rcu **rate_est,
  		      spinlock_t *lock,
@@ -196,7 +214,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		      struct nlattr *opt)
  {
  	struct gnet_estimator *parm = nla_data(opt);
-@@ -227,7 +227,7 @@ int gen_replace_estimator(struct gnet_st
+@@ -227,7 +227,7 @@ int gen_replace_estimator(struct gnet_stats_basic_packed *bstats,
  			  struct gnet_stats_basic_cpu __percpu *cpu_bstats,
  			  struct net_rate_estimator __rcu **rate_est,
  			  spinlock_t *lock,
@@ -205,9 +223,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  {
  	return gen_new_estimator(bstats, cpu_bstats, rate_est,
  				 lock, running, opt);
+diff --git a/net/core/gen_stats.c b/net/core/gen_stats.c
+index 9bf1b9ad1780..a5d587774653 100644
 --- a/net/core/gen_stats.c
 +++ b/net/core/gen_stats.c
-@@ -142,7 +142,7 @@ __gnet_stats_copy_basic_cpu(struct gnet_
+@@ -142,7 +142,7 @@ __gnet_stats_copy_basic_cpu(struct gnet_stats_basic_packed *bstats,
  }
  
  void
@@ -216,7 +236,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			struct gnet_stats_basic_packed *bstats,
  			struct gnet_stats_basic_cpu __percpu *cpu,
  			struct gnet_stats_basic_packed *b)
-@@ -155,15 +155,15 @@ __gnet_stats_copy_basic(const seqcount_t
+@@ -155,15 +155,15 @@ __gnet_stats_copy_basic(const seqcount_t *running,
  	}
  	do {
  		if (running)
@@ -235,7 +255,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			 struct gnet_dump *d,
  			 struct gnet_stats_basic_cpu __percpu *cpu,
  			 struct gnet_stats_basic_packed *b,
-@@ -204,7 +204,7 @@ ___gnet_stats_copy_basic(const seqcount_
+@@ -204,7 +204,7 @@ ___gnet_stats_copy_basic(const seqcount_t *running,
   * if the room in the socket buffer was not sufficient.
   */
  int
@@ -253,9 +273,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			 struct gnet_dump *d,
  			 struct gnet_stats_basic_cpu __percpu *cpu,
  			 struct gnet_stats_basic_packed *b)
+diff --git a/net/sched/sch_api.c b/net/sched/sch_api.c
+index 844c11acce03..910670b8a5d7 100644
 --- a/net/sched/sch_api.c
 +++ b/net/sched/sch_api.c
-@@ -1188,7 +1188,7 @@ static struct Qdisc *qdisc_create(struct
+@@ -1201,7 +1201,7 @@ static struct Qdisc *qdisc_create(struct net_device *dev,
  		rcu_assign_pointer(sch->stab, stab);
  	}
  	if (tca[TCA_RATE]) {
@@ -264,9 +286,11 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  		err = -EOPNOTSUPP;
  		if (sch->flags & TCQ_F_MQROOT) {
+diff --git a/net/sched/sch_generic.c b/net/sched/sch_generic.c
+index 5da52e4d3f56..85041afa9c4d 100644
 --- a/net/sched/sch_generic.c
 +++ b/net/sched/sch_generic.c
-@@ -567,7 +567,11 @@ struct Qdisc noop_qdisc = {
+@@ -581,7 +581,11 @@ struct Qdisc noop_qdisc = {
  	.ops		=	&noop_qdisc_ops,
  	.q.lock		=	__SPIN_LOCK_UNLOCKED(noop_qdisc.q.lock),
  	.dev_queue	=	&noop_netdev_queue,
@@ -278,7 +302,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	.busylock	=	__SPIN_LOCK_UNLOCKED(noop_qdisc.busylock),
  	.gso_skb = {
  		.next = (struct sk_buff *)&noop_qdisc.gso_skb,
-@@ -881,9 +885,17 @@ struct Qdisc *qdisc_alloc(struct netdev_
+@@ -918,9 +922,17 @@ struct Qdisc *qdisc_alloc(struct netdev_queue *dev_queue,
  	lockdep_set_class(&sch->busylock,
  			  dev->qdisc_tx_busylock ?: &qdisc_tx_busylock);
  
@@ -296,3 +320,6 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	sch->ops = ops;
  	sch->flags = ops->static_flags;
+-- 
+2.35.1
+

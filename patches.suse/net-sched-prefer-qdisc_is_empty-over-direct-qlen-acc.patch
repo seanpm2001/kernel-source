@@ -1,0 +1,32 @@
+From: Paolo Abeni <pabeni@redhat.com>
+Date: Wed, 10 Apr 2019 14:32:38 +0200
+Subject: net: sched: prefer qdisc_is_empty() over direct qlen access
+Patch-mainline: v5.2-rc1
+Git-commit: 1f5e6fdd6aec7929e67afad1e42e35d894a119ae
+References: bsc#1183405
+
+When checking for root qdisc queue length, do not access directly q.qlen.
+In the following patches we will move back qlen accounting to per CPU
+values for NOLOCK qdiscs.
+
+Instead, prefer the qdisc_is_empty() helper usage.
+
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Michal Kubecek <mkubecek@suse.cz>
+
+---
+ include/net/sch_generic.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/include/net/sch_generic.h
++++ b/include/net/sch_generic.h
+@@ -652,7 +652,7 @@ static inline bool qdisc_all_tx_empty(const struct net_device *dev)
+ 		struct netdev_queue *txq = netdev_get_tx_queue(dev, i);
+ 		const struct Qdisc *q = rcu_dereference(txq->qdisc);
+ 
+-		if (q->q.qlen) {
++		if (!qdisc_is_empty(q)) {
+ 			rcu_read_unlock();
+ 			return false;
+ 		}
