@@ -1,0 +1,58 @@
+From: NeilBrown <neilb@suse.de>
+Subject: sunrpc/auth_gss: support timeout on gss upcalls
+Patch-mainline: Never, this is a work around for customer
+References: bsc#1193857
+
+Customer repoorts kernel waiting indefinitely for reply from rpc.gssd,
+but there is no evidence of rpc.gssd misbehaving.
+
+This is a work around which may allow customer system to continue
+working until we isolate the problem.
+
+echo 10 > /sys/module/auth_rpcgss/parameters/upcall_timeo
+
+to enable.
+
+Signed-off-by: NeilBrown <neilb@suse.de>
+---
+ net/sunrpc/auth_gss/auth_gss.c |   16 +++++++++++++++-
+ 1 file changed, 15 insertions(+), 1 deletion(-)
+
+--- a/net/sunrpc/auth_gss/auth_gss.c
++++ b/net/sunrpc/auth_gss/auth_gss.c
+@@ -610,6 +610,8 @@ out:
+ 	return err;
+ }
+ 
++static unsigned int upcall_timeout;
++
+ static inline int
+ gss_create_upcall(struct gss_auth *gss_auth, struct gss_cred *gss_cred)
+ {
+@@ -658,7 +660,13 @@ retry:
+ 			err = -ERESTARTSYS;
+ 			goto out_intr;
+ 		}
+-		schedule();
++		if (upcall_timeout == 0)
++			schedule();
++		else if (schedule_timeout(upcall_timeout * HZ) == 0) {
++			pr_err("GSS upcall timed-out - please check rpc.gssd is healthy\n");
++			err = -ETIMEDOUT;
++			goto out_intr;
++		}
+ 	}
+ 	if (gss_msg->ctx)
+ 		gss_cred_set_ctx(cred, gss_msg->ctx);
+@@ -2122,5 +2130,11 @@ MODULE_PARM_DESC(key_expire_timeo, "Time
+ 		"credential keys lifetime where the NFS layer cleans up "
+ 		"prior to key expiration");
+ 
++module_param_named(upcall_timeo,
++		   upcall_timeout,
++		   uint, 0644);
++MODULE_PARM_DESC(upcall_timeo,
++		 "Time (in seconds) to wait for reply from rpc.gssd");
++
+ module_init(init_rpcsec_gss)
+ module_exit(exit_rpcsec_gss)
