@@ -1,0 +1,47 @@
+From: Borislav Petkov <bp@suse.de>
+Date: Mon, 15 Jun 2020 08:51:25 +0200
+Subject: x86/speculation: Merge one test in
+ spectre_v2_user_select_mitigation()
+Git-commit: a5ce9f2bb665d1d2b31f139a02dbaa2dfbb62fa6
+Patch-mainline: v5.9-rc1
+References: bsc#1191580 CVE-2022-0001 CVE-2022-0002
+
+Merge the test whether the CPU supports STIBP into the test which
+determines whether STIBP is required. Thus try to simplify what is
+already an insane logic.
+
+Remove a superfluous newline in a comment, while at it.
+
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Cc: Anthony Steinhauser <asteinhauser@google.com>
+Link: https://lkml.kernel.org/r/20200615065806.GB14668@zn.tnic
+---
+ arch/x86/kernel/cpu/bugs.c |   13 ++++---------
+ 1 file changed, 4 insertions(+), 9 deletions(-)
+
+--- a/arch/x86/kernel/cpu/bugs.c
++++ b/arch/x86/kernel/cpu/bugs.c
+@@ -785,19 +785,14 @@ spectre_v2_user_select_mitigation(enum s
+ 	}
+ 
+ 	/*
+-	 * If enhanced IBRS is enabled or SMT impossible, STIBP is not
++	 * If no STIBP, enhanced IBRS is enabled or SMT impossible, STIBP is not
+ 	 * required.
+ 	 */
+-	if (!smt_possible || spectre_v2_enabled == SPECTRE_V2_IBRS_ENHANCED)
++	if (!boot_cpu_has(X86_FEATURE_STIBP) ||
++	    !smt_possible ||
++	    spectre_v2_enabled == SPECTRE_V2_IBRS_ENHANCED)
+ 		return;
+ 
+-	/*
+-	 * If SMT is not possible or STIBP is not available clear the STIPB
+-	 * mode.
+-	 */
+-	if (!boot_cpu_has(X86_FEATURE_STIBP))
+-		mode = SPECTRE_V2_USER_NONE;
+-
+ 	spectre_v2_user_stibp = mode;
+ 
+ set_mode:
