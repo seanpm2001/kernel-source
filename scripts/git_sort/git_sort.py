@@ -209,8 +209,9 @@ remotes = (
     Head(RepoURL("https://github.com/kdave/btrfs-devel.git"), "misc-next"),
     Head(RepoURL("git://anongit.freedesktop.org/drm/drm"), "drm-next"),
     Head(RepoURL("git://anongit.freedesktop.org/drm/drm-misc"), "drm-misc-next"),
+    Head(RepoURL("gregkh/driver-core.git"), "driver-core-next"),
     Head(RepoURL("gregkh/tty.git"), "tty-next"),
-    Head(RepoURL("gregkh/usb.git"), "usb-testing"),
+    Head(RepoURL("gregkh/usb.git"), "usb-next"),
     Head(RepoURL("jj/linux-apparmor.git"), "apparmor-next"),
     Head(RepoURL("pablo/nf.git")),
     Head(RepoURL("pablo/nf-next.git")),
@@ -258,7 +259,6 @@ remotes = (
     Head(RepoURL("git://github.com/ceph/ceph-client"), "testing"),
     Head(RepoURL("bpf/bpf.git")),
     Head(RepoURL("linusw/linux-gpio.git"), "for-next"),
-    Head(RepoURL("paulmck/linux-rcu.git"), "dev.2021.11.12a"),
 )
 
 
