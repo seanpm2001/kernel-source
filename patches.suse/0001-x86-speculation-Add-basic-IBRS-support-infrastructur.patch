@@ -63,34 +63,34 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
 @@ -652,6 +652,7 @@ enum spectre_v2_mitigation_cmd {
  	SPECTRE_V2_CMD_RETPOLINE,
  	SPECTRE_V2_CMD_RETPOLINE_GENERIC,
- 	SPECTRE_V2_CMD_RETPOLINE_AMD,
+ 	SPECTRE_V2_CMD_RETPOLINE_LFENCE,
 +	SPECTRE_V2_CMD_IBRS,
  };
  
  enum spectre_v2_user_cmd {
 @@ -804,6 +805,7 @@ static const char * const spectre_v2_str
- 	[SPECTRE_V2_RETPOLINE_GENERIC]		= "Mitigation: Full generic retpoline",
- 	[SPECTRE_V2_RETPOLINE_AMD]		= "Mitigation: Full AMD retpoline",
+ 	[SPECTRE_V2_RETPOLINE]			= "Mitigation: Retpolines",
+ 	[SPECTRE_V2_LFENCE]			= "Mitigation: LFENCE",
  	[SPECTRE_V2_IBRS_ENHANCED]		= "Mitigation: Enhanced IBRS",
 +	[SPECTRE_V2_IBRS]			= "Mitigation: Indirect Branch Restricted Speculation",
  };
  
  static const struct {
-@@ -816,6 +818,7 @@ static const struct {
- 	{ "retpoline",		SPECTRE_V2_CMD_RETPOLINE,	  false },
- 	{ "retpoline,amd",	SPECTRE_V2_CMD_RETPOLINE_AMD,	  false },
+@@ -817,6 +819,7 @@ static const struct {
+ 	{ "retpoline,amd",	SPECTRE_V2_CMD_RETPOLINE_LFENCE,  false },
+ 	{ "retpoline,lfence",	SPECTRE_V2_CMD_RETPOLINE_LFENCE,  false },
  	{ "retpoline,generic",	SPECTRE_V2_CMD_RETPOLINE_GENERIC, false },
-+	{ "ibrs",              SPECTRE_V2_CMD_IBRS,              false },
++	{ "ibrs",		SPECTRE_V2_CMD_IBRS,		  false },
  	{ "auto",		SPECTRE_V2_CMD_AUTO,		  false },
  };
  
-@@ -881,6 +884,20 @@ static void __init spectre_v2_select_mit
+@@ -888,6 +891,20 @@ static void __init spectre_v2_select_mit
  	case SPECTRE_V2_CMD_NONE:
  		return;
  
-+	case SPECTRE_V2_CMD_RETPOLINE_AMD:
++	case SPECTRE_V2_CMD_RETPOLINE_LFENCE:
 +		if (IS_ENABLED(CONFIG_RETPOLINE))
-+			goto retpoline_amd;
++			goto retpoline_lfence;
 +		break;
 +	case SPECTRE_V2_CMD_RETPOLINE_GENERIC:
 +		if (IS_ENABLED(CONFIG_RETPOLINE))
@@ -105,22 +105,22 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  	case SPECTRE_V2_CMD_FORCE:
  	case SPECTRE_V2_CMD_AUTO:
  		if (boot_cpu_has(X86_FEATURE_IBRS_ENHANCED)) {
-@@ -890,17 +907,7 @@ static void __init spectre_v2_select_mit
+@@ -897,17 +914,7 @@ static void __init spectre_v2_select_mit
  			wrmsrl(MSR_IA32_SPEC_CTRL, x86_spec_ctrl_base);
  			goto specv2_set_mode;
  		}
 -		if (IS_ENABLED(CONFIG_RETPOLINE))
 -			goto retpoline_auto;
 -		break;
--	case SPECTRE_V2_CMD_RETPOLINE_AMD:
+-	case SPECTRE_V2_CMD_RETPOLINE_LFENCE:
 -		if (IS_ENABLED(CONFIG_RETPOLINE))
--			goto retpoline_amd;
+-			goto retpoline_lfence;
 -		break;
 -	case SPECTRE_V2_CMD_RETPOLINE_GENERIC:
 -		if (IS_ENABLED(CONFIG_RETPOLINE))
 -			goto retpoline_generic;
 -		break;
-+
++		/* fall through */
  	case SPECTRE_V2_CMD_RETPOLINE:
  		if (IS_ENABLED(CONFIG_RETPOLINE))
  			goto retpoline_auto;
