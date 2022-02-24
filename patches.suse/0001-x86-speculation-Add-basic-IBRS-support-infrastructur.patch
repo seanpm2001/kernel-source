@@ -22,13 +22,13 @@ Signed-off-by: David Woodhouse <dwmw@amazon.co.uk>
 Signed-off-by: KarimAllah Ahmed <karahmed@amazon.de>
 Signed-off-by: Jiri Slaby <jslaby@suse.cz>
 ---
- Documentation/admin-guide/kernel-parameters.txt |    1 
- arch/x86/include/asm/cpufeatures.h              |    1 
- arch/x86/include/asm/nospec-branch.h            |    2 -
- arch/x86/kernel/cpu/bugs.c                      |   29 ++++++++++++++----------
- arch/x86/lib/Makefile                           |    2 -
- arch/x86/lib/retpoline.S                        |    5 ++++
- 6 files changed, 26 insertions(+), 14 deletions(-)
+ Documentation/admin-guide/kernel-parameters.txt |    1 +
+ arch/x86/include/asm/cpufeatures.h              |    1 +
+ arch/x86/include/asm/nospec-branch.h            |    2 --
+ arch/x86/kernel/cpu/bugs.c                      |   12 ++++++++++++
+ arch/x86/lib/Makefile                           |    2 +-
+ arch/x86/lib/retpoline.S                        |    5 +++++
+ 6 files changed, 20 insertions(+), 3 deletions(-)
 
 --- a/arch/x86/include/asm/cpufeatures.h
 +++ b/arch/x86/include/asm/cpufeatures.h
@@ -42,7 +42,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  #define X86_FEATURE_IBRS		( 7*32+26) /* Indirect Branch Restricted Speculation */
 --- a/arch/x86/include/asm/nospec-branch.h
 +++ b/arch/x86/include/asm/nospec-branch.h
-@@ -256,7 +256,6 @@ extern char __indirect_thunk_end[];
+@@ -258,7 +258,6 @@ extern char __indirect_thunk_end[];
   */
  static inline void vmexit_fill_RSB(void)
  {
@@ -50,7 +50,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  	unsigned long loops;
  
  	asm volatile (ANNOTATE_NOSPEC_ALTERNATIVE
-@@ -266,7 +265,6 @@ static inline void vmexit_fill_RSB(void)
+@@ -268,7 +267,6 @@ static inline void vmexit_fill_RSB(void)
  		      "910:"
  		      : "=r" (loops), ASM_CALL_CONSTRAINT
  		      : : "memory" );
@@ -60,43 +60,34 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  static __always_inline
 --- a/arch/x86/kernel/cpu/bugs.c
 +++ b/arch/x86/kernel/cpu/bugs.c
-@@ -652,6 +652,7 @@ enum spectre_v2_mitigation_cmd {
- 	SPECTRE_V2_CMD_RETPOLINE,
- 	SPECTRE_V2_CMD_RETPOLINE_GENERIC,
- 	SPECTRE_V2_CMD_RETPOLINE_LFENCE,
+@@ -655,6 +655,7 @@ enum spectre_v2_mitigation_cmd {
+ 	SPECTRE_V2_CMD_EIBRS,
+ 	SPECTRE_V2_CMD_EIBRS_RETPOLINE,
+ 	SPECTRE_V2_CMD_EIBRS_LFENCE,
 +	SPECTRE_V2_CMD_IBRS,
  };
  
  enum spectre_v2_user_cmd {
-@@ -804,6 +805,7 @@ static const char * const spectre_v2_str
- 	[SPECTRE_V2_RETPOLINE]			= "Mitigation: Retpolines",
- 	[SPECTRE_V2_LFENCE]			= "Mitigation: LFENCE",
- 	[SPECTRE_V2_IBRS_ENHANCED]		= "Mitigation: Enhanced IBRS",
+@@ -816,6 +817,7 @@ static const char * const spectre_v2_str
+ 	[SPECTRE_V2_EIBRS]			= "Mitigation: Enhanced IBRS",
+ 	[SPECTRE_V2_EIBRS_LFENCE]		= "Mitigation: Enhanced IBRS + LFENCE",
+ 	[SPECTRE_V2_EIBRS_RETPOLINE]		= "Mitigation: Enhanced IBRS + Retpolines",
 +	[SPECTRE_V2_IBRS]			= "Mitigation: Indirect Branch Restricted Speculation",
  };
  
  static const struct {
-@@ -817,6 +819,7 @@ static const struct {
- 	{ "retpoline,amd",	SPECTRE_V2_CMD_RETPOLINE_LFENCE,  false },
- 	{ "retpoline,lfence",	SPECTRE_V2_CMD_RETPOLINE_LFENCE,  false },
- 	{ "retpoline,generic",	SPECTRE_V2_CMD_RETPOLINE_GENERIC, false },
+@@ -832,6 +834,7 @@ static const struct {
+ 	{ "eibrs",		SPECTRE_V2_CMD_EIBRS,		  false },
+ 	{ "eibrs,lfence",	SPECTRE_V2_CMD_EIBRS_LFENCE,	  false },
+ 	{ "eibrs,retpoline",	SPECTRE_V2_CMD_EIBRS_RETPOLINE,	  false },
 +	{ "ibrs",		SPECTRE_V2_CMD_IBRS,		  false },
  	{ "auto",		SPECTRE_V2_CMD_AUTO,		  false },
  };
  
-@@ -888,6 +891,20 @@ static void __init spectre_v2_select_mit
+@@ -936,6 +939,11 @@ static void __init spectre_v2_select_mit
  	case SPECTRE_V2_CMD_NONE:
  		return;
  
-+	case SPECTRE_V2_CMD_RETPOLINE_LFENCE:
-+		if (IS_ENABLED(CONFIG_RETPOLINE))
-+			goto retpoline_lfence;
-+		break;
-+	case SPECTRE_V2_CMD_RETPOLINE_GENERIC:
-+		if (IS_ENABLED(CONFIG_RETPOLINE))
-+			goto retpoline_generic;
-+		break;
-+
 +	case SPECTRE_V2_CMD_IBRS:
 +		mode = SPECTRE_V2_IBRS;
 +		setup_force_cpu_cap(X86_FEATURE_USE_IBRS);
@@ -105,25 +96,19 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  	case SPECTRE_V2_CMD_FORCE:
  	case SPECTRE_V2_CMD_AUTO:
  		if (boot_cpu_has(X86_FEATURE_IBRS_ENHANCED)) {
-@@ -897,17 +914,7 @@ static void __init spectre_v2_select_mit
- 			wrmsrl(MSR_IA32_SPEC_CTRL, x86_spec_ctrl_base);
- 			goto specv2_set_mode;
- 		}
--		if (IS_ENABLED(CONFIG_RETPOLINE))
--			goto retpoline_auto;
--		break;
--	case SPECTRE_V2_CMD_RETPOLINE_LFENCE:
--		if (IS_ENABLED(CONFIG_RETPOLINE))
--			goto retpoline_lfence;
--		break;
--	case SPECTRE_V2_CMD_RETPOLINE_GENERIC:
--		if (IS_ENABLED(CONFIG_RETPOLINE))
--			goto retpoline_generic;
--		break;
-+		/* fall through */
- 	case SPECTRE_V2_CMD_RETPOLINE:
- 		if (IS_ENABLED(CONFIG_RETPOLINE))
- 			goto retpoline_auto;
+@@ -991,8 +999,12 @@ static void __init spectre_v2_select_mit
+ 	case SPECTRE_V2_EIBRS_RETPOLINE:
+ 		setup_force_cpu_cap(X86_FEATURE_RETPOLINE);
+ 		break;
++
++	default:
++		break;
+ 	}
+ 
++specv2_set_mode:
+ 	spectre_v2_enabled = mode;
+ 	pr_info("%s\n", spectre_v2_strings[mode]);
+ 
 --- a/arch/x86/lib/Makefile
 +++ b/arch/x86/lib/Makefile
 @@ -37,7 +37,7 @@ lib-y += memcpy_$(BITS).o
