@@ -1,0 +1,50 @@
+From: Petr Tesarik <ptesarik@suse.com>
+Date: Mon, 14 Feb 2022 13:00:13 +0100
+Subject: kabi: Hide changes to s390/AP structures
+Patch-mainline: Never, kabi workaround
+References: jsc#SLE-20809
+
+Kernel commit bd39654a2282c1a51c044575a6bc00d641d5dfd1 adds these new
+fields:
+
+- struct ap_card: unsigned int maxmsgsize
+  Can be added at end, because struct ap_card is allocated only by
+  ap_card_create (which gets the correct new size), it is not embedded
+  in any other structure, and its definition is in a driver-private header
+  file (so potential out-of-tree users do not know its size).
+
+- struct ap_message: unsigned int bufsize
+  Fits into the hole at offset 44, filling it completely.
+
+Signed-off-by: Petr Tesarik <ptesarik@suse.com>
+
+---
+ drivers/s390/crypto/ap_bus.h |    8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+--- a/drivers/s390/crypto/ap_bus.h
++++ b/drivers/s390/crypto/ap_bus.h
+@@ -175,8 +175,10 @@ struct ap_card {
+ 	unsigned int functions;		/* AP device function bitfield. */
+ 	int queue_depth;		/* AP queue depth.*/
+ 	int id;				/* AP card number. */
+-	unsigned int maxmsgsize;	/* AP msg limit for this card */
+ 	atomic_t total_request_count;	/* # requests ever for this AP device.*/
++#ifndef __GENKSYMS__
++	unsigned int maxmsgsize;	/* AP msg limit for this card */
++#endif
+ };
+ 
+ #define to_ap_card(x) container_of((x), struct ap_card, ap_dev.device)
+@@ -210,8 +212,10 @@ struct ap_message {
+ 	unsigned long long psmid;	/* Message id. */
+ 	void *message;			/* Pointer to message buffer. */
+ 	size_t length;			/* actual msg len in msg buffer */
+-	unsigned int bufsize;		/* allocated msg buffer size */
+ 	int rc;				/* Return code for this message */
++#ifndef __GENKSYMS__
++	unsigned int bufsize;		/* allocated msg buffer size */
++#endif
+ 
+ 	void *private;			/* ap driver private pointer. */
+ 	unsigned int special:1;		/* Used for special commands. */

@@ -1,0 +1,285 @@
+From b6ee566cf3940883d67c0d142fae8d410e975f47 Mon Sep 17 00:00:00 2001
+From: Dany Madden <drt@linux.ibm.com>
+Date: Tue, 14 Dec 2021 00:17:47 -0500
+Subject: [PATCH] ibmvnic: Update driver return codes
+
+References: bsc#1196516 ltc#196391
+Patch-mainline: v5.17-rc1
+Git-commit: b6ee566cf3940883d67c0d142fae8d410e975f47
+
+Update return codes to be more informative.
+
+Signed-off-by: Jacob Root <otis@otisroot.com>
+Signed-off-by: Dany Madden <drt@linux.ibm.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ drivers/net/ethernet/ibm/ibmvnic.c | 64 ++++++++++++++++--------------
+ 1 file changed, 34 insertions(+), 30 deletions(-)
+
+diff --git a/drivers/net/ethernet/ibm/ibmvnic.c b/drivers/net/ethernet/ibm/ibmvnic.c
+--- a/drivers/net/ethernet/ibm/ibmvnic.c
++++ b/drivers/net/ethernet/ibm/ibmvnic.c
+@@ -264,7 +264,7 @@ static int alloc_long_term_buff(struct i
+ 	if (adapter->fw_done_rc) {
+ 		dev_err(dev, "Couldn't map long term buffer,rc = %d\n",
+ 			adapter->fw_done_rc);
+-		rc = -1;
++		rc = -EIO;
+ 		goto out;
+ 	}
+ 	rc = 0;
+@@ -495,13 +495,15 @@ static int init_stats_token(struct ibmvn
+ {
+ 	struct device *dev = &adapter->vdev->dev;
+ 	dma_addr_t stok;
++	int rc;
+ 
+ 	stok = dma_map_single(dev, &adapter->stats,
+ 			      sizeof(struct ibmvnic_statistics),
+ 			      DMA_FROM_DEVICE);
+-	if (dma_mapping_error(dev, stok)) {
+-		dev_err(dev, "Couldn't map stats buffer\n");
+-		return -1;
++	rc = dma_mapping_error(dev, stok);
++	if (rc) {
++		dev_err(dev, "Couldn't map stats buffer, rc = %d\n", rc);
++		return rc;
+ 	}
+ 
+ 	adapter->stats_token = stok;
+@@ -517,7 +519,7 @@ static int reset_rx_pools(struct ibmvnic
+ 	int i, j, rc;
+ 
+ 	if (!adapter->rx_pool)
+-		return -1;
++		return -ENOBUFS;
+ 
+ 	buff_size = adapter->cur_rx_buf_sz;
+ 	rx_scrqs = adapter->num_active_rx_pools;
+@@ -597,7 +599,7 @@ static int init_rx_pools(struct net_devi
+ 	struct ibmvnic_rx_pool *rx_pool;
+ 	int rxadd_subcrqs;
+ 	u64 buff_size;
+-	int i, j;
++	int i, j, rc;
+ 
+ 	rxadd_subcrqs = adapter->num_active_rx_scrqs;
+ 	buff_size = adapter->cur_rx_buf_sz;
+@@ -607,7 +609,7 @@ static int init_rx_pools(struct net_devi
+ 				   GFP_KERNEL);
+ 	if (!adapter->rx_pool) {
+ 		dev_err(dev, "Failed to allocate rx pools\n");
+-		return -1;
++		return -ENOMEM;
+ 	}
+ 
+ 	adapter->num_active_rx_pools = rxadd_subcrqs;
+@@ -629,7 +631,7 @@ static int init_rx_pools(struct net_devi
+ 					    GFP_KERNEL);
+ 		if (!rx_pool->free_map) {
+ 			release_rx_pools(adapter);
+-			return -1;
++			return -ENOMEM;
+ 		}
+ 
+ 		rx_pool->rx_buff = kcalloc(rx_pool->size,
+@@ -638,13 +640,14 @@ static int init_rx_pools(struct net_devi
+ 		if (!rx_pool->rx_buff) {
+ 			dev_err(dev, "Couldn't alloc rx buffers\n");
+ 			release_rx_pools(adapter);
+-			return -1;
++			return -ENOMEM;
+ 		}
+ 
+-		if (alloc_long_term_buff(adapter, &rx_pool->long_term_buff,
+-					 rx_pool->size * rx_pool->buff_size)) {
++		rc = alloc_long_term_buff(adapter, &rx_pool->long_term_buff,
++					  rx_pool->size * rx_pool->buff_size);
++		if (rc) {
+ 			release_rx_pools(adapter);
+-			return -1;
++			return rc;
+ 		}
+ 
+ 		for (j = 0; j < rx_pool->size; ++j)
+@@ -686,7 +689,7 @@ static int reset_tx_pools(struct ibmvnic
+ 	int i, rc;
+ 
+ 	if (!adapter->tx_pool)
+-		return -1;
++		return -ENOBUFS;
+ 
+ 	tx_scrqs = adapter->num_active_tx_pools;
+ 	for (i = 0; i < tx_scrqs; i++) {
+@@ -744,21 +747,22 @@ static int init_one_tx_pool(struct net_d
+ 			    int num_entries, int buf_size)
+ {
+ 	struct ibmvnic_adapter *adapter = netdev_priv(netdev);
+-	int i;
++	int i, rc;
+ 
+ 	tx_pool->tx_buff = kcalloc(num_entries,
+ 				   sizeof(struct ibmvnic_tx_buff),
+ 				   GFP_KERNEL);
+ 	if (!tx_pool->tx_buff)
+-		return -1;
++		return -ENOMEM;
+ 
+-	if (alloc_long_term_buff(adapter, &tx_pool->long_term_buff,
+-				 num_entries * buf_size))
+-		return -1;
++	rc = alloc_long_term_buff(adapter, &tx_pool->long_term_buff,
++				 num_entries * buf_size);
++	if (rc)
++		return rc;
+ 
+ 	tx_pool->free_map = kcalloc(num_entries, sizeof(int), GFP_KERNEL);
+ 	if (!tx_pool->free_map)
+-		return -1;
++		return -ENOMEM;
+ 
+ 	for (i = 0; i < num_entries; i++)
+ 		tx_pool->free_map[i] = i;
+@@ -782,14 +786,14 @@ static int init_tx_pools(struct net_devi
+ 	adapter->tx_pool = kcalloc(tx_subcrqs,
+ 				   sizeof(struct ibmvnic_tx_pool), GFP_KERNEL);
+ 	if (!adapter->tx_pool)
+-		return -1;
++		return -ENOMEM;
+ 
+ 	adapter->tso_pool = kcalloc(tx_subcrqs,
+ 				    sizeof(struct ibmvnic_tx_pool), GFP_KERNEL);
+ 	if (!adapter->tso_pool) {
+ 		kfree(adapter->tx_pool);
+ 		adapter->tx_pool = NULL;
+-		return -1;
++		return -ENOMEM;
+ 	}
+ 
+ 	adapter->num_active_tx_pools = tx_subcrqs;
+@@ -920,7 +924,7 @@ static int ibmvnic_login(struct net_devi
+ 		retry = false;
+ 		if (retry_count > retries) {
+ 			netdev_warn(netdev, "Login attempts exceeded\n");
+-			return -1;
++			return -EACCES;
+ 		}
+ 
+ 		adapter->init_done_rc = 0;
+@@ -961,25 +965,26 @@ static int ibmvnic_login(struct net_devi
+ 							 timeout)) {
+ 				netdev_warn(netdev,
+ 					    "Capabilities query timed out\n");
+-				return -1;
++				return -ETIMEDOUT;
+ 			}
+ 
+ 			rc = init_sub_crqs(adapter);
+ 			if (rc) {
+ 				netdev_warn(netdev,
+ 					    "SCRQ initialization failed\n");
+-				return -1;
++				return rc;
+ 			}
+ 
+ 			rc = init_sub_crq_irqs(adapter);
+ 			if (rc) {
+ 				netdev_warn(netdev,
+ 					    "SCRQ irq initialization failed\n");
+-				return -1;
++				return rc;
+ 			}
+ 		} else if (adapter->init_done_rc) {
+-			netdev_warn(netdev, "Adapter login failed\n");
+-			return -1;
++			netdev_warn(netdev, "Adapter login failed, init_done_rc = %d\n",
++				    adapter->init_done_rc);
++			return -EIO;
+ 		}
+ 	} while (retry);
+ 
+@@ -1041,7 +1046,7 @@ static int set_link_state(struct ibmvnic
+ 		if (!wait_for_completion_timeout(&adapter->init_done,
+ 						 timeout)) {
+ 			netdev_err(netdev, "timeout setting link state\n");
+-			return -1;
++			return -ETIMEDOUT;
+ 		}
+ 
+ 		if (adapter->init_done_rc == PARTIALSUCCESS) {
+@@ -2035,7 +2040,7 @@ static int do_reset(struct ibmvnic_adapt
+ 				/* If someone else changed the adapter state
+ 				 * when we dropped the rtnl, fail the reset
+ 				 */
+-				rc = -1;
++				rc = -EAGAIN;
+ 				goto out;
+ 			}
+ 			adapter->state = VNIC_CLOSED;
+@@ -2077,10 +2082,8 @@ static int do_reset(struct ibmvnic_adapt
+ 		}
+ 
+ 		rc = ibmvnic_reset_init(adapter, true);
+-		if (rc) {
+-			rc = IBMVNIC_INIT_FAILED;
++		if (rc)
+ 			goto out;
+-		}
+ 
+ 		/* If the adapter was in PROBE or DOWN state prior to the reset,
+ 		 * exit here.
+@@ -3477,7 +3480,7 @@ static int init_sub_crqs(struct ibmvnic_
+ 
+ 	allqueues = kcalloc(total_queues, sizeof(*allqueues), GFP_KERNEL);
+ 	if (!allqueues)
+-		return -1;
++		return -ENOMEM;
+ 
+ 	for (i = 0; i < total_queues; i++) {
+ 		allqueues[i] = init_sub_crq_queue(adapter);
+@@ -3546,7 +3549,7 @@ tx_failed:
+ 	for (i = 0; i < registered_queues; i++)
+ 		release_sub_crq_queue(adapter, allqueues[i], 1);
+ 	kfree(allqueues);
+-	return -1;
++	return -ENOMEM;
+ }
+ 
+ static void send_request_cap(struct ibmvnic_adapter *adapter, int retry)
+@@ -3937,7 +3940,7 @@ static int send_login(struct ibmvnic_ada
+ 	if (!adapter->tx_scrq || !adapter->rx_scrq) {
+ 		netdev_err(adapter->netdev,
+ 			   "RX or TX queues are not allocated, device login failed\n");
+-		return -1;
++		return -ENOMEM;
+ 	}
+ 
+ 	release_login_buffer(adapter);
+@@ -4057,7 +4060,7 @@ buf_map_failed:
+ 	kfree(login_buffer);
+ 	adapter->login_buf = NULL;
+ buf_alloc_failed:
+-	return -1;
++	return -ENOMEM;
+ }
+ 
+ static int send_request_map(struct ibmvnic_adapter *adapter, dma_addr_t addr,
+@@ -5376,7 +5379,7 @@ static int ibmvnic_reset_init(struct ibm
+ 
+ 	if (!wait_for_completion_timeout(&adapter->init_done, timeout)) {
+ 		dev_err(dev, "Initialization sequence timed out\n");
+-		return -1;
++		return -ETIMEDOUT;
+ 	}
+ 
+ 	if (adapter->init_done_rc) {
+@@ -5387,7 +5390,7 @@ static int ibmvnic_reset_init(struct ibm
+ 	if (adapter->from_passive_init) {
+ 		adapter->state = VNIC_OPEN;
+ 		adapter->from_passive_init = false;
+-		return -1;
++		return -EINVAL;
+ 	}
+ 
+ 	if (reset &&
