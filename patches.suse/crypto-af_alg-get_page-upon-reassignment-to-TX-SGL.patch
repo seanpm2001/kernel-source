@@ -1,0 +1,50 @@
+From: Stephan Mueller <smueller@chronox.de>
+Date: Thu, 10 Aug 2017 16:40:03 +0200
+Subject: crypto: af_alg - get_page upon reassignment to TX SGL
+Patch-mainline: v4.14-rc1
+Git-commit: 2d45a7e89833f88b38112292ff227af437f81f2f
+References: bsc#1195840
+
+When a page is assigned to a TX SGL, call get_page to increment the
+reference counter. It is possible that one page is referenced in
+multiple SGLs:
+
+- in the global TX SGL in case a previous af_alg_pull_tsgl only
+reassigned parts of a page to a per-request TX SGL
+
+- in the per-request TX SGL as assigned by af_alg_pull_tsgl
+
+Note, multiple requests can be active at the same time whose TX SGLs all
+point to different parts of the same page.
+
+Signed-off-by: Stephan Mueller <smueller@chronox.de>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Acked-by: Nicolai Stange <nstange@suse.de>
+---
+ crypto/af_alg.c |    6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+--- a/crypto/af_alg.c
++++ b/crypto/af_alg.c
+@@ -641,9 +641,9 @@ void af_alg_pull_tsgl(struct sock *sk, s
+ 				if (dst_offset >= plen) {
+ 					/* discard page before offset */
+ 					dst_offset -= plen;
+-					put_page(page);
+ 				} else {
+ 					/* reassign page to dst after offset */
++					get_page(page);
+ 					sg_set_page(dst + j, page,
+ 						    plen - dst_offset,
+ 						    sg[i].offset + dst_offset);
+@@ -661,9 +661,7 @@ void af_alg_pull_tsgl(struct sock *sk, s
+ 			if (sg[i].length)
+ 				return;
+ 
+-			if (!dst)
+-				put_page(page);
+-
++			put_page(page);
+ 			sg_assign_page(sg + i, NULL);
+ 		}
+ 
