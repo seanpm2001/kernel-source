@@ -1,0 +1,62 @@
+From: Vitaly Kuznetsov <vkuznets@redhat.com>
+Date: Mon, 16 Sep 2019 18:22:56 +0200
+Subject: cpu/SMT: create and export cpu_smt_possible()
+Git-commit: e1572f1d08be57a5412a464cff0712a23cd0b73e
+Patch-mainline: v5.4-rc1
+References: bsc#1191580 CVE-2022-0001 CVE-2022-0002
+
+KVM needs to know if SMT is theoretically possible, this means it is
+supported and not forcefully disabled ('nosmt=force'). Create and
+export cpu_smt_possible() answering this question.
+
+Signed-off-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Borislav Petkov <bp@suse.de>
+---
+ include/linux/cpu.h |    2 ++
+ kernel/cpu.c        |   11 +++++++++--
+ 2 files changed, 11 insertions(+), 2 deletions(-)
+
+--- a/include/linux/cpu.h
++++ b/include/linux/cpu.h
+@@ -191,11 +191,13 @@ extern enum cpuhp_smt_control cpu_smt_co
+ extern void cpu_smt_disable(bool force);
+ extern void cpu_smt_check_topology_early(void);
+ extern void cpu_smt_check_topology(void);
++extern bool cpu_smt_possible(void);
+ #else
+ # define cpu_smt_control		(CPU_SMT_ENABLED)
+ static inline void cpu_smt_disable(bool force) { }
+ static inline void cpu_smt_check_topology_early(void) { }
+ static inline void cpu_smt_check_topology(void) { }
++static inline bool cpu_smt_possible(void) { return false; }
+ #endif
+ 
+ /*
+--- a/kernel/cpu.c
++++ b/kernel/cpu.c
+@@ -360,8 +360,7 @@ static bool cpu_smt_available __read_mos
+ 
+ void __init cpu_smt_disable(bool force)
+ {
+-	if (cpu_smt_control == CPU_SMT_FORCE_DISABLED ||
+-		cpu_smt_control == CPU_SMT_NOT_SUPPORTED)
++	if (!cpu_smt_possible())
+ 		return;
+ 
+ 	if (force) {
+@@ -427,6 +426,14 @@ static inline bool cpu_smt_allowed(unsig
+ 	 */
+ 	return !per_cpu(cpuhp_state, cpu).booted_once;
+ }
++
++/* Returns true if SMT is not supported of forcefully (irreversibly) disabled */
++bool cpu_smt_possible(void)
++{
++	return cpu_smt_control != CPU_SMT_FORCE_DISABLED &&
++		cpu_smt_control != CPU_SMT_NOT_SUPPORTED;
++}
++EXPORT_SYMBOL_GPL(cpu_smt_possible);
+ #else
+ static inline bool cpu_smt_allowed(unsigned int cpu) { return true; }
+ #endif
