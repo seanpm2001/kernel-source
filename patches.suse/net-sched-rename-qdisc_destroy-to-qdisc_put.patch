@@ -1,0 +1,433 @@
+From: Vlad Buslov <vladbu@mellanox.com>
+Date: Mon, 24 Sep 2018 19:22:50 +0300
+Subject: net: sched: rename qdisc_destroy() to qdisc_put()
+Patch-mainline: v4.20-rc1
+Git-commit: 86bd446b5cebd783187ea3772ff258210de77d99
+References: bsc#1196973 CVE-2021-39713
+
+Current implementation of qdisc_destroy() decrements Qdisc reference
+counter and only actually destroy Qdisc if reference counter value reached
+zero. Rename qdisc_destroy() to qdisc_put() in order for it to better
+describe the way in which this function currently implemented and used.
+
+Extract code that deallocates Qdisc into new private qdisc_destroy()
+function. It is intended to be shared between regular qdisc_put() and its
+unlocked version that is introduced in next patch in this series.
+
+Signed-off-by: Vlad Buslov <vladbu@mellanox.com>
+Acked-by: Jiri Pirko <jiri@mellanox.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ include/net/sch_generic.h |    1 +
+ net/sched/sch_api.c       |    6 +++---
+ net/sched/sch_atm.c       |    2 +-
+ net/sched/sch_cbq.c       |    2 +-
+ net/sched/sch_drr.c       |    4 ++--
+ net/sched/sch_dsmark.c    |    2 +-
+ net/sched/sch_fifo.c      |    2 +-
+ net/sched/sch_generic.c   |   28 ++++++++++++++++++++--------
+ net/sched/sch_hfsc.c      |    2 +-
+ net/sched/sch_htb.c       |    4 ++--
+ net/sched/sch_mq.c        |    4 ++--
+ net/sched/sch_mqprio.c    |    4 ++--
+ net/sched/sch_multiq.c    |    6 +++---
+ net/sched/sch_netem.c     |    2 +-
+ net/sched/sch_prio.c      |    6 +++---
+ net/sched/sch_qfq.c       |    4 ++--
+ net/sched/sch_red.c       |    4 ++--
+ net/sched/sch_sfb.c       |    4 ++--
+ net/sched/sch_tbf.c       |    4 ++--
+ 19 files changed, 52 insertions(+), 39 deletions(-)
+
+--- a/include/net/sch_generic.h
++++ b/include/net/sch_generic.h
+@@ -418,6 +418,7 @@ struct Qdisc *dev_graft_qdisc(struct net
+ 			      struct Qdisc *qdisc);
+ void qdisc_reset(struct Qdisc *qdisc);
+ void qdisc_destroy(struct Qdisc *qdisc);
++void qdisc_put(struct Qdisc *qdisc);
+ void qdisc_tree_reduce_backlog(struct Qdisc *qdisc, unsigned int n,
+ 			       unsigned int len);
+ struct Qdisc *qdisc_alloc(struct netdev_queue *dev_queue,
+--- a/net/sched/sch_api.c
++++ b/net/sched/sch_api.c
+@@ -791,7 +791,7 @@ static void notify_and_destroy(struct ne
+ 		qdisc_notify(net, skb, n, clid, old, new);
+ 
+ 	if (old)
+-		qdisc_destroy(old);
++		qdisc_put(old);
+ }
+ 
+ /* Graft qdisc "new" to class "classid" of qdisc "parent" or
+@@ -841,7 +841,7 @@ static int qdisc_graft(struct net_device
+ 				atomic_inc(&new->refcnt);
+ 
+ 			if (!ingress)
+-				qdisc_destroy(old);
++				qdisc_put(old);
+ 		}
+ 
+ skip:
+@@ -1343,7 +1343,7 @@ graft:
+ 	err = qdisc_graft(dev, p, skb, n, clid, q, NULL);
+ 	if (err) {
+ 		if (q)
+-			qdisc_destroy(q);
++			qdisc_put(q);
+ 		return err;
+ 	}
+ 
+--- a/net/sched/sch_atm.c
++++ b/net/sched/sch_atm.c
+@@ -143,7 +143,7 @@ static void atm_tc_put(struct Qdisc *sch
+ 	pr_debug("atm_tc_put: destroying\n");
+ 	list_del_init(&flow->list);
+ 	pr_debug("atm_tc_put: qdisc %p\n", flow->q);
+-	qdisc_destroy(flow->q);
++	qdisc_put(flow->q);
+ 	tcf_block_put(flow->block);
+ 	if (flow->sock) {
+ 		pr_debug("atm_tc_put: f_count %ld\n",
+--- a/net/sched/sch_cbq.c
++++ b/net/sched/sch_cbq.c
+@@ -1419,7 +1419,7 @@ static void cbq_destroy_class(struct Qdi
+ 	WARN_ON(cl->filters);
+ 
+ 	tcf_block_put(cl->block);
+-	qdisc_destroy(cl->q);
++	qdisc_put(cl->q);
+ 	qdisc_put_rtab(cl->R_tab);
+ 	gen_kill_estimator(&cl->rate_est);
+ 	if (cl != &q->link)
+--- a/net/sched/sch_drr.c
++++ b/net/sched/sch_drr.c
+@@ -127,7 +127,7 @@ static int drr_change_class(struct Qdisc
+ 					    qdisc_root_sleeping_running(sch),
+ 					    tca[TCA_RATE]);
+ 		if (err) {
+-			qdisc_destroy(cl->qdisc);
++			qdisc_put(cl->qdisc);
+ 			kfree(cl);
+ 			return err;
+ 		}
+@@ -146,7 +146,7 @@ static int drr_change_class(struct Qdisc
+ static void drr_destroy_class(struct Qdisc *sch, struct drr_class *cl)
+ {
+ 	gen_kill_estimator(&cl->rate_est);
+-	qdisc_destroy(cl->qdisc);
++	qdisc_put(cl->qdisc);
+ 	kfree(cl);
+ }
+ 
+--- a/net/sched/sch_dsmark.c
++++ b/net/sched/sch_dsmark.c
+@@ -407,7 +407,7 @@ static void dsmark_destroy(struct Qdisc
+ 	pr_debug("%s(sch %p,[qdisc %p])\n", __func__, sch, p);
+ 
+ 	tcf_block_put(p->block);
+-	qdisc_destroy(p->q);
++	qdisc_put(p->q);
+ 	if (p->mv != p->embedded)
+ 		kfree(p->mv);
+ }
+--- a/net/sched/sch_fifo.c
++++ b/net/sched/sch_fifo.c
+@@ -174,7 +174,7 @@ struct Qdisc *fifo_create_dflt(struct Qd
+ 	if (q) {
+ 		err = fifo_set_limit(q, limit);
+ 		if (err < 0) {
+-			qdisc_destroy(q);
++			qdisc_put(q);
+ 			q = NULL;
+ 		}
+ 	}
+--- a/net/sched/sch_generic.c
++++ b/net/sched/sch_generic.c
+@@ -659,7 +659,7 @@ struct Qdisc *qdisc_create_dflt(struct n
+ 	if (!ops->init || ops->init(sch, NULL) == 0)
+ 		return sch;
+ 
+-	qdisc_destroy(sch);
++	qdisc_put(sch);
+ 	return NULL;
+ }
+ EXPORT_SYMBOL(qdisc_create_dflt);
+@@ -697,14 +697,10 @@ static void qdisc_rcu_free(struct rcu_he
+ 	kfree((char *) qdisc - qdisc->padded);
+ }
+ 
+-void qdisc_destroy(struct Qdisc *qdisc)
++static void qdisc_destroy_internal(struct Qdisc *qdisc)
+ {
+ 	const struct Qdisc_ops  *ops = qdisc->ops;
+ 
+-	if (qdisc->flags & TCQ_F_BUILTIN ||
+-	    !atomic_dec_and_test(&qdisc->refcnt))
+-		return;
+-
+ #ifdef CONFIG_NET_SCHED
+ 	qdisc_hash_del(qdisc);
+ 
+@@ -727,6 +723,22 @@ void qdisc_destroy(struct Qdisc *qdisc)
+ 	 */
+ 	call_rcu(&qdisc->rcu_head, qdisc_rcu_free);
+ }
++
++void qdisc_put(struct Qdisc *qdisc)
++{
++	if (qdisc->flags & TCQ_F_BUILTIN ||
++	    !atomic_dec_and_test(&qdisc->refcnt))
++		return;
++
++	qdisc_destroy_internal(qdisc);
++}
++EXPORT_SYMBOL(qdisc_put);
++
++/* not used by the kernel itself, but needed for KABI */
++void qdisc_destroy(struct Qdisc *qdisc)
++{
++	qdisc_put(qdisc);
++}
+ EXPORT_SYMBOL(qdisc_destroy);
+ 
+ /* Attach toplevel qdisc to device queue. */
+@@ -970,7 +982,7 @@ static void shutdown_scheduler_queue(str
+ 		rcu_assign_pointer(dev_queue->qdisc, qdisc_default);
+ 		dev_queue->qdisc_sleeping = qdisc_default;
+ 
+-		qdisc_destroy(qdisc);
++		qdisc_put(qdisc);
+ 	}
+ }
+ 
+@@ -979,7 +991,7 @@ void dev_shutdown(struct net_device *dev
+ 	netdev_for_each_tx_queue(dev, shutdown_scheduler_queue, &noop_qdisc);
+ 	if (dev_ingress_queue(dev))
+ 		shutdown_scheduler_queue(dev, dev_ingress_queue(dev), &noop_qdisc);
+-	qdisc_destroy(dev->qdisc);
++	qdisc_put(dev->qdisc);
+ 	dev->qdisc = &noop_qdisc;
+ 
+ 	WARN_ON(timer_pending(&dev->watchdog_timer));
+--- a/net/sched/sch_hfsc.c
++++ b/net/sched/sch_hfsc.c
+@@ -1100,7 +1100,7 @@ hfsc_destroy_class(struct Qdisc *sch, st
+ 	struct hfsc_sched *q = qdisc_priv(sch);
+ 
+ 	tcf_block_put(cl->block);
+-	qdisc_destroy(cl->qdisc);
++	qdisc_put(cl->qdisc);
+ 	gen_kill_estimator(&cl->rate_est);
+ 	if (cl != &q->root)
+ 		kfree(cl);
+--- a/net/sched/sch_htb.c
++++ b/net/sched/sch_htb.c
+@@ -1235,7 +1235,7 @@ static void htb_destroy_class(struct Qdi
+ {
+ 	if (!cl->level) {
+ 		WARN_ON(!cl->un.leaf.q);
+-		qdisc_destroy(cl->un.leaf.q);
++		qdisc_put(cl->un.leaf.q);
+ 	}
+ 	gen_kill_estimator(&cl->rate_est);
+ 	tcf_block_put(cl->block);
+@@ -1446,7 +1446,7 @@ static int htb_change_class(struct Qdisc
+ 			/* turn parent into inner node */
+ 			qdisc_reset(parent->un.leaf.q);
+ 			qdisc_tree_reduce_backlog(parent->un.leaf.q, qlen, backlog);
+-			qdisc_destroy(parent->un.leaf.q);
++			qdisc_put(parent->un.leaf.q);
+ 			if (parent->prio_activity)
+ 				htb_deactivate(q, parent);
+ 
+--- a/net/sched/sch_mq.c
++++ b/net/sched/sch_mq.c
+@@ -31,7 +31,7 @@ static void mq_destroy(struct Qdisc *sch
+ 	if (!priv->qdiscs)
+ 		return;
+ 	for (ntx = 0; ntx < dev->num_tx_queues && priv->qdiscs[ntx]; ntx++)
+-		qdisc_destroy(priv->qdiscs[ntx]);
++		qdisc_put(priv->qdiscs[ntx]);
+ 	kfree(priv->qdiscs);
+ }
+ 
+@@ -81,7 +81,7 @@ static void mq_attach(struct Qdisc *sch)
+ 		qdisc = priv->qdiscs[ntx];
+ 		old = dev_graft_qdisc(qdisc->dev_queue, qdisc);
+ 		if (old)
+-			qdisc_destroy(old);
++			qdisc_put(old);
+ #ifdef CONFIG_NET_SCHED
+ 		if (ntx < dev->real_num_tx_queues)
+ 			qdisc_hash_add(qdisc, false);
+--- a/net/sched/sch_mqprio.c
++++ b/net/sched/sch_mqprio.c
+@@ -34,7 +34,7 @@ static void mqprio_destroy(struct Qdisc
+ 		for (ntx = 0;
+ 		     ntx < dev->num_tx_queues && priv->qdiscs[ntx];
+ 		     ntx++)
+-			qdisc_destroy(priv->qdiscs[ntx]);
++			qdisc_put(priv->qdiscs[ntx]);
+ 		kfree(priv->qdiscs);
+ 	}
+ 
+@@ -181,7 +181,7 @@ static void mqprio_attach(struct Qdisc *
+ 		qdisc = priv->qdiscs[ntx];
+ 		old = dev_graft_qdisc(qdisc->dev_queue, qdisc);
+ 		if (old)
+-			qdisc_destroy(old);
++			qdisc_put(old);
+ 		if (ntx < dev->real_num_tx_queues)
+ 			qdisc_hash_add(qdisc, false);
+ 	}
+--- a/net/sched/sch_multiq.c
++++ b/net/sched/sch_multiq.c
+@@ -174,7 +174,7 @@ multiq_destroy(struct Qdisc *sch)
+ 
+ 	tcf_block_put(q->block);
+ 	for (band = 0; band < q->bands; band++)
+-		qdisc_destroy(q->queues[band]);
++		qdisc_put(q->queues[band]);
+ 
+ 	kfree(q->queues);
+ }
+@@ -202,7 +202,7 @@ static int multiq_tune(struct Qdisc *sch
+ 			q->queues[i] = &noop_qdisc;
+ 			qdisc_tree_reduce_backlog(child, child->q.qlen,
+ 						  child->qstats.backlog);
+-			qdisc_destroy(child);
++			qdisc_put(child);
+ 		}
+ 	}
+ 
+@@ -226,7 +226,7 @@ static int multiq_tune(struct Qdisc *sch
+ 					qdisc_tree_reduce_backlog(old,
+ 								  old->q.qlen,
+ 								  old->qstats.backlog);
+-					qdisc_destroy(old);
++					qdisc_put(old);
+ 				}
+ 				sch_tree_unlock(sch);
+ 			}
+--- a/net/sched/sch_netem.c
++++ b/net/sched/sch_netem.c
+@@ -945,7 +945,7 @@ static void netem_destroy(struct Qdisc *
+ 
+ 	qdisc_watchdog_cancel(&q->watchdog);
+ 	if (q->qdisc)
+-		qdisc_destroy(q->qdisc);
++		qdisc_put(q->qdisc);
+ 	dist_free(q->delay_dist);
+ }
+ 
+--- a/net/sched/sch_prio.c
++++ b/net/sched/sch_prio.c
+@@ -149,7 +149,7 @@ prio_destroy(struct Qdisc *sch)
+ 
+ 	tcf_block_put(q->block);
+ 	for (prio = 0; prio < q->bands; prio++)
+-		qdisc_destroy(q->queues[prio]);
++		qdisc_put(q->queues[prio]);
+ }
+ 
+ static int prio_tune(struct Qdisc *sch, struct nlattr *opt)
+@@ -177,7 +177,7 @@ static int prio_tune(struct Qdisc *sch,
+ 					      TC_H_MAKE(sch->handle, i + 1));
+ 		if (!queues[i]) {
+ 			while (i > oldbands)
+-				qdisc_destroy(queues[--i]);
++				qdisc_put(queues[--i]);
+ 			return -ENOMEM;
+ 		}
+ 	}
+@@ -191,7 +191,7 @@ static int prio_tune(struct Qdisc *sch,
+ 
+ 		qdisc_tree_reduce_backlog(child, child->q.qlen,
+ 					  child->qstats.backlog);
+-		qdisc_destroy(child);
++		qdisc_put(child);
+ 	}
+ 
+ 	for (i = oldbands; i < q->bands; i++) {
+--- a/net/sched/sch_qfq.c
++++ b/net/sched/sch_qfq.c
+@@ -527,7 +527,7 @@ set_change_agg:
+ 	return 0;
+ 
+ destroy_class:
+-	qdisc_destroy(cl->qdisc);
++	qdisc_put(cl->qdisc);
+ 	kfree(cl);
+ 	return err;
+ }
+@@ -538,7 +538,7 @@ static void qfq_destroy_class(struct Qdi
+ 
+ 	qfq_rm_from_agg(q, cl);
+ 	gen_kill_estimator(&cl->rate_est);
+-	qdisc_destroy(cl->qdisc);
++	qdisc_put(cl->qdisc);
+ 	kfree(cl);
+ }
+ 
+--- a/net/sched/sch_red.c
++++ b/net/sched/sch_red.c
+@@ -152,7 +152,7 @@ static void red_destroy(struct Qdisc *sc
+ 	struct red_sched_data *q = qdisc_priv(sch);
+ 
+ 	del_timer_sync(&q->adapt_timer);
+-	qdisc_destroy(q->qdisc);
++	qdisc_put(q->qdisc);
+ }
+ 
+ static const struct nla_policy red_policy[TCA_RED_MAX + 1] = {
+@@ -202,7 +202,7 @@ static int red_change(struct Qdisc *sch,
+ 	if (child) {
+ 		qdisc_tree_reduce_backlog(q->qdisc, q->qdisc->q.qlen,
+ 					  q->qdisc->qstats.backlog);
+-		qdisc_destroy(q->qdisc);
++		qdisc_put(q->qdisc);
+ 		q->qdisc = child;
+ 	}
+ 
+--- a/net/sched/sch_sfb.c
++++ b/net/sched/sch_sfb.c
+@@ -468,7 +468,7 @@ static void sfb_destroy(struct Qdisc *sc
+ 	struct sfb_sched_data *q = qdisc_priv(sch);
+ 
+ 	tcf_block_put(q->block);
+-	qdisc_destroy(q->qdisc);
++	qdisc_put(q->qdisc);
+ }
+ 
+ static const struct nla_policy sfb_policy[TCA_SFB_MAX + 1] = {
+@@ -521,7 +521,7 @@ static int sfb_change(struct Qdisc *sch,
+ 
+ 	qdisc_tree_reduce_backlog(q->qdisc, q->qdisc->q.qlen,
+ 				  q->qdisc->qstats.backlog);
+-	qdisc_destroy(q->qdisc);
++	qdisc_put(q->qdisc);
+ 	q->qdisc = child;
+ 
+ 	q->rehash_interval = msecs_to_jiffies(ctl->rehash_interval);
+--- a/net/sched/sch_tbf.c
++++ b/net/sched/sch_tbf.c
+@@ -387,7 +387,7 @@ static int tbf_change(struct Qdisc *sch,
+ 	if (child) {
+ 		qdisc_tree_reduce_backlog(q->qdisc, q->qdisc->q.qlen,
+ 					  q->qdisc->qstats.backlog);
+-		qdisc_destroy(q->qdisc);
++		qdisc_put(q->qdisc);
+ 		q->qdisc = child;
+ 	}
+ 	q->limit = qopt->limit;
+@@ -432,7 +432,7 @@ static void tbf_destroy(struct Qdisc *sc
+ 	struct tbf_sched_data *q = qdisc_priv(sch);
+ 
+ 	qdisc_watchdog_cancel(&q->watchdog);
+-	qdisc_destroy(q->qdisc);
++	qdisc_put(q->qdisc);
+ }
+ 
+ static int tbf_dump(struct Qdisc *sch, struct sk_buff *skb)
