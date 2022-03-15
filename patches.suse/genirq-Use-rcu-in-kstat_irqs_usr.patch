@@ -1,0 +1,65 @@
+From: Eric Dumazet <edumazet@google.com>
+Date: Mon, 18 Jun 2018 05:56:12 -0700
+Subject: genirq: Use rcu in kstat_irqs_usr()
+Git-commit: 4a5f4d2f891bcff7285b5f7490ed5a7a5d516049
+Patch-mainline: v4.19-rc1
+References: bsc#1193738
+
+Jeremy Dorfman identified mutex contention when multiple threads
+parse /proc/stat concurrently.
+
+Since commit 425a5072dcd1 ("genirq: Free irq_desc with rcu"),
+kstat_irqs_usr() can be switched to rcu locking, which removes this mutex
+contention.
+
+show_interrupts() case will be handled in a separate patch.
+
+Reported-by: Jeremy Dorfman <jdorfman@google.com>
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Cc: Eric Dumazet <eric.dumazet@gmail.com>
+Cc: Willem de Bruijn <willemb@google.com>
+Link: https://lkml.kernel.org/r/20180618125612.155057-1-edumazet@google.com
+
+Acked-by: Michal Koutný <mkoutny@suse.com>
+---
+ kernel/irq/irqdesc.c | 13 +++++++------
+ 1 file changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/kernel/irq/irqdesc.c b/kernel/irq/irqdesc.c
+index afc7f902d74a..578d0e5f1b5b 100644
+--- a/kernel/irq/irqdesc.c
++++ b/kernel/irq/irqdesc.c
+@@ -443,6 +443,7 @@ static void free_desc(unsigned int irq)
+ 	 * We free the descriptor, masks and stat fields via RCU. That
+ 	 * allows demultiplex interrupts to do rcu based management of
+ 	 * the child interrupts.
++	 * This also allows us to use rcu in kstat_irqs_usr().
+ 	 */
+ 	call_rcu(&desc->rcu, delayed_free_desc);
+ }
+@@ -928,17 +929,17 @@ unsigned int kstat_irqs(unsigned int irq)
+  * kstat_irqs_usr - Get the statistics for an interrupt
+  * @irq:	The interrupt number
+  *
+- * Returns the sum of interrupt counts on all cpus since boot for
+- * @irq. Contrary to kstat_irqs() this can be called from any
+- * preemptible context. It's protected against concurrent removal of
+- * an interrupt descriptor when sparse irqs are enabled.
++ * Returns the sum of interrupt counts on all cpus since boot for @irq.
++ * Contrary to kstat_irqs() this can be called from any context.
++ * It uses rcu since a concurrent removal of an interrupt descriptor is
++ * observing an rcu grace period before delayed_free_desc()/irq_kobj_release().
+  */
+ unsigned int kstat_irqs_usr(unsigned int irq)
+ {
+ 	unsigned int sum;
+ 
+-	irq_lock_sparse();
++	rcu_read_lock();
+ 	sum = kstat_irqs(irq);
+-	irq_unlock_sparse();
++	rcu_read_unlock();
+ 	return sum;
+ }
+
