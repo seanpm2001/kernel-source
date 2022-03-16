@@ -1,0 +1,86 @@
+From d0c8f338ab41438bdf8472cb4209d4ab54d439d5 Mon Sep 17 00:00:00 2001
+From: Dean Jenkins <Dean_Jenkins@mentor.com>
+Date: Mon, 7 Aug 2017 09:50:16 +0100
+Subject: [PATCH] asix: Fix small memory leak in ax88772_unbind()
+Git-commit: d0c8f338ab41438bdf8472cb4209d4ab54d439d5
+References: git-fixes
+Patch-mainline: v4.13-rc5
+
+When Ethernet frames span mulitple URBs, the netdev buffer memory
+pointed to by the asix_rx_fixup_info structure remains allocated
+during the time gap between the 2 executions of asix_rx_fixup_internal().
+
+This means that if ax88772_unbind() is called within this time
+gap to free the memory of the parent private data structure then
+a memory leak of the part filled netdev buffer memory will occur.
+
+Therefore, create a new function asix_rx_fixup_common_free() to
+free the memory of the netdev buffer and add a call to
+asix_rx_fixup_common_free() from inside ax88772_unbind().
+
+Consequently when an unbind occurs part way through receiving
+an Ethernet frame, the netdev buffer memory that is holding part
+of the received Ethernet frame will now be freed.
+
+Signed-off-by: Dean Jenkins <Dean_Jenkins@mentor.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/net/usb/asix.h         |  1 +
+ drivers/net/usb/asix_common.c  | 15 +++++++++++++++
+ drivers/net/usb/asix_devices.c |  1 +
+ 3 files changed, 17 insertions(+)
+
+diff --git a/drivers/net/usb/asix.h b/drivers/net/usb/asix.h
+index d1092421aaa7..9a4171b90947 100644
+--- a/drivers/net/usb/asix.h
++++ b/drivers/net/usb/asix.h
+@@ -209,6 +209,7 @@ void asix_write_cmd_async(struct usbnet *dev, u8 cmd, u16 value,
+ int asix_rx_fixup_internal(struct usbnet *dev, struct sk_buff *skb,
+ 			   struct asix_rx_fixup_info *rx);
+ int asix_rx_fixup_common(struct usbnet *dev, struct sk_buff *skb);
++void asix_rx_fixup_common_free(struct asix_common_private *dp);
+ 
+ struct sk_buff *asix_tx_fixup(struct usbnet *dev, struct sk_buff *skb,
+ 			      gfp_t flags);
+diff --git a/drivers/net/usb/asix_common.c b/drivers/net/usb/asix_common.c
+index fda74f33e3ec..522d2900cd1d 100644
+--- a/drivers/net/usb/asix_common.c
++++ b/drivers/net/usb/asix_common.c
+@@ -210,6 +210,21 @@ int asix_rx_fixup_common(struct usbnet *dev, struct sk_buff *skb)
+ 	return asix_rx_fixup_internal(dev, skb, rx);
+ }
+ 
++void asix_rx_fixup_common_free(struct asix_common_private *dp)
++{
++	struct asix_rx_fixup_info *rx;
++
++	if (!dp)
++		return;
++
++	rx = &dp->rx_fixup_info;
++
++	if (rx->ax_skb) {
++		kfree_skb(rx->ax_skb);
++		rx->ax_skb = NULL;
++	}
++}
++
+ struct sk_buff *asix_tx_fixup(struct usbnet *dev, struct sk_buff *skb,
+ 			      gfp_t flags)
+ {
+diff --git a/drivers/net/usb/asix_devices.c b/drivers/net/usb/asix_devices.c
+index a3aa0a27dfe5..b2ff88e69a81 100644
+--- a/drivers/net/usb/asix_devices.c
++++ b/drivers/net/usb/asix_devices.c
+@@ -764,6 +764,7 @@ static int ax88772_bind(struct usbnet *dev, struct usb_interface *intf)
+ 
+ static void ax88772_unbind(struct usbnet *dev, struct usb_interface *intf)
+ {
++	asix_rx_fixup_common_free(dev->driver_priv);
+ 	kfree(dev->driver_priv);
+ }
+ 
+-- 
+2.34.1
+
