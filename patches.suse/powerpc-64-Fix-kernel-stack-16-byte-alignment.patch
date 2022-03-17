@@ -1,0 +1,44 @@
+From 66f93c5a02d5ba6ef17fef459143961382593212 Mon Sep 17 00:00:00 2001
+From: Nicholas Piggin <npiggin@gmail.com>
+Date: Thu, 15 Nov 2018 12:34:27 +1000
+Subject: [PATCH] powerpc/64: Fix kernel stack 16-byte alignment
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+References: bsc#1196999 ltc#196609S git-fixes
+Patch-mainline: v4.20-rc3
+Git-commit: 66f93c5a02d5ba6ef17fef459143961382593212 (partial)
+
+Commit 4c2de74cc869 ("powerpc/64: Interrupts save PPR on stack rather
+than thread_struct") changed sizeof(struct pt_regs) % 16 from 0 to 8,
+which causes the interrupt frame allocation on kernel entry to put the
+kernel stack out of alignment.
+
+Quadword (16-byte) alignment for the stack is required by both the
+64-bit v1 ABI (v1.9 § 3.2.2) and the 64-bit v2 ABI (v1.1 § 2.2.2.1).
+
+Add a pad field to fix alignment, and add a BUILD_BUG_ON to catch this
+in future.
+
+Fixes: 4c2de74cc869 ("powerpc/64: Interrupts save PPR on stack rather than thread_struct")
+Signed-off-by: Nicholas Piggin <npiggin@gmail.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+[only add the check, padding not needed on SLE kernel]
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/include/asm/ptrace.h | 1 +
+ arch/powerpc/kernel/setup_64.c    | 2 ++
+ 2 files changed, 3 insertions(+)
+
+--- a/arch/powerpc/kernel/setup_64.c
++++ b/arch/powerpc/kernel/setup_64.c
+@@ -599,6 +599,8 @@ void __init irqstack_early_init(void)
+ 	u64 limit = ppc64_bolted_size();
+ 	unsigned int i;
+ 
++	BUILD_BUG_ON(STACK_INT_FRAME_SIZE % 16);
++
+ 	/*
+ 	 * Interrupt stacks must be in the first segment since we
+ 	 * cannot afford to take SLB misses on them. They are not
