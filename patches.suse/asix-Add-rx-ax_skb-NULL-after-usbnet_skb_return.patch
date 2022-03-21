@@ -1,0 +1,50 @@
+From 22889dbbd98a0e3390e9120074c39c6e5a3fea5e Mon Sep 17 00:00:00 2001
+From: Dean Jenkins <Dean_Jenkins@mentor.com>
+Date: Mon, 7 Aug 2017 09:50:14 +0100
+Subject: [PATCH] asix: Add rx->ax_skb = NULL after usbnet_skb_return()
+Git-commit: 22889dbbd98a0e3390e9120074c39c6e5a3fea5e
+References: git-fixes
+Patch-mainline: v4.13-rc5
+
+In asix_rx_fixup_internal() there is a risk that rx->ax_skb gets
+reused after passing the Ethernet frame into the network stack via
+usbnet_skb_return().
+
+The risks include:
+
+a) asynchronously freeing rx->ax_skb after passing the netdev buffer
+   to the NAPI layer which might corrupt the backlog queue.
+
+b) erroneously reusing rx->ax_skb such as calling skb_put_data() multiple
+   times which causes writing off the end of the netdev buffer.
+
+Therefore add a defensive rx->ax_skb = NULL after usbnet_skb_return()
+so that it is not possible to free rx->ax_skb or to apply
+skb_put_data() too many times.
+
+Signed-off-by: Dean Jenkins <Dean_Jenkins@mentor.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/net/usb/asix_common.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/usb/asix_common.c b/drivers/net/usb/asix_common.c
+index 7847436c441e..6983b6bd8cf9 100644
+--- a/drivers/net/usb/asix_common.c
++++ b/drivers/net/usb/asix_common.c
+@@ -168,8 +168,10 @@ int asix_rx_fixup_internal(struct usbnet *dev, struct sk_buff *skb,
+ 		if (rx->ax_skb) {
+ 			skb_put_data(rx->ax_skb, skb->data + offset,
+ 				     copy_length);
+-			if (!rx->remaining)
++			if (!rx->remaining) {
+ 				usbnet_skb_return(dev, rx->ax_skb);
++				rx->ax_skb = NULL;
++			}
+ 		}
+ 
+ 		offset += (copy_length + 1) & 0xfffe;
+-- 
+2.34.1
+
