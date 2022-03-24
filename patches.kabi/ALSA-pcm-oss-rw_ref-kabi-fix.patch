@@ -27,8 +27,8 @@ Signed-off-by: Takashi Iwai <tiwai@suse.de>
 +	atomic_t oss_rw_ref;		/* concurrent read/write accesses */
 +#endif
  #endif
- };
- 
+ #ifndef __GENKSYMS__
+ 	struct mutex buffer_mutex;	/* protect for buffer changes */
 --- a/include/sound/pcm_oss.h
 +++ b/include/sound/pcm_oss.h
 @@ -57,7 +57,6 @@ struct snd_pcm_oss_runtime {
@@ -50,7 +50,7 @@ Signed-off-by: Takashi Iwai <tiwai@suse.de>
  		mutex_unlock(&runtime->oss.params_lock);
  		return -EBUSY;
  	}
-@@ -1424,7 +1424,7 @@ static ssize_t snd_pcm_oss_write1(struct
+@@ -1425,7 +1425,7 @@ static ssize_t snd_pcm_oss_write1(struct
  	if (atomic_read(&substream->mmap_count))
  		return -ENXIO;
  
@@ -59,7 +59,7 @@ Signed-off-by: Takashi Iwai <tiwai@suse.de>
  	while (bytes > 0) {
  		if (mutex_lock_interruptible(&runtime->oss.params_lock)) {
  			tmp = -ERESTARTSYS;
-@@ -1488,7 +1488,7 @@ static ssize_t snd_pcm_oss_write1(struct
+@@ -1489,7 +1489,7 @@ static ssize_t snd_pcm_oss_write1(struct
  		}
  		tmp = 0;
  	}
@@ -68,7 +68,7 @@ Signed-off-by: Takashi Iwai <tiwai@suse.de>
  	return xfer > 0 ? (snd_pcm_sframes_t)xfer : tmp;
  }
  
-@@ -1534,7 +1534,7 @@ static ssize_t snd_pcm_oss_read1(struct
+@@ -1535,7 +1535,7 @@ static ssize_t snd_pcm_oss_read1(struct
  	if (atomic_read(&substream->mmap_count))
  		return -ENXIO;
  
@@ -77,7 +77,7 @@ Signed-off-by: Takashi Iwai <tiwai@suse.de>
  	while (bytes > 0) {
  		if (mutex_lock_interruptible(&runtime->oss.params_lock)) {
  			tmp = -ERESTARTSYS;
-@@ -1583,7 +1583,7 @@ static ssize_t snd_pcm_oss_read1(struct
+@@ -1584,7 +1584,7 @@ static ssize_t snd_pcm_oss_read1(struct
  		}
  		tmp = 0;
  	}
@@ -86,7 +86,7 @@ Signed-off-by: Takashi Iwai <tiwai@suse.de>
  	return xfer > 0 ? (snd_pcm_sframes_t)xfer : tmp;
  }
  
-@@ -1690,9 +1690,9 @@ static int snd_pcm_oss_sync(struct snd_p
+@@ -1691,9 +1691,9 @@ static int snd_pcm_oss_sync(struct snd_p
  			goto __direct;
  		if ((err = snd_pcm_oss_make_ready(substream)) < 0)
  			return err;
@@ -98,7 +98,7 @@ Signed-off-by: Takashi Iwai <tiwai@suse.de>
  			return -ERESTARTSYS;
  		}
  		format = snd_pcm_oss_format_from(runtime->oss.format);
-@@ -1751,7 +1751,7 @@ static int snd_pcm_oss_sync(struct snd_p
+@@ -1752,7 +1752,7 @@ static int snd_pcm_oss_sync(struct snd_p
  		}
  unlock:
  		mutex_unlock(&runtime->oss.params_lock);
@@ -107,7 +107,7 @@ Signed-off-by: Takashi Iwai <tiwai@suse.de>
  		if (err < 0)
  			return err;
  		/*
-@@ -2419,7 +2419,7 @@ static void snd_pcm_oss_init_substream(s
+@@ -2420,7 +2420,7 @@ static void snd_pcm_oss_init_substream(s
  	runtime->oss.maxfrags = 0;
  	runtime->oss.subdivision = 0;
  	substream->pcm_release = snd_pcm_oss_release_substream;
