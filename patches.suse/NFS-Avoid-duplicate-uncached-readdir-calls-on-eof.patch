@@ -1,0 +1,102 @@
+From: Trond Myklebust <trond.myklebust@hammerspace.com>
+Date: Tue, 18 Jan 2022 22:10:52 -0500
+Subject: [PATCH] NFS: Avoid duplicate uncached readdir calls on eof
+Git-commit: e1d2699b96793d19388e302fa095e0da2c145701
+Patch-mainline: v5.17
+References: git-fixes
+
+If we've reached the end of the directory, then cache that information
+in the context so that we don't need to do an uncached readdir in order
+to rediscover that fact.
+
+Fixes: 794092c57f89 ("NFS: Do uncached readdir when we're seeking a cookie in an empty page cache")
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/dir.c           |   16 +++++++++++++---
+ include/linux/nfs_fs.h |    1 +
+ 2 files changed, 14 insertions(+), 3 deletions(-)
+
+--- a/fs/nfs/dir.c
++++ b/fs/nfs/dir.c
+@@ -78,6 +78,7 @@ static struct nfs_open_dir_context *allo
+ 		ctx->dir_cookie = 0;
+ 		ctx->dup_cookie = 0;
+ 		ctx->cred = get_rpccred(cred);
++		ctx->eof = 0;
+ 		spin_lock(&dir->i_lock);
+ 		list_add(&ctx->list, &nfsi->open_files);
+ 		spin_unlock(&dir->i_lock);
+@@ -166,6 +167,7 @@ typedef struct {
+ 	unsigned long	gencount;
+ 	unsigned int	cache_entry_index;
+ 	unsigned int	plus:1;
++	unsigned int	eob:1;
+ 	unsigned int	eof:1;
+ } nfs_readdir_descriptor_t;
+ 
+@@ -801,7 +803,7 @@ int nfs_do_filldir(nfs_readdir_descripto
+ 		ent = &array->array[i];
+ 		if (!dir_emit(desc->ctx, ent->string.name, ent->string.len,
+ 		    nfs_compat_user_ino64(ent->ino), ent->d_type)) {
+-			desc->eof = 1;
++			desc->eob = 1;
+ 			break;
+ 		}
+ 		desc->ctx->pos++;
+@@ -813,7 +815,7 @@ int nfs_do_filldir(nfs_readdir_descripto
+ 			ctx->duped = 1;
+ 	}
+ 	if (array->eof_index >= 0)
+-		desc->eof = 1;
++		desc->eof = !desc->eob;
+ 
+ 	kunmap(desc->page);
+ 	dfprintk(DIRCACHE, "NFS: nfs_do_filldir() filling ended @ cookie %Lu; returning = %d\n",
+@@ -898,9 +900,15 @@ static int nfs_readdir(struct file *file
+ 	desc->file = file;
+ 	desc->ctx = ctx;
+ 	desc->dir_cookie = &dir_ctx->dir_cookie;
++	desc->eof = dir_ctx->eof;
+ 	desc->decode = NFS_PROTO(inode)->decode_dirent;
+ 	desc->plus = nfs_use_readdirplus(inode, ctx) ? 1 : 0;
+ 
++	if (desc->eof) {
++		res = 0;
++		goto out;
++	}
++
+ 	if (ctx->pos == 0 || nfs_attribute_cache_expired(inode))
+ 		res = nfs_revalidate_mapping(inode, file->f_mapping);
+ 	if (res < 0)
+@@ -936,8 +944,9 @@ static int nfs_readdir(struct file *file
+ 		cache_page_release(desc);
+ 		if (res < 0)
+ 			break;
+-	} while (!desc->eof);
++	} while (!desc->eob && !desc->eof);
+ out:
++	dir_ctx->eof = desc->eof;
+ 	if (res > 0)
+ 		res = 0;
+ 	dfprintk(FILE, "NFS: readdir(%pD2) returns %d\n", file, res);
+@@ -967,6 +976,7 @@ static loff_t nfs_llseek_dir(struct file
+ 		filp->f_pos = offset;
+ 		dir_ctx->dir_cookie = 0;
+ 		dir_ctx->duped = 0;
++		dir_ctx->eof = false;
+ 	}
+ out:
+ 	inode_unlock(inode);
+--- a/include/linux/nfs_fs.h
++++ b/include/linux/nfs_fs.h
+@@ -90,6 +90,7 @@ struct nfs_open_dir_context {
+ 	__u64 dir_cookie;
+ 	__u64 dup_cookie;
+ 	signed char duped;
++	bool eof;
+ };
+ 
+ /*
