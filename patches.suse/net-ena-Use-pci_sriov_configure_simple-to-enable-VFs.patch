@@ -1,0 +1,63 @@
+From: Alexander Duyck <alexander.h.duyck@intel.com>
+Date: Tue, 24 Apr 2018 16:47:22 -0500
+Subject: net: ena: Use pci_sriov_configure_simple() to enable VFs
+Patch-mainline: v4.18-rc1
+Git-commit: 115ddc491922c3c133551e9cff2d3bfaed02a27e
+References: bsc#1197099 jsc#SLE-24125
+
+Instead of implementing our own version of a SR-IOV configuration stub in
+the ena driver, use the existing pci_sriov_configure_simple() function.
+
+Signed-off-by: Alexander Duyck <alexander.h.duyck@intel.com>
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Reviewed-by: Greg Rose <gvrose8192@gmail.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/amazon/ena/ena_netdev.c |   28 ---------------------------
+ 1 file changed, 1 insertion(+), 27 deletions(-)
+
+--- a/drivers/net/ethernet/amazon/ena/ena_netdev.c
++++ b/drivers/net/ethernet/amazon/ena/ena_netdev.c
+@@ -3387,32 +3387,6 @@ err_disable_device:
+ }
+ 
+ /*****************************************************************************/
+-static int ena_sriov_configure(struct pci_dev *dev, int numvfs)
+-{
+-	int rc;
+-
+-	if (numvfs > 0) {
+-		rc = pci_enable_sriov(dev, numvfs);
+-		if (rc != 0) {
+-			dev_err(&dev->dev,
+-				"pci_enable_sriov failed to enable: %d vfs with the error: %d\n",
+-				numvfs, rc);
+-			return rc;
+-		}
+-
+-		return numvfs;
+-	}
+-
+-	if (numvfs == 0) {
+-		pci_disable_sriov(dev);
+-		return 0;
+-	}
+-
+-	return -EINVAL;
+-}
+-
+-/*****************************************************************************/
+-/*****************************************************************************/
+ 
+ /* ena_remove - Device Removal Routine
+  * @pdev: PCI device information struct
+@@ -3527,7 +3501,7 @@ static struct pci_driver ena_pci_driver
+ 	.suspend    = ena_suspend,
+ 	.resume     = ena_resume,
+ #endif
+-	.sriov_configure = ena_sriov_configure,
++	.sriov_configure = pci_sriov_configure_simple,
+ };
+ 
+ static int __init ena_init(void)
