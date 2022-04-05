@@ -1,9 +1,23 @@
 From: Ilya Leoshkevich <iii@linux.ibm.com>
+Date: Mon, 6 Sep 2021 15:04:14 +0200
 Subject: s390/bpf: Fix optimizing out zero-extensions
-Patch-mainline: Not yet, embargoed
+Git-commit: db7bee653859ef7179be933e7d1384644f795f26
+Patch-mainline: v5.15-rc3
 References: bsc#1190601
-Signed-off-by: Tony Jones <tonyj@suse.de>
 
+Currently the JIT completely removes things like `reg32 += 0`,
+however, the BPF_ALU semantics requires the target register to be
+zero-extended in such cases.
+
+Fix by optimizing out only the arithmetic operation, but not the
+subsequent zero-extension.
+
+Reported-by: Johan Almbladh <johan.almbladh@anyfinetworks.com>
+Fixes: 054623105728 ("s390/bpf: Add s390x eBPF JIT compiler backend")
+Reviewed-by: Heiko Carstens <hca@linux.ibm.com>
+Signed-off-by: Ilya Leoshkevich <iii@linux.ibm.com>
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Signed-off-by: Tony Jones <tonyj@suse.de>
 ---
  arch/s390/net/bpf_jit_comp.c | 58 +++++++++++++++++++-----------------
  1 file changed, 30 insertions(+), 28 deletions(-)
@@ -123,4 +137,3 @@ Signed-off-by: Tony Jones <tonyj@suse.de>
  		EMIT_ZERO(dst_reg);
  		break;
  	case BPF_ALU64 | BPF_ARSH | BPF_K: /* ((s64) dst) >>= imm */
--- 
