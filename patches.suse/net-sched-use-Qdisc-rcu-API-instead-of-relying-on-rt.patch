@@ -69,15 +69,15 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
 +		rcu_read_unlock();
 +		goto errout;
 +	}
-+
+ 
+-	if (!cops->tcf_block)
+-		return -EOPNOTSUPP;
 +	if (!cops->tcf_block) {
 +		err = -EOPNOTSUPP;
 +		rcu_read_unlock();
 +		goto errout;
 +	}
- 
--	if (!cops->tcf_block)
--		return -EOPNOTSUPP;
++
 +	/* At this point we know that qdisc is not noop_qdisc,
 +	 * which means that qdisc holds a reference to net_device
 +	 * and we hold a reference to qdisc, so it is safe to release
@@ -97,12 +97,12 @@ Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
  	}
  
  	/* And the last stroke */
-@@ -641,6 +670,8 @@ replay:
- 	}
- 
- errout:
-+	if (q)
-+		qdisc_put(q);
- 	if (chain)
+@@ -645,6 +674,8 @@ errout:
  		tcf_chain_put(chain);
  	if (cl)
+ 		cops->put(q, cl);
++	if (q)
++		qdisc_put(q);
+ 	if (err == -EAGAIN)
+ 		/* Replay the request. */
+ 		goto replay;
