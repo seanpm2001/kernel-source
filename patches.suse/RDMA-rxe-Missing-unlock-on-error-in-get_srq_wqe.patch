@@ -1,0 +1,36 @@
+From 36941dfe0e8c3e2da7851b9648fd74bd3a3e78ce Mon Sep 17 00:00:00 2001
+From: Dan Carpenter <dan.carpenter@oracle.com>
+Date: Fri, 25 Jun 2021 16:03:06 +0300
+Subject: [PATCH 1/1] RDMA/rxe: Missing unlock on error in get_srq_wqe()
+Git-commit: 36941dfe0e8c3e2da7851b9648fd74bd3a3e78ce
+Patch-mainline: v5.14
+References: git-fixes
+
+This error path needs to unlock before returning.
+
+Fixes: ec0fa2445c18 ("RDMA/rxe: Fix over copying in get_srq_wqe")
+Link: https://lore.kernel.org/r/YNXUCmnPsSkPyhkm@mwanda
+Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
+Reviewed-by: Majd Dibbiny <majd@nvidia.com>
+Reviewed-by: Bob Pearson <rpearsonhpe@gmail.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/sw/rxe/rxe_resp.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/infiniband/sw/rxe/rxe_resp.c b/drivers/infiniband/sw/rxe/rxe_resp.c
+index 72cdb170b67b..3743dc39b60c 100644
+--- a/drivers/infiniband/sw/rxe/rxe_resp.c
++++ b/drivers/infiniband/sw/rxe/rxe_resp.c
+@@ -314,6 +314,7 @@ static enum resp_states get_srq_wqe(struct rxe_qp *qp)
+ 
+ 	/* don't trust user space data */
+ 	if (unlikely(wqe->dma.num_sge > srq->rq.max_sge)) {
++		spin_unlock_bh(&srq->rq.consumer_lock);
+ 		pr_warn("%s: invalid num_sge in SRQ entry\n", __func__);
+ 		return RESPST_ERR_MALFORMED_WQE;
+ 	}
+-- 
+2.35.0
+
