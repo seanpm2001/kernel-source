@@ -1,0 +1,27 @@
+From: Trond Myklebust <trond.myklebust@primarydata.com>
+Date: Tue, 6 Feb 2018 07:58:49 -0500
+Subject: [PATCH] Make the xprtiod workqueue unbounded.
+Git-commit: 90ea9f1b60c679049619a79d9fc1557bc41c4973
+Patch-mainline: v4.16
+References: bsc#1197663
+
+This should help reduce the latency on replies.
+
+Signed-off-by: Trond Myklebust <trond.myklebust@primarydata.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ net/sunrpc/sched.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/net/sunrpc/sched.c
++++ b/net/sunrpc/sched.c
+@@ -1127,7 +1127,7 @@ static int rpciod_start(void)
+ 		goto out_failed;
+ 	rpciod_workqueue = wq;
+ 	/* Note: highpri because network receive is latency sensitive */
+-	wq = alloc_workqueue("xprtiod", WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
++	wq = alloc_workqueue("xprtiod", WQ_UNBOUND|WQ_MEM_RECLAIM|WQ_HIGHPRI, 0);
+ 	if (!wq)
+ 		goto free_rpciod;
+ 	xprtiod_workqueue = wq;

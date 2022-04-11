@@ -1,0 +1,38 @@
+From: Olga Kornievskaia <aglo@umich.edu>
+Date: Thu, 29 Jun 2017 09:25:36 -0400
+Subject: [PATCH] fix parallelism for rpc tasks
+Git-commit: f515f86b34b2e7d4b24cc9b7375c9e749895088e
+Patch-mainline: v4.16
+References: bsc#1197663
+
+Hi folks,
+
+On a multi-core machine, is it expected that we can have parallel RPCs
+handled by each of the per-core workqueue?
+
+In testing a read workload, observing via "top" command that a single
+"kworker" thread is running servicing the requests (no parallelism).
+It's more prominent while doing these operations over krb5p mount.
+
+What has been suggested by Bruce is to try this and in my testing I
+see then the read workload spread among all the kworker threads.
+
+Signed-off-by: Olga Kornievskaia <kolga@netapp.com>
+Signed-off-by: Trond Myklebust <trond.myklebust@primarydata.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ net/sunrpc/sched.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/net/sunrpc/sched.c
++++ b/net/sunrpc/sched.c
+@@ -1122,7 +1122,7 @@ static int rpciod_start(void)
+ 	 * Create the rpciod thread and wait for it to start.
+ 	 */
+ 	dprintk("RPC:       creating workqueue rpciod\n");
+-	wq = alloc_workqueue("rpciod", WQ_MEM_RECLAIM, 0);
++	wq = alloc_workqueue("rpciod", WQ_MEM_RECLAIM | WQ_UNBOUND, 0);
+ 	if (!wq)
+ 		goto out_failed;
+ 	rpciod_workqueue = wq;
