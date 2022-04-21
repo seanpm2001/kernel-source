@@ -27,7 +27,7 @@ Signed-off-by: NeilBrown <neilb@suse.de>
  
 --- a/fs/nfs/nfs4proc.c
 +++ b/fs/nfs/nfs4proc.c
-@@ -1397,7 +1397,7 @@ static bool nfs_open_stateid_recover_ope
+@@ -1396,7 +1396,7 @@ static bool nfs_open_stateid_recover_ope
  static void nfs_state_log_update_open_stateid(struct nfs4_state *state)
  {
  	if (test_and_clear_bit(NFS_STATE_CHANGE_WAIT, &state->flags))
@@ -35,8 +35,8 @@ Signed-off-by: NeilBrown <neilb@suse.de>
 +		wake_up_bit(&state->flags, NFS_STATE_CHANGE_WAIT);
  }
  
- static void nfs_state_log_out_of_order_open_stateid(struct nfs4_state *state,
-@@ -1518,6 +1518,8 @@ static void nfs_set_open_stateid_locked(
+ static void nfs_test_and_clear_all_open_stateid(struct nfs4_state *state)
+@@ -1502,6 +1502,8 @@ static void nfs_set_open_stateid_locked(
  		const nfs4_stateid *stateid, nfs4_stateid *freeme)
  {
  	DEFINE_WAIT(wait);
@@ -45,16 +45,16 @@ Signed-off-by: NeilBrown <neilb@suse.de>
  	int status = 0;
  	for (;;) {
  
-@@ -1531,7 +1533,7 @@ static void nfs_set_open_stateid_locked(
- 		if (!nfs4_has_session(NFS_SERVER(state->inode)->nfs_client))
+@@ -1515,7 +1517,7 @@ static void nfs_set_open_stateid_locked(
  			break;
  
+ 		set_bit(NFS_STATE_CHANGE_WAIT, &state->flags);
 -		prepare_to_wait(&state->waitq, &wait, TASK_KILLABLE);
 +		prepare_to_wait(wq_head, &wait, TASK_KILLABLE);
  		/*
  		 * Ensure we process the state changes in the same order
  		 * in which the server processed them by delaying the
-@@ -1547,7 +1549,7 @@ static void nfs_set_open_stateid_locked(
+@@ -1532,7 +1534,7 @@ static void nfs_set_open_stateid_locked(
  				status = 0;
  		} else
  			status = -EINTR;
@@ -63,15 +63,9 @@ Signed-off-by: NeilBrown <neilb@suse.de>
  		rcu_read_lock();
  		spin_lock(&state->owner->so_lock);
  		write_seqlock(&state->seqlock);
- 	}
--	finish_wait(&state->waitq, &wait);
-+	finish_wait(wq_head, &wbq_entry.wq_entry);
- 
- 	if (!nfs4_stateid_match_other(stateid, &state->open_stateid)) {
- 		nfs4_stateid_copy(freeme, &state->open_stateid);
 --- a/fs/nfs/nfs4state.c
 +++ b/fs/nfs/nfs4state.c
-@@ -656,7 +656,6 @@ nfs4_alloc_open_state(void)
+@@ -664,7 +664,6 @@ nfs4_alloc_open_state(void)
  	INIT_LIST_HEAD(&state->lock_states);
  	spin_lock_init(&state->state_lock);
  	seqlock_init(&state->seqlock);
