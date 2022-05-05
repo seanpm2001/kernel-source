@@ -1,0 +1,50 @@
+From cd9f7f7ac5932129fe81b4c7559cfcb226ec7c5c Mon Sep 17 00:00:00 2001
+From: Thomas Zimmermann <tzimmermann@suse.de>
+Date: Tue, 1 Feb 2022 12:53:05 +0100
+Subject: drm/fb-helper: Mark screen buffers in system memory with
+ FBINFO_VIRTFB
+Git-commit: cd9f7f7ac5932129fe81b4c7559cfcb226ec7c5c
+Patch-mainline: v5.18-rc1
+References: bsc#1129770
+
+Mark screen buffers in system memory with FBINFO_VIRTFB. Otherwise, fbdev
+deferred I/O marks mmap'ed areas of system memory with VM_IO. (There's an
+inverse relationship between the two flags.)
+
+For shadow buffers, also set the FBINFO_READS_FAST hint.
+
+v3:
+	* change FB_ to FBINFO_ in commit description
+v2:
+	* updated commit description (Daniel)
+	* added Fixes tag
+
+Signed-off-by: Thomas Zimmermann <tzimmermann@suse.de>
+Fixes: d536540f304c ("drm/fb-helper: Add generic fbdev emulation .fb_probe function")
+Reviewed-by: Daniel Vetter <daniel.vetter@ffwll.ch>
+Cc: dri-devel@lists.freedesktop.org
+Cc: <stable@vger.kernel.org> # v4.19+
+Link: https://patchwork.freedesktop.org/patch/msgid/20220201115305.9333-1-tzimmermann@suse.de
+Acked-by: Thomas Zimmermann <tzimmermann@suse.de>
+---
+ drivers/gpu/drm/drm_fb_helper.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/drivers/gpu/drm/drm_fb_helper.c
++++ b/drivers/gpu/drm/drm_fb_helper.c
+@@ -3083,6 +3083,7 @@ int drm_fb_helper_generic_probe(struct d
+ 	fbi->fix.smem_len = fbi->screen_size;
+ 	fbi->screen_buffer = buffer->vaddr;
+ 	strcpy(fbi->fix.id, "DRM emulated");
++	fbi->flags = FBINFO_DEFAULT;
+ 
+ 	drm_fb_helper_fill_fix(fbi, fb->pitches[0], fb->format->depth);
+ 	drm_fb_helper_fill_var(fbi, fb_helper, sizes->fb_width, sizes->fb_height);
+@@ -3106,6 +3107,7 @@ int drm_fb_helper_generic_probe(struct d
+ 		*fbops = *fbi->fbops;
+ 		fbi->fbops = fbops;
+ 		fbi->screen_buffer = shadow;
++		fbi->flags |= FBINFO_VIRTFB | FBINFO_READS_FAST;
+ 		fbi->fbdefio = &drm_fbdev_defio;
+ 
+ 		fb_deferred_io_init(fbi);
