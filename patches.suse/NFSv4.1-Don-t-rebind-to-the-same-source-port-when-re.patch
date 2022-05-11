@@ -63,7 +63,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  	int error;
 --- a/fs/nfs/nfs4client.c
 +++ b/fs/nfs/nfs4client.c
-@@ -865,8 +865,11 @@ static int nfs4_set_client(struct nfs_se
+@@ -867,8 +867,11 @@ static int nfs4_set_client(struct nfs_se
  	};
  	struct nfs_client *clp;
  
@@ -87,14 +87,14 @@ Acked-by: NeilBrown <neilb@suse.com>
  	char *			cl_hostname;	/* hostname of server */
 --- a/include/linux/sunrpc/clnt.h
 +++ b/include/linux/sunrpc/clnt.h
-@@ -153,6 +153,7 @@ struct rpc_add_xprt_test {
+@@ -149,6 +149,7 @@ struct rpc_add_xprt_test {
  #define RPC_CLNT_CREATE_INFINITE_SLOTS	(1UL << 7)
  #define RPC_CLNT_CREATE_NO_IDLE_TIMEOUT	(1UL << 8)
  #define RPC_CLNT_CREATE_NO_RETRANS_TIMEOUT	(1UL << 9)
 +#define RPC_CLNT_CREATE_REUSEPORT	(1UL << 11)
+ #define RPC_CLNT_CREATE_IGNORE_NULL_UNAVAIL (1UL << 12)
  
  struct rpc_clnt *rpc_create(struct rpc_create_args *args);
- struct rpc_clnt	*rpc_bind_new_program(struct rpc_clnt *,
 --- a/include/linux/sunrpc/xprt.h
 +++ b/include/linux/sunrpc/xprt.h
 @@ -199,7 +199,8 @@ struct rpc_xprt {
@@ -109,7 +109,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  	unsigned int		bind_index;	/* bind function index */
 --- a/net/sunrpc/clnt.c
 +++ b/net/sunrpc/clnt.c
-@@ -592,6 +592,9 @@ struct rpc_clnt *rpc_create(struct rpc_c
+@@ -595,6 +595,9 @@ struct rpc_clnt *rpc_create(struct rpc_c
  	xprt->resvport = 1;
  	if (args->flags & RPC_CLNT_CREATE_NONPRIVPORT)
  		xprt->resvport = 0;
@@ -119,7 +119,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  
  	clnt = rpc_create_xprt(args, xprt);
  	if (IS_ERR(clnt) || args->nconnect <= 1)
-@@ -2732,7 +2735,7 @@ int rpc_clnt_add_xprt(struct rpc_clnt *c
+@@ -2780,7 +2783,7 @@ int rpc_clnt_add_xprt(struct rpc_clnt *c
  	struct rpc_xprt *xprt;
  	unsigned long connect_timeout;
  	unsigned long reconnect_timeout;
@@ -128,7 +128,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  	int ret = 0;
  
  	rcu_read_lock();
-@@ -2743,6 +2746,7 @@ int rpc_clnt_add_xprt(struct rpc_clnt *c
+@@ -2791,6 +2794,7 @@ int rpc_clnt_add_xprt(struct rpc_clnt *c
  		return -EAGAIN;
  	}
  	resvport = xprt->resvport;
@@ -136,7 +136,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  	connect_timeout = xprt->connect_timeout;
  	reconnect_timeout = xprt->max_reconnect_timeout;
  	rcu_read_unlock();
-@@ -2753,6 +2757,7 @@ int rpc_clnt_add_xprt(struct rpc_clnt *c
+@@ -2801,6 +2805,7 @@ int rpc_clnt_add_xprt(struct rpc_clnt *c
  		goto out_put_switch;
  	}
  	xprt->resvport = resvport;
