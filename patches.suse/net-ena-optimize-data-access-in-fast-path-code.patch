@@ -1,0 +1,186 @@
+From: Shay Agroskin <shayagr@amazon.com>
+Date: Tue, 8 Jun 2021 19:01:09 +0300
+Subject: net: ena: optimize data access in fast-path code
+Patch-mainline: v5.14-rc1
+Git-commit: e4ac382ebfb4e40dbf01db9ab4a42b10b298946a
+References: bsc#1198778
+
+This tweaks several small places to improve the data access in fast
+path:
+
+* Remove duplicates of first_interrupt flag and surround it with
+  WRITE/READ_ONCE macros:
+
+  The flag is used to detect HW disorders in its
+  interrupt communication with the driver. The flag is set when an
+  interrupt is received and used in the health check function
+  (ena_timer_service()) to help it find irregularities.
+
+* Reorder some fields in ena_napi struct to take better advantage of
+  cache access pattern.
+
+* Move XDP TX queue number to a variable to save its calculation for
+  every packet.
+
+* Use likely in a condition to improve branch prediction
+
+The 'first_interrupt' and 'interrupt_masked' flags were moved to reside
+in the same cache line as the first fields of 'napi' struct. This
+placement ensures that all memory accessed during upper-half handler
+reside in the same cacheline (napi_schedule_irqoff() only accesses
+'state' and 'poll_list' fields which are at the beginning of napi
+struct).
+
+Signed-off-by: Sameeh Jubran <sameehj@amazon.com>
+Signed-off-by: Shay Agroskin <shayagr@amazon.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/amazon/ena/ena_eth_com.c |    2 +-
+ drivers/net/ethernet/amazon/ena/ena_netdev.c  |   23 +++++++++++------------
+ drivers/net/ethernet/amazon/ena/ena_netdev.h  |   11 +++++++----
+ 3 files changed, 19 insertions(+), 17 deletions(-)
+
+--- a/drivers/net/ethernet/amazon/ena/ena_eth_com.c
++++ b/drivers/net/ethernet/amazon/ena/ena_eth_com.c
+@@ -151,7 +151,7 @@ static int ena_com_close_bounce_buffer(s
+ 		return 0;
+ 
+ 	/* bounce buffer was used, so write it and get a new one */
+-	if (pkt_ctrl->idx) {
++	if (likely(pkt_ctrl->idx)) {
+ 		rc = ena_com_write_bounce_buffer_to_dev(io_sq,
+ 							pkt_ctrl->curr_bounce_buf);
+ 		if (unlikely(rc))
+--- a/drivers/net/ethernet/amazon/ena/ena_netdev.c
++++ b/drivers/net/ethernet/amazon/ena/ena_netdev.c
+@@ -200,7 +200,6 @@ static int ena_xdp_io_poll(struct napi_s
+ 	int ret;
+ 
+ 	xdp_ring = ena_napi->xdp_ring;
+-	xdp_ring->first_interrupt = ena_napi->first_interrupt;
+ 
+ 	xdp_budget = budget;
+ 
+@@ -393,7 +392,6 @@ static int ena_xdp_execute(struct ena_ri
+ 	u32 verdict = XDP_PASS;
+ 	struct xdp_frame *xdpf;
+ 	u64 *xdp_stat;
+-	int qid;
+ 
+ 	rcu_read_lock();
+ 	xdp_prog = READ_ONCE(rx_ring->xdp_bpf_prog);
+@@ -414,8 +412,7 @@ static int ena_xdp_execute(struct ena_ri
+ 		}
+ 
+ 		/* Find xmit queue */
+-		qid = rx_ring->qid + rx_ring->adapter->num_io_queues;
+-		xdp_ring = &rx_ring->adapter->tx_ring[qid];
++		xdp_ring = rx_ring->xdp_ring;
+ 
+ 		/* The XDP queues are shared between XDP_TX and XDP_REDIRECT */
+ 		spin_lock(&xdp_ring->xdp_tx_lock);
+@@ -695,7 +692,6 @@ static void ena_init_io_rings_common(str
+ 	ring->ena_dev = adapter->ena_dev;
+ 	ring->per_napi_packets = 0;
+ 	ring->cpu = 0;
+-	ring->first_interrupt = false;
+ 	ring->no_interrupt_event_cnt = 0;
+ 	u64_stats_init(&ring->syncp);
+ }
+@@ -739,6 +735,7 @@ static void ena_init_io_rings(struct ena
+ 				ena_com_get_nonadaptive_moderation_interval_rx(ena_dev);
+ 			rxr->empty_rx_queue = 0;
+ 			adapter->ena_napi[i].dim.mode = DIM_CQ_PERIOD_MODE_START_FROM_EQE;
++			rxr->xdp_ring = &adapter->tx_ring[i + adapter->num_io_queues];
+ 		}
+ 	}
+ }
+@@ -1937,9 +1934,6 @@ static int ena_io_poll(struct napi_struc
+ 	tx_ring = ena_napi->tx_ring;
+ 	rx_ring = ena_napi->rx_ring;
+ 
+-	tx_ring->first_interrupt = ena_napi->first_interrupt;
+-	rx_ring->first_interrupt = ena_napi->first_interrupt;
+-
+ 	tx_budget = tx_ring->ring_size / ENA_TX_POLL_BUDGET_DIVIDER;
+ 
+ 	if (!test_bit(ENA_FLAG_DEV_UP, &tx_ring->adapter->flags) ||
+@@ -2018,7 +2012,8 @@ static irqreturn_t ena_intr_msix_io(int
+ {
+ 	struct ena_napi *ena_napi = data;
+ 
+-	ena_napi->first_interrupt = true;
++	/* Used to check HW health */
++	WRITE_ONCE(ena_napi->first_interrupt, true);
+ 
+ 	WRITE_ONCE(ena_napi->interrupts_masked, true);
+ 	smp_wmb(); /* write interrupts_masked before calling napi */
+@@ -3675,7 +3670,9 @@ static void ena_fw_reset_device(struct w
+ static int check_for_rx_interrupt_queue(struct ena_adapter *adapter,
+ 					struct ena_ring *rx_ring)
+ {
+-	if (likely(rx_ring->first_interrupt))
++	struct ena_napi *ena_napi = container_of(rx_ring->napi, struct ena_napi, napi);
++
++	if (likely(READ_ONCE(ena_napi->first_interrupt)))
+ 		return 0;
+ 
+ 	if (ena_com_cq_empty(rx_ring->ena_com_io_cq))
+@@ -3699,6 +3696,7 @@ static int check_for_rx_interrupt_queue(
+ static int check_missing_comp_in_tx_queue(struct ena_adapter *adapter,
+ 					  struct ena_ring *tx_ring)
+ {
++	struct ena_napi *ena_napi = container_of(tx_ring->napi, struct ena_napi, napi);
+ 	struct ena_tx_buffer *tx_buf;
+ 	unsigned long last_jiffies;
+ 	u32 missed_tx = 0;
+@@ -3712,8 +3710,9 @@ static int check_missing_comp_in_tx_queu
+ 			/* no pending Tx at this location */
+ 			continue;
+ 
+-		if (unlikely(!tx_ring->first_interrupt && time_is_before_jiffies(last_jiffies +
+-			     2 * adapter->missing_tx_completion_to))) {
++		if (unlikely(!READ_ONCE(ena_napi->first_interrupt) &&
++			time_is_before_jiffies(last_jiffies + 2 *
++				adapter->missing_tx_completion_to))) {
+ 			/* If after graceful period interrupt is still not
+ 			 * received, we schedule a reset
+ 			 */
+--- a/drivers/net/ethernet/amazon/ena/ena_netdev.h
++++ b/drivers/net/ethernet/amazon/ena/ena_netdev.h
+@@ -140,12 +140,12 @@ struct ena_irq {
+ };
+ 
+ struct ena_napi {
+-	struct napi_struct napi ____cacheline_aligned;
++	u8 first_interrupt ____cacheline_aligned;
++	u8 interrupts_masked;
++	struct napi_struct napi;
+ 	struct ena_ring *tx_ring;
+ 	struct ena_ring *rx_ring;
+ 	struct ena_ring *xdp_ring;
+-	bool first_interrupt;
+-	bool interrupts_masked;
+ 	u32 qid;
+ 	struct dim dim;
+ };
+@@ -264,6 +264,10 @@ struct ena_ring {
+ 	struct bpf_prog *xdp_bpf_prog;
+ 	struct xdp_rxq_info xdp_rxq;
+ 	spinlock_t xdp_tx_lock;	/* synchronize XDP TX/Redirect traffic */
++	/* Used for rx queues only to point to the xdp tx ring, to
++	 * which traffic should be redirected from this rx ring.
++	 */
++	struct ena_ring *xdp_ring;
+ 
+ 	u16 next_to_use;
+ 	u16 next_to_clean;
+@@ -276,7 +280,6 @@ struct ena_ring {
+ 	/* The maximum header length the device can handle */
+ 	u8 tx_max_header_size;
+ 
+-	bool first_interrupt;
+ 	bool disable_meta_caching;
+ 	u16 no_interrupt_event_cnt;
+ 
