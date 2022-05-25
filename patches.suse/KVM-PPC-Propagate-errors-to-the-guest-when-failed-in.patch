@@ -1,0 +1,117 @@
+From 2691f0ff3d96b471a69c7ef29f3340b91056845d Mon Sep 17 00:00:00 2001
+From: Alexey Kardashevskiy <aik@ozlabs.ru>
+Date: Mon, 10 Sep 2018 18:29:11 +1000
+Subject: [PATCH] KVM: PPC: Propagate errors to the guest when failed instead
+ of ignoring
+
+References: bsc#1061840 git-fixes
+Patch-mainline: v4.20-rc1
+Git-commit: 2691f0ff3d96b471a69c7ef29f3340b91056845d
+
+At the moment if the PUT_TCE{_INDIRECT} handlers fail to update
+the hardware tables, we print a warning once, clear the entry and
+continue. This is so as at the time the assumption was that if
+a VFIO device is hotplugged into the guest, and the userspace replays
+virtual DMA mappings (i.e. TCEs) to the hardware tables and if this fails,
+then there is nothing useful we can do about it.
+
+However the assumption is not valid as these handlers are not called for
+TCE replay (VFIO ioctl interface is used for that) and these handlers
+are for new TCEs.
+
+This returns an error to the guest if there is a request which cannot be
+processed. By now the only possible failure must be H_TOO_HARD.
+
+Signed-off-by: Alexey Kardashevskiy <aik@ozlabs.ru>
+Reviewed-by: David Gibson <david@gibson.dropbear.id.au>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kvm/book3s_64_vio.c    | 20 ++++++--------------
+ arch/powerpc/kvm/book3s_64_vio_hv.c | 21 +++++++--------------
+ 2 files changed, 13 insertions(+), 28 deletions(-)
+
+diff --git a/arch/powerpc/kvm/book3s_64_vio.c b/arch/powerpc/kvm/book3s_64_vio.c
+index 01e1994daff0..8231b178eac6 100644
+--- a/arch/powerpc/kvm/book3s_64_vio.c
++++ b/arch/powerpc/kvm/book3s_64_vio.c
+@@ -568,14 +568,10 @@ long kvmppc_h_put_tce(struct kvm_vcpu *vcpu, unsigned long liobn,
+ 			ret = kvmppc_tce_iommu_map(vcpu->kvm, stt, stit->tbl,
+ 					entry, ua, dir);
+ 
+-		if (ret == H_SUCCESS)
+-			continue;
+-
+-		if (ret == H_TOO_HARD)
++		if (ret != H_SUCCESS) {
++			kvmppc_clear_tce(stit->tbl, entry);
+ 			goto unlock_exit;
+-
+-		WARN_ON_ONCE(1);
+-		kvmppc_clear_tce(stit->tbl, entry);
++		}
+ 	}
+ 
+ 	kvmppc_tce_put(stt, entry, tce);
+@@ -663,14 +659,10 @@ long kvmppc_h_put_tce_indirect(struct kvm_vcpu *vcpu,
+ 					stit->tbl, entry + i, ua,
+ 					iommu_tce_direction(tce));
+ 
+-			if (ret == H_SUCCESS)
+-				continue;
+-
+-			if (ret == H_TOO_HARD)
++			if (ret != H_SUCCESS) {
++				kvmppc_clear_tce(stit->tbl, entry);
+ 				goto unlock_exit;
+-
+-			WARN_ON_ONCE(1);
+-			kvmppc_clear_tce(stit->tbl, entry);
++			}
+ 		}
+ 
+ 		kvmppc_tce_put(stt, entry + i, tce);
+diff --git a/arch/powerpc/kvm/book3s_64_vio_hv.c b/arch/powerpc/kvm/book3s_64_vio_hv.c
+index 3c05fc22de07..ae147b5c7571 100644
+--- a/arch/powerpc/kvm/book3s_64_vio_hv.c
++++ b/arch/powerpc/kvm/book3s_64_vio_hv.c
+@@ -405,14 +405,10 @@ long kvmppc_rm_h_put_tce(struct kvm_vcpu *vcpu, unsigned long liobn,
+ 			ret = kvmppc_rm_tce_iommu_map(vcpu->kvm, stt,
+ 					stit->tbl, entry, ua, dir);
+ 
+-		if (ret == H_SUCCESS)
+-			continue;
+-
+-		if (ret == H_TOO_HARD)
++		if (ret != H_SUCCESS) {
++			kvmppc_rm_clear_tce(vcpu->kvm, stit->tbl, entry);
+ 			return ret;
+-
+-		WARN_ON_ONCE_RM(1);
+-		kvmppc_rm_clear_tce(vcpu->kvm, stit->tbl, entry);
++		}
+ 	}
+ 
+ 	kvmppc_tce_put(stt, entry, tce);
+@@ -558,14 +554,11 @@ long kvmppc_rm_h_put_tce_indirect(struct kvm_vcpu *vcpu,
+ 					stit->tbl, entry + i, ua,
+ 					iommu_tce_direction(tce));
+ 
+-			if (ret == H_SUCCESS)
+-				continue;
+-
+-			if (ret == H_TOO_HARD)
++			if (ret != H_SUCCESS) {
++				kvmppc_rm_clear_tce(vcpu->kvm, stit->tbl,
++						entry);
+ 				goto unlock_exit;
+-
+-			WARN_ON_ONCE_RM(1);
+-			kvmppc_rm_clear_tce(vcpu->kvm, stit->tbl, entry);
++			}
+ 		}
+ 
+ 		kvmppc_tce_put(stt, entry + i, tce);
+-- 
+2.35.3
+
