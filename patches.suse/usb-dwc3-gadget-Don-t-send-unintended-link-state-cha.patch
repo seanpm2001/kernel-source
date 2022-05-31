@@ -1,0 +1,107 @@
+From 5b738211fb59e114727381d07c647a77c0010996 Mon Sep 17 00:00:00 2001
+From: Thinh Nguyen <Thinh.Nguyen@synopsys.com>
+Date: Wed, 23 Oct 2019 19:15:43 -0700
+Subject: [PATCH] usb: dwc3: gadget: Don't send unintended link state change
+Git-commit: 5b738211fb59e114727381d07c647a77c0010996
+References: git-fixes
+Patch-mainline: v5.6-rc1
+
+DCTL.ULSTCHNGREQ is a write-only field. When doing a read-modify-write
+to DCTL, the driver must make sure that there's no unintended link state
+change request from whatever is read from DCTL.ULSTCHNGREQ. Set link
+state change to no-action when the driver writes to DCTL.
+
+Signed-off-by: Thinh Nguyen <thinhn@synopsys.com>
+Signed-off-by: Felipe Balbi <felipe.balbi@linux.intel.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/usb/dwc3/gadget.c |   16 +++++++---------
+ drivers/usb/dwc3/gadget.h |   14 ++++++++++++++
+ 2 files changed, 21 insertions(+), 9 deletions(-)
+
+--- a/drivers/usb/dwc3/gadget.c
++++ b/drivers/usb/dwc3/gadget.c
+@@ -63,7 +63,7 @@ int dwc3_gadget_set_test_mode(struct dwc
+ 		return -EINVAL;
+ 	}
+ 
+-	dwc3_writel(dwc->regs, DWC3_DCTL, reg);
++	dwc3_gadget_dctl_write_safe(dwc, reg);
+ 
+ 	return 0;
+ }
+@@ -1692,7 +1692,7 @@ static int dwc3_gadget_run_stop(struct d
+ 		dwc->pullups_connected = false;
+ 	}
+ 
+-	dwc3_writel(dwc->regs, DWC3_DCTL, reg);
++	dwc3_gadget_dctl_write_safe(dwc, reg);
+ 
+ 	do {
+ 		reg = dwc3_readl(dwc->regs, DWC3_DSTS);
+@@ -2583,10 +2583,8 @@ static void dwc3_gadget_disconnect_inter
+ 
+ 	reg = dwc3_readl(dwc->regs, DWC3_DCTL);
+ 	reg &= ~DWC3_DCTL_INITU1ENA;
+-	dwc3_writel(dwc->regs, DWC3_DCTL, reg);
+-
+ 	reg &= ~DWC3_DCTL_INITU2ENA;
+-	dwc3_writel(dwc->regs, DWC3_DCTL, reg);
++	dwc3_gadget_dctl_write_safe(dwc, reg);
+ 
+ 	dwc3_disconnect_gadget(dwc);
+ 
+@@ -2638,7 +2636,7 @@ static void dwc3_gadget_reset_interrupt(
+ 
+ 	reg = dwc3_readl(dwc->regs, DWC3_DCTL);
+ 	reg &= ~DWC3_DCTL_TSTCTRL_MASK;
+-	dwc3_writel(dwc->regs, DWC3_DCTL, reg);
++	dwc3_gadget_dctl_write_safe(dwc, reg);
+ 	dwc->test_mode = false;
+ 	dwc3_clear_stall_all_ep(dwc);
+ 
+@@ -2741,11 +2739,11 @@ static void dwc3_gadget_conndone_interru
+ 		if (dwc->has_lpm_erratum && dwc->revision >= DWC3_REVISION_240A)
+ 			reg |= DWC3_DCTL_LPM_ERRATA(dwc->lpm_nyet_threshold);
+ 
+-		dwc3_writel(dwc->regs, DWC3_DCTL, reg);
++		dwc3_gadget_dctl_write_safe(dwc, reg);
+ 	} else {
+ 		reg = dwc3_readl(dwc->regs, DWC3_DCTL);
+ 		reg &= ~DWC3_DCTL_HIRD_THRES_MASK;
+-		dwc3_writel(dwc->regs, DWC3_DCTL, reg);
++		dwc3_gadget_dctl_write_safe(dwc, reg);
+ 	}
+ 
+ 	dep = dwc->eps[0];
+@@ -2854,7 +2852,7 @@ static void dwc3_gadget_linksts_change_i
+ 
+ 				reg &= ~u1u2;
+ 
+-				dwc3_writel(dwc->regs, DWC3_DCTL, reg);
++				dwc3_gadget_dctl_write_safe(dwc, reg);
+ 				break;
+ 			default:
+ 				/* do nothing */
+--- a/drivers/usb/dwc3/gadget.h
++++ b/drivers/usb/dwc3/gadget.h
+@@ -116,4 +116,18 @@ static inline u32 dwc3_gadget_ep_get_tra
+ 	return DWC3_DEPCMD_GET_RSC_IDX(res_id);
+ }
+ 
++/**
++ * dwc3_gadget_dctl_write_safe - write to DCTL safe from link state change
++ * @dwc: pointer to our context structure
++ * @value: value to write to DCTL
++ *
++ * Use this function when doing read-modify-write to DCTL. It will not
++ * send link state change request.
++ */
++static inline void dwc3_gadget_dctl_write_safe(struct dwc3 *dwc, u32 value)
++{
++	value &= ~DWC3_DCTL_ULSTCHNGREQ_MASK;
++	dwc3_writel(dwc->regs, DWC3_DCTL, value);
++}
++
+ #endif /* __DRIVERS_USB_DWC3_GADGET_H */
