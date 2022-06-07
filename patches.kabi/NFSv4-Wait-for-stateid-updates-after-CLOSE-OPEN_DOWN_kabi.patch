@@ -1,0 +1,42 @@
+From: NeilBrown <neilb@suse.de>
+Subject: kabi fix for NFSv4: Wait for stateid updates after CLOSE/OPEN_DOWNGRADE
+Patch-mainline: Never, kabi
+References: bsc#1196247
+
+We cannot add waitq to state, so use a bit waitqueue.
+
+Signed-off-by: Neil Brown <neilb@suse.com>
+
+---
+ fs/nfs/nfs4proc.c |    6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+--- a/fs/nfs/nfs4proc.c
++++ b/fs/nfs/nfs4proc.c
+@@ -3154,6 +3154,8 @@ static bool nfs4_refresh_open_old_statei
+ 	u32 dst_seqid;
+ 	bool ret;
+ 	int seq, status = -EAGAIN;
++	struct wait_queue_head *wq_head = bit_waitqueue(&state->flags,
++							NFS_STATE_CHANGE_WAIT);
+ 	DEFINE_WAIT(wait);
+ 
+ 	for (;;) {
+@@ -3182,7 +3184,7 @@ static bool nfs4_refresh_open_old_statei
+ 
+ 		/* server says we're behind but we haven't seen the update yet */
+ 		set_bit(NFS_STATE_CHANGE_WAIT, &state->flags);
+-		prepare_to_wait(&state->waitq, &wait, TASK_KILLABLE);
++		prepare_to_wait(wq_head, &wait, TASK_KILLABLE);
+ 		write_sequnlock(&state->seqlock);
+ 		trace_nfs4_close_stateid_update_wait(state->inode, dst, 0);
+ 
+@@ -3192,7 +3194,7 @@ static bool nfs4_refresh_open_old_statei
+ 			if (schedule_timeout(5*HZ) != 0)
+ 				status = 0;
+ 
+-		finish_wait(&state->waitq, &wait);
++		finish_wait(wq_head, &wait);
+ 
+ 		if (!status)
+ 			continue;

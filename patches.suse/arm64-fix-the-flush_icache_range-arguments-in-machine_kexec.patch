@@ -1,0 +1,28 @@
+From: Christoph Hellwig <hch@lst.de>
+Date: Sun, 10 May 2020 09:54:41 +0200
+Subject: arm64: fix the flush_icache_range arguments in machine_kexec
+Git-commit: d51c214541c5154dda3037289ee895ea3ded5ebd
+Patch-mainline: v5.7-rc6
+References: git-fixes
+
+The second argument is the end "pointer", not the length.
+
+Fixes: d28f6df1305a ("arm64/kexec: Add core kexec support")
+Cc: <stable@vger.kernel.org> # 4.8.x-
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Catalin Marinas <catalin.marinas@arm.com>
+Acked-by: Ivan T. Ivanov <iivanov@suse.de>
+---
+ arch/arm64/kernel/machine_kexec.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/arch/arm64/kernel/machine_kexec.c
++++ b/arch/arm64/kernel/machine_kexec.c
+@@ -185,6 +185,7 @@ void machine_kexec(struct kimage *kimage
+ 	/* Flush the reboot_code_buffer in preparation for its execution. */
+ 	__flush_dcache_area(reboot_code_buffer, arm64_relocate_new_kernel_size);
+ 	flush_icache_range((uintptr_t)reboot_code_buffer,
++		(uintptr_t)reboot_code_buffer +
+ 		arm64_relocate_new_kernel_size);
+ 
+ 	/* Flush the kimage list and its buffers. */

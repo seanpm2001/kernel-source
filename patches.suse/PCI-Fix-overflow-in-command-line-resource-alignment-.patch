@@ -1,0 +1,44 @@
+From: Colin Ian King <colin.king@canonical.com>
+Date: Sat, 14 Nov 2020 15:48:04 -0600
+Subject: PCI: Fix overflow in command-line resource alignment requests
+Git-commit: cc73eb321d246776e5a9f7723d15708809aa3699
+Patch-mainline: 5.11-rc1
+References: git-fixes
+
+The shift of 1 by align_order is evaluated using 32 bit arithmetic and the
+result is assigned to a resource_size_t type variable that is a 64 bit
+unsigned integer on 64 bit platforms. Fix an overflow before widening issue
+by making the 1 a ULL.
+
+[js] it's on two places in 4.12
+
+Addresses-Coverity: ("Unintentional integer overflow")
+Fixes: 32a9a682bef2 ("PCI: allow assignment of memory resources with a specified alignment")
+Signed-off-by: Colin Ian King <colin.king@canonical.com>
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Reviewed-by: Logan Gunthorpe <logang@deltatee.com>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ drivers/pci/pci.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/drivers/pci/pci.c
++++ b/drivers/pci/pci.c
+@@ -5661,7 +5661,7 @@ static resource_size_t pci_specified_res
+ 				if (align_order == -1)
+ 					align = PAGE_SIZE;
+ 				else
+-					align = 1 << align_order;
++					align = 1ULL << align_order;
+ 				/* Found */
+ 				break;
+ 			}
+@@ -5687,7 +5687,7 @@ static resource_size_t pci_specified_res
+ 				if (align_order == -1)
+ 					align = PAGE_SIZE;
+ 				else
+-					align = 1 << align_order;
++					align = 1ULL << align_order;
+ 				/* Found */
+ 				break;
+ 			}
