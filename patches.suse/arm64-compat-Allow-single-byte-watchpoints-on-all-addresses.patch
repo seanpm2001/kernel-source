@@ -1,0 +1,32 @@
+From: Will Deacon <will@kernel.org>
+Date: Mon, 29 Jul 2019 11:06:17 +0100
+Subject: arm64: compat: Allow single-byte watchpoints on all addresses
+Git-commit: 849adec41203ac5837c40c2d7e08490ffdef3c2c
+Patch-mainline: v5.3-rc3
+References: git-fixes
+
+Commit d968d2b801d8 ("ARM: 7497/1: hw_breakpoint: allow single-byte
+watchpoints on all addresses") changed the validation requirements for
+hardware watchpoints on arch/arm/. Update our compat layer to implement
+the same relaxation.
+
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Will Deacon <will@kernel.org>
+Acked-by: Ivan T. Ivanov <iivanov@suse.de>
+---
+ arch/arm64/kernel/hw_breakpoint.c |    4 ++++
+ 1 file changed, 4 insertions(+)
+
+--- a/arch/arm64/kernel/hw_breakpoint.c
++++ b/arch/arm64/kernel/hw_breakpoint.c
+@@ -555,6 +555,10 @@ int arch_validate_hwbkpt_settings(struct
+ 			/* Allow halfword watchpoints and breakpoints. */
+ 			if (info->ctrl.len == ARM_BREAKPOINT_LEN_2)
+ 				break;
++		case 3:
++			/* Allow single byte watchpoint. */
++			if (info->ctrl.len == ARM_BREAKPOINT_LEN_1)
++				break;
+ 		default:
+ 			return -EINVAL;
+ 		}

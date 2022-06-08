@@ -1,0 +1,47 @@
+From: Pavel Tatashin <pasha.tatashin@soleen.com>
+Date: Mon, 14 Oct 2019 10:48:24 -0400
+Subject: arm64: hibernate: check pgd table allocation
+Git-commit: 8c551f919a73c1dfa690a70a691be1da394145e8
+Patch-mainline: v5.4-rc4
+References: git-fixes
+
+There is a bug in create_safe_exec_page(), when page table is allocated
+it is not checked that table is allocated successfully:
+
+But it is dereferenced in: pgd_none(READ_ONCE(*pgdp)).  Check that
+allocation was successful.
+
+Fixes: 82869ac57b5d ("arm64: kernel: Add support for hibernate/suspend-to-disk")
+Reviewed-by: James Morse <james.morse@arm.com>
+Signed-off-by: Pavel Tatashin <pasha.tatashin@soleen.com>
+Signed-off-by: Will Deacon <will@kernel.org>
+Acked-by: Ivan T. Ivanov <iivanov@suse.de>
+---
+ arch/arm64/kernel/hibernate.c |    9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+--- a/arch/arm64/kernel/hibernate.c
++++ b/arch/arm64/kernel/hibernate.c
+@@ -202,6 +202,7 @@ static int create_safe_exec_page(void *s
+ 				 gfp_t mask)
+ {
+ 	int rc = 0;
++	pgd_t *trans_pgd;
+ 	pgd_t *pgd;
+ 	pud_t *pud;
+ 	pmd_t *pmd;
+@@ -216,7 +217,13 @@ static int create_safe_exec_page(void *s
+ 	memcpy((void *)dst, src_start, length);
+ 	flush_icache_range(dst, dst + length);
+ 
+-	pgd = pgd_offset_raw(allocator(mask), dst_addr);
++	trans_pgd = allocator(mask);
++	if (!trans_pgd) {
++		rc = -ENOMEM;
++		goto out;
++	}
++
++	pgd = pgd_offset_raw(trans_pgd, dst_addr);
+ 	if (pgd_none(*pgd)) {
+ 		pud = allocator(mask);
+ 		if (!pud) {

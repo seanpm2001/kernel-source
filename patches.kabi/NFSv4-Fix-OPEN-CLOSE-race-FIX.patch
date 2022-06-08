@@ -17,7 +17,7 @@ Signed-off-by: NeilBrown <neilb@suse.com>
 
 --- a/fs/nfs/nfs4proc.c
 +++ b/fs/nfs/nfs4proc.c
-@@ -1501,6 +1501,7 @@ static void nfs_clear_open_stateid(struc
+@@ -1502,6 +1502,7 @@ static void nfs_clear_open_stateid(struc
  static void nfs_set_open_stateid_locked(struct nfs4_state *state,
  		const nfs4_stateid *stateid, nfs4_stateid *freeme)
  {
@@ -25,10 +25,10 @@ Signed-off-by: NeilBrown <neilb@suse.com>
  	DEFINE_WAIT(wait);
  	struct wait_queue_head *wq_head = bit_waitqueue(&state->flags,
  							NFS_STATE_CHANGE_WAIT);
-@@ -1528,7 +1529,8 @@ static void nfs_set_open_stateid_locked(
+@@ -1529,7 +1530,8 @@ static void nfs_set_open_stateid_locked(
  		rcu_read_unlock();
  
- 		if (!signal_pending(current)) {
+ 		if (!fatal_signal_pending(current)) {
 -			if (schedule_timeout(5*HZ) == 0)
 +			if (schedule_timeout(5*HZ) == 0 ||
 +			    time_after(jiffies, deadline))
