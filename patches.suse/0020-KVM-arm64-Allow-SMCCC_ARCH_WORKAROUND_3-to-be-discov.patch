@@ -1,0 +1,110 @@
+From 0d6285b1bacbbaa940b0489b21c2143af37fb7c5 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Tue, 12 Oct 2021 12:16:00 +0200
+Subject: [PATCH 20/22] KVM: arm64: Allow SMCCC_ARCH_WORKAROUND_3 to be
+ discovered and migrated
+
+Git-commit: a5905d6af492ee6a4a2205f0d550b3f931b03d03
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git
+Patch-mainline: Queued in a subsystem tree
+References: bsc#1191580 CVE-2022-0001 CVE-2022-000 CVE-2022-23960
+
+KVM allows the guest to discover whether the ARCH_WORKAROUND SMCCC are
+implemented, and to preserve that state during migration through its
+firmware register interface.
+
+Add the necessary boiler plate for SMCCC_ARCH_WORKAROUND_3.
+
+Reviewed-by: Russell King (Oracle) <rmk+kernel@armlinux.org.uk>
+Reviewed-by: Catalin Marinas <catalin.marinas@arm.com>
+[ kvm code moved to virt/kvm/arm, removed fw regs ABI. Added 32bit stub ]
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Matthias Brugger <mbrugger@suse.com>
+---
+ arch/arm/include/asm/kvm_host.h   |  6 ++++++
+ arch/arm/include/asm/spectre.h    | 12 ++++++++++++
+ arch/arm64/include/asm/kvm_host.h |  5 +++++
+ virt/kvm/arm/psci.c               | 12 ++++++++++++
+ 4 files changed, 35 insertions(+)
+ create mode 100644 arch/arm/include/asm/spectre.h
+
+diff --git a/arch/arm/include/asm/kvm_host.h b/arch/arm/include/asm/kvm_host.h
+index bafceaaa4cc33..ae17d957c1b6b 100644
+--- a/arch/arm/include/asm/kvm_host.h
++++ b/arch/arm/include/asm/kvm_host.h
+@@ -26,6 +26,7 @@
+ #include <asm/kvm_asm.h>
+ #include <asm/kvm_mmio.h>
+ #include <asm/fpstate.h>
++#include <asm/spectre.h>
+ #include <kvm/arm_arch_timer.h>
+ 
+ #define __KVM_HAVE_ARCH_INTC_INITIALIZED
+@@ -350,4 +351,9 @@ static inline void kvm_vcpu_put_sysregs(struct kvm_vcpu *vcpu) {}
+ struct kvm *kvm_arch_alloc_vm(void);
+ void kvm_arch_free_vm(struct kvm *kvm);
+ 
++static inline int kvm_arm_get_spectre_bhb_state(void)
++{
++	/* 32bit guests don't need firmware for this */
++	return SPECTRE_VULNERABLE; /* aka SMCCC_RET_NOT_SUPPORTED */
++}
+ #endif /* __ARM_KVM_HOST_H__ */
+diff --git a/arch/arm/include/asm/spectre.h b/arch/arm/include/asm/spectre.h
+new file mode 100644
+index 0000000000000..c672caa13fa24
+--- /dev/null
++++ b/arch/arm/include/asm/spectre.h
+@@ -0,0 +1,12 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef __ASM_SPECTRE_H
++#define __ASM_SPECTRE_H
++
++enum {
++	SPECTRE_UNAFFECTED,
++	SPECTRE_MITIGATED,
++	SPECTRE_VULNERABLE,
++};
++
++#endif
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index 6dc9c67aebd4e..f4e810f5f4037 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -502,4 +502,9 @@ void kvm_vcpu_put_sysregs(struct kvm_vcpu *vcpu);
+ struct kvm *kvm_arch_alloc_vm(void);
+ void kvm_arch_free_vm(struct kvm *kvm);
+ 
++static inline enum mitigation_state kvm_arm_get_spectre_bhb_state(void)
++{
++	return arm64_get_spectre_bhb_state();
++}
++
+ #endif /* __ARM64_KVM_HOST_H__ */
+diff --git a/virt/kvm/arm/psci.c b/virt/kvm/arm/psci.c
+index c95ab4c5a4751..129b755824e12 100644
+--- a/virt/kvm/arm/psci.c
++++ b/virt/kvm/arm/psci.c
+@@ -433,6 +433,18 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
+ 				break;
+ 			}
+ 			break;
++		case ARM_SMCCC_ARCH_WORKAROUND_3:
++			switch (kvm_arm_get_spectre_bhb_state()) {
++			case SPECTRE_VULNERABLE:
++				break;
++			case SPECTRE_MITIGATED:
++				val = SMCCC_RET_SUCCESS;
++				break;
++			case SPECTRE_UNAFFECTED:
++				val = SMCCC_ARCH_WORKAROUND_RET_UNAFFECTED;
++				break;
++			}
++			break;
+ 		}
+ 		break;
+ 	default:
+-- 
+2.34.1
+

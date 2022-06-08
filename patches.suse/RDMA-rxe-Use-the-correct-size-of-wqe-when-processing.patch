@@ -1,0 +1,38 @@
+From e2a05339fa1188b6b37540f4611893ac4c534fa2 Mon Sep 17 00:00:00 2001
+From: Bob Pearson <rpearsonhpe@gmail.com>
+Date: Thu, 29 Jul 2021 17:00:38 -0500
+Subject: [PATCH 1/1] RDMA/rxe: Use the correct size of wqe when processing SRQ
+Git-commit: e2a05339fa1188b6b37540f4611893ac4c534fa2
+Patch-mainline: v5.14
+References: git-fixes
+
+The memcpy() that copies a WQE from a SRQ the QP uses an incorrect size.
+The size should have been the size of the rxe_send_wqe struct not the size
+of a pointer to it. The result is that IO operations using a SRQ on the
+responder side will fail.
+
+Fixes: ec0fa2445c18 ("RDMA/rxe: Fix over copying in get_srq_wqe")
+Link: https://lore.kernel.org/r/20210729220039.18549-2-rpearsonhpe@gmail.com
+Signed-off-by: Bob Pearson <rpearsonhpe@gmail.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/sw/rxe/rxe_resp.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/infiniband/sw/rxe/rxe_resp.c b/drivers/infiniband/sw/rxe/rxe_resp.c
+index 3743dc39b60c..360ec67cb9e1 100644
+--- a/drivers/infiniband/sw/rxe/rxe_resp.c
++++ b/drivers/infiniband/sw/rxe/rxe_resp.c
+@@ -318,7 +318,7 @@ static enum resp_states get_srq_wqe(struct rxe_qp *qp)
+ 		pr_warn("%s: invalid num_sge in SRQ entry\n", __func__);
+ 		return RESPST_ERR_MALFORMED_WQE;
+ 	}
+-	size = sizeof(wqe) + wqe->dma.num_sge*sizeof(struct rxe_sge);
++	size = sizeof(*wqe) + wqe->dma.num_sge*sizeof(struct rxe_sge);
+ 	memcpy(&qp->resp.srq_wqe, wqe, size);
+ 
+ 	qp->resp.wqe = &qp->resp.srq_wqe.wqe;
+-- 
+2.35.0
+

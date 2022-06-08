@@ -1,0 +1,72 @@
+From a917dfb66c0a1fa1caacf3d71edcafcab48e6ff0 Mon Sep 17 00:00:00 2001
+From: Christophe JAILLET <christophe.jaillet@wanadoo.fr>
+Date: Fri, 12 Nov 2021 09:59:04 +0100
+Subject: [PATCH 1/1] RDMA/bnxt_re: Scan the whole bitmap when checking if
+ "disabling RCFW with pending cmd-bit"
+Git-commit: a917dfb66c0a1fa1caacf3d71edcafcab48e6ff0
+Patch-mainline: v5.17
+References: git-fixes
+
+The 'cmdq->cmdq_bitmap' bitmap is 'rcfw->cmdq_depth' bits long.  The size
+stored in 'cmdq->bmap_size' is the size of the bitmap in bytes.
+
+Remove this erroneous 'bmap_size' and use 'rcfw->cmdq_depth' directly in
+'bnxt_qplib_disable_rcfw_channel()'. Otherwise some error messages may be
+missing.
+
+Other uses of 'cmdq_bitmap' already take into account 'rcfw->cmdq_depth'
+directly.
+
+Fixes: 1ac5a4047975 ("RDMA/bnxt_re: Add bnxt_re RoCE driver")
+Link: https://lore.kernel.org/r/47ed717c3070a1d0f53e7b4c768a4fd11caf365d.1636707421.git.christophe.jaillet@wanadoo.fr
+Signed-off-by: Christophe JAILLET <christophe.jaillet@wanadoo.fr>
+Acked-by: Selvin Xavier <selvin.xavier@broadcom.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/hw/bnxt_re/qplib_rcfw.c | 6 ++----
+ drivers/infiniband/hw/bnxt_re/qplib_rcfw.h | 1 -
+ 2 files changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/infiniband/hw/bnxt_re/qplib_rcfw.c b/drivers/infiniband/hw/bnxt_re/qplib_rcfw.c
+index af74dbdadfaa..c8c8a68f0d90 100644
+--- a/drivers/infiniband/hw/bnxt_re/qplib_rcfw.c
++++ b/drivers/infiniband/hw/bnxt_re/qplib_rcfw.c
+@@ -650,12 +650,11 @@ void bnxt_qplib_disable_rcfw_channel(struct bnxt_qplib_rcfw *rcfw)
+ 	iounmap(rcfw->cmdq_bar_reg_iomem);
+ 	iounmap(rcfw->creq_bar_reg_iomem);
+ 
+-	indx = find_first_bit(rcfw->cmdq_bitmap, rcfw->bmap_size);
+-	if (indx != rcfw->bmap_size)
++	indx = find_first_bit(rcfw->cmdq_bitmap, rcfw->cmdq_depth);
++	if (indx != rcfw->cmdq_depth)
+ 		dev_err(&rcfw->pdev->dev,
+ 			"disabling RCFW with pending cmd-bit %lx\n", indx);
+ 	kfree(rcfw->cmdq_bitmap);
+-	rcfw->bmap_size = 0;
+ 
+ 	rcfw->cmdq_bar_reg_iomem = NULL;
+ 	rcfw->creq_bar_reg_iomem = NULL;
+@@ -709,7 +708,6 @@ int bnxt_qplib_enable_rcfw_channel(struct pci_dev *pdev,
+ 	rcfw->cmdq_bitmap = kzalloc(bmap_size, GFP_KERNEL);
+ 	if (!rcfw->cmdq_bitmap)
+ 		return -ENOMEM;
+-	rcfw->bmap_size = bmap_size;
+ 
+ 	/* CMDQ */
+ 	rcfw->cmdq_bar_reg = RCFW_COMM_PCI_BAR_REGION;
+diff --git a/drivers/infiniband/hw/bnxt_re/qplib_rcfw.h b/drivers/infiniband/hw/bnxt_re/qplib_rcfw.h
+index dfeadc192e17..df5deda6c4c9 100644
+--- a/drivers/infiniband/hw/bnxt_re/qplib_rcfw.h
++++ b/drivers/infiniband/hw/bnxt_re/qplib_rcfw.h
+@@ -233,7 +233,6 @@ struct bnxt_qplib_rcfw {
+ 	struct tasklet_struct	worker;
+ 	bool			requested;
+ 	unsigned long		*cmdq_bitmap;
+-	u32			bmap_size;
+ 	unsigned long		flags;
+ #define FIRMWARE_INITIALIZED_FLAG	0
+ #define FIRMWARE_FIRST_FLAG		31
+-- 
+2.35.0
+

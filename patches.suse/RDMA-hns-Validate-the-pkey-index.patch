@@ -1,0 +1,36 @@
+From 2a67fcfa0db6b4075515bd23497750849b88850f Mon Sep 17 00:00:00 2001
+From: Kamal Heib <kamalheib1@gmail.com>
+Date: Wed, 17 Nov 2021 16:59:54 +0200
+Subject: [PATCH 1/1] RDMA/hns: Validate the pkey index
+Git-commit: 2a67fcfa0db6b4075515bd23497750849b88850f
+Patch-mainline: v5.17
+References: git-fixes
+
+Before query pkey, make sure that the queried index is valid.
+
+Fixes: 9a4435375cd1 ("IB/hns: Add driver files for hns RoCE driver")
+Link: https://lore.kernel.org/r/20211117145954.123893-1-kamalheib1@gmail.com
+Signed-off-by: Kamal Heib <kamalheib1@gmail.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/hw/hns/hns_roce_main.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/infiniband/hw/hns/hns_roce_main.c b/drivers/infiniband/hw/hns/hns_roce_main.c
+index 4194b626f3c6..8233bec053ee 100644
+--- a/drivers/infiniband/hw/hns/hns_roce_main.c
++++ b/drivers/infiniband/hw/hns/hns_roce_main.c
+@@ -298,6 +298,9 @@ static enum rdma_link_layer hns_roce_get_link_layer(struct ib_device *device,
+ static int hns_roce_query_pkey(struct ib_device *ib_dev, u8 port, u16 index,
+ 			       u16 *pkey)
+ {
++	if (index > 0)
++		return -EINVAL;
++
+ 	*pkey = PKEY_ID;
+ 
+ 	return 0;
+-- 
+2.35.0
+
