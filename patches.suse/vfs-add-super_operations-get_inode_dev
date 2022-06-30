@@ -131,16 +131,16 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  
 --- a/fs/notify/fdinfo.c
 +++ b/fs/notify/fdinfo.c
-@@ -90,7 +90,7 @@ static void inotify_fdinfo(struct seq_fi
- 		 */
- 		u32 mask = mark->mask & IN_ALL_EVENTS;
- 		seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:%x ",
+@@ -83,7 +83,7 @@ static void inotify_fdinfo(struct seq_fi
+ 	inode = igrab(mark->connector->inode);
+ 	if (inode) {
+ 		seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:0 ",
 -			   inode_mark->wd, inode->i_ino, inode->i_sb->s_dev,
 +			   inode_mark->wd, inode->i_ino, inode_get_dev(inode),
- 			   mask, mark->ignored_mask);
+ 			   inotify_mark_user_mask(mark));
  		show_mark_fhandle(m, inode);
  		seq_putc(m, '\n');
-@@ -120,7 +120,7 @@ static void fanotify_fdinfo(struct seq_f
+@@ -113,7 +113,7 @@ static void fanotify_fdinfo(struct seq_f
  		if (!inode)
  			return;
  		seq_printf(m, "fanotify ino:%lx sdev:%x mflags:%x mask:%x ignored_mask:%x ",
@@ -282,7 +282,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  	),
 --- a/include/trace/events/writeback.h
 +++ b/include/trace/events/writeback.h
-@@ -708,7 +708,7 @@ DECLARE_EVENT_CLASS(writeback_inode_temp
+@@ -707,7 +707,7 @@ DECLARE_EVENT_CLASS(writeback_inode_temp
  	),
  
  	TP_fast_assign(
@@ -364,7 +364,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  			if (n->type == AUDIT_TYPE_UNKNOWN)
 --- a/kernel/events/core.c
 +++ b/kernel/events/core.c
-@@ -7169,7 +7169,7 @@ static void perf_event_mmap_event(struct
+@@ -7222,7 +7222,7 @@ static void perf_event_mmap_event(struct
  			goto cpy_name;
  		}
  		inode = file_inode(vma->vm_file);
