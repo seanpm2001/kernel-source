@@ -1,21 +1,20 @@
 From: João Silva <joao.silva@suse.com>
-Subject: kABI fix for tcp: fix race condition when creating child sockets from
- syncookies
+Subject: kABI fix for tcp: fix race condition when creating child sockets from syncookies
 References: bsc#1197075 bsc#1199671
 Patch-mainline: Never, kABI breakage workaround
 ---
- include/net/inet_hashtables.h |    5 +++--
- net/dccp/ipv4.c               |    2 +-
- net/dccp/ipv6.c               |    2 +-
- net/ipv4/inet_hashtables.c    |   17 ++++++++++++-----
- net/ipv4/tcp_ipv4.c           |    4 ++--
- net/ipv6/tcp_ipv6.c           |    4 ++--
+ include/net/inet_hashtables.h |  5 +++--
+ net/dccp/ipv4.c               |  2 +-
+ net/dccp/ipv6.c               |  2 +-
+ net/ipv4/inet_hashtables.c    | 17 ++++++++++++-----
+ net/ipv4/tcp_ipv4.c           |  4 ++--
+ net/ipv6/tcp_ipv6.c           |  4 ++--
  6 files changed, 21 insertions(+), 13 deletions(-)
 
 --- a/include/net/inet_hashtables.h
 +++ b/include/net/inet_hashtables.h
-@@ -210,8 +210,9 @@ void inet_put_port(struct sock *sk);
- void inet_hashinfo_init(struct inet_hashinfo *h);
+@@ -211,8 +211,9 @@ void inet_hashinfo_init(struct inet_hashinfo *h);
+ void inet_alloc_perturb_table(void);
  
  bool inet_ehash_insert(struct sock *sk, struct sock *osk, bool *found_dup_sk);
 -bool inet_ehash_nolisten(struct sock *sk, struct sock *osk,
@@ -28,7 +27,7 @@ Patch-mainline: Never, kABI breakage workaround
  void inet_unhash(struct sock *sk);
 --- a/net/dccp/ipv4.c
 +++ b/net/dccp/ipv4.c
-@@ -428,7 +428,7 @@ struct sock *dccp_v4_request_recv_sock(c
+@@ -428,7 +428,7 @@ struct sock *dccp_v4_request_recv_sock(const struct sock *sk,
  
  	if (__inet_inherit_port(sk, newsk) < 0)
  		goto put_and_exit;
@@ -39,7 +38,7 @@ Patch-mainline: Never, kABI breakage workaround
  	else
 --- a/net/dccp/ipv6.c
 +++ b/net/dccp/ipv6.c
-@@ -530,7 +530,7 @@ static struct sock *dccp_v6_request_recv
+@@ -530,7 +530,7 @@ static struct sock *dccp_v6_request_recv_sock(const struct sock *sk,
  		dccp_done(newsk);
  		goto out;
  	}
@@ -50,7 +49,7 @@ Patch-mainline: Never, kABI breakage workaround
  		newnp->pktoptions = skb_clone(ireq->pktopts, GFP_ATOMIC);
 --- a/net/ipv4/inet_hashtables.c
 +++ b/net/ipv4/inet_hashtables.c
-@@ -478,7 +478,13 @@ bool inet_ehash_insert(struct sock *sk,
+@@ -478,7 +478,13 @@ bool inet_ehash_insert(struct sock *sk, struct sock *osk, bool *found_dup_sk)
  	return ret;
  }
  
@@ -65,7 +64,7 @@ Patch-mainline: Never, kABI breakage workaround
  {
  	bool ok = inet_ehash_insert(sk, osk, found_dup_sk);
  
-@@ -492,7 +498,8 @@ bool inet_ehash_nolisten(struct sock *sk
+@@ -492,7 +498,8 @@ bool inet_ehash_nolisten(struct sock *sk, struct sock *osk, bool *found_dup_sk)
  	}
  	return ok;
  }
@@ -75,7 +74,7 @@ Patch-mainline: Never, kABI breakage workaround
  
  static int inet_reuseport_add_sock(struct sock *sk,
  				   struct inet_listen_hashbucket *ilb)
-@@ -522,7 +529,7 @@ int __inet_hash(struct sock *sk, struct
+@@ -522,7 +529,7 @@ int __inet_hash(struct sock *sk, struct sock *osk)
  	int err = 0;
  
  	if (sk->sk_state != TCP_LISTEN) {
@@ -84,7 +83,7 @@ Patch-mainline: Never, kABI breakage workaround
  		return 0;
  	}
  	WARN_ON(!sk_unhashed(sk));
-@@ -623,7 +630,7 @@ int __inet_hash_connect(struct inet_time
+@@ -624,7 +631,7 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
  		tb = inet_csk(sk)->icsk_bind_hash;
  		spin_lock_bh(&head->lock);
  		if (sk_head(&tb->owners) == sk && !sk->sk_bind_node.next) {
@@ -93,7 +92,7 @@ Patch-mainline: Never, kABI breakage workaround
  			spin_unlock_bh(&head->lock);
  			return 0;
  		}
-@@ -707,7 +714,7 @@ ok:
+@@ -712,7 +719,7 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
  	inet_bind_hash(sk, tb, port);
  	if (sk_unhashed(sk)) {
  		inet_sk(sk)->inet_sport = htons(port);
@@ -104,7 +103,7 @@ Patch-mainline: Never, kABI breakage workaround
  		inet_twsk_bind_unhash(tw, hinfo);
 --- a/net/ipv4/tcp_ipv4.c
 +++ b/net/ipv4/tcp_ipv4.c
-@@ -1376,8 +1376,8 @@ struct sock *tcp_v4_syn_recv_sock(const
+@@ -1376,8 +1376,8 @@ struct sock *tcp_v4_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
  
  	if (__inet_inherit_port(sk, newsk) < 0)
  		goto put_and_exit;
@@ -117,7 +116,7 @@ Patch-mainline: Never, kABI breakage workaround
  		ireq->ireq_opt = NULL;
 --- a/net/ipv6/tcp_ipv6.c
 +++ b/net/ipv6/tcp_ipv6.c
-@@ -1211,8 +1211,8 @@ static struct sock *tcp_v6_syn_recv_sock
+@@ -1211,8 +1211,8 @@ static struct sock *tcp_v6_syn_recv_sock(const struct sock *sk, struct sk_buff *
  		tcp_done(newsk);
  		goto out;
  	}
