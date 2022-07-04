@@ -1,0 +1,39 @@
+From c2e6acb44c6a85de10544a6d6be3237bb3e87c98 Mon Sep 17 00:00:00 2001
+From: Denis Kirjanov <denis.kirjanov@suse.com>
+Date: Fri, 1 Jul 2022 17:28:33 +0300
+Subject: [PATCH] net: stmmac: update rx tail pointer register to fix rx dma
+ hang issue.
+Git-commit: 4523a5611526709ec9b4e2574f1bb7818212651e
+References: git-fixes
+Patch-mainline: v5.2-rc3
+
+Currently we will not update the receive descriptor tail pointer in
+stmmac_rx_refill. Rx dma will think no available descriptors and stop
+once received packets exceed DMA_RX_SIZE, so that the rx only test will fail.
+
+Update the receive tail pointer in stmmac_rx_refill to add more descriptors
+to the rx channel, so packets can be received continually
+
+Fixes: 54139cf3bb33 ("net: stmmac: adding multiple buffers for rx")
+Signed-off-by: Biao Huang <biao.huang@mediatek.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/stmmac_main.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+index 23fd6c22778c..b2a313ef33ec 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+@@ -3334,6 +3334,7 @@ static inline void stmmac_rx_refill(struct stmmac_priv *priv, u32 queue)
+ 		entry = STMMAC_GET_ENTRY(entry, DMA_RX_SIZE);
+ 	}
+ 	rx_q->dirty_rx = entry;
++	priv->hw->dma->set_rx_tail_ptr(priv->ioaddr, rx_q->rx_tail_addr, queue);
+ }
+ 
+ /**
+-- 
+2.16.4
+
