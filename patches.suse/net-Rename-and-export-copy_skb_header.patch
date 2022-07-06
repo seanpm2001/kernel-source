@@ -1,0 +1,85 @@
+Patch-mainline: v4.18-rc1
+Git-commit: 08303c189581c985e60f588ad92a041e46b6e307
+References: bsc#1200762, CVE-2022-33741, XSA-403
+From: Ilya Lesokhin <ilyal@mellanox.com>
+Date: Mon, 30 Apr 2018 10:16:11 +0300
+Subject: [PATCH] net: Rename and export copy_skb_header
+
+copy_skb_header is renamed to skb_copy_header and
+exported. Exposing this function give more flexibility
+in copying SKBs.
+skb_copy and skb_copy_expand do not give enough control
+over which parts are copied.
+
+Signed-off-by: Ilya Lesokhin <ilyal@mellanox.com>
+Signed-off-by: Boris Pismenny <borisp@mellanox.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+---
+ include/linux/skbuff.h | 1 +
+ net/core/skbuff.c      | 9 +++++----
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/include/linux/skbuff.h b/include/linux/skbuff.h
+index a4a5c0c5cba8..908d66e55b14 100644
+--- a/include/linux/skbuff.h
++++ b/include/linux/skbuff.h
+@@ -1034,6 +1034,7 @@ static inline struct sk_buff *alloc_skb_fclone(unsigned int size,
+ struct sk_buff *skb_morph(struct sk_buff *dst, struct sk_buff *src);
+ int skb_copy_ubufs(struct sk_buff *skb, gfp_t gfp_mask);
+ struct sk_buff *skb_clone(struct sk_buff *skb, gfp_t priority);
++void skb_copy_header(struct sk_buff *new, const struct sk_buff *old);
+ struct sk_buff *skb_copy(const struct sk_buff *skb, gfp_t priority);
+ struct sk_buff *__pskb_copy_fclone(struct sk_buff *skb, int headroom,
+ 				   gfp_t gfp_mask, bool fclone);
+diff --git a/net/core/skbuff.c b/net/core/skbuff.c
+index c647cfe114e0..c642304f178c 100644
+--- a/net/core/skbuff.c
++++ b/net/core/skbuff.c
+@@ -1305,7 +1305,7 @@ static void skb_headers_offset_update(struct sk_buff *skb, int off)
+ 	skb->inner_mac_header += off;
+ }
+ 
+-static void copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
++void skb_copy_header(struct sk_buff *new, const struct sk_buff *old)
+ {
+ 	__copy_skb_header(new, old);
+ 
+@@ -1313,6 +1313,7 @@ static void copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
+ 	skb_shinfo(new)->gso_segs = skb_shinfo(old)->gso_segs;
+ 	skb_shinfo(new)->gso_type = skb_shinfo(old)->gso_type;
+ }
++EXPORT_SYMBOL(skb_copy_header);
+ 
+ static inline int skb_alloc_rx_flag(const struct sk_buff *skb)
+ {
+@@ -1355,7 +1356,7 @@ struct sk_buff *skb_copy(const struct sk_buff *skb, gfp_t gfp_mask)
+ 	if (skb_copy_bits(skb, -headerlen, n->head, headerlen + skb->len))
+ 		BUG();
+ 
+-	copy_skb_header(n, skb);
++	skb_copy_header(n, skb);
+ 	return n;
+ }
+ EXPORT_SYMBOL(skb_copy);
+@@ -1419,7 +1420,7 @@ struct sk_buff *__pskb_copy_fclone(struct sk_buff *skb, int headroom,
+ 		skb_clone_fraglist(n);
+ 	}
+ 
+-	copy_skb_header(n, skb);
++	skb_copy_header(n, skb);
+ out:
+ 	return n;
+ }
+@@ -1599,7 +1600,7 @@ struct sk_buff *skb_copy_expand(const struct sk_buff *skb,
+ 			  skb->len + head_copy_len))
+ 		BUG();
+ 
+-	copy_skb_header(n, skb);
++	skb_copy_header(n, skb);
+ 
+ 	skb_headers_offset_update(n, newheadroom - oldheadroom);
+ 
+-- 
+2.35.3
+
