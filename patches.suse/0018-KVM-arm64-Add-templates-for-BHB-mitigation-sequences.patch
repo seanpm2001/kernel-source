@@ -1,0 +1,237 @@
+From b9f951828c41365ad2c927ad13d4885a72e4d6d0 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 28 Feb 2022 17:46:00 +0100
+Subject: [PATCH 18/22] KVM: arm64: Add templates for BHB mitigation sequences
+
+Patch-mainline: Not yet, commit ID was missing in provided bundle
+References: bsc#1191580 CVE-2022-0001 CVE-2022-000 CVE-2022-23960
+
+KVM writes the Spectre-v2 mitigation template at the beginning of each
+vector when a CPU requires a specific sequence to run.
+
+Because the template is copied, it can not be modified by the alternatives
+at runtime. As the KVM template code is intertwined with the bp-hardening
+callbacks, all templates must have a bp-hardening callback.
+
+Add templates for calling ARCH_WORKAROUND_3 and one for each value of K
+in the brancy-loop. Identify these sequences by a new parameter
+template_start, and add a copy of install_bp_hardening_cb() that is able to
+install them.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Matthias Brugger <mbrugger@suse.com>
+---
+ arch/arm64/include/asm/cpucaps.h |  1 +
+ arch/arm64/include/asm/kvm_mmu.h |  2 +-
+ arch/arm64/include/asm/mmu.h     |  6 +++
+ arch/arm64/kernel/bpi.S          | 50 ++++++++++++++++++++++
+ arch/arm64/kernel/cpu_errata.c   | 71 +++++++++++++++++++++++++++++++-
+ 5 files changed, 127 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm64/include/asm/cpucaps.h b/arch/arm64/include/asm/cpucaps.h
+index 69c2957d1bf36..eb504c57f324d 100644
+--- a/arch/arm64/include/asm/cpucaps.h
++++ b/arch/arm64/include/asm/cpucaps.h
+@@ -54,6 +54,7 @@
+ #define ARM64_HAS_CACHE_DIC			33
+ #define ARM64_MISMATCHED_CACHE_TYPE		34
+ #define ARM64_WORKAROUND_1542419		35
++#define ARM64_SPECTRE_BHB			28
+ 
+ /* kabi: reserve 36 - 40 for future cpu capabilities */
+ #define ARM64_NCAPS				40
+diff --git a/arch/arm64/include/asm/kvm_mmu.h b/arch/arm64/include/asm/kvm_mmu.h
+index 77015f4cf2bfd..f30d18dbac48e 100644
+--- a/arch/arm64/include/asm/kvm_mmu.h
++++ b/arch/arm64/include/asm/kvm_mmu.h
+@@ -434,7 +434,7 @@ static inline void *kvm_get_hyp_vector(void)
+ 	struct bp_hardening_data *data = arm64_get_bp_hardening_data();
+ 	void *vect = kvm_ksym_ref(__kvm_hyp_vector);
+ 
+-	if (data->fn) {
++	if (data->template_start) {
+ 		vect = __bp_harden_hyp_vecs_start +
+ 		       data->hyp_vectors_slot * SZ_2K;
+ 
+diff --git a/arch/arm64/include/asm/mmu.h b/arch/arm64/include/asm/mmu.h
+index d31bab89efa42..9c53141993481 100644
+--- a/arch/arm64/include/asm/mmu.h
++++ b/arch/arm64/include/asm/mmu.h
+@@ -90,6 +90,12 @@ typedef void (*bp_hardening_cb_t)(void);
+ struct bp_hardening_data {
+ 	int			hyp_vectors_slot;
+ 	bp_hardening_cb_t	fn;
++
++	/*
++	 * template_start is only used by the BHB mitigation to identify the
++	 * hyp_vectors_slot sequence.
++	 */
++	const char *template_start;
+ };
+ 
+ #ifdef CONFIG_HARDEN_BRANCH_PREDICTOR
+diff --git a/arch/arm64/kernel/bpi.S b/arch/arm64/kernel/bpi.S
+index 5a64ff2740906..cdcf2197b72be 100644
+--- a/arch/arm64/kernel/bpi.S
++++ b/arch/arm64/kernel/bpi.S
+@@ -65,3 +65,53 @@ ENTRY(__smccc_workaround_1_smc_start)
+ 	ldp	x0, x1, [sp, #(8 * 2)]
+ 	add	sp, sp, #(8 * 4)
+ ENTRY(__smccc_workaround_1_smc_end)
++
++ENTRY(__smccc_workaround_3_smc_start)
++	sub     sp, sp, #(8 * 4)
++	stp     x2, x3, [sp, #(8 * 0)]
++	stp     x0, x1, [sp, #(8 * 2)]
++	mov     w0, #ARM_SMCCC_ARCH_WORKAROUND_3
++	smc     #0
++	ldp     x2, x3, [sp, #(8 * 0)]
++	ldp     x0, x1, [sp, #(8 * 2)]
++	add     sp, sp, #(8 * 4)
++ENTRY(__smccc_workaround_3_smc_end)
++
++ENTRY(__spectre_bhb_loop_k8_start)
++	sub     sp, sp, #(8 * 2)
++	stp     x0, x1, [sp, #(8 * 0)]
++	mov     x0, #8
++2:	b       . + 4
++	subs    x0, x0, #1
++	b.ne    2b
++	dsb     nsh
++	isb
++	ldp     x0, x1, [sp, #(8 * 0)]
++	add     sp, sp, #(8 * 2)
++ENTRY(__spectre_bhb_loop_k8_end)
++
++ENTRY(__spectre_bhb_loop_k24_start)
++	sub     sp, sp, #(8 * 2)
++	stp     x0, x1, [sp, #(8 * 0)]
++	mov     x0, #8
++2:	b       . + 4
++	subs    x0, x0, #1
++	b.ne    2b
++	dsb     nsh
++	isb
++	ldp     x0, x1, [sp, #(8 * 0)]
++	add     sp, sp, #(8 * 2)
++ENTRY(__spectre_bhb_loop_k24_end)
++
++ENTRY(__spectre_bhb_loop_k32_start)
++	sub     sp, sp, #(8 * 2)
++	stp     x0, x1, [sp, #(8 * 0)]
++	mov     x0, #8
++2:	b       . + 4
++	subs    x0, x0, #1
++	b.ne    2b
++	dsb     nsh
++	isb
++	ldp     x0, x1, [sp, #(8 * 0)]
++	add     sp, sp, #(8 * 2)
++ENTRY(__spectre_bhb_loop_k32_end)
+diff --git a/arch/arm64/kernel/cpu_errata.c b/arch/arm64/kernel/cpu_errata.c
+index 64fc527f19654..bce8e9b25f9d6 100644
+--- a/arch/arm64/kernel/cpu_errata.c
++++ b/arch/arm64/kernel/cpu_errata.c
+@@ -110,6 +110,14 @@ DEFINE_PER_CPU_READ_MOSTLY(struct bp_hardening_data, bp_hardening_data);
+ #ifdef CONFIG_KVM
+ extern char __smccc_workaround_1_smc_start[];
+ extern char __smccc_workaround_1_smc_end[];
++extern char __smccc_workaround_3_smc_start[];
++extern char __smccc_workaround_3_smc_end[];
++extern char __spectre_bhb_loop_k8_start[];
++extern char __spectre_bhb_loop_k8_end[];
++extern char __spectre_bhb_loop_k24_start[];
++extern char __spectre_bhb_loop_k24_end[];
++extern char __spectre_bhb_loop_k32_start[];
++extern char __spectre_bhb_loop_k32_end[];
+ 
+ static void __copy_hyp_vect_bpi(int slot, const char *hyp_vecs_start,
+ 				const char *hyp_vecs_end)
+@@ -123,12 +131,14 @@ static void __copy_hyp_vect_bpi(int slot, const char *hyp_vecs_start,
+ 	flush_icache_range((uintptr_t)dst, (uintptr_t)dst + SZ_2K);
+ }
+ 
++static DEFINE_SPINLOCK(bp_lock);
++static int last_slot = -1;
++
+ static void install_bp_hardening_cb(bp_hardening_cb_t fn,
+ 				    const char *hyp_vecs_start,
+ 				    const char *hyp_vecs_end)
+ {
+-	static int last_slot = -1;
+-	static DEFINE_SPINLOCK(bp_lock);
++
+ 	int cpu, slot = -1;
+ 
+ 	/*
+@@ -158,6 +168,7 @@ static void install_bp_hardening_cb(bp_hardening_cb_t fn,
+ 
+ 	__this_cpu_write(bp_hardening_data.hyp_vectors_slot, slot);
+ 	__this_cpu_write(bp_hardening_data.fn, fn);
++	__this_cpu_write(bp_hardening_data.template_start, hyp_vecs_start);
+ 	spin_unlock(&bp_lock);
+ }
+ #else
+@@ -903,3 +914,59 @@ enum mitigation_state arm64_get_spectre_bhb_state(void)
+ {
+ 	return spectre_bhb_state;
+ }
++
++#ifdef CONFIG_KVM
++static const char *kvm_bhb_get_vecs_end(const char *start)
++{
++	if (start == __smccc_workaround_3_smc_start)
++		return __smccc_workaround_3_smc_end;
++	else if (start == __spectre_bhb_loop_k8_start)
++		return __spectre_bhb_loop_k8_end;
++	else if (start == __spectre_bhb_loop_k24_start)
++		return __spectre_bhb_loop_k24_end;
++	else if (start == __spectre_bhb_loop_k32_start)
++		return __spectre_bhb_loop_k32_end;
++
++	return NULL;
++}
++
++void kvm_setup_bhb_slot(const char *hyp_vecs_start)
++{
++	int cpu, slot = -1;
++	const char *hyp_vecs_end;
++
++	if (!IS_ENABLED(CONFIG_KVM) || !is_hyp_mode_available())
++		return;
++
++	hyp_vecs_end = kvm_bhb_get_vecs_end(hyp_vecs_start);
++	if (WARN_ON_ONCE(!hyp_vecs_start || !hyp_vecs_end))
++		return;
++
++	spin_lock(&bp_lock);
++	for_each_possible_cpu(cpu) {
++		if (per_cpu(bp_hardening_data.template_start, cpu) == hyp_vecs_start) {
++			slot = per_cpu(bp_hardening_data.hyp_vectors_slot, cpu);
++			break;
++		}
++	}
++
++	if (slot == -1) {
++		last_slot++;
++		BUG_ON(((__bp_harden_hyp_vecs_end - __bp_harden_hyp_vecs_start)
++			/ SZ_2K) <= last_slot);
++		slot = last_slot;
++		__copy_hyp_vect_bpi(slot, hyp_vecs_start, hyp_vecs_end);
++	}
++
++	__this_cpu_write(bp_hardening_data.hyp_vectors_slot, slot);
++	__this_cpu_write(bp_hardening_data.template_start, hyp_vecs_start);
++	spin_unlock(&bp_lock);
++}
++#else
++#define __smccc_workaround_3_smc_start NULL
++#define __spectre_bhb_loop_k8_start NULL
++#define __spectre_bhb_loop_k24_start NULL
++#define __spectre_bhb_loop_k32_start NULL
++
++void kvm_setup_bhb_slot(const char *hyp_vecs_start) { };
++#endif
+-- 
+2.34.1
+

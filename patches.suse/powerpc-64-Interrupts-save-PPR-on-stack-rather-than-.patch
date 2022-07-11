@@ -1,0 +1,68 @@
+From ea1545d4ce1813a9506ca2debe93577404a205e4 Mon Sep 17 00:00:00 2001
+From: Nicholas Piggin <npiggin@gmail.com>
+Date: Sat, 13 Oct 2018 00:15:16 +1100
+Subject: [PATCH] powerpc/64: Interrupts save PPR on stack rather than
+ thread_struct
+
+Patch-mainline: v4.20-rc1
+References: bsc#1196999 ltc#196609
+Git-commit: 4c2de74cc8696154b283f241d74ec0bb24438e22 (partial, adapted to Linux 4.12)
+
+This is a backport of 4c2de74cc869 ("powerpc/64: Interrupts save PPR on
+stack rather than thread_struct") but changed in a way that does not
+cause pt_regs definition to be changed, by temporarily saving to an
+unused dword in pt_regs (RESULT), then moving that to the thread.ppr
+after SLB interrupts may be taken.
+
+Link: https://lore.kernel.org/linuxppc-dev/20220316033235.903657-1-npiggin@gmail.com/
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/include/asm/exception-64s.h | 22 ++++++++++++++++++----
+ 1 file changed, 18 insertions(+), 4 deletions(-)
+
+diff --git a/arch/powerpc/include/asm/exception-64s.h b/arch/powerpc/include/asm/exception-64s.h
+index e39a23613fac..47948239f79c 100644
+--- a/arch/powerpc/include/asm/exception-64s.h
++++ b/arch/powerpc/include/asm/exception-64s.h
+@@ -226,10 +226,22 @@
+  * PPR save/restore macros used in exceptions_64s.S  
+  * Used for P7 or later processors
+  */
+-#define SAVE_PPR(area, ra, rb)						\
++#define SAVE_PPR(area, ra)						\
++BEGIN_FTR_SECTION_NESTED(940)						\
++	ld	ra,area+EX_PPR(r13);	/* Read PPR from paca */	\
++	std	ra,RESULT(r1);		/* Store PPR in RESULT for now */ \
++END_FTR_SECTION_NESTED(CPU_FTR_HAS_PPR,CPU_FTR_HAS_PPR,940)
++
++/*
++ * This is called after we are finished accessing 'area', so we can now take
++ * SLB faults accessing the thread struct, which will use PACA_EXSLB area.
++ * This is required because the large_addr_slb handler uses EXSLB and it also
++ * uses the common exception macros including this PPR saving.
++ */
++#define MOVE_PPR_TO_THREAD(ra, rb)					\
+ BEGIN_FTR_SECTION_NESTED(940)						\
+ 	ld	ra,PACACURRENT(r13);					\
+-	ld	rb,area+EX_PPR(r13);	/* Read PPR from paca */	\
++	ld	rb,RESULT(r1);		/* Read PPR from stack */	\
+ 	std	rb,TASKTHREADPPR(ra);					\
+ END_FTR_SECTION_NESTED(CPU_FTR_HAS_PPR,CPU_FTR_HAS_PPR,940)
+ 
+@@ -475,9 +487,11 @@ END_FTR_SECTION_NESTED(ftr,ftr,943)
+ 3:	EXCEPTION_PROLOG_COMMON_1();					   \
+ 	beq	4f;			/* if from kernel mode		*/ \
+ 	ACCOUNT_CPU_USER_ENTRY(r13, r9, r10);				   \
+-	SAVE_PPR(area, r9, r10);					   \
++	SAVE_PPR(area, r9);						   \
+ 4:	EXCEPTION_PROLOG_COMMON_2(area)					   \
+-	EXCEPTION_PROLOG_COMMON_3(n)					   \
++	beq	5f;			/* if from kernel mode		*/ \
++	MOVE_PPR_TO_THREAD(r9, r10);					   \
++5:	EXCEPTION_PROLOG_COMMON_3(n)					   \
+ 	ACCOUNT_STOLEN_TIME
+ 
+ /* Save original regs values from save area to stack frame. */
+-- 
+2.34.1
+

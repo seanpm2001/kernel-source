@@ -1,0 +1,150 @@
+Patch-mainline: v4.13
+Git-commit: 369ea8242c0fb5239b4ddf0dc568f694bd244de4
+References: bsc#1184207
+From: =?UTF-8?q?J=C3=A9r=C3=B4me=20Glisse?= <jglisse@redhat.com>
+Date: Thu, 31 Aug 2017 17:17:27 -0400
+Subject: [PATCH] mm/rmap: update to new mmu_notifier semantic v2
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Replace all mmu_notifier_invalidate_page() calls by *_invalidate_range()
+and make sure it is bracketed by calls to *_invalidate_range_start()/end().
+
+Note that because we can not presume the pmd value or pte value we have
+to assume the worst and unconditionaly report an invalidation as
+happening.
+
+Changed since v2:
+  - try_to_unmap_one() only one call to mmu_notifier_invalidate_range()
+  - compute end with PAGE_SIZE << compound_order(page)
+  - fix PageHuge() case in try_to_unmap_one()
+
+Signed-off-by: Jérôme Glisse <jglisse@redhat.com>
+Reviewed-by: Andrea Arcangeli <aarcange@redhat.com>
+Cc: Dan Williams <dan.j.williams@intel.com>
+Cc: Ross Zwisler <ross.zwisler@linux.intel.com>
+Cc: Bernhard Held <berny156@gmx.de>
+Cc: Adam Borowski <kilobyte@angband.pl>
+Cc: Radim Krčmář <rkrcmar@redhat.com>
+Cc: Wanpeng Li <kernellwp@gmail.com>
+Cc: Paolo Bonzini <pbonzini@redhat.com>
+Cc: Takashi Iwai <tiwai@suse.de>
+Cc: Nadav Amit <nadav.amit@gmail.com>
+Cc: Mike Galbraith <efault@gmx.de>
+Cc: Kirill A. Shutemov <kirill.shutemov@linux.intel.com>
+Cc: axie <axie@amd.com>
+Cc: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+---
+ mm/rmap.c | 35 ++++++++++++++++++++++++++++++++---
+ 1 file changed, 32 insertions(+), 3 deletions(-)
+
+diff --git a/mm/rmap.c b/mm/rmap.c
+index c8993c63eb25..c570f82e6827 100644
+--- a/mm/rmap.c
++++ b/mm/rmap.c
+@@ -887,11 +887,21 @@ static bool page_mkclean_one(struct page *page, struct vm_area_struct *vma,
+ 		.address = address,
+ 		.flags = PVMW_SYNC,
+ 	};
++	unsigned long start = address, end;
+ 	int *cleaned = arg;
+ 
++	/*
++	 * We have to assume the worse case ie pmd for invalidation. Note that
++	 * the page can not be free from this function.
++	 */
++	end = min(vma->vm_end, start + (PAGE_SIZE << compound_order(page)));
++	mmu_notifier_invalidate_range_start(vma->vm_mm, start, end);
++
+ 	while (page_vma_mapped_walk(&pvmw)) {
++		unsigned long cstart, cend;
+ 		int ret = 0;
+-		address = pvmw.address;
++
++		cstart = address = pvmw.address;
+ 		if (pvmw.pte) {
+ 			pte_t entry;
+ 			pte_t *pte = pvmw.pte;
+@@ -904,6 +914,7 @@ static bool page_mkclean_one(struct page *page, struct vm_area_struct *vma,
+ 			entry = pte_wrprotect(entry);
+ 			entry = pte_mkclean(entry);
+ 			set_pte_at(vma->vm_mm, address, pte, entry);
++			cend = cstart + PAGE_SIZE;
+ 			ret = 1;
+ 		} else {
+ #ifdef CONFIG_TRANSPARENT_HUGE_PAGECACHE
+@@ -918,6 +929,8 @@ static bool page_mkclean_one(struct page *page, struct vm_area_struct *vma,
+ 			entry = pmd_wrprotect(entry);
+ 			entry = pmd_mkclean(entry);
+ 			set_pmd_at(vma->vm_mm, address, pmd, entry);
++			cstart &= PMD_MASK;
++			cend = cstart + PMD_SIZE;
+ 			ret = 1;
+ #else
+ 			/* unexpected pmd-mapped page? */
+@@ -926,11 +939,13 @@ static bool page_mkclean_one(struct page *page, struct vm_area_struct *vma,
+ 		}
+ 
+ 		if (ret) {
+-			mmu_notifier_invalidate_page(vma->vm_mm, address);
++			mmu_notifier_invalidate_range(vma->vm_mm, cstart, cend);
+ 			(*cleaned)++;
+ 		}
+ 	}
+ 
++	mmu_notifier_invalidate_range_end(vma->vm_mm, start, end);
++
+ 	return true;
+ }
+ 
+@@ -1324,6 +1339,7 @@ static bool try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
+ 	pte_t pteval;
+ 	struct page *subpage;
+ 	bool ret = true;
++	unsigned long start = address, end;
+ 	enum ttu_flags flags = (enum ttu_flags)arg;
+ 
+ 	/* munlock has nothing to gain from examining un-locked vmas */
+@@ -1335,6 +1351,14 @@ static bool try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
+ 				flags & TTU_MIGRATION, page);
+ 	}
+ 
++	/*
++	 * We have to assume the worse case ie pmd for invalidation. Note that
++	 * the page can not be free in this function as call of try_to_unmap()
++	 * must hold a reference on the page.
++	 */
++	end = min(vma->vm_end, start + (PAGE_SIZE << compound_order(page)));
++	mmu_notifier_invalidate_range_start(vma->vm_mm, start, end);
++
+ 	while (page_vma_mapped_walk(&pvmw)) {
+ 		/*
+ 		 * If the page is mlock()d, we cannot swap it out.
+@@ -1445,6 +1469,7 @@ static bool try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
+ 			if (unlikely(PageSwapBacked(page) != PageSwapCache(page))) {
+ 				WARN_ON_ONCE(1);
+ 				ret = false;
++				/* We have to invalidate as we cleared the pte */
+ 				page_vma_mapped_walk_done(&pvmw);
+ 				break;
+ 			}
+@@ -1490,8 +1515,12 @@ static bool try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
+ discard:
+ 		page_remove_rmap(subpage, PageHuge(page));
+ 		put_page(page);
+-		mmu_notifier_invalidate_page(mm, address);
++		mmu_notifier_invalidate_range(mm, address,
++					      address + PAGE_SIZE);
+ 	}
++
++	mmu_notifier_invalidate_range_end(vma->vm_mm, start, end);
++
+ 	return ret;
+ }
+ 
+-- 
+2.34.1
+

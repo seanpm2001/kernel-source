@@ -1,0 +1,114 @@
+From: Olga Kornievskaia <kolga@netapp.com>
+Date: Wed, 18 Dec 2019 16:50:42 -0500
+Subject: [PATCH] NFSv4.x recover from pre-mature loss of openstateid
+Git-commit: d826e5b827641ae1bebb33d23a774f4e9bb8e94f
+Patch-mainline: v5.6
+References: bsc#1196247
+
+Ever since the commit 0e0cb35b417f, it's possible to lose an open stateid
+while retrying a CLOSE due to ERR_OLD_STATEID. Once that happens,
+operations that require openstateid fail with EAGAIN which is propagated
+to the application then tests like generic/446 and generic/168 fail with
+"Resource temporarily unavailable".
+
+Instead of returning this error, initiate state recovery when possible to
+recover the open stateid and then try calling nfs4_select_rw_stateid()
+again.
+
+Fixes: 0e0cb35b417f ("NFSv4: Handle NFS4ERR_OLD_STATEID in CLOSE/OPEN_DOWNGRADE")
+Signed-off-by: Olga Kornievskaia <kolga@netapp.com>
+Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/nfs42proc.c |   31 ++++++++++++++++++++++++-------
+ fs/nfs/nfs4proc.c  |    2 ++
+ 2 files changed, 26 insertions(+), 7 deletions(-)
+
+--- a/fs/nfs/nfs42proc.c
++++ b/fs/nfs/nfs42proc.c
+@@ -38,8 +38,11 @@ static int _nfs42_proc_fallocate(struct
+ 
+ 	status = nfs4_set_rw_stateid(&args.falloc_stateid, lock->open_context,
+ 			lock, FMODE_WRITE);
+-	if (status)
++	if (status) {
++		if (status == -EAGAIN)
++			status = -NFS4ERR_BAD_STATEID;
+ 		return status;
++	}
+ 
+ 	res.falloc_fattr = nfs_alloc_fattr();
+ 	if (!res.falloc_fattr)
+@@ -178,8 +181,11 @@ static ssize_t _nfs42_proc_copy(struct f
+ 
+ 	status = nfs4_set_rw_stateid(&args->src_stateid, src_lock->open_context,
+ 				     src_lock, FMODE_READ);
+-	if (status)
++	if (status) {
++		if (status == -EAGAIN)
++			status = -NFS4ERR_BAD_STATEID;
+ 		return status;
++	}
+ 
+ 	status = nfs_filemap_write_and_wait_range(file_inode(src)->i_mapping,
+ 			pos_src, pos_src + (loff_t)count - 1);
+@@ -188,8 +194,11 @@ static ssize_t _nfs42_proc_copy(struct f
+ 
+ 	status = nfs4_set_rw_stateid(&args->dst_stateid, dst_lock->open_context,
+ 				     dst_lock, FMODE_WRITE);
+-	if (status)
++	if (status) {
++		if (status == -EAGAIN)
++			status = -NFS4ERR_BAD_STATEID;
+ 		return status;
++	}
+ 
+ 	status = nfs_sync_inode(dst_inode);
+ 	if (status)
+@@ -318,8 +327,11 @@ static loff_t _nfs42_proc_llseek(struct
+ 
+ 	status = nfs4_set_rw_stateid(&args.sa_stateid, lock->open_context,
+ 			lock, FMODE_READ);
+-	if (status)
++	if (status) {
++		if (status == -EAGAIN)
++			status = -NFS4ERR_BAD_STATEID;
+ 		return status;
++	}
+ 
+ 	status = nfs_filemap_write_and_wait_range(inode->i_mapping,
+ 			offset, LLONG_MAX);
+@@ -529,13 +541,18 @@ static int _nfs42_proc_clone(struct rpc_
+ 
+ 	status = nfs4_set_rw_stateid(&args.src_stateid, src_lock->open_context,
+ 			src_lock, FMODE_READ);
+-	if (status)
++	if (status) {
++		if (status == -EAGAIN)
++			status = -NFS4ERR_BAD_STATEID;
+ 		return status;
+-
++	}
+ 	status = nfs4_set_rw_stateid(&args.dst_stateid, dst_lock->open_context,
+ 			dst_lock, FMODE_WRITE);
+-	if (status)
++	if (status) {
++		if (status == -EAGAIN)
++			status = -NFS4ERR_BAD_STATEID;
+ 		return status;
++	}
+ 
+ 	res.dst_fattr = nfs_alloc_fattr();
+ 	if (!res.dst_fattr)
+--- a/fs/nfs/nfs4proc.c
++++ b/fs/nfs/nfs4proc.c
+@@ -3045,6 +3045,8 @@ static int _nfs4_do_setattr(struct inode
+ 		nfs_put_lock_context(l_ctx);
+ 		if (status == -EIO)
+ 			return -EBADF;
++		else if (status == -EAGAIN)
++			goto zero_stateid;
+ 	} else {
+ zero_stateid:
+ 		nfs4_stateid_copy(&arg->stateid, &zero_stateid);

@@ -31,23 +31,31 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
 
 ---
  drivers/pci/pcie/aer/Makefile      |    1 
- drivers/pci/pcie/aer/aerdrv_acpi.c |  120 -------------------------------------
+ drivers/pci/pcie/aer/aerdrv_acpi.c |  119 -------------------------------------
  drivers/pci/pcie/aer/aerdrv_core.c |   21 ++++--
  drivers/pci/pcie/dpc.c             |    2 
  drivers/pci/pcie/portdrv.h         |   13 ----
  include/linux/pci.h                |    2 
- 6 files changed, 17 insertions(+), 142 deletions(-)
+ 6 files changed, 17 insertions(+), 141 deletions(-)
 
+--- a/drivers/pci/pcie/aer/Makefile
++++ b/drivers/pci/pcie/aer/Makefile
+@@ -7,6 +7,5 @@ obj-$(CONFIG_PCIEAER) += aerdriver.o
+ obj-$(CONFIG_PCIE_ECRC)	+= ecrc.o
+ 
+ aerdriver-objs := aerdrv_errprint.o aerdrv_core.o aerdrv.o
+-aerdriver-$(CONFIG_ACPI) += aerdrv_acpi.o
+ 
+ obj-$(CONFIG_PCIEAER_INJECT) += aer_inject.o
 --- a/drivers/pci/pcie/aer/aerdrv_acpi.c
 +++ /dev/null
-@@ -1,120 +0,0 @@
+@@ -1,119 +0,0 @@
 -/*
 - * Access ACPI _OSC method
 - *
 - * Copyright (C) 2006 Intel Corp.
 - *	Tom Long Nguyen (tom.l.nguyen@intel.com)
 - *	Zhang Yanmin (yanmin.zhang@intel.com)
-- *
 - */
 -
 -#include <linux/module.h>
@@ -161,59 +169,6 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
 -	return dev->__aer_firmware_first;
 -}
 -#endif
---- a/drivers/pci/pcie/dpc.c
-+++ b/drivers/pci/pcie/dpc.c
-@@ -246,7 +246,7 @@ static int dpc_probe(struct pcie_device
- 	int status;
- 	u16 ctl, cap;
- 
--	if (pcie_aer_get_firmware_first(pdev))
-+	if (!pcie_aer_is_native(pdev))
- 		return -ENOTSUPP;
- 
- 	dpc = devm_kzalloc(device, sizeof(*dpc), GFP_KERNEL);
---- a/drivers/pci/pcie/portdrv.h
-+++ b/drivers/pci/pcie/portdrv.h
-@@ -27,8 +27,10 @@
- 
- #ifdef CONFIG_PCIEAER
- int pcie_aer_init(void);
-+int pcie_aer_is_native(struct pci_dev *dev);
- #else
- static inline int pcie_aer_init(void) { return 0; }
-+static inline int pcie_aer_is_native(struct pci_dev *dev) { return 0; }
- #endif
- 
- #ifdef CONFIG_HOTPLUG_PCI_PCIE
-@@ -154,17 +156,6 @@ static inline bool pcie_pme_no_msi(void)
- static inline void pcie_pme_interrupt_enable(struct pci_dev *dev, bool en) {}
- #endif /* !CONFIG_PCIE_PME */
- 
--#ifdef CONFIG_ACPI_APEI
--int pcie_aer_get_firmware_first(struct pci_dev *pci_dev);
--#else
--static inline int pcie_aer_get_firmware_first(struct pci_dev *pci_dev)
--{
--	if (pci_dev->__aer_firmware_first_valid)
--		return pci_dev->__aer_firmware_first;
--	return 0;
--}
--#endif
--
- struct pcie_port_service_driver *pcie_port_find_service(struct pci_dev *dev,
- 							u32 service);
- struct device *pcie_port_find_device(struct pci_dev *dev, u32 service);
---- a/include/linux/pci.h
-+++ b/include/linux/pci.h
-@@ -408,8 +408,6 @@ struct pci_dev {
- 	 * mappings to make sure they cannot access arbitrary memory.
- 	 */
- 	unsigned int	untrusted:1;
--	unsigned int    __aer_firmware_first_valid:1;
--	unsigned int	__aer_firmware_first:1;
- 	unsigned int	broken_intx_masking:1;
- 	unsigned int	io_window_1k:1;	/* Intel P2P bridge 1K I/O windows */
- 	unsigned int	irq_managed:1;
 --- a/drivers/pci/pcie/aer/aerdrv_core.c
 +++ b/drivers/pci/pcie/aer/aerdrv_core.c
 @@ -31,12 +31,19 @@
@@ -275,12 +230,56 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  		return -EIO;
  
  	port_type = pci_pcie_type(dev);
---- a/drivers/pci/pcie/aer/Makefile
-+++ b/drivers/pci/pcie/aer/Makefile
-@@ -7,6 +7,5 @@ obj-$(CONFIG_PCIEAER) += aerdriver.o
- obj-$(CONFIG_PCIE_ECRC)	+= ecrc.o
+--- a/drivers/pci/pcie/dpc.c
++++ b/drivers/pci/pcie/dpc.c
+@@ -246,7 +246,7 @@ static int dpc_probe(struct pcie_device
+ 	int status;
+ 	u16 ctl, cap;
  
- aerdriver-objs := aerdrv_errprint.o aerdrv_core.o aerdrv.o
--aerdriver-$(CONFIG_ACPI) += aerdrv_acpi.o
+-	if (pcie_aer_get_firmware_first(pdev))
++	if (!pcie_aer_is_native(pdev))
+ 		return -ENOTSUPP;
  
- obj-$(CONFIG_PCIEAER_INJECT) += aer_inject.o
+ 	dpc = devm_kzalloc(device, sizeof(*dpc), GFP_KERNEL);
+--- a/drivers/pci/pcie/portdrv.h
++++ b/drivers/pci/pcie/portdrv.h
+@@ -27,8 +27,10 @@
+ 
+ #ifdef CONFIG_PCIEAER
+ int pcie_aer_init(void);
++int pcie_aer_is_native(struct pci_dev *dev);
+ #else
+ static inline int pcie_aer_init(void) { return 0; }
++static inline int pcie_aer_is_native(struct pci_dev *dev) { return 0; }
+ #endif
+ 
+ #ifdef CONFIG_HOTPLUG_PCI_PCIE
+@@ -154,17 +156,6 @@ static inline bool pcie_pme_no_msi(void)
+ static inline void pcie_pme_interrupt_enable(struct pci_dev *dev, bool en) {}
+ #endif /* !CONFIG_PCIE_PME */
+ 
+-#ifdef CONFIG_ACPI_APEI
+-int pcie_aer_get_firmware_first(struct pci_dev *pci_dev);
+-#else
+-static inline int pcie_aer_get_firmware_first(struct pci_dev *pci_dev)
+-{
+-	if (pci_dev->__aer_firmware_first_valid)
+-		return pci_dev->__aer_firmware_first;
+-	return 0;
+-}
+-#endif
+-
+ struct pcie_port_service_driver *pcie_port_find_service(struct pci_dev *dev,
+ 							u32 service);
+ struct device *pcie_port_find_device(struct pci_dev *dev, u32 service);
+--- a/include/linux/pci.h
++++ b/include/linux/pci.h
+@@ -408,8 +408,6 @@ struct pci_dev {
+ 	 * mappings to make sure they cannot access arbitrary memory.
+ 	 */
+ 	unsigned int	untrusted:1;
+-	unsigned int    __aer_firmware_first_valid:1;
+-	unsigned int	__aer_firmware_first:1;
+ 	unsigned int	broken_intx_masking:1;
+ 	unsigned int	io_window_1k:1;	/* Intel P2P bridge 1K I/O windows */
+ 	unsigned int	irq_managed:1;

@@ -1,0 +1,86 @@
+From: Trond Myklebust <trond.myklebust@hammerspace.com>
+Date: Thu, 11 Jul 2019 16:33:12 -0400
+Subject: [PATCH] SUNRPC: Fix transport accounting when caller specifies an
+ rpc_xprt
+Git-commit: a101b043c44dfcb63bed7f29a675e9fa0259005e
+Patch-mainline: v5.3
+References: bsc#1197531
+
+Ensure that we do the required accounting for the round robin queue
+when the caller to rpc_init_task() has passed in a transport to be
+used.
+
+Reported-by: Olga Kornievskaia <aglo@umich.edu>
+Reported-by: Neil Brown <neilb@suse.com>
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ include/linux/sunrpc/clnt.h |    2 ++
+ net/sunrpc/clnt.c           |   15 ++++++++++-----
+ net/sunrpc/sched.c          |    3 ++-
+ 3 files changed, 14 insertions(+), 6 deletions(-)
+
+--- a/include/linux/sunrpc/clnt.h
++++ b/include/linux/sunrpc/clnt.h
+@@ -169,6 +169,8 @@ void		rpc_shutdown_client(struct rpc_cln
+ void		rpc_release_client(struct rpc_clnt *);
+ void		rpc_task_release_transport(struct rpc_task *);
+ void		rpc_task_release_client(struct rpc_task *);
++struct rpc_xprt	*rpc_task_get_xprt(struct rpc_clnt *clnt,
++				   struct rpc_xprt *xprt);
+ 
+ int		rpcb_create_local(struct net *);
+ void		rpcb_put_local(struct net *);
+--- a/net/sunrpc/clnt.c
++++ b/net/sunrpc/clnt.c
+@@ -999,11 +999,10 @@ out:
+ }
+ EXPORT_SYMBOL_GPL(rpc_bind_new_program);
+ 
+-static struct rpc_xprt *
+-rpc_task_get_xprt(struct rpc_clnt *clnt)
++struct rpc_xprt *
++rpc_task_get_xprt(struct rpc_clnt *clnt, struct rpc_xprt *xprt)
+ {
+ 	struct rpc_xprt_switch *xps;
+-	struct rpc_xprt *xprt= xprt_iter_get_next(&clnt->cl_xpi);
+ 
+ 	if (!xprt)
+ 		return NULL;
+@@ -1069,7 +1068,13 @@ rpc_task_get_first_xprt(struct rpc_clnt
+ 	xprt = xprt_get(rcu_dereference(clnt->cl_xprt));
+ 	rcu_read_unlock();
+ 
+-	return xprt;
++	return rpc_task_get_xprt(clnt, xprt);
++}
++
++static struct rpc_xprt *
++rpc_task_get_next_xprt(struct rpc_clnt *clnt)
++{
++	return rpc_task_get_xprt(clnt, xprt_iter_get_next(&clnt->cl_xpi));
+ }
+ 
+ static
+@@ -1080,7 +1085,7 @@ void rpc_task_set_transport(struct rpc_t
+ 	if (task->tk_flags & RPC_TASK_NO_ROUND_ROBIN)
+ 		task->tk_xprt = rpc_task_get_first_xprt(clnt);
+ 	else
+-		task->tk_xprt = rpc_task_get_xprt(clnt);
++		task->tk_xprt = rpc_task_get_next_xprt(clnt);
+ }
+ 
+ static
+--- a/net/sunrpc/sched.c
++++ b/net/sunrpc/sched.c
+@@ -964,7 +964,8 @@ static void rpc_init_task(struct rpc_tas
+ 	/* Initialize workqueue for async tasks */
+ 	task->tk_workqueue = task_setup_data->workqueue;
+ 
+-	task->tk_xprt = xprt_get(task_setup_data->rpc_xprt);
++	task->tk_xprt = rpc_task_get_xprt(task_setup_data->rpc_client,
++					  xprt_get(task_setup_data->rpc_xprt));
+ 
+ 	if (task->tk_ops->rpc_call_prepare != NULL)
+ 		task->tk_action = rpc_prepare_task;

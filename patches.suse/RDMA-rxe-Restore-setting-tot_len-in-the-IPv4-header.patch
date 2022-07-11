@@ -1,0 +1,40 @@
+From ef4b96a5773d7f6568363b3d0c3c3f371fb690bd Mon Sep 17 00:00:00 2001
+From: Bob Pearson <rpearsonhpe@gmail.com>
+Date: Thu, 29 Jul 2021 17:00:39 -0500
+Subject: [PATCH 1/1] RDMA/rxe: Restore setting tot_len in the IPv4 header
+Git-commit: ef4b96a5773d7f6568363b3d0c3c3f371fb690bd
+Patch-mainline: v5.14
+References: git-fixes
+
+An earlier patch removed setting of tot_len in IPv4 headers because it was
+also set in ip_local_out. However, this change resulted in an incorrect
+ICRC being computed because the tot_len field is not masked out. This
+patch restores that line. This fixes the bug reported by Zhu Yanjun.  This
+bug affects anyone using rxe which is currently broken.
+
+Fixes: 230bb836ee88 ("RDMA/rxe: Fix redundant call to ip_send_check")
+Link: https://lore.kernel.org/r/20210729220039.18549-3-rpearsonhpe@gmail.com
+Reported-by: Zhu Yanjun <zyjzyj2000@gmail.com>
+Signed-off-by: Bob Pearson <rpearsonhpe@gmail.com>
+Reviewed-and-tested-by: Zhu Yanjun <zyjzyj2000@gmail.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Acked-by: Nicolas Morey-Chaisemartin <nmoreychaisemartin@suse.com>
+---
+ drivers/infiniband/sw/rxe/rxe_net.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/infiniband/sw/rxe/rxe_net.c b/drivers/infiniband/sw/rxe/rxe_net.c
+index dec92928a1cd..5ac27f28ace1 100644
+--- a/drivers/infiniband/sw/rxe/rxe_net.c
++++ b/drivers/infiniband/sw/rxe/rxe_net.c
+@@ -259,6 +259,7 @@ static void prepare_ipv4_hdr(struct dst_entry *dst, struct sk_buff *skb,
+ 
+ 	iph->version	=	IPVERSION;
+ 	iph->ihl	=	sizeof(struct iphdr) >> 2;
++	iph->tot_len	=	htons(skb->len);
+ 	iph->frag_off	=	df;
+ 	iph->protocol	=	proto;
+ 	iph->tos	=	tos;
+-- 
+2.35.0
+
