@@ -1,0 +1,1881 @@
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Sat, 4 Dec 2021 14:43:40 +0100
+Subject: x86: Prepare asm files for straight-line-speculation
+Git-commit: f94909ceb1ed4bfdb2ada72f93236305e6d6951f
+Patch-mainline: v5.17-rc1
+References: bsc#1201050 CVE-2021-26341
+
+Replace all ret/retq instructions with RET in preparation of making
+RET a macro. Since AS is case insensitive it's a big no-op without
+RET defined.
+
+  find arch/x86/ -name \*.S | while read file
+  do
+	sed -i 's/\<ret[q]*\>/RET/' $file
+  done
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Link: https://lore.kernel.org/r/20211204134907.905503893@infradead.org
+---
+ arch/x86/boot/compressed/efi_thunk_64.S      |    2 -
+ arch/x86/boot/compressed/mem_encrypt.S       |    4 +-
+ arch/x86/crypto/aes_ctrby8_avx-x86_64.S      |    2 -
+ arch/x86/crypto/aesni-intel_asm.S            |   42 +++++++++++++--------------
+ arch/x86/crypto/blowfish-x86_64-asm_64.S     |   12 +++----
+ arch/x86/crypto/camellia-aesni-avx-asm_64.S  |   14 ++++-----
+ arch/x86/crypto/camellia-aesni-avx2-asm_64.S |   14 ++++-----
+ arch/x86/crypto/cast5-avx-x86_64-asm_64.S    |   12 +++----
+ arch/x86/crypto/cast6-avx-x86_64-asm_64.S    |   10 +++---
+ arch/x86/crypto/crc32c-pcl-intel-asm_64.S    |    2 -
+ arch/x86/crypto/crct10dif-pcl-asm_64.S       |    2 -
+ arch/x86/crypto/des3_ede-asm_64.S            |    4 +-
+ arch/x86/crypto/ghash-clmulni-intel_asm.S    |    6 +--
+ arch/x86/crypto/serpent-avx-x86_64-asm_64.S  |   10 +++---
+ arch/x86/crypto/serpent-avx2-asm_64.S        |   10 +++---
+ arch/x86/crypto/sha512-avx-asm.S             |    2 -
+ arch/x86/crypto/sha512-avx2-asm.S            |    2 -
+ arch/x86/crypto/sha512-ssse3-asm.S           |    2 -
+ arch/x86/crypto/twofish-avx-x86_64-asm_64.S  |   10 +++---
+ arch/x86/crypto/twofish-i586-asm_32.S        |    4 +-
+ arch/x86/crypto/twofish-x86_64-asm_64-3way.S |    6 +--
+ arch/x86/crypto/twofish-x86_64-asm_64.S      |    4 +-
+ arch/x86/entry/entry_32.S                    |    2 -
+ arch/x86/entry/entry_64.S                    |    8 ++---
+ arch/x86/entry/thunk_64.S                    |    2 -
+ arch/x86/entry/vdso/vdso32/system_call.S     |    2 -
+ arch/x86/entry/vsyscall/vsyscall_emu_64.S    |    6 +--
+ arch/x86/kernel/acpi/wakeup_32.S             |    6 +--
+ arch/x86/kernel/relocate_kernel_32.S         |   10 +++---
+ arch/x86/kernel/relocate_kernel_64.S         |   10 +++---
+ arch/x86/kernel/verify_cpu.S                 |    4 +-
+ arch/x86/lib/atomic64_386_32.S               |    2 -
+ arch/x86/lib/atomic64_cx8_32.S               |   16 +++++-----
+ arch/x86/lib/cmpxchg8b_emu.S                 |    4 +-
+ arch/x86/lib/copy_page_64.S                  |    4 +-
+ arch/x86/lib/copy_user_64.S                  |    8 ++---
+ arch/x86/lib/getuser.S                       |   14 ++++-----
+ arch/x86/lib/hweight.S                       |    6 +--
+ arch/x86/lib/memcpy_64.S                     |   12 +++----
+ arch/x86/lib/memmove_64.S                    |    4 +-
+ arch/x86/lib/memset_64.S                     |    6 +--
+ arch/x86/lib/msr-reg.S                       |    4 +-
+ arch/x86/math-emu/div_Xsig.S                 |    2 -
+ arch/x86/math-emu/mul_Xsig.S                 |    6 +--
+ arch/x86/math-emu/polynom_Xsig.S             |    2 -
+ arch/x86/math-emu/reg_norm.S                 |    6 +--
+ arch/x86/math-emu/reg_round.S                |    2 -
+ arch/x86/math-emu/reg_u_div.S                |    2 -
+ arch/x86/math-emu/reg_u_mul.S                |    2 -
+ arch/x86/math-emu/reg_u_sub.S                |    2 -
+ arch/x86/math-emu/round_Xsig.S               |    4 +-
+ arch/x86/math-emu/shr_Xsig.S                 |    8 ++---
+ arch/x86/math-emu/wm_shrx.S                  |   16 +++++-----
+ arch/x86/mm/mem_encrypt_boot.S               |    4 +-
+ arch/x86/platform/efi/efi_stub_32.S          |    2 -
+ arch/x86/platform/efi/efi_stub_64.S          |    2 -
+ arch/x86/platform/efi/efi_thunk_64.S         |    2 -
+ arch/x86/platform/olpc/xo1-wakeup.S          |    6 +--
+ arch/x86/power/hibernate_asm_64.S            |    4 +-
+ arch/x86/um/checksum_32.S                    |    4 +-
+ arch/x86/um/setjmp_32.S                      |    2 -
+ arch/x86/um/setjmp_64.S                      |    2 -
+ 62 files changed, 193 insertions(+), 193 deletions(-)
+
+--- a/arch/x86/boot/compressed/efi_thunk_64.S
++++ b/arch/x86/boot/compressed/efi_thunk_64.S
+@@ -95,7 +95,7 @@ ENTRY(efi64_thunk)
+ 	addq	$8, %rsp
+ 	pop	%rbx
+ 	pop	%rbp
+-	ret
++	RET
+ ENDPROC(efi64_thunk)
+ 
+ ENTRY(efi_exit32)
+--- a/arch/x86/boot/compressed/mem_encrypt.S
++++ b/arch/x86/boot/compressed/mem_encrypt.S
+@@ -67,7 +67,7 @@ ENTRY(get_sev_encryption_bit)
+ 
+ #endif	/* CONFIG_AMD_MEM_ENCRYPT */
+ 
+-	ret
++	RET
+ ENDPROC(get_sev_encryption_bit)
+ 
+ 	.code64
+@@ -95,7 +95,7 @@ ENTRY(get_sev_encryption_mask)
+ 	pop	%rbp
+ #endif
+ 
+-	ret
++	RET
+ ENDPROC(get_sev_encryption_mask)
+ 
+ 	.data
+--- a/arch/x86/crypto/aes_ctrby8_avx-x86_64.S
++++ b/arch/x86/crypto/aes_ctrby8_avx-x86_64.S
+@@ -534,7 +534,7 @@ ddq_add_8:
+ 	/* return updated IV */
+ 	vpshufb	xbyteswap, xcounter, xcounter
+ 	vmovdqu	xcounter, (p_iv)
+-	ret
++	RET
+ .endm
+ 
+ /*
+--- a/arch/x86/crypto/aesni-intel_asm.S
++++ b/arch/x86/crypto/aesni-intel_asm.S
+@@ -1475,7 +1475,7 @@ _return_T_done_decrypt:
+ 	pop	%r14
+ 	pop	%r13
+ 	pop	%r12
+-	ret
++	RET
+ ENDPROC(aesni_gcm_dec)
+ 
+ 
+@@ -1739,7 +1739,7 @@ _return_T_done_encrypt:
+ 	pop	%r14
+ 	pop	%r13
+ 	pop	%r12
+-	ret
++	RET
+ ENDPROC(aesni_gcm_enc)
+ 
+ #endif
+@@ -1756,7 +1756,7 @@ _key_expansion_256a:
+ 	pxor %xmm1, %xmm0
+ 	movaps %xmm0, (TKEYP)
+ 	add $0x10, TKEYP
+-	ret
++	RET
+ ENDPROC(_key_expansion_128)
+ ENDPROC(_key_expansion_256a)
+ 
+@@ -1782,7 +1782,7 @@ _key_expansion_192a:
+ 	shufps $0b01001110, %xmm2, %xmm1
+ 	movaps %xmm1, 0x10(TKEYP)
+ 	add $0x20, TKEYP
+-	ret
++	RET
+ ENDPROC(_key_expansion_192a)
+ 
+ .align 4
+@@ -1802,7 +1802,7 @@ _key_expansion_192b:
+ 
+ 	movaps %xmm0, (TKEYP)
+ 	add $0x10, TKEYP
+-	ret
++	RET
+ ENDPROC(_key_expansion_192b)
+ 
+ .align 4
+@@ -1815,7 +1815,7 @@ _key_expansion_256b:
+ 	pxor %xmm1, %xmm2
+ 	movaps %xmm2, (TKEYP)
+ 	add $0x10, TKEYP
+-	ret
++	RET
+ ENDPROC(_key_expansion_256b)
+ 
+ /*
+@@ -1930,7 +1930,7 @@ ENTRY(aesni_set_key)
+ 	popl KEYP
+ #endif
+ 	FRAME_END
+-	ret
++	RET
+ ENDPROC(aesni_set_key)
+ 
+ /*
+@@ -1954,7 +1954,7 @@ ENTRY(aesni_enc)
+ 	popl KEYP
+ #endif
+ 	FRAME_END
+-	ret
++	RET
+ ENDPROC(aesni_enc)
+ 
+ /*
+@@ -2012,7 +2012,7 @@ _aesni_enc1:
+ 	AESENC KEY STATE
+ 	movaps 0x70(TKEYP), KEY
+ 	AESENCLAST KEY STATE
+-	ret
++	RET
+ ENDPROC(_aesni_enc1)
+ 
+ /*
+@@ -2121,7 +2121,7 @@ _aesni_enc4:
+ 	AESENCLAST KEY STATE2
+ 	AESENCLAST KEY STATE3
+ 	AESENCLAST KEY STATE4
+-	ret
++	RET
+ ENDPROC(_aesni_enc4)
+ 
+ /*
+@@ -2146,7 +2146,7 @@ ENTRY(aesni_dec)
+ 	popl KEYP
+ #endif
+ 	FRAME_END
+-	ret
++	RET
+ ENDPROC(aesni_dec)
+ 
+ /*
+@@ -2204,7 +2204,7 @@ _aesni_dec1:
+ 	AESDEC KEY STATE
+ 	movaps 0x70(TKEYP), KEY
+ 	AESDECLAST KEY STATE
+-	ret
++	RET
+ ENDPROC(_aesni_dec1)
+ 
+ /*
+@@ -2313,7 +2313,7 @@ _aesni_dec4:
+ 	AESDECLAST KEY STATE2
+ 	AESDECLAST KEY STATE3
+ 	AESDECLAST KEY STATE4
+-	ret
++	RET
+ ENDPROC(_aesni_dec4)
+ 
+ /*
+@@ -2373,7 +2373,7 @@ ENTRY(aesni_ecb_enc)
+ 	popl LEN
+ #endif
+ 	FRAME_END
+-	ret
++	RET
+ ENDPROC(aesni_ecb_enc)
+ 
+ /*
+@@ -2434,7 +2434,7 @@ ENTRY(aesni_ecb_dec)
+ 	popl LEN
+ #endif
+ 	FRAME_END
+-	ret
++	RET
+ ENDPROC(aesni_ecb_dec)
+ 
+ /*
+@@ -2478,7 +2478,7 @@ ENTRY(aesni_cbc_enc)
+ 	popl IVP
+ #endif
+ 	FRAME_END
+-	ret
++	RET
+ ENDPROC(aesni_cbc_enc)
+ 
+ /*
+@@ -2571,7 +2571,7 @@ ENTRY(aesni_cbc_dec)
+ 	popl IVP
+ #endif
+ 	FRAME_END
+-	ret
++	RET
+ ENDPROC(aesni_cbc_dec)
+ 
+ #ifdef __x86_64__
+@@ -2600,7 +2600,7 @@ _aesni_inc_init:
+ 	mov $1, TCTR_LOW
+ 	MOVQ_R64_XMM TCTR_LOW INC
+ 	MOVQ_R64_XMM CTR TCTR_LOW
+-	ret
++	RET
+ ENDPROC(_aesni_inc_init)
+ 
+ /*
+@@ -2629,7 +2629,7 @@ _aesni_inc:
+ .Linc_low:
+ 	movaps CTR, IV
+ 	PSHUFB_XMM BSWAP_MASK IV
+-	ret
++	RET
+ ENDPROC(_aesni_inc)
+ 
+ /*
+@@ -2692,7 +2692,7 @@ ENTRY(aesni_ctr_enc)
+ 	movups IV, (IVP)
+ .Lctr_enc_just_ret:
+ 	FRAME_END
+-	ret
++	RET
+ ENDPROC(aesni_ctr_enc)
+ 
+ /*
+@@ -2845,7 +2845,7 @@ ENTRY(aesni_xts_decrypt)
+ 	movups IV, (IVP)
+ 
+ 	FRAME_END
+-	ret
++	RET
+ ENDPROC(aesni_xts_decrypt)
+ 
+ #endif
+--- a/arch/x86/crypto/blowfish-x86_64-asm_64.S
++++ b/arch/x86/crypto/blowfish-x86_64-asm_64.S
+@@ -150,10 +150,10 @@ ENTRY(__blowfish_enc_blk)
+ 	jnz .L__enc_xor;
+ 
+ 	write_block();
+-	ret;
++	RET;
+ .L__enc_xor:
+ 	xor_block();
+-	ret;
++	RET;
+ ENDPROC(__blowfish_enc_blk)
+ 
+ ENTRY(blowfish_dec_blk)
+@@ -185,7 +185,7 @@ ENTRY(blowfish_dec_blk)
+ 
+ 	movq %r11, %r12;
+ 
+-	ret;
++	RET;
+ ENDPROC(blowfish_dec_blk)
+ 
+ /**********************************************************************
+@@ -337,14 +337,14 @@ ENTRY(__blowfish_enc_blk_4way)
+ 
+ 	popq %rbx;
+ 	popq %r12;
+-	ret;
++	RET;
+ 
+ .L__enc_xor4:
+ 	xor_block4();
+ 
+ 	popq %rbx;
+ 	popq %r12;
+-	ret;
++	RET;
+ ENDPROC(__blowfish_enc_blk_4way)
+ 
+ ENTRY(blowfish_dec_blk_4way)
+@@ -379,5 +379,5 @@ ENTRY(blowfish_dec_blk_4way)
+ 	popq %rbx;
+ 	popq %r12;
+ 
+-	ret;
++	RET;
+ ENDPROC(blowfish_dec_blk_4way)
+--- a/arch/x86/crypto/camellia-aesni-avx2-asm_64.S
++++ b/arch/x86/crypto/camellia-aesni-avx2-asm_64.S
+@@ -232,7 +232,7 @@ roundsm32_x0_x1_x2_x3_x4_x5_x6_x7_y0_y1_
+ 	roundsm32(%ymm0, %ymm1, %ymm2, %ymm3, %ymm4, %ymm5, %ymm6, %ymm7,
+ 		  %ymm8, %ymm9, %ymm10, %ymm11, %ymm12, %ymm13, %ymm14, %ymm15,
+ 		  %rcx, (%r9));
+-	ret;
++	RET;
+ ENDPROC(roundsm32_x0_x1_x2_x3_x4_x5_x6_x7_y0_y1_y2_y3_y4_y5_y6_y7_cd)
+ 
+ .align 8
+@@ -240,7 +240,7 @@ roundsm32_x4_x5_x6_x7_x0_x1_x2_x3_y4_y5_
+ 	roundsm32(%ymm4, %ymm5, %ymm6, %ymm7, %ymm0, %ymm1, %ymm2, %ymm3,
+ 		  %ymm12, %ymm13, %ymm14, %ymm15, %ymm8, %ymm9, %ymm10, %ymm11,
+ 		  %rax, (%r9));
+-	ret;
++	RET;
+ ENDPROC(roundsm32_x4_x5_x6_x7_x0_x1_x2_x3_y4_y5_y6_y7_y0_y1_y2_y3_ab)
+ 
+ /*
+@@ -830,7 +830,7 @@ __camellia_enc_blk32:
+ 		    %ymm15, (key_table)(CTX, %r8, 8), (%rax), 1 * 32(%rax));
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ 
+ .align 8
+ .Lenc_max32:
+@@ -917,7 +917,7 @@ __camellia_dec_blk32:
+ 		    %ymm15, (key_table)(CTX), (%rax), 1 * 32(%rax));
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ 
+ .align 8
+ .Ldec_max32:
+@@ -962,7 +962,7 @@ ENTRY(camellia_ecb_enc_32way)
+ 	vzeroupper;
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(camellia_ecb_enc_32way)
+ 
+ ENTRY(camellia_ecb_dec_32way)
+@@ -996,7 +996,7 @@ ENTRY(camellia_ecb_dec_32way)
+ 	vzeroupper;
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(camellia_ecb_dec_32way)
+ 
+ ENTRY(camellia_cbc_dec_32way)
+@@ -1064,7 +1064,7 @@ ENTRY(camellia_cbc_dec_32way)
+ 	vzeroupper;
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(camellia_cbc_dec_32way)
+ 
+ #define inc_le128(x, minus_one, tmp) \
+--- a/arch/x86/crypto/camellia-aesni-avx-asm_64.S
++++ b/arch/x86/crypto/camellia-aesni-avx-asm_64.S
+@@ -193,7 +193,7 @@ roundsm16_x0_x1_x2_x3_x4_x5_x6_x7_y0_y1_
+ 	roundsm16(%xmm0, %xmm1, %xmm2, %xmm3, %xmm4, %xmm5, %xmm6, %xmm7,
+ 		  %xmm8, %xmm9, %xmm10, %xmm11, %xmm12, %xmm13, %xmm14, %xmm15,
+ 		  %rcx, (%r9));
+-	ret;
++	RET;
+ ENDPROC(roundsm16_x0_x1_x2_x3_x4_x5_x6_x7_y0_y1_y2_y3_y4_y5_y6_y7_cd)
+ 
+ .align 8
+@@ -201,7 +201,7 @@ roundsm16_x4_x5_x6_x7_x0_x1_x2_x3_y4_y5_
+ 	roundsm16(%xmm4, %xmm5, %xmm6, %xmm7, %xmm0, %xmm1, %xmm2, %xmm3,
+ 		  %xmm12, %xmm13, %xmm14, %xmm15, %xmm8, %xmm9, %xmm10, %xmm11,
+ 		  %rax, (%r9));
+-	ret;
++	RET;
+ ENDPROC(roundsm16_x4_x5_x6_x7_x0_x1_x2_x3_y4_y5_y6_y7_y0_y1_y2_y3_ab)
+ 
+ /*
+@@ -787,7 +787,7 @@ __camellia_enc_blk16:
+ 		    %xmm15, (key_table)(CTX, %r8, 8), (%rax), 1 * 16(%rax));
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ 
+ .align 8
+ .Lenc_max32:
+@@ -874,7 +874,7 @@ __camellia_dec_blk16:
+ 		    %xmm15, (key_table)(CTX), (%rax), 1 * 16(%rax));
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ 
+ .align 8
+ .Ldec_max32:
+@@ -915,7 +915,7 @@ ENTRY(camellia_ecb_enc_16way)
+ 		     %xmm8, %rsi);
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(camellia_ecb_enc_16way)
+ 
+ ENTRY(camellia_ecb_dec_16way)
+@@ -945,7 +945,7 @@ ENTRY(camellia_ecb_dec_16way)
+ 		     %xmm8, %rsi);
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(camellia_ecb_dec_16way)
+ 
+ ENTRY(camellia_cbc_dec_16way)
+@@ -996,7 +996,7 @@ ENTRY(camellia_cbc_dec_16way)
+ 		     %xmm8, %rsi);
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(camellia_cbc_dec_16way)
+ 
+ #define inc_le128(x, minus_one, tmp) \
+--- a/arch/x86/crypto/cast5-avx-x86_64-asm_64.S
++++ b/arch/x86/crypto/cast5-avx-x86_64-asm_64.S
+@@ -294,7 +294,7 @@ __cast5_enc_blk16:
+ 	outunpack_blocks(RR3, RL3, RTMP, RX, RKM);
+ 	outunpack_blocks(RR4, RL4, RTMP, RX, RKM);
+ 
+-	ret;
++	RET;
+ ENDPROC(__cast5_enc_blk16)
+ 
+ .align 16
+@@ -367,7 +367,7 @@ __cast5_dec_blk16:
+ 	outunpack_blocks(RR3, RL3, RTMP, RX, RKM);
+ 	outunpack_blocks(RR4, RL4, RTMP, RX, RKM);
+ 
+-	ret;
++	RET;
+ 
+ .L__skip_dec:
+ 	vpsrldq $4, RKR, RKR;
+@@ -408,7 +408,7 @@ ENTRY(cast5_ecb_enc_16way)
+ 
+ 	popq %r15;
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(cast5_ecb_enc_16way)
+ 
+ ENTRY(cast5_ecb_dec_16way)
+@@ -446,7 +446,7 @@ ENTRY(cast5_ecb_dec_16way)
+ 
+ 	popq %r15;
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(cast5_ecb_dec_16way)
+ 
+ ENTRY(cast5_cbc_dec_16way)
+@@ -498,7 +498,7 @@ ENTRY(cast5_cbc_dec_16way)
+ 	popq %r15;
+ 	popq %r12;
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(cast5_cbc_dec_16way)
+ 
+ ENTRY(cast5_ctr_16way)
+@@ -574,5 +574,5 @@ ENTRY(cast5_ctr_16way)
+ 	popq %r15;
+ 	popq %r12;
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(cast5_ctr_16way)
+--- a/arch/x86/crypto/cast6-avx-x86_64-asm_64.S
++++ b/arch/x86/crypto/cast6-avx-x86_64-asm_64.S
+@@ -306,7 +306,7 @@ __cast6_enc_blk8:
+ 	outunpack_blocks(RA1, RB1, RC1, RD1, RTMP, RX, RKRF, RKM);
+ 	outunpack_blocks(RA2, RB2, RC2, RD2, RTMP, RX, RKRF, RKM);
+ 
+-	ret;
++	RET;
+ ENDPROC(__cast6_enc_blk8)
+ 
+ .align 8
+@@ -353,7 +353,7 @@ __cast6_dec_blk8:
+ 	outunpack_blocks(RA1, RB1, RC1, RD1, RTMP, RX, RKRF, RKM);
+ 	outunpack_blocks(RA2, RB2, RC2, RD2, RTMP, RX, RKRF, RKM);
+ 
+-	ret;
++	RET;
+ ENDPROC(__cast6_dec_blk8)
+ 
+ ENTRY(cast6_ecb_enc_8way)
+@@ -376,7 +376,7 @@ ENTRY(cast6_ecb_enc_8way)
+ 
+ 	popq %r15;
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(cast6_ecb_enc_8way)
+ 
+ ENTRY(cast6_ecb_dec_8way)
+@@ -399,7 +399,7 @@ ENTRY(cast6_ecb_dec_8way)
+ 
+ 	popq %r15;
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(cast6_ecb_dec_8way)
+ 
+ ENTRY(cast6_cbc_dec_8way)
+@@ -425,7 +425,7 @@ ENTRY(cast6_cbc_dec_8way)
+ 	popq %r15;
+ 	popq %r12;
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(cast6_cbc_dec_8way)
+ 
+ ENTRY(cast6_ctr_8way)
+--- a/arch/x86/crypto/crc32c-pcl-intel-asm_64.S
++++ b/arch/x86/crypto/crc32c-pcl-intel-asm_64.S
+@@ -310,7 +310,7 @@ do_return:
+ 	popq    %rsi
+ 	popq    %rdi
+ 	popq    %rbx
+-        ret
++        RET
+ ENDPROC(crc_pcl)
+ 
+ .section	.rodata, "a", @progbits
+--- a/arch/x86/crypto/crct10dif-pcl-asm_64.S
++++ b/arch/x86/crypto/crct10dif-pcl-asm_64.S
+@@ -367,7 +367,7 @@ _cleanup:
+ 	# scale the result back to 16 bits
+ 	shr	$16, %eax
+ 	mov     %rcx, %rsp
+-	ret
++	RET
+ 
+ ########################################################################
+ 
+--- a/arch/x86/crypto/des3_ede-asm_64.S
++++ b/arch/x86/crypto/des3_ede-asm_64.S
+@@ -252,7 +252,7 @@ ENTRY(des3_ede_x86_64_crypt_blk)
+ 	popq %r12;
+ 	popq %rbx;
+ 
+-	ret;
++	RET;
+ ENDPROC(des3_ede_x86_64_crypt_blk)
+ 
+ /***********************************************************************
+@@ -537,7 +537,7 @@ ENTRY(des3_ede_x86_64_crypt_blk_3way)
+ 	popq %r12;
+ 	popq %rbx;
+ 
+-	ret;
++	RET;
+ ENDPROC(des3_ede_x86_64_crypt_blk_3way)
+ 
+ .section	.rodata, "a", @progbits
+--- a/arch/x86/crypto/ghash-clmulni-intel_asm.S
++++ b/arch/x86/crypto/ghash-clmulni-intel_asm.S
+@@ -89,7 +89,7 @@ __clmul_gf128mul_ble:
+ 	psrlq $1, T2
+ 	pxor T2, T1
+ 	pxor T1, DATA
+-	ret
++	RET
+ ENDPROC(__clmul_gf128mul_ble)
+ 
+ /* void clmul_ghash_mul(char *dst, const u128 *shash) */
+@@ -103,7 +103,7 @@ ENTRY(clmul_ghash_mul)
+ 	PSHUFB_XMM BSWAP DATA
+ 	movups DATA, (%rdi)
+ 	FRAME_END
+-	ret
++	RET
+ ENDPROC(clmul_ghash_mul)
+ 
+ /*
+@@ -132,5 +132,5 @@ ENTRY(clmul_ghash_update)
+ 	movups DATA, (%rdi)
+ .Lupdate_just_ret:
+ 	FRAME_END
+-	ret
++	RET
+ ENDPROC(clmul_ghash_update)
+--- a/arch/x86/crypto/serpent-avx2-asm_64.S
++++ b/arch/x86/crypto/serpent-avx2-asm_64.S
+@@ -616,7 +616,7 @@ __serpent_enc_blk16:
+ 	write_blocks(RA1, RB1, RC1, RD1, RK0, RK1, RK2);
+ 	write_blocks(RA2, RB2, RC2, RD2, RK0, RK1, RK2);
+ 
+-	ret;
++	RET;
+ ENDPROC(__serpent_enc_blk16)
+ 
+ .align 8
+@@ -670,7 +670,7 @@ __serpent_dec_blk16:
+ 	write_blocks(RC1, RD1, RB1, RE1, RK0, RK1, RK2);
+ 	write_blocks(RC2, RD2, RB2, RE2, RK0, RK1, RK2);
+ 
+-	ret;
++	RET;
+ ENDPROC(__serpent_dec_blk16)
+ 
+ ENTRY(serpent_ecb_enc_16way)
+@@ -692,7 +692,7 @@ ENTRY(serpent_ecb_enc_16way)
+ 	vzeroupper;
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(serpent_ecb_enc_16way)
+ 
+ ENTRY(serpent_ecb_dec_16way)
+@@ -714,7 +714,7 @@ ENTRY(serpent_ecb_dec_16way)
+ 	vzeroupper;
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(serpent_ecb_dec_16way)
+ 
+ ENTRY(serpent_cbc_dec_16way)
+@@ -737,7 +737,7 @@ ENTRY(serpent_cbc_dec_16way)
+ 	vzeroupper;
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(serpent_cbc_dec_16way)
+ 
+ ENTRY(serpent_ctr_16way)
+--- a/arch/x86/crypto/serpent-avx-x86_64-asm_64.S
++++ b/arch/x86/crypto/serpent-avx-x86_64-asm_64.S
+@@ -620,7 +620,7 @@ __serpent_enc_blk8_avx:
+ 	write_blocks(RA1, RB1, RC1, RD1, RK0, RK1, RK2);
+ 	write_blocks(RA2, RB2, RC2, RD2, RK0, RK1, RK2);
+ 
+-	ret;
++	RET;
+ ENDPROC(__serpent_enc_blk8_avx)
+ 
+ .align 8
+@@ -674,7 +674,7 @@ __serpent_dec_blk8_avx:
+ 	write_blocks(RC1, RD1, RB1, RE1, RK0, RK1, RK2);
+ 	write_blocks(RC2, RD2, RB2, RE2, RK0, RK1, RK2);
+ 
+-	ret;
++	RET;
+ ENDPROC(__serpent_dec_blk8_avx)
+ 
+ ENTRY(serpent_ecb_enc_8way_avx)
+@@ -692,7 +692,7 @@ ENTRY(serpent_ecb_enc_8way_avx)
+ 	store_8way(%rsi, RA1, RB1, RC1, RD1, RA2, RB2, RC2, RD2);
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(serpent_ecb_enc_8way_avx)
+ 
+ ENTRY(serpent_ecb_dec_8way_avx)
+@@ -710,7 +710,7 @@ ENTRY(serpent_ecb_dec_8way_avx)
+ 	store_8way(%rsi, RC1, RD1, RB1, RE1, RC2, RD2, RB2, RE2);
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(serpent_ecb_dec_8way_avx)
+ 
+ ENTRY(serpent_cbc_dec_8way_avx)
+@@ -728,7 +728,7 @@ ENTRY(serpent_cbc_dec_8way_avx)
+ 	store_cbc_8way(%rdx, %rsi, RC1, RD1, RB1, RE1, RC2, RD2, RB2, RE2);
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(serpent_cbc_dec_8way_avx)
+ 
+ ENTRY(serpent_ctr_8way_avx)
+--- a/arch/x86/crypto/sha512-avx2-asm.S
++++ b/arch/x86/crypto/sha512-avx2-asm.S
+@@ -681,7 +681,7 @@ done_hash:
+ 
+ 	# Restore Stack Pointer
+ 	mov	frame_RSPSAVE(%rsp), %rsp
+-	ret
++	RET
+ ENDPROC(sha512_transform_rorx)
+ 
+ ########################################################################
+--- a/arch/x86/crypto/sha512-avx-asm.S
++++ b/arch/x86/crypto/sha512-avx-asm.S
+@@ -364,7 +364,7 @@ updateblock:
+ 	mov	frame_RSPSAVE(%rsp), %rsp
+ 
+ nowork:
+-	ret
++	RET
+ ENDPROC(sha512_transform_avx)
+ 
+ ########################################################################
+--- a/arch/x86/crypto/sha512-ssse3-asm.S
++++ b/arch/x86/crypto/sha512-ssse3-asm.S
+@@ -363,7 +363,7 @@ updateblock:
+ 	mov	frame_RSPSAVE(%rsp), %rsp
+ 
+ nowork:
+-	ret
++	RET
+ ENDPROC(sha512_transform_ssse3)
+ 
+ ########################################################################
+--- a/arch/x86/crypto/twofish-avx-x86_64-asm_64.S
++++ b/arch/x86/crypto/twofish-avx-x86_64-asm_64.S
+@@ -287,7 +287,7 @@ __twofish_enc_blk8:
+ 	outunpack_blocks(RC1, RD1, RA1, RB1, RK1, RX0, RY0, RK2);
+ 	outunpack_blocks(RC2, RD2, RA2, RB2, RK1, RX0, RY0, RK2);
+ 
+-	ret;
++	RET;
+ ENDPROC(__twofish_enc_blk8)
+ 
+ .align 8
+@@ -327,7 +327,7 @@ __twofish_dec_blk8:
+ 	outunpack_blocks(RA1, RB1, RC1, RD1, RK1, RX0, RY0, RK2);
+ 	outunpack_blocks(RA2, RB2, RC2, RD2, RK1, RX0, RY0, RK2);
+ 
+-	ret;
++	RET;
+ ENDPROC(__twofish_dec_blk8)
+ 
+ ENTRY(twofish_ecb_enc_8way)
+@@ -347,7 +347,7 @@ ENTRY(twofish_ecb_enc_8way)
+ 	store_8way(%r11, RC1, RD1, RA1, RB1, RC2, RD2, RA2, RB2);
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(twofish_ecb_enc_8way)
+ 
+ ENTRY(twofish_ecb_dec_8way)
+@@ -367,7 +367,7 @@ ENTRY(twofish_ecb_dec_8way)
+ 	store_8way(%r11, RA1, RB1, RC1, RD1, RA2, RB2, RC2, RD2);
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(twofish_ecb_dec_8way)
+ 
+ ENTRY(twofish_cbc_dec_8way)
+@@ -392,7 +392,7 @@ ENTRY(twofish_cbc_dec_8way)
+ 	popq %r12;
+ 
+ 	FRAME_END
+-	ret;
++	RET;
+ ENDPROC(twofish_cbc_dec_8way)
+ 
+ ENTRY(twofish_ctr_8way)
+--- a/arch/x86/crypto/twofish-i586-asm_32.S
++++ b/arch/x86/crypto/twofish-i586-asm_32.S
+@@ -273,7 +273,7 @@ ENTRY(twofish_enc_blk)
+ 	pop	%ebx
+ 	pop	%ebp
+ 	mov	$1,	%eax
+-	ret
++	RET
+ ENDPROC(twofish_enc_blk)
+ 
+ ENTRY(twofish_dec_blk)
+@@ -330,5 +330,5 @@ ENTRY(twofish_dec_blk)
+ 	pop	%ebx
+ 	pop	%ebp
+ 	mov	$1,	%eax
+-	ret
++	RET
+ ENDPROC(twofish_dec_blk)
+--- a/arch/x86/crypto/twofish-x86_64-asm_64-3way.S
++++ b/arch/x86/crypto/twofish-x86_64-asm_64-3way.S
+@@ -273,7 +273,7 @@ ENTRY(__twofish_enc_blk_3way)
+ 	popq %rbx;
+ 	popq %r12;
+ 	popq %r13;
+-	ret;
++	RET;
+ 
+ .L__enc_xor3:
+ 	outunpack_enc3(xor);
+@@ -281,7 +281,7 @@ ENTRY(__twofish_enc_blk_3way)
+ 	popq %rbx;
+ 	popq %r12;
+ 	popq %r13;
+-	ret;
++	RET;
+ ENDPROC(__twofish_enc_blk_3way)
+ 
+ ENTRY(twofish_dec_blk_3way)
+@@ -316,5 +316,5 @@ ENTRY(twofish_dec_blk_3way)
+ 	popq %rbx;
+ 	popq %r12;
+ 	popq %r13;
+-	ret;
++	RET;
+ ENDPROC(twofish_dec_blk_3way)
+--- a/arch/x86/crypto/twofish-x86_64-asm_64.S
++++ b/arch/x86/crypto/twofish-x86_64-asm_64.S
+@@ -265,7 +265,7 @@ ENTRY(twofish_enc_blk)
+ 
+ 	popq	R1
+ 	movl	$1,%eax
+-	ret
++	RET
+ ENDPROC(twofish_enc_blk)
+ 
+ ENTRY(twofish_dec_blk)
+@@ -317,5 +317,5 @@ ENTRY(twofish_dec_blk)
+ 
+ 	popq	R1
+ 	movl	$1,%eax
+-	ret
++	RET
+ ENDPROC(twofish_dec_blk)
+--- a/arch/x86/entry/entry_32.S
++++ b/arch/x86/entry/entry_32.S
+@@ -280,7 +280,7 @@ ENTRY(schedule_tail_wrapper)
+ 	popl	%eax
+ 
+ 	FRAME_END
+-	ret
++	RET
+ ENDPROC(schedule_tail_wrapper)
+ /*
+  * A newly forked process directly context switches into this address.
+--- a/arch/x86/entry/entry_64.S
++++ b/arch/x86/entry/entry_64.S
+@@ -868,7 +868,7 @@ ENTRY(switch_to_thread_stack)
+ 	UNWIND_HINT_FUNC
+ 
+ 	movq	(%rdi), %rdi
+-	ret
++	RET
+ END(switch_to_thread_stack)
+ 
+ .macro idtentry sym do_sym has_error_code:req paranoid=0 shift_ist=-1 create_gap=0
+@@ -1002,7 +1002,7 @@ ENTRY(native_load_gs_index)
+ 	SWAPGS
+ 	popfq
+ 	FRAME_END
+-	ret
++	RET
+ ENDPROC(native_load_gs_index)
+ EXPORT_SYMBOL(native_load_gs_index)
+ 
+@@ -1245,13 +1245,13 @@ ENTRY(error_entry)
+ 	 */
+ 	TRACE_IRQS_OFF
+ 	CALL_enter_from_user_mode
+-	ret
++	RET
+ 
+ .Lerror_entry_done_lfence:
+ 	FENCE_SWAPGS_KERNEL_ENTRY
+ .Lerror_entry_done:
+ 	TRACE_IRQS_OFF
+-	ret
++	RET
+ 
+ 	/*
+ 	 * There are two places in the kernel that can potentially fault with
+--- a/arch/x86/entry/thunk_64.S
++++ b/arch/x86/entry/thunk_64.S
+@@ -68,6 +68,6 @@
+ 	popq %rsi
+ 	popq %rdi
+ 	popq %rbp
+-	ret
++	RET
+ 	_ASM_NOKPROBE(.L_restore)
+ #endif
+--- a/arch/x86/entry/vdso/vdso32/system_call.S
++++ b/arch/x86/entry/vdso/vdso32/system_call.S
+@@ -77,7 +77,7 @@ GLOBAL(int80_landing_pad)
+ 	popl	%ecx
+ 	CFI_RESTORE		ecx
+ 	CFI_ADJUST_CFA_OFFSET	-4
+-	ret
++	RET
+ 	CFI_ENDPROC
+ 
+ 	.size __kernel_vsyscall,.-__kernel_vsyscall
+--- a/arch/x86/entry/vsyscall/vsyscall_emu_64.S
++++ b/arch/x86/entry/vsyscall/vsyscall_emu_64.S
+@@ -20,17 +20,17 @@ __vsyscall_page:
+ 
+ 	mov $__NR_gettimeofday, %rax
+ 	syscall
+-	ret
++	RET
+ 
+ 	.balign 1024, 0xcc
+ 	mov $__NR_time, %rax
+ 	syscall
+-	ret
++	RET
+ 
+ 	.balign 1024, 0xcc
+ 	mov $__NR_getcpu, %rax
+ 	syscall
+-	ret
++	RET
+ 
+ 	.balign 4096, 0xcc
+ 
+--- a/arch/x86/kernel/acpi/wakeup_32.S
++++ b/arch/x86/kernel/acpi/wakeup_32.S
+@@ -59,7 +59,7 @@ save_registers:
+ 	popl	saved_context_eflags
+ 
+ 	movl	$ret_point, saved_eip
+-	ret
++	RET
+ 
+ 
+ restore_registers:
+@@ -69,7 +69,7 @@ restore_registers:
+ 	movl	saved_context_edi, %edi
+ 	pushl	saved_context_eflags
+ 	popfl
+-	ret
++	RET
+ 
+ ENTRY(do_suspend_lowlevel)
+ 	call	save_processor_state
+@@ -85,7 +85,7 @@ ENTRY(do_suspend_lowlevel)
+ ret_point:
+ 	call	restore_registers
+ 	call	restore_processor_state
+-	ret
++	RET
+ 
+ .data
+ ALIGN
+--- a/arch/x86/kernel/relocate_kernel_32.S
++++ b/arch/x86/kernel/relocate_kernel_32.S
+@@ -94,7 +94,7 @@ relocate_kernel:
+ 	movl    %edi, %eax
+ 	addl    $(identity_mapped - relocate_kernel), %eax
+ 	pushl   %eax
+-	ret
++	RET
+ 
+ identity_mapped:
+ 	/* set return address to 0 if not preserving context */
+@@ -161,7 +161,7 @@ identity_mapped:
+ 	xorl    %edx, %edx
+ 	xorl    %esi, %esi
+ 	xorl    %ebp, %ebp
+-	ret
++	RET
+ 1:
+ 	popl	%edx
+ 	movl	CP_PA_SWAP_PAGE(%edi), %esp
+@@ -192,7 +192,7 @@ identity_mapped:
+ 	movl	%edi, %eax
+ 	addl	$(virtual_mapped - relocate_kernel), %eax
+ 	pushl	%eax
+-	ret
++	RET
+ 
+ virtual_mapped:
+ 	movl	CR4(%edi), %eax
+@@ -209,7 +209,7 @@ virtual_mapped:
+ 	popl	%edi
+ 	popl	%esi
+ 	popl	%ebx
+-	ret
++	RET
+ 
+ 	/* Do the copies */
+ swap_pages:
+@@ -271,7 +271,7 @@ swap_pages:
+ 	popl	%edi
+ 	popl	%ebx
+ 	popl	%ebp
+-	ret
++	RET
+ 
+ 	.globl kexec_control_code_size
+ .set kexec_control_code_size, . - relocate_kernel
+--- a/arch/x86/kernel/relocate_kernel_64.S
++++ b/arch/x86/kernel/relocate_kernel_64.S
+@@ -104,7 +104,7 @@ relocate_kernel:
+ 	/* jump to identity mapped page */
+ 	addq	$(identity_mapped - relocate_kernel), %r8
+ 	pushq	%r8
+-	ret
++	RET
+ 
+ identity_mapped:
+ 	/* set return address to 0 if not preserving context */
+@@ -189,7 +189,7 @@ identity_mapped:
+ 	xorl	%r14d, %r14d
+ 	xorl	%r15d, %r15d
+ 
+-	ret
++	RET
+ 
+ 1:
+ 	popq	%rdx
+@@ -210,7 +210,7 @@ identity_mapped:
+ 	call	swap_pages
+ 	movq	$virtual_mapped, %rax
+ 	pushq	%rax
+-	ret
++	RET
+ 
+ virtual_mapped:
+ 	movq	RSP(%r8), %rsp
+@@ -229,7 +229,7 @@ virtual_mapped:
+ 	popq	%r12
+ 	popq	%rbp
+ 	popq	%rbx
+-	ret
++	RET
+ 
+ 	/* Do the copies */
+ swap_pages:
+@@ -284,7 +284,7 @@ swap_pages:
+ 	lea	PAGE_SIZE(%rax), %rsi
+ 	jmp	0b
+ 3:
+-	ret
++	RET
+ 
+ 	.globl kexec_control_code_size
+ .set kexec_control_code_size, . - relocate_kernel
+--- a/arch/x86/kernel/verify_cpu.S
++++ b/arch/x86/kernel/verify_cpu.S
+@@ -134,9 +134,9 @@ ENTRY(verify_cpu)
+ .Lverify_cpu_no_longmode:
+ 	popf				# Restore caller passed flags
+ 	movl $1,%eax
+-	ret
++	RET
+ .Lverify_cpu_sse_ok:
+ 	popf				# Restore caller passed flags
+ 	xorl %eax, %eax
+-	ret
++	RET
+ ENDPROC(verify_cpu)
+--- a/arch/x86/lib/atomic64_386_32.S
++++ b/arch/x86/lib/atomic64_386_32.S
+@@ -34,7 +34,7 @@ ENTRY(atomic64_##op##_386); \
+ 
+ #define RET_IRQ_RESTORE \
+ 	IRQ_RESTORE v; \
+-	ret
++	RET
+ 
+ #define v %ecx
+ BEGIN_IRQ_SAVE(read)
+--- a/arch/x86/lib/atomic64_cx8_32.S
++++ b/arch/x86/lib/atomic64_cx8_32.S
+@@ -22,7 +22,7 @@
+ 
+ ENTRY(atomic64_read_cx8)
+ 	read64 %ecx
+-	ret
++	RET
+ ENDPROC(atomic64_read_cx8)
+ 
+ ENTRY(atomic64_set_cx8)
+@@ -32,7 +32,7 @@ ENTRY(atomic64_set_cx8)
+ 	cmpxchg8b (%esi)
+ 	jne 1b
+ 
+-	ret
++	RET
+ ENDPROC(atomic64_set_cx8)
+ 
+ ENTRY(atomic64_xchg_cx8)
+@@ -41,7 +41,7 @@ ENTRY(atomic64_xchg_cx8)
+ 	cmpxchg8b (%esi)
+ 	jne 1b
+ 
+-	ret
++	RET
+ ENDPROC(atomic64_xchg_cx8)
+ 
+ .macro addsub_return func ins insc
+@@ -72,7 +72,7 @@ ENTRY(atomic64_\func\()_return_cx8)
+ 	popl %esi
+ 	popl %ebx
+ 	popl %ebp
+-	ret
++	RET
+ ENDPROC(atomic64_\func\()_return_cx8)
+ .endm
+ 
+@@ -97,7 +97,7 @@ ENTRY(atomic64_\func\()_return_cx8)
+ 	movl %ebx, %eax
+ 	movl %ecx, %edx
+ 	popl %ebx
+-	ret
++	RET
+ ENDPROC(atomic64_\func\()_return_cx8)
+ .endm
+ 
+@@ -122,7 +122,7 @@ ENTRY(atomic64_dec_if_positive_cx8)
+ 	movl %ebx, %eax
+ 	movl %ecx, %edx
+ 	popl %ebx
+-	ret
++	RET
+ ENDPROC(atomic64_dec_if_positive_cx8)
+ 
+ ENTRY(atomic64_add_unless_cx8)
+@@ -153,7 +153,7 @@ ENTRY(atomic64_add_unless_cx8)
+ 	addl $8, %esp
+ 	popl %ebx
+ 	popl %ebp
+-	ret
++	RET
+ 4:
+ 	cmpl %edx, 4(%esp)
+ 	jne 2b
+@@ -180,5 +180,5 @@ ENTRY(atomic64_inc_not_zero_cx8)
+ 	movl $1, %eax
+ 3:
+ 	popl %ebx
+-	ret
++	RET
+ ENDPROC(atomic64_inc_not_zero_cx8)
+--- a/arch/x86/lib/cmpxchg8b_emu.S
++++ b/arch/x86/lib/cmpxchg8b_emu.S
+@@ -38,7 +38,7 @@ ENTRY(cmpxchg8b_emu)
+ 	movl %ecx, 4(%esi)
+ 
+ 	popfl
+-	ret
++	RET
+ 
+ .Lnot_same:
+ 	movl  (%esi), %eax
+@@ -46,7 +46,7 @@ ENTRY(cmpxchg8b_emu)
+ 	movl 4(%esi), %edx
+ 
+ 	popfl
+-	ret
++	RET
+ 
+ ENDPROC(cmpxchg8b_emu)
+ EXPORT_SYMBOL(cmpxchg8b_emu)
+--- a/arch/x86/lib/copy_page_64.S
++++ b/arch/x86/lib/copy_page_64.S
+@@ -16,7 +16,7 @@ ENTRY(copy_page)
+ 	ALTERNATIVE "jmp copy_page_regs", "", X86_FEATURE_REP_GOOD
+ 	movl	$4096/8, %ecx
+ 	rep	movsq
+-	ret
++	RET
+ ENDPROC(copy_page)
+ EXPORT_SYMBOL(copy_page)
+ 
+@@ -84,5 +84,5 @@ ENTRY(copy_page_regs)
+ 	movq	(%rsp), %rbx
+ 	movq	1*8(%rsp), %r12
+ 	addq	$2*8, %rsp
+-	ret
++	RET
+ ENDPROC(copy_page_regs)
+--- a/arch/x86/lib/copy_user_64.S
++++ b/arch/x86/lib/copy_user_64.S
+@@ -80,7 +80,7 @@ ENTRY(copy_user_generic_unrolled)
+ 	jnz 21b
+ 23:	xor %eax,%eax
+ 	ASM_CLAC
+-	ret
++	RET
+ 
+ 	.section .fixup,"ax"
+ 30:	shll $6,%ecx
+@@ -148,7 +148,7 @@ ENTRY(copy_user_generic_string)
+ 	movsb
+ 	xorl %eax,%eax
+ 	ASM_CLAC
+-	ret
++	RET
+ 
+ 	.section .fixup,"ax"
+ 11:	leal (%rdx,%rcx,8),%ecx
+@@ -182,7 +182,7 @@ ENTRY(copy_user_enhanced_fast_string)
+ 	movsb
+ 	xorl %eax,%eax
+ 	ASM_CLAC
+-	ret
++	RET
+ 
+ 	.section .fixup,"ax"
+ 12:	movl %ecx,%edx		/* ecx is zerorest also */
+@@ -299,7 +299,7 @@ ENTRY(__copy_user_nocache)
+ 	xorl %eax,%eax
+ 	ASM_CLAC
+ 	sfence
+-	ret
++	RET
+ 
+ 	.section .fixup,"ax"
+ .L_fixup_4x8b_copy:
+--- a/arch/x86/lib/getuser.S
++++ b/arch/x86/lib/getuser.S
+@@ -45,7 +45,7 @@ ENTRY(__get_user_1)
+ 1:	movzbl (%_ASM_AX),%edx
+ 	xor %eax,%eax
+ 	ASM_CLAC
+-	ret
++	RET
+ ENDPROC(__get_user_1)
+ EXPORT_SYMBOL(__get_user_1)
+ 
+@@ -61,7 +61,7 @@ ENTRY(__get_user_2)
+ 2:	movzwl -1(%_ASM_AX),%edx
+ 	xor %eax,%eax
+ 	ASM_CLAC
+-	ret
++	RET
+ ENDPROC(__get_user_2)
+ EXPORT_SYMBOL(__get_user_2)
+ 
+@@ -77,7 +77,7 @@ ENTRY(__get_user_4)
+ 3:	movl -3(%_ASM_AX),%edx
+ 	xor %eax,%eax
+ 	ASM_CLAC
+-	ret
++	RET
+ ENDPROC(__get_user_4)
+ EXPORT_SYMBOL(__get_user_4)
+ 
+@@ -94,7 +94,7 @@ ENTRY(__get_user_8)
+ 4:	movq -7(%_ASM_AX),%rdx
+ 	xor %eax,%eax
+ 	ASM_CLAC
+-	ret
++	RET
+ #else
+ 	add $7,%_ASM_AX
+ 	jc bad_get_user_8
+@@ -108,7 +108,7 @@ ENTRY(__get_user_8)
+ 5:	movl -3(%_ASM_AX),%ecx
+ 	xor %eax,%eax
+ 	ASM_CLAC
+-	ret
++	RET
+ #endif
+ ENDPROC(__get_user_8)
+ EXPORT_SYMBOL(__get_user_8)
+@@ -118,7 +118,7 @@ bad_get_user:
+ 	xor %edx,%edx
+ 	mov $(-EFAULT),%_ASM_AX
+ 	ASM_CLAC
+-	ret
++	RET
+ END(bad_get_user)
+ 
+ #ifdef CONFIG_X86_32
+@@ -127,7 +127,7 @@ bad_get_user_8:
+ 	xor %ecx,%ecx
+ 	mov $(-EFAULT),%_ASM_AX
+ 	ASM_CLAC
+-	ret
++	RET
+ END(bad_get_user_8)
+ #endif
+ 
+--- a/arch/x86/lib/hweight.S
++++ b/arch/x86/lib/hweight.S
+@@ -31,7 +31,7 @@ ENTRY(__sw_hweight32)
+ 	imull $0x01010101, %eax, %eax		# w_tmp *= 0x01010101
+ 	shrl $24, %eax				# w = w_tmp >> 24
+ 	__ASM_SIZE(pop,) %__ASM_REG(dx)
+-	ret
++	RET
+ ENDPROC(__sw_hweight32)
+ EXPORT_SYMBOL(__sw_hweight32)
+ 
+@@ -64,7 +64,7 @@ ENTRY(__sw_hweight64)
+ 
+ 	popq    %rdx
+ 	popq    %rdi
+-	ret
++	RET
+ #else /* CONFIG_X86_32 */
+ 	/* We're getting an u64 arg in (%eax,%edx): unsigned long hweight64(__u64 w) */
+ 	pushl   %ecx
+@@ -76,7 +76,7 @@ ENTRY(__sw_hweight64)
+ 	addl    %ecx, %eax                      # result
+ 
+ 	popl    %ecx
+-	ret
++	RET
+ #endif
+ ENDPROC(__sw_hweight64)
+ EXPORT_SYMBOL(__sw_hweight64)
+--- a/arch/x86/lib/memcpy_64.S
++++ b/arch/x86/lib/memcpy_64.S
+@@ -39,7 +39,7 @@ ENTRY(memcpy)
+ 	rep movsq
+ 	movl %edx, %ecx
+ 	rep movsb
+-	ret
++	RET
+ ENDPROC(memcpy)
+ ENDPROC(__memcpy)
+ EXPORT_SYMBOL(memcpy)
+@@ -53,7 +53,7 @@ ENTRY(memcpy_erms)
+ 	movq %rdi, %rax
+ 	movq %rdx, %rcx
+ 	rep movsb
+-	ret
++	RET
+ ENDPROC(memcpy_erms)
+ 
+ ENTRY(memcpy_orig)
+@@ -137,7 +137,7 @@ ENTRY(memcpy_orig)
+ 	movq %r9,	1*8(%rdi)
+ 	movq %r10,	-2*8(%rdi, %rdx)
+ 	movq %r11,	-1*8(%rdi, %rdx)
+-	retq
++	RET
+ 	.p2align 4
+ .Lless_16bytes:
+ 	cmpl $8,	%edx
+@@ -149,7 +149,7 @@ ENTRY(memcpy_orig)
+ 	movq -1*8(%rsi, %rdx),	%r9
+ 	movq %r8,	0*8(%rdi)
+ 	movq %r9,	-1*8(%rdi, %rdx)
+-	retq
++	RET
+ 	.p2align 4
+ .Lless_8bytes:
+ 	cmpl $4,	%edx
+@@ -162,7 +162,7 @@ ENTRY(memcpy_orig)
+ 	movl -4(%rsi, %rdx), %r8d
+ 	movl %ecx, (%rdi)
+ 	movl %r8d, -4(%rdi, %rdx)
+-	retq
++	RET
+ 	.p2align 4
+ .Lless_3bytes:
+ 	subl $1, %edx
+@@ -180,7 +180,7 @@ ENTRY(memcpy_orig)
+ 	movb %cl, (%rdi)
+ 
+ .Lend:
+-	retq
++	RET
+ ENDPROC(memcpy_orig)
+ 
+ #ifndef CONFIG_UML
+--- a/arch/x86/lib/memmove_64.S
++++ b/arch/x86/lib/memmove_64.S
+@@ -42,7 +42,7 @@ ENTRY(__memmove)
+ 	jg 2f
+ 
+ .Lmemmove_begin_forward:
+-	ALTERNATIVE "", "movq %rdx, %rcx; rep movsb; retq", X86_FEATURE_ERMS
++	ALTERNATIVE "", "movq %rdx, %rcx; rep movsb; RET", X86_FEATURE_ERMS
+ 
+ 	/*
+ 	 * movsq instruction have many startup latency
+@@ -205,7 +205,7 @@ ENTRY(__memmove)
+ 	movb (%rsi), %r11b
+ 	movb %r11b, (%rdi)
+ 13:
+-	retq
++	RET
+ ENDPROC(__memmove)
+ ENDPROC(memmove)
+ EXPORT_SYMBOL(__memmove)
+--- a/arch/x86/lib/memset_64.S
++++ b/arch/x86/lib/memset_64.S
+@@ -41,7 +41,7 @@ ENTRY(__memset)
+ 	movl %edx,%ecx
+ 	rep stosb
+ 	movq %r9,%rax
+-	ret
++	RET
+ ENDPROC(memset)
+ ENDPROC(__memset)
+ EXPORT_SYMBOL(memset)
+@@ -64,7 +64,7 @@ ENTRY(memset_erms)
+ 	movq %rdx,%rcx
+ 	rep stosb
+ 	movq %r9,%rax
+-	ret
++	RET
+ ENDPROC(memset_erms)
+ 
+ ENTRY(memset_orig)
+@@ -126,7 +126,7 @@ ENTRY(memset_orig)
+ 
+ .Lende:
+ 	movq	%r10,%rax
+-	ret
++	RET
+ 
+ .Lbad_alignment:
+ 	cmpq $7,%rdx
+--- a/arch/x86/lib/msr-reg.S
++++ b/arch/x86/lib/msr-reg.S
+@@ -34,7 +34,7 @@ ENTRY(\op\()_safe_regs)
+ 	movl    %edi, 28(%r10)
+ 	popq %r12
+ 	popq %rbx
+-	ret
++	RET
+ 3:
+ 	movl    $-EIO, %r11d
+ 	jmp     2b
+@@ -76,7 +76,7 @@ ENTRY(\op\()_safe_regs)
+ 	popl %esi
+ 	popl %ebp
+ 	popl %ebx
+-	ret
++	RET
+ 3:
+ 	movl    $-EIO, 4(%esp)
+ 	jmp     2b
+--- a/arch/x86/math-emu/div_Xsig.S
++++ b/arch/x86/math-emu/div_Xsig.S
+@@ -340,7 +340,7 @@ L_exit:
+ 	popl	%esi
+ 
+ 	leave
+-	ret
++	RET
+ 
+ 
+ #ifdef PARANOID
+--- a/arch/x86/math-emu/mul_Xsig.S
++++ b/arch/x86/math-emu/mul_Xsig.S
+@@ -61,7 +61,7 @@ ENTRY(mul32_Xsig)
+ 
+ 	popl %esi
+ 	leave
+-	ret
++	RET
+ 
+ 
+ ENTRY(mul64_Xsig)
+@@ -113,7 +113,7 @@ ENTRY(mul64_Xsig)
+ 
+ 	popl %esi
+ 	leave
+-	ret
++	RET
+ 
+ 
+ 
+@@ -172,5 +172,5 @@ ENTRY(mul_Xsig_Xsig)
+ 
+ 	popl %esi
+ 	leave
+-	ret
++	RET
+ 
+--- a/arch/x86/math-emu/polynom_Xsig.S
++++ b/arch/x86/math-emu/polynom_Xsig.S
+@@ -132,4 +132,4 @@ L_accum_done:
+ 	popl	%edi
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+--- a/arch/x86/math-emu/reg_norm.S
++++ b/arch/x86/math-emu/reg_norm.S
+@@ -71,7 +71,7 @@ L_exit_valid:
+ L_exit:
+ 	popl	%ebx
+ 	leave
+-	ret
++	RET
+ 
+ 
+ L_zero:
+@@ -136,7 +136,7 @@ L_exit_nuo_valid:
+ 
+ 	popl	%ebx
+ 	leave
+-	ret
++	RET
+ 
+ L_exit_nuo_zero:
+ 	movl	TAG_Zero,%eax
+@@ -144,4 +144,4 @@ L_exit_nuo_zero:
+ 
+ 	popl	%ebx
+ 	leave
+-	ret
++	RET
+--- a/arch/x86/math-emu/reg_round.S
++++ b/arch/x86/math-emu/reg_round.S
+@@ -436,7 +436,7 @@ fpu_Arith_exit:
+ 	popl	%edi
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+ 
+ 
+ /*
+--- a/arch/x86/math-emu/reg_u_div.S
++++ b/arch/x86/math-emu/reg_u_div.S
+@@ -467,5 +467,5 @@ L_exit:
+ 	popl	%esi
+ 
+ 	leave
+-	ret
++	RET
+ #endif /* PARANOID */ 
+--- a/arch/x86/math-emu/reg_u_mul.S
++++ b/arch/x86/math-emu/reg_u_mul.S
+@@ -143,6 +143,6 @@ L_exit:
+ 	popl	%edi
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+ #endif /* PARANOID */ 
+ 
+--- a/arch/x86/math-emu/reg_u_sub.S
++++ b/arch/x86/math-emu/reg_u_sub.S
+@@ -269,4 +269,4 @@ L_exit:
+ 	popl	%edi
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+--- a/arch/x86/math-emu/round_Xsig.S
++++ b/arch/x86/math-emu/round_Xsig.S
+@@ -77,7 +77,7 @@ L_exit:
+ 	popl	%esi
+ 	popl	%ebx
+ 	leave
+-	ret
++	RET
+ 
+ 
+ 
+@@ -137,5 +137,5 @@ L_n_exit:
+ 	popl	%esi
+ 	popl	%ebx
+ 	leave
+-	ret
++	RET
+ 
+--- a/arch/x86/math-emu/shr_Xsig.S
++++ b/arch/x86/math-emu/shr_Xsig.S
+@@ -44,7 +44,7 @@ ENTRY(shr_Xsig)
+ 	popl	%ebx
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+ 
+ L_more_than_31:
+ 	cmpl	$64,%ecx
+@@ -60,7 +60,7 @@ L_more_than_31:
+ 	movl	$0,8(%esi)
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+ 
+ L_more_than_63:
+ 	cmpl	$96,%ecx
+@@ -75,7 +75,7 @@ L_more_than_63:
+ 	movl	%edx,8(%esi)
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+ 
+ L_more_than_95:
+ 	xorl	%eax,%eax
+@@ -84,4 +84,4 @@ L_more_than_95:
+ 	movl	%eax,8(%esi)
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+--- a/arch/x86/math-emu/wm_shrx.S
++++ b/arch/x86/math-emu/wm_shrx.S
+@@ -54,7 +54,7 @@ ENTRY(FPU_shrx)
+ 	popl	%ebx
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+ 
+ L_more_than_31:
+ 	cmpl	$64,%ecx
+@@ -69,7 +69,7 @@ L_more_than_31:
+ 	movl	$0,4(%esi)
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+ 
+ L_more_than_63:
+ 	cmpl	$96,%ecx
+@@ -83,7 +83,7 @@ L_more_than_63:
+ 	movl	%edx,4(%esi)
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+ 
+ L_more_than_95:
+ 	xorl	%eax,%eax
+@@ -91,7 +91,7 @@ L_more_than_95:
+ 	movl	%eax,4(%esi)
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+ 
+ 
+ /*---------------------------------------------------------------------------+
+@@ -144,7 +144,7 @@ ENTRY(FPU_shrxs)
+ 	popl	%ebx
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+ 
+ /* Shift by [0..31] bits */
+ Ls_less_than_32:
+@@ -161,7 +161,7 @@ Ls_less_than_32:
+ 	popl	%ebx
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+ 
+ /* Shift by [64..95] bits */
+ Ls_more_than_63:
+@@ -187,7 +187,7 @@ Ls_more_than_63:
+ 	popl	%ebx
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+ 
+ Ls_more_than_95:
+ /* Shift by [96..inf) bits */
+@@ -201,4 +201,4 @@ Ls_more_than_95:
+ 	popl	%ebx
+ 	popl	%esi
+ 	leave
+-	ret
++	RET
+--- a/arch/x86/mm/mem_encrypt_boot.S
++++ b/arch/x86/mm/mem_encrypt_boot.S
+@@ -68,7 +68,7 @@ ENTRY(sme_encrypt_execute)
+ 	movq	%rbp, %rsp		/* Restore original stack pointer */
+ 	pop	%rbp
+ 
+-	ret
++	RET
+ ENDPROC(sme_encrypt_execute)
+ 
+ ENTRY(__enc_copy)
+@@ -154,6 +154,6 @@ ENTRY(__enc_copy)
+ 	pop	%r12
+ 	pop	%r15
+ 
+-	ret
++	RET
+ .L__enc_copy_end:
+ ENDPROC(__enc_copy)
+--- a/arch/x86/platform/efi/efi_stub_32.S
++++ b/arch/x86/platform/efi/efi_stub_32.S
+@@ -112,7 +112,7 @@ ENTRY(efi_call_phys)
+ 	leal	saved_return_addr, %edx
+ 	movl	(%edx), %ecx
+ 	pushl	%ecx
+-	ret
++	RET
+ ENDPROC(efi_call_phys)
+ .previous
+ 
+--- a/arch/x86/platform/efi/efi_stub_64.S
++++ b/arch/x86/platform/efi/efi_stub_64.S
+@@ -53,5 +53,5 @@ ENTRY(efi_call)
+ 	addq $48, %rsp
+ 	RESTORE_XMM
+ 	popq %rbp
+-	ret
++	RET
+ ENDPROC(efi_call)
+--- a/arch/x86/platform/efi/efi_thunk_64.S
++++ b/arch/x86/platform/efi/efi_thunk_64.S
+@@ -58,7 +58,7 @@ ENTRY(efi64_thunk)
+ 	movq	efi_saved_sp(%rip), %rsp
+ 	pop	%rbx
+ 	pop	%rbp
+-	retq
++	RET
+ ENDPROC(efi64_thunk)
+ 
+ /*
+--- a/arch/x86/platform/olpc/xo1-wakeup.S
++++ b/arch/x86/platform/olpc/xo1-wakeup.S
+@@ -76,7 +76,7 @@ save_registers:
+ 	pushfl
+ 	popl saved_context_eflags
+ 
+-	ret
++	RET
+ 
+ restore_registers:
+ 	movl saved_context_ebp, %ebp
+@@ -87,7 +87,7 @@ restore_registers:
+ 	pushl saved_context_eflags
+ 	popfl
+ 
+-	ret
++	RET
+ 
+ ENTRY(do_olpc_suspend_lowlevel)
+ 	call	save_processor_state
+@@ -108,7 +108,7 @@ ret_point:
+ 
+ 	call	restore_registers
+ 	call	restore_processor_state
+-	ret
++	RET
+ 
+ .data
+ saved_gdt:             .long   0,0
+--- a/arch/x86/power/hibernate_asm_64.S
++++ b/arch/x86/power/hibernate_asm_64.S
+@@ -50,7 +50,7 @@ ENTRY(swsusp_arch_suspend)
+ 	FRAME_BEGIN
+ 	call swsusp_save
+ 	FRAME_END
+-	ret
++	RET
+ ENDPROC(swsusp_arch_suspend)
+ 
+ ENTRY(restore_image)
+@@ -142,5 +142,5 @@ ENTRY(restore_registers)
+ 	/* tell the hibernation core that we've just restored the memory */
+ 	movq	%rax, in_suspend(%rip)
+ 
+-	ret
++	RET
+ ENDPROC(restore_registers)
+--- a/arch/x86/um/checksum_32.S
++++ b/arch/x86/um/checksum_32.S
+@@ -114,7 +114,7 @@ csum_partial:
+ 7:	
+ 	popl %ebx
+ 	popl %esi
+-	ret
++	RET
+ 
+ #else
+ 
+@@ -212,7 +212,7 @@ csum_partial:
+ 80: 
+ 	popl %ebx
+ 	popl %esi
+-	ret
++	RET
+ 				
+ #endif
+ 	EXPORT_SYMBOL(csum_partial)
+--- a/arch/x86/um/setjmp_32.S
++++ b/arch/x86/um/setjmp_32.S
+@@ -33,7 +33,7 @@ setjmp:
+ 	movl %esi,12(%edx)
+ 	movl %edi,16(%edx)
+ 	movl %ecx,20(%edx)		# Return address
+-	ret
++	RET
+ 
+ 	.size setjmp,.-setjmp
+ 
+--- a/arch/x86/um/setjmp_64.S
++++ b/arch/x86/um/setjmp_64.S
+@@ -32,7 +32,7 @@ setjmp:
+ 	movq %r14,40(%rdi)
+ 	movq %r15,48(%rdi)
+ 	movq %rsi,56(%rdi)		# Return address
+-	ret
++	RET
+ 
+ 	.size setjmp,.-setjmp
+ 
