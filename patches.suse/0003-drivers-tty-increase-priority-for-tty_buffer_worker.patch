@@ -1,0 +1,59 @@
+From 33c6e212d1eb6ab730aa6ab825e1c0eebd8e399e Mon Sep 17 00:00:00 2001
+From: Oleksij Rempel <o.rempel@pengutronix.de>
+Date: Thu, 10 Jan 2019 11:12:32 +0100
+Subject: [PATCH 3/4] drivers/tty: increase priority for tty_buffer_worker
+Patch-mainline: Never, downstream fix.
+References: jsc#EB-390, bsc#1191701, jsc#EB-310
+
+sched_priority = 1 is enough to dramatically reduce latency
+on have system load produced by tasks with default user space prio.
+
+Elektrobit is responsible for this patch.
+
+Signed-off-by: Oleksij Rempel <o.rempel@pengutronix.de>
+Signed-off-by: Bogdan Lezhepekov <blezhepekov@suse.de>
+Signed-off-by: Peter Kunath <Peter.Kunath@elektrobit.com>
+Signed-off-by: Muhammad Faisal <Muhammad.Faisal@elektrobit.com>
+
+---
+ drivers/tty/tty_buffer.c | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/tty/tty_buffer.c b/drivers/tty/tty_buffer.c
+index 4ebcc1c7d4081..14056096d4d33 100644
+--- a/drivers/tty/tty_buffer.c
++++ b/drivers/tty/tty_buffer.c
+@@ -13,11 +13,13 @@
+ #include <linux/string.h>
+ #include <linux/slab.h>
+ #include <linux/sched.h>
++#include <linux/sched/rt.h>
+ #include <linux/wait.h>
+ #include <linux/bitops.h>
+ #include <linux/delay.h>
+ #include <linux/module.h>
+ #include <linux/ratelimit.h>
++#include <uapi/linux/sched/types.h>
+ 
+ 
+ #define MIN_TTYB_SIZE	256
+@@ -567,7 +569,15 @@ bool tty_buffer_queue_work(struct tty_port *port)
+ 
+ void tty_buffer_init_kthread(void)
+ {
+-	kthread_run(kthread_worker_fn, &tty_buffer_worker, "tty");
++	struct sched_param param = { .sched_priority = 1 };
++	struct task_struct *kworker_task;
++
++	kworker_task = kthread_run(kthread_worker_fn, &tty_buffer_worker, "tty");
++	if (IS_ERR(kworker_task)) {
++		pr_err("failed to create message pump task\n");
++		return;
++	}
++	sched_setscheduler(kworker_task, SCHED_FIFO, &param);
+ }
+ 
+ /**
+-- 
+2.33.1
+
