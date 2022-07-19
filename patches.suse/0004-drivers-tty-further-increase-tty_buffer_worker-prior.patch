@@ -1,0 +1,40 @@
+From 4160ac6de172fef55df4ed6d0a0f1dfaab5ff795 Mon Sep 17 00:00:00 2001
+From: Matthias von Faber <matthias.vonfaber@aox-tech.de>
+Date: Mon, 11 Oct 2021 14:32:28 +0200
+Subject: [PATCH 4/4] drivers/tty: further increase tty_buffer_worker priority
+Patch-mainline: Never, downstream fix.
+References: jsc#EB-390, bsc#1191701, jsc#EB-310
+
+Derivative of https://www.spinics.net/lists/linux-serial/msg17782.html
+
+The BMW system required (ref.: jsc#EB-310) further 
+increase of TTY priority to reduce latency.
+
+Elektrobit is responsible for this patch.
+
+Signed-off-by: Steven Walter <stevenrwalter@gmail.com>
+Signed-off-by: Matthias von Faber <matthias.vonfaber@aox-tech.de>
+Signed-off-by: Bogdan Lezhepekov <blezhepekov@suse.de>
+Signed-off-by: Peter Kunath <Peter.Kunath@elektrobit.com>
+Signed-off-by: Muhammad Faisal <Muhammad.Faisal@elektrobit.com>
+
+---
+ drivers/tty/tty_buffer.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/tty/tty_buffer.c b/drivers/tty/tty_buffer.c
+index 14056096d4d33..91b2f3a90994f 100644
+--- a/drivers/tty/tty_buffer.c
++++ b/drivers/tty/tty_buffer.c
+@@ -569,7 +569,7 @@ bool tty_buffer_queue_work(struct tty_port *port)
+ 
+ void tty_buffer_init_kthread(void)
+ {
+-	struct sched_param param = { .sched_priority = 1 };
++	struct sched_param param = { .sched_priority = MAX_USER_RT_PRIO / 2 };
+ 	struct task_struct *kworker_task;
+ 
+ 	kworker_task = kthread_run(kthread_worker_fn, &tty_buffer_worker, "tty");
+-- 
+2.33.1
+
