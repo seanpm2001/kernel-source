@@ -1,0 +1,57 @@
+From 9888a588ea96ba2804f955bbc2667346719da887 Mon Sep 17 00:00:00 2001
+From: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+Date: Fri, 8 Sep 2017 16:15:28 -0700
+Subject: [PATCH] lib/hexdump.c: return -EINVAL in case of error in hex2bin()
+Git-commit: 9888a588ea96ba2804f955bbc2667346719da887
+Patch-mainline: v4.14-rc1
+References: git-fixes
+
+In some cases caller would like to use error code directly without
+shadowing.
+
+-EINVAL feels a rightful code to return in case of error in hex2bin().
+
+Link: http://lkml.kernel.org/r/20170731135510.68023-1-andriy.shevchenko@linux.intel.com
+Signed-off-by: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+Cc: Arnd Bergmann <arnd@arndb.de>
+Cc: Rasmus Villemoes <linux@rasmusvillemoes.dk>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Coly Li <colyli@suse.de>
+---
+ lib/hexdump.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/lib/hexdump.c b/lib/hexdump.c
+index 992457b1284c..81b70ed37209 100644
+--- a/lib/hexdump.c
++++ b/lib/hexdump.c
+@@ -9,6 +9,7 @@
+ 
+ #include <linux/types.h>
+ #include <linux/ctype.h>
++#include <linux/errno.h>
+ #include <linux/kernel.h>
+ #include <linux/export.h>
+ #include <asm/unaligned.h>
+@@ -42,7 +43,7 @@ EXPORT_SYMBOL(hex_to_bin);
+  * @src: ascii hexadecimal string
+  * @count: result length
+  *
+- * Return 0 on success, -1 in case of bad input.
++ * Return 0 on success, -EINVAL in case of bad input.
+  */
+ int hex2bin(u8 *dst, const char *src, size_t count)
+ {
+@@ -51,7 +52,7 @@ int hex2bin(u8 *dst, const char *src, size_t count)
+ 		int lo = hex_to_bin(*src++);
+ 
+ 		if ((hi < 0) || (lo < 0))
+-			return -1;
++			return -EINVAL;
+ 
+ 		*dst++ = (hi << 4) | lo;
+ 	}
+-- 
+2.35.3
+

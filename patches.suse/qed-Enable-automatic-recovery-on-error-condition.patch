@@ -1,0 +1,55 @@
+From 755f905340802e2efb1ea96b9ce0f442916c2645 Mon Sep 17 00:00:00 2001
+From: Alok Prasad <palok@marvell.com>
+Date: Tue, 24 Aug 2021 04:02:46 +0000
+Subject: [PATCH] qed: Enable automatic recovery on error condition.
+Git-commit: 755f905340802e2efb1ea96b9ce0f442916c2645
+Patch-mainline: v5.15-rc1
+References: bsc#1196964
+
+This patch enables automatic recovery by default in case of various
+error condition like fw assert , hardware error etc.
+This also ensure driver can handle multiple iteration of assertion
+conditions.
+
+IMPORTANT: backported to SLE12-SP5 (partial patch)
+
+Signed-off-by: Ariel Elior <aelior@marvell.com>
+Signed-off-by: Shai Malin <smalin@marvell.com>
+Signed-off-by: Igor Russkikh <irusskikh@marvell.com>
+Signed-off-by: Alok Prasad <palok@marvell.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Luis Galdos <luis.galdos@suse.com>
+
+diff --git a/drivers/net/ethernet/qlogic/qede/qede_main.c b/drivers/net/ethernet/qlogic/qede/qede_main.c
+index d400e9b235bf..4877cb88c31a 100644
+--- a/drivers/net/ethernet/qlogic/qede/qede_main.c
++++ b/drivers/net/ethernet/qlogic/qede/qede_main.c
+@@ -1898,6 +1898,12 @@ static int qede_req_msix_irqs(struct qede_dev *edev)
+ 				 &edev->fp_array[i]);
+ 		if (rc) {
+ 			DP_ERR(edev, "Request fp %d irq failed\n", i);
++#ifdef CONFIG_RFS_ACCEL
++			if (edev->ndev->rx_cpu_rmap)
++				free_irq_cpu_rmap(edev->ndev->rx_cpu_rmap);
++
++			edev->ndev->rx_cpu_rmap = NULL;
++#endif
+ 			qede_sync_free_irqs(edev);
+ 			return rc;
+ 		}
+@@ -2290,6 +2296,15 @@ static void qede_unload(struct qede_dev *edev, enum qede_unload_mode mode,
+ 
+ 		rc = qede_stop_queues(edev);
+ 		if (rc) {
++#ifdef CONFIG_RFS_ACCEL
++			if (!IS_VF(edev) && edev->dev_info.common.num_hwfns == 1) {
++				qede_poll_for_freeing_arfs_filters(edev);
++				if (edev->ndev->rx_cpu_rmap)
++					free_irq_cpu_rmap(edev->ndev->rx_cpu_rmap);
++
++				edev->ndev->rx_cpu_rmap = NULL;
++			}
++#endif
+ 			qede_sync_free_irqs(edev);
+ 			goto out;
+ 		}
