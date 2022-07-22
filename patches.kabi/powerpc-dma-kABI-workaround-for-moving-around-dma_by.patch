@@ -1,0 +1,70 @@
+From 0772589b9c1fa7c9953b6b4d5094b0e762d0b90f Mon Sep 17 00:00:00 2001
+From: Michal Suchanek <msuchanek@suse.de>
+Date: Wed, 2 Mar 2022 16:48:15 +0100
+Subject: [PATCH] powerpc: dma: kABI workaround for moving around dma_bypass
+ bit.
+
+References: bsc#1196472 ltc#192278
+Patch-mainline: Never, kABI
+
+struct dev_archdata is embedded in widely used struct device but only
+used internally and not directly passed on any kernel interface.
+
+The dma_bypass bit is removed from struct dev_archdata and added to
+struct_device. Place it in the same location. The internally used struct
+dev_archdata size and offset is changed but there is no way for
+out-of-tree code to observe this.
+
+Signed-off-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/include/asm/device.h | 7 +++++++
+ include/linux/device.h            | 8 +++++---
+ 2 files changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/arch/powerpc/include/asm/device.h b/arch/powerpc/include/asm/device.h
+index 452402215e12..8e7c05dfd9ec 100644
+--- a/arch/powerpc/include/asm/device.h
++++ b/arch/powerpc/include/asm/device.h
+@@ -18,6 +18,13 @@ struct iommu_table;
+  * drivers/macintosh/macio_asic.c
+  */
+ struct dev_archdata {
++#ifdef __GENKSYMS__
++	/*
++	 * Set to %true if the dma_iommu_ops are requested to use a direct
++	 * window instead of dynamically mapping memory.
++	 */
++	bool			iommu_bypass : 1;
++#endif
+ 	/*
+ 	 * These two used to be a union. However, with the hybrid ops we need
+ 	 * both so here we store both a DMA offset for direct mappings and
+diff --git a/include/linux/device.h b/include/linux/device.h
+index d54369bb4125..1a5082dec180 100644
+--- a/include/linux/device.h
++++ b/include/linux/device.h
+@@ -1175,6 +1175,11 @@ struct device {
+ #ifdef CONFIG_DMA_CMA
+ 	struct cma *cma_area;		/* contiguous memory area for dma
+ 					   allocations */
++#endif
++#ifdef CONFIG_PPC
++#ifndef __GENKSYMS__
++	bool			dma_ops_bypass : 1;
++#endif
+ #endif
+ 	/* arch specific additions */
+ 	struct dev_archdata	archdata;
+@@ -1206,9 +1211,6 @@ struct device {
+     defined(CONFIG_ARCH_HAS_SYNC_DMA_FOR_CPU) || \
+     defined(CONFIG_ARCH_HAS_SYNC_DMA_FOR_CPU_ALL)
+ 	bool			dma_coherent:1;
+-#endif
+-#ifdef CONFIG_DMA_OPS_BYPASS
+-	bool			dma_ops_bypass : 1;
+ #endif
+ 	void			*suse_kabi_padding;
+ };
+-- 
+2.34.1
+
