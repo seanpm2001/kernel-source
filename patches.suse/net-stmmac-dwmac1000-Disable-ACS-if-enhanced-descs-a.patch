@@ -1,0 +1,57 @@
+From ec1d458509d38692a9c2dc955e71fdd854a859d8 Mon Sep 17 00:00:00 2001
+From: Denis Kirjanov <denis.kirjanov@suse.com>
+Date: Wed, 27 Jul 2022 11:10:37 +0300
+Subject: [PATCH 3/8] net: stmmac: dwmac1000: Disable ACS if enhanced descs are
+ not used
+Git-commit: b723bd933980f4956dabc8a8d84b3e83be8d094c
+Patch-mainline: v5.6-rc1
+References: git-fixes
+
+ACS (auto PAD/FCS stripping) removes FCS off 802.3 packets (LLC) so that
+there is no need to manually strip it for such packets. The enhanced DMA
+descriptors allow to flag LLC packets so that the receiving callback can
+use that to strip FCS manually or not. On the other hand, normal
+descriptors do not support that.
+
+Thus in order to not truncate LLC packet ACS should be disabled when
+using normal DMA descriptors.
+
+Fixes: 47dd7a540b8a0 ("net: add support for STMicroelectronics Ethernet controllers.")
+Signed-off-by: Remi Pommarel <repk@triplefau.lt>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/dwmac1000_core.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/dwmac1000_core.c b/drivers/net/ethernet/stmicro/stmmac/dwmac1000_core.c
+index f3df4cf0cb6a..61131b957e1b 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/dwmac1000_core.c
++++ b/drivers/net/ethernet/stmicro/stmmac/dwmac1000_core.c
+@@ -27,12 +27,14 @@
+ #include <linux/ethtool.h>
+ #include <net/dsa.h>
+ #include <asm/io.h>
++#include "stmmac.h"
+ #include "stmmac_pcs.h"
+ #include "dwmac1000.h"
+ 
+ static void dwmac1000_core_init(struct mac_device_info *hw,
+ 				struct net_device *dev)
+ {
++	struct stmmac_priv *priv = netdev_priv(dev);
+ 	void __iomem *ioaddr = hw->pcsr;
+ 	u32 value = readl(ioaddr + GMAC_CONTROL);
+ 	int mtu = dev->mtu;
+@@ -44,7 +46,7 @@ static void dwmac1000_core_init(struct mac_device_info *hw,
+ 	 * Broadcom tags can look like invalid LLC/SNAP packets and cause the
+ 	 * hardware to truncate packets on reception.
+ 	 */
+-	if (netdev_uses_dsa(dev))
++	if (netdev_uses_dsa(dev) || !priv->plat->enh_desc)
+ 		value &= ~GMAC_CONTROL_ACS;
+ 
+ 	if (mtu > 1500)
+-- 
+2.16.4
+
