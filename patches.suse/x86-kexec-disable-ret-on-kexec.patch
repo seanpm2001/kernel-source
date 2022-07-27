@@ -1,0 +1,149 @@
+From: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Date: Fri, 8 Jul 2022 19:10:11 +0200
+Subject: x86/kexec: Disable RET on kexec
+Git-commit: 697977d8415d61f3acbc4ee6d564c9dcf0309507
+Patch-mainline: v5.19-rc7
+References: bsc#1199657 CVE-2022-29900 CVE-2022-29901
+
+All the invocations unroll to __x86_return_thunk and this file
+must be PIC independent.
+
+This fixes kexec on 64-bit AMD boxes.
+
+  [ bp: Fix 32-bit build. ]
+
+Reported-by: Edward Tran <edward.tran@oracle.com>
+Reported-by: Awais Tanveer <awais.tanveer@oracle.com>
+Suggested-by: Ankur Arora <ankur.a.arora@oracle.com>
+Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Signed-off-by: Alexandre Chartre <alexandre.chartre@oracle.com>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+---
+ arch/x86/kernel/relocate_kernel_32.S |   17 ++++++++++++-----
+ arch/x86/kernel/relocate_kernel_64.S |   18 ++++++++++++------
+ 2 files changed, 24 insertions(+), 11 deletions(-)
+
+--- a/arch/x86/kernel/relocate_kernel_32.S
++++ b/arch/x86/kernel/relocate_kernel_32.S
+@@ -9,10 +9,12 @@
+ #include <linux/linkage.h>
+ #include <asm/page_types.h>
+ #include <asm/kexec.h>
++#include <asm/nospec-branch.h>
+ #include <asm/processor-flags.h>
+ 
+ /*
+- * Must be relocatable PIC code callable as a C function
++ * Must be relocatable PIC code callable as a C function, in particular
++ * there must be a plain RET and not jump to return thunk.
+  */
+ 
+ #define PTR(x) (x << 2)
+@@ -94,7 +96,8 @@ relocate_kernel:
+ 	movl    %edi, %eax
+ 	addl    $(identity_mapped - relocate_kernel), %eax
+ 	pushl   %eax
+-	RET
++	ret
++	int3
+ 
+ identity_mapped:
+ 	/* set return address to 0 if not preserving context */
+@@ -161,12 +164,14 @@ identity_mapped:
+ 	xorl    %edx, %edx
+ 	xorl    %esi, %esi
+ 	xorl    %ebp, %ebp
+-	RET
++	ret
++	int3
+ 1:
+ 	popl	%edx
+ 	movl	CP_PA_SWAP_PAGE(%edi), %esp
+ 	addl	$PAGE_SIZE, %esp
+ 2:
++	ANNOTATE_RETPOLINE_SAFE
+ 	call	*%edx
+ 
+ 	/* get the re-entry point of the peer system */
+@@ -209,7 +214,8 @@ virtual_mapped:
+ 	popl	%edi
+ 	popl	%esi
+ 	popl	%ebx
+-	RET
++	ret
++	int3
+ 
+ 	/* Do the copies */
+ swap_pages:
+@@ -271,7 +277,8 @@ swap_pages:
+ 	popl	%edi
+ 	popl	%ebx
+ 	popl	%ebp
+-	RET
++	ret
++	int3
+ 
+ 	.globl kexec_control_code_size
+ .set kexec_control_code_size, . - relocate_kernel
+--- a/arch/x86/kernel/relocate_kernel_64.S
++++ b/arch/x86/kernel/relocate_kernel_64.S
+@@ -13,7 +13,8 @@
+ #include <asm/pgtable_types.h>
+ 
+ /*
+- * Must be relocatable PIC code callable as a C function
++ * Must be relocatable PIC code callable as a C function, in particular
++ * there must be a plain RET and not jump to return thunk.
+  */
+ 
+ #define PTR(x) (x << 3)
+@@ -104,7 +105,8 @@ relocate_kernel:
+ 	/* jump to identity mapped page */
+ 	addq	$(identity_mapped - relocate_kernel), %r8
+ 	pushq	%r8
+-	RET
++	ret
++	int3
+ 
+ identity_mapped:
+ 	/* set return address to 0 if not preserving context */
+@@ -189,7 +191,8 @@ identity_mapped:
+ 	xorl	%r14d, %r14d
+ 	xorl	%r15d, %r15d
+ 
+-	RET
++	ret
++	int3
+ 
+ 1:
+ 	popq	%rdx
+@@ -210,7 +213,8 @@ identity_mapped:
+ 	call	swap_pages
+ 	movq	$virtual_mapped, %rax
+ 	pushq	%rax
+-	RET
++	ret
++	int3
+ 
+ virtual_mapped:
+ 	movq	RSP(%r8), %rsp
+@@ -229,7 +233,8 @@ virtual_mapped:
+ 	popq	%r12
+ 	popq	%rbp
+ 	popq	%rbx
+-	RET
++	ret
++	int3
+ 
+ 	/* Do the copies */
+ swap_pages:
+@@ -284,7 +289,8 @@ swap_pages:
+ 	lea	PAGE_SIZE(%rax), %rsi
+ 	jmp	0b
+ 3:
+-	RET
++	ret
++	int3
+ 
+ 	.globl kexec_control_code_size
+ .set kexec_control_code_size, . - relocate_kernel
