@@ -1,0 +1,65 @@
+From 973c39115cb308b6b1fe64b4f342996f3eef06d0 Mon Sep 17 00:00:00 2001
+From: Joe Perches <joe@perches.com>
+Date: Wed, 16 Sep 2020 13:40:40 -0700
+Subject: [PATCH] drivers core: Remove strcat uses around sysfs_emit and neaten
+Git-commit: 973c39115cb308b6b1fe64b4f342996f3eef06d0
+Patch-mainline: v5.10-rc1
+References: bsc#1200598 CVE-2022-20166
+
+strcat is no longer necessary for sysfs_emit and sysfs_emit_at uses.
+
+Convert the strcat uses to sysfs_emit calls and neaten other block
+uses of direct returns to use an intermediate const char *.
+
+Signed-off-by: Joe Perches <joe@perches.com>
+Link: https://lore.kernel.org/r/5d606519698ce4c8f1203a2b35797d8254c6050a.1600285923.git.joe@perches.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Acked-by: Petr Mladek <pmladek@suse.com>
+
+[ pmladek@suse.com: Removed changes where the buffer could never overflow. ]
+---
+ drivers/base/memory.c |   13 +++++++------
+ 1 file changed, 7 insertions(+), 6 deletions(-)
+
+--- a/drivers/base/memory.c
++++ b/drivers/base/memory.c
+@@ -396,6 +396,7 @@ static ssize_t show_valid_zones(struct d
+ 	unsigned long nr_pages = PAGES_PER_SECTION * sections_per_block;
+ 	unsigned long valid_start_pfn, valid_end_pfn;
+ 	bool append = false;
++	int len = 0;
+ 	int nid;
+ 
+ 	/*
+@@ -413,25 +414,25 @@ static ssize_t show_valid_zones(struct d
+ 	 * online nodes otherwise the page_zone is not reliable
+ 	 */
+ 	if (mem->state == MEM_ONLINE) {
+-		strcat(buf, page_zone(pfn_to_page(start_pfn))->name);
++		len += sysfs_emit_at(buf, len, "%s", page_zone(pfn_to_page(start_pfn))->name);
+ 		goto out;
+ 	}
+ 
+ 	nid = pfn_to_nid(start_pfn);
+ 	if (allow_online_pfn_range(nid, start_pfn, nr_pages, MMOP_ONLINE_KERNEL)) {
+-		strcat(buf, default_zone_for_pfn(nid, start_pfn, nr_pages)->name);
++		len += sysfs_emit_at(buf, len, "%s", default_zone_for_pfn(nid, start_pfn, nr_pages)->name);
+ 		append = true;
+ 	}
+ 
+ 	if (allow_online_pfn_range(nid, start_pfn, nr_pages, MMOP_ONLINE_MOVABLE)) {
+ 		if (append)
+-			strcat(buf, " ");
+-		strcat(buf, NODE_DATA(nid)->node_zones[ZONE_MOVABLE].name);
++			len += sysfs_emit_at(buf, len, " ");
++		len += sysfs_emit_at(buf, len, "%s", NODE_DATA(nid)->node_zones[ZONE_MOVABLE].name);
+ 	}
+ out:
+-	strcat(buf, "\n");
++	len += sysfs_emit_at(buf, len, "\n");
+ 
+-	return strlen(buf);
++	return len;
+ }
+ static DEVICE_ATTR(valid_zones, 0444, show_valid_zones, NULL);
+ #endif
