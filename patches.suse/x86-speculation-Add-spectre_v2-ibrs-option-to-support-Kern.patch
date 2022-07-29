@@ -2,7 +2,7 @@ From: Pawan Gupta <pawan.kumar.gupta@linux.intel.com>
 Date: Tue, 14 Jun 2022 23:15:55 +0200
 Subject: x86/speculation: Add spectre_v2=ibrs option to support Kernel IBRS
 Git-commit: 7c693f54c873691a4b7da05c7e0f74e67745d144
-Patch-mainline: v5.19-rc4
+Patch-mainline: v5.19-rc7
 References: bsc#1199657 CVE-2022-29900 CVE-2022-29901
 
 Extend spectre_v2= boot option with Kernel IBRS.
@@ -15,12 +15,36 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
 Reviewed-by: Josh Poimboeuf <jpoimboe@kernel.org>
 Signed-off-by: Borislav Petkov <bp@suse.de>
 ---
- arch/x86/kernel/cpu/bugs.c |   59 ++++++++++++++++++++++++++++++++++-----------
- 1 file changed, 45 insertions(+), 14 deletions(-)
+ Documentation/admin-guide/kernel-parameters.txt |    1 
+ arch/x86/include/asm/nospec-branch.h            |    2 
+ arch/x86/kernel/cpu/bugs.c                      |   66 ++++++++++++++++++------
+ 3 files changed, 54 insertions(+), 15 deletions(-)
 
+--- a/arch/x86/include/asm/nospec-branch.h
++++ b/arch/x86/include/asm/nospec-branch.h
+@@ -244,10 +244,10 @@ enum spectre_v2_mitigation {
+ 	SPECTRE_V2_NONE,
+ 	SPECTRE_V2_RETPOLINE,
+ 	SPECTRE_V2_LFENCE,
+-	SPECTRE_V2_IBRS,
+ 	SPECTRE_V2_EIBRS,
+ 	SPECTRE_V2_EIBRS_RETPOLINE,
+ 	SPECTRE_V2_EIBRS_LFENCE,
++	SPECTRE_V2_IBRS,
+ };
+ 
+ /* The indirect branch speculation control variants */
 --- a/arch/x86/kernel/cpu/bugs.c
 +++ b/arch/x86/kernel/cpu/bugs.c
-@@ -1117,11 +1117,12 @@ spectre_v2_parse_user_cmdline(enum spect
+@@ -1045,6 +1045,7 @@ enum spectre_v2_mitigation_cmd {
+ 	SPECTRE_V2_CMD_EIBRS,
+ 	SPECTRE_V2_CMD_EIBRS_RETPOLINE,
+ 	SPECTRE_V2_CMD_EIBRS_LFENCE,
++	SPECTRE_V2_CMD_IBRS,
+ };
+ 
+ enum spectre_v2_user_cmd {
+@@ -1116,11 +1117,12 @@ spectre_v2_parse_user_cmdline(enum spect
  	return SPECTRE_V2_USER_CMD_AUTO;
  }
  
@@ -37,7 +61,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  }
  
  static void __init
-@@ -1186,12 +1187,12 @@ spectre_v2_user_select_mitigation(enum s
+@@ -1185,12 +1187,12 @@ spectre_v2_user_select_mitigation(enum s
  	}
  
  	/*
@@ -53,7 +77,23 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  		return;
  
  	spectre_v2_user_stibp = mode;
-@@ -1288,6 +1289,24 @@ static enum spectre_v2_mitigation_cmd __
+@@ -1206,6 +1208,7 @@ static const char * const spectre_v2_str
+ 	[SPECTRE_V2_EIBRS]			= "Mitigation: Enhanced IBRS",
+ 	[SPECTRE_V2_EIBRS_LFENCE]		= "Mitigation: Enhanced IBRS + LFENCE",
+ 	[SPECTRE_V2_EIBRS_RETPOLINE]		= "Mitigation: Enhanced IBRS + Retpolines",
++	[SPECTRE_V2_IBRS]			= "Mitigation: IBRS",
+ };
+ 
+ static const struct {
+@@ -1223,6 +1226,7 @@ static const struct {
+ 	{ "eibrs,lfence",	SPECTRE_V2_CMD_EIBRS_LFENCE,	  false },
+ 	{ "eibrs,retpoline",	SPECTRE_V2_CMD_EIBRS_RETPOLINE,	  false },
+ 	{ "auto",		SPECTRE_V2_CMD_AUTO,		  false },
++	{ "ibrs",		SPECTRE_V2_CMD_IBRS,              false },
+ };
+ 
+ static void __init spec_v2_print_cond(const char *reason, bool secure)
+@@ -1285,6 +1289,24 @@ static enum spectre_v2_mitigation_cmd __
  		return SPECTRE_V2_CMD_AUTO;
  	}
  
@@ -78,7 +118,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  	spec_v2_print_cond(mitigation_options[i].option,
  			   mitigation_options[i].secure);
  	return cmd;
-@@ -1335,6 +1354,14 @@ static void __init spectre_v2_select_mit
+@@ -1324,6 +1346,14 @@ static void __init spectre_v2_select_mit
  			break;
  		}
  
@@ -93,7 +133,18 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  		mode = spectre_v2_select_retpoline();
  		break;
  
-@@ -1367,7 +1394,7 @@ static void __init spectre_v2_select_mit
+@@ -1340,6 +1370,10 @@ static void __init spectre_v2_select_mit
+ 		mode = spectre_v2_select_retpoline();
+ 		break;
+ 
++	case SPECTRE_V2_CMD_IBRS:
++		mode = SPECTRE_V2_IBRS;
++		break;
++
+ 	case SPECTRE_V2_CMD_EIBRS:
+ 		mode = SPECTRE_V2_EIBRS;
+ 		break;
+@@ -1356,7 +1390,7 @@ static void __init spectre_v2_select_mit
  	if (mode == SPECTRE_V2_EIBRS && unprivileged_ebpf_enabled())
  		pr_err(SPECTRE_V2_EIBRS_EBPF_MSG);
  
@@ -102,18 +153,18 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  		/* Force it so VMEXIT will restore correctly */
  		x86_spec_ctrl_base |= SPEC_CTRL_IBRS;
  		write_spec_ctrl_current(x86_spec_ctrl_base, true);
-@@ -1378,6 +1405,10 @@ static void __init spectre_v2_select_mit
+@@ -1367,6 +1401,10 @@ static void __init spectre_v2_select_mit
  	case SPECTRE_V2_EIBRS:
  		break;
  
 +	case SPECTRE_V2_IBRS:
-+		setup_force_cpu_cap(X86_FEATURE_USE_IBRS);
++		setup_force_cpu_cap(X86_FEATURE_KERNEL_IBRS);
 +		break;
 +
  	case SPECTRE_V2_LFENCE:
  	case SPECTRE_V2_EIBRS_LFENCE:
  		setup_force_cpu_cap(X86_FEATURE_RETPOLINE_LFENCE);
-@@ -1408,17 +1439,17 @@ specv2_set_mode:
+@@ -1393,17 +1431,17 @@ static void __init spectre_v2_select_mit
  	pr_info("Spectre v2 / SpectreRSB mitigation: Filling RSB on context switch\n");
  
  	/*
@@ -136,7 +187,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  		setup_force_cpu_cap(X86_FEATURE_USE_IBRS_FW);
  		pr_info("Enabling Restricted Speculation for firmware calls\n");
  	}
-@@ -1972,7 +2003,7 @@ static ssize_t mmio_stale_data_show_stat
+@@ -1957,7 +1995,7 @@ static ssize_t mmio_stale_data_show_stat
  
  static char *stibp_state(void)
  {
@@ -145,3 +196,13 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  		return "";
  
  	switch (spectre_v2_user_stibp) {
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -4242,6 +4242,7 @@
+ 			eibrs		  - enhanced IBRS
+ 			eibrs,retpoline   - enhanced IBRS + Retpolines
+ 			eibrs,lfence      - enhanced IBRS + LFENCE
++			ibrs		  - use IBRS to protect kernel
+ 
+ 			Not specifying this option is equivalent to
+ 			spectre_v2=auto.
