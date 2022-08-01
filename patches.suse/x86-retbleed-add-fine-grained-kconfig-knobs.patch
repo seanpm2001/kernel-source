@@ -1,0 +1,37 @@
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Mon, 27 Jun 2022 22:21:17 +0000
+Subject: x86/retbleed: Add fine grained Kconfig knobs
+Git-commit: f43b9876e857c739d407bc56df288b0ebe1a9164
+Patch-mainline: v5.19-rc7
+References: bsc#1114648
+
+Do fine-grained Kconfig for all the various retbleed parts.
+
+NOTE: if your compiler doesn't support return thunks this will
+silently 'upgrade' your mitigation to IBPB, you might not like this.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+
+  [ bp: just the RETPOLINE_CFLAGS changes in order to simplify a later backport. ]
+---
+---
+ arch/x86/Makefile |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+--- a/arch/x86/Makefile
++++ b/arch/x86/Makefile
+@@ -230,10 +230,12 @@ KBUILD_AFLAGS += $(mflags-y)
+ # Avoid indirect branches in kernel to deal with Spectre
+ ifdef CONFIG_RETPOLINE
+     RETPOLINE_CFLAGS += $(call cc-option,-mindirect-branch=thunk-extern -mindirect-branch-register)
+-    RETPOLINE_CFLAGS += $(call cc-option,-mfunction-return=thunk-extern)
+     KBUILD_CFLAGS += $(RETPOLINE_CFLAGS) -DRETPOLINE
+ endif
+ 
++RETHUNK_CFLAGS		:= -mfunction-return=thunk-extern
++RETPOLINE_CFLAGS	+= $(RETHUNK_CFLAGS)
++
+ # for vdso Makefile to exclude
+ export RETPOLINE_CFLAGS
+ 
