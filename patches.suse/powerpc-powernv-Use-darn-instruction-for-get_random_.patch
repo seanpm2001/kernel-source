@@ -1,0 +1,125 @@
+From e66ca3db5917f4bcad039d3a3df9f1003797c249 Mon Sep 17 00:00:00 2001
+From: Matt Brown <matthew.brown.dev@gmail.com>
+Date: Fri, 4 Aug 2017 11:12:18 +1000
+Subject: [PATCH] powerpc/powernv: Use darn instruction for get_random_seed()
+ on Power9
+
+References: bsc#1065729
+Patch-mainline: v4.14-rc1
+Git-commit: e66ca3db5917f4bcad039d3a3df9f1003797c249
+
+This adds powernv_get_random_darn() which utilises the darn instruction,
+introduced in ISA v3.0/POWER9.
+
+The darn instruction can potentially return an error, which is supported
+by the get_random_seed() API, in normal usage if we see an error we just
+return that to the caller.
+
+However when detecting whether darn is functional at boot we try up to
+10 times, before deciding that darn doesn't work and failing the
+registration of get_random_seed(). That way an intermittent failure
+at boot doesn't deprive the system of randomness until the next reboot.
+
+Signed-off-by: Matt Brown <matthew.brown.dev@gmail.com>
+[mpe: Move init into a function, tweak change log]
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/include/asm/ppc-opcode.h |  4 +++
+ arch/powerpc/platforms/powernv/rng.c  | 39 +++++++++++++++++++++++++++
+ 2 files changed, 43 insertions(+)
+
+diff --git a/arch/powerpc/include/asm/ppc-opcode.h b/arch/powerpc/include/asm/ppc-opcode.h
+index fa9ebaead91e..041ba15aa2b9 100644
+--- a/arch/powerpc/include/asm/ppc-opcode.h
++++ b/arch/powerpc/include/asm/ppc-opcode.h
+@@ -193,6 +193,7 @@
+ #define PPC_INST_CLRBHRB		0x7c00035c
+ #define PPC_INST_COPY			0x7c20060c
+ #define PPC_INST_CP_ABORT		0x7c00068c
++#define PPC_INST_DARN			0x7c0005e6
+ #define PPC_INST_DCBA			0x7c0005ec
+ #define PPC_INST_DCBA_MASK		0xfc0007fe
+ #define PPC_INST_DCBAL			0x7c2005ec
+@@ -395,6 +396,9 @@
+ #define	PPC_CP_ABORT		stringify_in_c(.long PPC_INST_CP_ABORT)
+ #define	PPC_COPY(a, b)		stringify_in_c(.long PPC_INST_COPY | \
+ 					___PPC_RA(a) | ___PPC_RB(b))
++#define PPC_DARN(t, l)		stringify_in_c(.long PPC_INST_DARN |  \
++						___PPC_RT(t)	   |  \
++						(((l) & 0x3) << 16))
+ #define	PPC_DCBAL(a, b)		stringify_in_c(.long PPC_INST_DCBAL | \
+ 					__PPC_RA(a) | __PPC_RB(b))
+ #define	PPC_DCBZL(a, b)		stringify_in_c(.long PPC_INST_DCBZL | \
+diff --git a/arch/powerpc/platforms/powernv/rng.c b/arch/powerpc/platforms/powernv/rng.c
+index 1a9d84371a4d..c5ce3a8bd4c9 100644
+--- a/arch/powerpc/platforms/powernv/rng.c
++++ b/arch/powerpc/platforms/powernv/rng.c
+@@ -16,11 +16,13 @@
+ #include <linux/slab.h>
+ #include <linux/smp.h>
+ #include <asm/archrandom.h>
++#include <asm/cputable.h>
+ #include <asm/io.h>
+ #include <asm/prom.h>
+ #include <asm/machdep.h>
+ #include <asm/smp.h>
+ 
++#define DARN_ERR 0xFFFFFFFFFFFFFFFFul
+ 
+ struct powernv_rng {
+ 	void __iomem *regs;
+@@ -67,6 +69,41 @@ int powernv_get_random_real_mode(unsigned long *v)
+ 	return 1;
+ }
+ 
++int powernv_get_random_darn(unsigned long *v)
++{
++	unsigned long val;
++
++	/* Using DARN with L=1 - 64-bit conditioned random number */
++	asm volatile(PPC_DARN(%0, 1) : "=r"(val));
++
++	if (val == DARN_ERR)
++		return 0;
++
++	*v = val;
++
++	return 1;
++}
++
++static int initialise_darn(void)
++{
++	unsigned long val;
++	int i;
++
++	if (!cpu_has_feature(CPU_FTR_ARCH_300))
++		return -ENODEV;
++
++	for (i = 0; i < 10; i++) {
++		if (powernv_get_random_darn(&val)) {
++			ppc_md.get_random_seed = powernv_get_random_darn;
++			return 0;
++		}
++	}
++
++	pr_warn("Unable to use DARN for get_random_seed()\n");
++
++	return -EIO;
++}
++
+ int powernv_get_random_long(unsigned long *v)
+ {
+ 	struct powernv_rng *rng;
+@@ -150,6 +187,8 @@ static __init int rng_init(void)
+ 		of_platform_device_create(dn, NULL, NULL);
+ 	}
+ 
++	initialise_darn();
++
+ 	return 0;
+ }
+ machine_subsys_initcall(powernv, rng_init);
+-- 
+2.35.3
+
