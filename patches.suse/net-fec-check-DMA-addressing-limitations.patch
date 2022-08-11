@@ -1,0 +1,50 @@
+From a9ed3f37063f18bd3434924e4c45f21a67d04d5c Mon Sep 17 00:00:00 2001
+From: Stefan Agner <stefan@agner.ch>
+Date: Thu, 2 Aug 2018 10:42:50 +0200
+Subject: [PATCH 03/16] net: fec: check DMA addressing limitations
+Git-commit: 453e9dc48be466afa2adc25d072aa4c5b8774f8d
+Patch-mainline: v4.19-rc1
+References: git-fixes
+
+Check DMA addressing limitations as suggested by the DMA API
+how-to. This does not fix a particular issue seen but is
+considered good style.
+
+Signed-off-by: Stefan Agner <stefan@agner.ch>
+Acked-by: Fugang Duan <fugang.duan@nxp.com>
+Reviewed-by: Robin Murphy <robin.murphy@arm.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/freescale/fec_main.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/net/ethernet/freescale/fec_main.c b/drivers/net/ethernet/freescale/fec_main.c
+index b0bea7cb2f20..70a5039faa89 100644
+--- a/drivers/net/ethernet/freescale/fec_main.c
++++ b/drivers/net/ethernet/freescale/fec_main.c
+@@ -3157,6 +3157,7 @@ static int fec_enet_init(struct net_device *ndev)
+ 	unsigned dsize = fep->bufdesc_ex ? sizeof(struct bufdesc_ex) :
+ 			sizeof(struct bufdesc);
+ 	unsigned dsize_log2 = __fls(dsize);
++	int ret;
+ 
+ 	WARN_ON(dsize != (1 << dsize_log2));
+ #if defined(CONFIG_ARM) || defined(CONFIG_ARM64)
+@@ -3167,6 +3168,13 @@ static int fec_enet_init(struct net_device *ndev)
+ 	fep->tx_align = 0x3;
+ #endif
+ 
++	/* Check mask of the streaming and coherent API */
++	ret = dma_set_mask_and_coherent(&fep->pdev->dev, DMA_BIT_MASK(32));
++	if (ret < 0) {
++		dev_warn(&fep->pdev->dev, "No suitable DMA available\n");
++		return ret;
++	}
++
+ 	fec_enet_alloc_queue(ndev);
+ 
+ 	bd_size = (fep->total_tx_ring_size + fep->total_rx_ring_size) * dsize;
+-- 
+2.16.4
+
