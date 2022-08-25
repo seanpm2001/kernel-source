@@ -1,0 +1,88 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Tue, 22 Jun 2021 15:51:58 +0300
+Subject: btrfs: rip out may_commit_transaction
+Git-commit: c416a30cddec0840520e9ffb170aea6c6b6c64af
+Patch-mainline: v5.14-rc1
+References: bsc#1202528
+
+may_commit_transaction was introduced before the ticketing
+infrastructure existed.  There was a problem where we'd legitimately be
+out of space, but every reservation would trigger a transaction commit
+and then fail.  Thus if you had 1000 things trying to make a
+reservation, they'd all do the flushing loop and thus commit the
+transaction 1000 times before they'd get their ENOSPC.
+
+This helper was introduced to short circuit this, if there wasn't space
+that could be reclaimed by committing the transaction then simply ENOSPC
+out.  This made true ENOSPC tests much faster as we didn't waste a bunch
+of time.
+
+However many of our bugs over the years have been from cases where we
+didn't account for some space that would be reclaimed by committing a
+transaction.  The delayed refs rsv space, delayed rsv, many pinned bytes
+miscalculations, etc.  And in the meantime the original problem has been
+solved with ticketing.  We no longer will commit the transaction 1000
+times.  Instead we'll get 1000 waiters, we will go through the flushing
+mechanisms, and if there's no progress after 2 loops we ENOSPC everybody
+out.  The ticketing infrastructure gives us a deterministic way to see
+if we're making progress or not, thus we avoid a lot of extra work.
+
+So simplify this step by simply unconditionally committing the
+transaction.  This removes what is arguably our most common source of
+early ENOSPC bugs and will allow us to drastically simplify many of the
+things we track because we simply won't need them with this stuff gone.
+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/ctree.h             |    1 -
+ fs/btrfs/space-info.c        |    6 ++----
+ include/trace/events/btrfs.h |    3 +--
+ 3 files changed, 3 insertions(+), 7 deletions(-)
+
+--- a/fs/btrfs/ctree.h
++++ b/fs/btrfs/ctree.h
+@@ -2593,7 +2593,6 @@ enum btrfs_flush_state {
+ 	ALLOC_CHUNK_FORCE	=	8,
+ 	RUN_DELAYED_IPUTS	=	9,
+ 	COMMIT_TRANS		=	10,
+-	FORCE_COMMIT_TRANS	=	11,
+ };
+ 
+ void btrfs_trans_release_metadata(struct btrfs_trans_handle *trans,
+--- a/fs/btrfs/space-info.c
++++ b/fs/btrfs/space-info.c
+@@ -522,9 +522,7 @@ static int flush_space(struct btrfs_fs_i
+ 		btrfs_wait_on_delayed_iputs(fs_info);
+ 		break;
+ 	case COMMIT_TRANS:
+-		ret = may_commit_transaction(fs_info, space_info);
+-		break;
+-	case FORCE_COMMIT_TRANS:
++		ASSERT(current->journal_info == NULL);
+ 		trans = btrfs_join_transaction(root);
+ 		if (IS_ERR(trans)) {
+ 			ret = PTR_ERR(trans);
+@@ -910,7 +908,7 @@ static void btrfs_preempt_reclaim_metada
+ 			   (delayed_block_rsv->reserved +
+ 			    delayed_refs_rsv->reserved)) {
+ 			to_reclaim = space_info->bytes_pinned;
+-			flush = FORCE_COMMIT_TRANS;
++			flush = COMMIT_TRANS;
+ 		} else if (delayed_block_rsv->reserved >
+ 			   delayed_refs_rsv->reserved) {
+ 			to_reclaim = delayed_block_rsv->reserved;
+--- a/include/trace/events/btrfs.h
++++ b/include/trace/events/btrfs.h
+@@ -1104,8 +1104,7 @@ TRACE_EVENT(btrfs_trigger_flush,
+ 		{ ALLOC_CHUNK,			"ALLOC_CHUNK"},			\
+ 		{ ALLOC_CHUNK_FORCE,		"ALLOC_CHUNK_FORCE"},		\
+ 		{ RUN_DELAYED_IPUTS,		"RUN_DELAYED_IPUTS"},		\
+-		{ COMMIT_TRANS,			"COMMIT_TRANS"},		\
+-		{ FORCE_COMMIT_TRANS,		"FORCE_COMMIT_TRANS"})
++		{ COMMIT_TRANS,			"COMMIT_TRANS"})
+ 
+ TRACE_EVENT(btrfs_flush_space,
+ 
