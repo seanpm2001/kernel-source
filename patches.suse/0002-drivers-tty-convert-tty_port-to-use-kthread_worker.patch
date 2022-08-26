@@ -18,13 +18,11 @@ Link: https://lore.kernel.org/lkml/20190110101232.9398-3-o.rempel@pengutronix.de
 Acked-by: Varad Gautam <varad.gautam@suse.com>
 
 ---
- drivers/tty/tty_buffer.c | 21 ++++++++++++++-------
- drivers/tty/tty_io.c     |  1 +
- include/linux/tty.h      |  7 ++++---
+ drivers/tty/tty_buffer.c |   21 ++++++++++++++-------
+ drivers/tty/tty_io.c     |    1 +
+ include/linux/tty.h      |    7 ++++---
  3 files changed, 19 insertions(+), 10 deletions(-)
 
-diff --git a/drivers/tty/tty_buffer.c b/drivers/tty/tty_buffer.c
-index 6bf69712bf0bb..4ebcc1c7d4081 100644
 --- a/drivers/tty/tty_buffer.c
 +++ b/drivers/tty/tty_buffer.c
 @@ -4,6 +4,7 @@
@@ -35,7 +33,7 @@ index 6bf69712bf0bb..4ebcc1c7d4081 100644
  #include <linux/errno.h>
  #include <linux/tty.h>
  #include <linux/tty_driver.h>
-@@ -497,7 +498,7 @@ receive_buf(struct tty_port *port, struct tty_buffer *head, int count)
+@@ -503,7 +504,7 @@ receive_buf(struct tty_port *port, struc
   *		 'consumer'
   */
  
@@ -44,9 +42,9 @@ index 6bf69712bf0bb..4ebcc1c7d4081 100644
  {
  	struct tty_port *port = container_of(work, struct tty_port, buf.work);
  	struct tty_bufhead *buf = &port->buf;
-@@ -557,10 +558,16 @@ void tty_flip_buffer_push(struct tty_port *port)
+@@ -549,10 +550,16 @@ static void flush_to_ldisc(struct work_s
+ 
  }
- EXPORT_SYMBOL(tty_flip_buffer_push);
  
 +static DEFINE_KTHREAD_WORKER(tty_buffer_worker);
 +
@@ -63,7 +61,7 @@ index 6bf69712bf0bb..4ebcc1c7d4081 100644
  }
  
  /**
-@@ -582,7 +589,7 @@ void tty_buffer_init(struct tty_port *port)
+@@ -622,7 +629,7 @@ void tty_buffer_init(struct tty_port *po
  	init_llist_head(&buf->free);
  	atomic_set(&buf->mem_used, 0);
  	atomic_set(&buf->priority, 0);
@@ -72,7 +70,7 @@ index 6bf69712bf0bb..4ebcc1c7d4081 100644
  	buf->mem_limit = TTYB_DEFAULT_MEM_LIMIT;
  }
  
-@@ -614,12 +621,12 @@ bool tty_buffer_restart_work(struct tty_port *port)
+@@ -654,12 +661,12 @@ bool tty_buffer_restart_work(struct tty_
  	return tty_buffer_queue_work(port);
  }
  
@@ -88,8 +86,6 @@ index 6bf69712bf0bb..4ebcc1c7d4081 100644
 -	flush_work(&port->buf.work);
 +	kthread_flush_work(&port->buf.work);
  }
-diff --git a/drivers/tty/tty_io.c b/drivers/tty/tty_io.c
-index 525f1af3716f9..2dc6208aec4ab 100644
 --- a/drivers/tty/tty_io.c
 +++ b/drivers/tty/tty_io.c
 @@ -3494,6 +3494,7 @@ void console_sysfs_notify(void)
@@ -100,8 +96,6 @@ index 525f1af3716f9..2dc6208aec4ab 100644
  	tty_sysctl_init();
  	cdev_init(&tty_cdev, &tty_fops);
  	if (cdev_add(&tty_cdev, MKDEV(TTYAUX_MAJOR, 0), 1) ||
-diff --git a/include/linux/tty.h b/include/linux/tty.h
-index 4d346b167492d..2fddee46b1659 100644
 --- a/include/linux/tty.h
 +++ b/include/linux/tty.h
 @@ -3,9 +3,9 @@
@@ -115,7 +109,7 @@ index 4d346b167492d..2fddee46b1659 100644
  #include <linux/tty_driver.h>
  #include <linux/tty_ldisc.h>
  #include <linux/mutex.h>
-@@ -84,7 +84,7 @@ static inline char *flag_buf_ptr(struct tty_buffer *b, int ofs)
+@@ -84,7 +84,7 @@ static inline char *flag_buf_ptr(struct
  
  struct tty_bufhead {
  	struct tty_buffer *head;	/* Queue head */
@@ -124,7 +118,7 @@ index 4d346b167492d..2fddee46b1659 100644
  	struct mutex	   lock;
  	atomic_t	   priority;
  	struct tty_buffer sentinel;
-@@ -516,8 +516,9 @@ extern void tty_buffer_flush(struct tty_struct *tty, struct tty_ldisc *ld);
+@@ -516,8 +516,9 @@ extern void tty_buffer_flush(struct tty_
  extern bool tty_buffer_queue_work(struct tty_port *port);
  extern void tty_buffer_init(struct tty_port *port);
  extern void tty_buffer_set_lock_subclass(struct tty_port *port);
@@ -135,6 +129,3 @@ index 4d346b167492d..2fddee46b1659 100644
  extern void tty_buffer_flush_work(struct tty_port *port);
  extern speed_t tty_termios_baud_rate(struct ktermios *termios);
  extern speed_t tty_termios_input_baud_rate(struct ktermios *termios);
--- 
-2.32.0
-
