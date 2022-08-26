@@ -1,0 +1,49 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Wed, 14 Jul 2021 14:47:17 -0400
+Subject: btrfs: wake up async_delalloc_pages waiters after submit
+Git-commit: ac98141d140444fe93e26471d3074c603b70e2ca
+Patch-mainline: v5.15-rc1
+References: bsc#1202528
+
+We use the async_delalloc_pages mechanism to make sure that we've
+completed our async work before trying to continue our delalloc
+flushing.  The reason for this is we need to see any ordered extents
+that were created by our delalloc flushing.  However we're waking up
+before we do the submit work, which is before we create the ordered
+extents.  This is a pretty wide race window where we could potentially
+think there are no ordered extents and thus exit shrink_delalloc
+prematurely.  Fix this by waking us up after we've done the work to
+create ordered extents.
+
+CC: stable@vger.kernel.org # 5.4+
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/inode.c |   10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -1218,16 +1218,14 @@ static noinline void async_cow_submit(st
+ 	nr_pages = (async_cow->end - async_cow->start + PAGE_SIZE) >>
+ 		PAGE_SHIFT;
+ 
+-	/*
+-	 * atomic_sub_return implies a barrier for waitqueue_active
+-	 */
++	if (async_cow->inode)
++		submit_compressed_extents(async_cow->inode, async_cow);
++
++	/* atomic_sub_return implies a barrier for waitqueue_active */
+ 	if (atomic_sub_return(nr_pages, &fs_info->async_delalloc_pages) <
+ 	    5 * SZ_1M &&
+ 	    waitqueue_active(&fs_info->async_submit_wait))
+ 		wake_up(&fs_info->async_submit_wait);
+-
+-	if (async_cow->inode)
+-		submit_compressed_extents(async_cow->inode, async_cow);
+ }
+ 
+ static noinline void async_cow_free(struct btrfs_work *work)
