@@ -31,8 +31,8 @@ Link: https://lkml.kernel.org/r/20200428191700.032079304@infradead.org
 
 Acked-by: Borislav Petkov <bp@suse.de>
 ---
- arch/x86/include/asm/nospec-branch.h |   12 ++++++------
- 1 file changed, 6 insertions(+), 6 deletions(-)
+ arch/x86/include/asm/nospec-branch.h |   14 ++++++++------
+ 1 file changed, 8 insertions(+), 6 deletions(-)
 
 --- a/arch/x86/include/asm/nospec-branch.h
 +++ b/arch/x86/include/asm/nospec-branch.h
@@ -50,7 +50,21 @@ Acked-by: Borislav Petkov <bp@suse.de>
  
  /*
   * Fill the CPU return stack buffer.
-@@ -50,9 +52,9 @@
+@@ -38,21 +40,23 @@
+ #define __FILL_RETURN_BUFFER(reg, nr, sp)	\
+ 	mov	$(nr/2), reg;			\
+ 771:						\
++	ANNOTATE_INTRA_FUNCTION_CALL		\
+ 	call	772f;				\
+ 773:	/* speculation trap */			\
+ 	pause;					\
+ 	lfence;					\
+ 	jmp	773b;				\
+ 772:						\
++	ANNOTATE_INTRA_FUNCTION_CALL		\
+ 	call	774f;				\
+ 775:	/* speculation trap */			\
+ 	pause;					\
  	lfence;					\
  	jmp	775b;				\
  774:						\
@@ -62,7 +76,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  
  #ifdef __ASSEMBLY__
  
-@@ -142,10 +144,8 @@
+@@ -142,10 +146,8 @@
    */
  .macro FILL_RETURN_BUFFER reg:req nr:req ftr:req
  #ifdef CONFIG_RETPOLINE
