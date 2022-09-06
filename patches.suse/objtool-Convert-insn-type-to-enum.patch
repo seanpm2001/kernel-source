@@ -1,0 +1,105 @@
+From: Josh Poimboeuf <jpoimboe@redhat.com>
+Date: Wed, 17 Jul 2019 20:36:56 -0500
+Subject: objtool: Convert insn type to enum
+Git-commit: 9fe7b7642fe2c5158904d06fe31b740ca0695a01
+Patch-mainline: v5.3-rc1
+References: bsc#1202396
+
+This makes it easier to add new instruction types.  Also it's hopefully
+more robust since the compiler should warn about out-of-range enums.
+
+Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Tested-by: Nick Desaulniers <ndesaulniers@google.com>
+Acked-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/0740e96af0d40e54cfd6a07bf09db0fbd10793cd.1563413318.git.jpoimboe@redhat.com
+
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ tools/objtool/arch.h            |   27 ++++++++++++++-------------
+ tools/objtool/arch/x86/decode.c |    2 +-
+ tools/objtool/check.c           |    7 -------
+ tools/objtool/check.h           |    2 +-
+ 4 files changed, 16 insertions(+), 22 deletions(-)
+
+--- a/tools/objtool/arch.h
++++ b/tools/objtool/arch.h
+@@ -23,18 +23,19 @@
+ #include "elf.h"
+ #include "cfi.h"
+ 
+-#define INSN_JUMP_CONDITIONAL	1
+-#define INSN_JUMP_UNCONDITIONAL	2
+-#define INSN_JUMP_DYNAMIC	3
+-#define INSN_CALL		4
+-#define INSN_CALL_DYNAMIC	5
+-#define INSN_RETURN		6
+-#define INSN_CONTEXT_SWITCH	7
+-#define INSN_STACK		8
+-#define INSN_BUG		9
+-#define INSN_NOP		10
+-#define INSN_OTHER		11
+-#define INSN_LAST		INSN_OTHER
++enum insn_type {
++	INSN_JUMP_CONDITIONAL,
++	INSN_JUMP_UNCONDITIONAL,
++	INSN_JUMP_DYNAMIC,
++	INSN_CALL,
++	INSN_CALL_DYNAMIC,
++	INSN_RETURN,
++	INSN_CONTEXT_SWITCH,
++	INSN_STACK,
++	INSN_BUG,
++	INSN_NOP,
++	INSN_OTHER,
++};
+ 
+ enum op_dest_type {
+ 	OP_DEST_REG,
+@@ -74,7 +75,7 @@ void arch_initial_func_cfi_state(struct
+ 
+ int arch_decode_instruction(struct elf *elf, struct section *sec,
+ 			    unsigned long offset, unsigned int maxlen,
+-			    unsigned int *len, unsigned char *type,
++			    unsigned int *len, enum insn_type *type,
+ 			    unsigned long *immediate, struct stack_op *op);
+ 
+ bool arch_callee_saved_reg(unsigned char reg);
+--- a/tools/objtool/arch/x86/decode.c
++++ b/tools/objtool/arch/x86/decode.c
+@@ -80,7 +80,7 @@ bool arch_callee_saved_reg(unsigned char
+ 
+ int arch_decode_instruction(struct elf *elf, struct section *sec,
+ 			    unsigned long offset, unsigned int maxlen,
+-			    unsigned int *len, unsigned char *type,
++			    unsigned int *len, enum insn_type *type,
+ 			    unsigned long *immediate, struct stack_op *op)
+ {
+ 	struct insn insn;
+--- a/tools/objtool/check.c
++++ b/tools/objtool/check.c
+@@ -295,13 +295,6 @@ static int decode_instructions(struct ob
+ 			if (ret)
+ 				goto err;
+ 
+-			if (!insn->type || insn->type > INSN_LAST) {
+-				WARN_FUNC("invalid instruction type %d",
+-					  insn->sec, insn->offset, insn->type);
+-				ret = -1;
+-				goto err;
+-			}
+-
+ 			hash_add(file->insn_hash, &insn->hash, insn->offset);
+ 			list_add_tail(&insn->list, &file->insn_list);
+ 		}
+--- a/tools/objtool/check.h
++++ b/tools/objtool/check.h
+@@ -42,7 +42,7 @@ struct instruction {
+ 	struct section *sec;
+ 	unsigned long offset;
+ 	unsigned int len;
+-	unsigned char type;
++	enum insn_type type;
+ 	unsigned long immediate;
+ 	bool alt_group, visited, dead_end, ignore, hint, save, restore, ignore_alts;
+ 	bool retpoline_safe;

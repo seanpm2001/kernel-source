@@ -1,0 +1,166 @@
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Fri, 1 Mar 2019 11:15:49 +0100
+Subject: objtool: Add --backtrace support
+Git-commit: 7697eee3ddd768a1fd78c1e687afaa6c5aa5072d
+Patch-mainline: v5.2-rc1
+References: bsc#1202396
+
+For when you want to know the path that reached your fail state:
+
+  $ ./objtool check --no-fp --backtrace arch/x86/lib/usercopy_64.o
+  arch/x86/lib/usercopy_64.o: warning: objtool: .altinstr_replacement+0x3: UACCESS disable without MEMOPs: __clear_user()
+  arch/x86/lib/usercopy_64.o: warning: objtool:   __clear_user()+0x3a: (alt)
+  arch/x86/lib/usercopy_64.o: warning: objtool:   __clear_user()+0x2e: (branch)
+  arch/x86/lib/usercopy_64.o: warning: objtool:   __clear_user()+0x18: (branch)
+  arch/x86/lib/usercopy_64.o: warning: objtool:   .altinstr_replacement+0xffffffffffffffff: (branch)
+  arch/x86/lib/usercopy_64.o: warning: objtool:   __clear_user()+0x5: (alt)
+  arch/x86/lib/usercopy_64.o: warning: objtool:   __clear_user()+0x0: <=== (func)
+
+  0000000000000000 <__clear_user>:
+    0:   e8 00 00 00 00          callq  5 <__clear_user+0x5>
+                 1: R_X86_64_PLT32       __fentry__-0x4
+    5:   90                      nop
+    6:   90                      nop
+    7:   90                      nop
+    8:   48 89 f0                mov    %rsi,%rax
+    b:   48 c1 ee 03             shr    $0x3,%rsi
+    f:   83 e0 07                and    $0x7,%eax
+   12:   48 89 f1                mov    %rsi,%rcx
+   15:   48 85 c9                test   %rcx,%rcx
+   18:   74 0f                   je     29 <__clear_user+0x29>
+   1a:   48 c7 07 00 00 00 00    movq   $0x0,(%rdi)
+   21:   48 83 c7 08             add    $0x8,%rdi
+   25:   ff c9                   dec    %ecx
+   27:   75 f1                   jne    1a <__clear_user+0x1a>
+   29:   48 89 c1                mov    %rax,%rcx
+   2c:   85 c9                   test   %ecx,%ecx
+   2e:   74 0a                   je     3a <__clear_user+0x3a>
+   30:   c6 07 00                movb   $0x0,(%rdi)
+   33:   48 ff c7                inc    %rdi
+   36:   ff c9                   dec    %ecx
+   38:   75 f6                   jne    30 <__clear_user+0x30>
+   3a:   90                      nop
+   3b:   90                      nop
+   3c:   90                      nop
+   3d:   48 89 c8                mov    %rcx,%rax
+   40:   c3                      retq
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Cc: Borislav Petkov <bp@alien8.de>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ tools/objtool/builtin-check.c |  3 ++-
+ tools/objtool/builtin.h       |  2 +-
+ tools/objtool/check.c         | 18 ++++++++++++++----
+ tools/objtool/warn.h          |  8 ++++++++
+ 4 files changed, 25 insertions(+), 6 deletions(-)
+
+diff --git a/tools/objtool/builtin-check.c b/tools/objtool/builtin-check.c
+index 694abc628e9b..99f10c585cbe 100644
+--- a/tools/objtool/builtin-check.c
++++ b/tools/objtool/builtin-check.c
+@@ -29,7 +29,7 @@
+ #include "builtin.h"
+ #include "check.h"
+ 
+-bool no_fp, no_unreachable, retpoline, module;
++bool no_fp, no_unreachable, retpoline, module, backtrace;
+ 
+ static const char * const check_usage[] = {
+ 	"objtool check [<options>] file.o",
+@@ -41,6 +41,7 @@ const struct option check_options[] = {
+ 	OPT_BOOLEAN('u', "no-unreachable", &no_unreachable, "Skip 'unreachable instruction' warnings"),
+ 	OPT_BOOLEAN('r', "retpoline", &retpoline, "Validate retpoline assumptions"),
+ 	OPT_BOOLEAN('m', "module", &module, "Indicates the object will be part of a kernel module"),
++	OPT_BOOLEAN('b', "backtrace", &backtrace, "unwind on error"),
+ 	OPT_END(),
+ };
+ 
+diff --git a/tools/objtool/builtin.h b/tools/objtool/builtin.h
+index 28ff40e19a14..65fd3cc3c98b 100644
+--- a/tools/objtool/builtin.h
++++ b/tools/objtool/builtin.h
+@@ -20,7 +20,7 @@
+ #include <subcmd/parse-options.h>
+ 
+ extern const struct option check_options[];
+-extern bool no_fp, no_unreachable, retpoline, module;
++extern bool no_fp, no_unreachable, retpoline, module, backtrace;
+ 
+ extern int cmd_check(int argc, const char **argv);
+ extern int cmd_orc(int argc, const char **argv);
+diff --git a/tools/objtool/check.c b/tools/objtool/check.c
+index 8d8191f25381..ccc66af5907f 100644
+--- a/tools/objtool/check.c
++++ b/tools/objtool/check.c
+@@ -1885,8 +1885,11 @@ static int validate_branch(struct objtool_file *file, struct instruction *first,
+ 		if (!insn->ignore_alts) {
+ 			list_for_each_entry(alt, &insn->alts, list) {
+ 				ret = validate_branch(file, alt->insn, state);
+-				if (ret)
+-					return 1;
++				if (ret) {
++					if (backtrace)
++						BT_FUNC("(alt)", insn);
++					return ret;
++				}
+ 			}
+ 		}
+ 
+@@ -1933,8 +1936,11 @@ static int validate_branch(struct objtool_file *file, struct instruction *first,
+ 			     insn->jump_dest->func->pfunc == func)) {
+ 				ret = validate_branch(file, insn->jump_dest,
+ 						      state);
+-				if (ret)
+-					return 1;
++				if (ret) {
++					if (backtrace)
++						BT_FUNC("(branch)", insn);
++					return ret;
++				}
+ 
+ 			} else if (func && has_modified_stack_frame(&state)) {
+ 				WARN_FUNC("sibling call from callable instruction with modified stack frame",
+@@ -2005,6 +2011,8 @@ static int validate_unwind_hints(struct objtool_file *file)
+ 	for_each_insn(file, insn) {
+ 		if (insn->hint && !insn->visited) {
+ 			ret = validate_branch(file, insn, state);
++			if (ret && backtrace)
++				BT_FUNC("<=== (hint)", insn);
+ 			warnings += ret;
+ 		}
+ 	}
+@@ -2133,6 +2141,8 @@ static int validate_functions(struct objtool_file *file)
+ 				continue;
+ 
+ 			ret = validate_branch(file, insn, state);
++			if (ret && backtrace)
++				BT_FUNC("<=== (func)", insn);
+ 			warnings += ret;
+ 		}
+ 	}
+diff --git a/tools/objtool/warn.h b/tools/objtool/warn.h
+index afd9f7a05f6d..f4fbb972b611 100644
+--- a/tools/objtool/warn.h
++++ b/tools/objtool/warn.h
+@@ -64,6 +64,14 @@ static inline char *offstr(struct section *sec, unsigned long offset)
+ 	free(_str);					\
+ })
+ 
++#define BT_FUNC(format, insn, ...)			\
++({							\
++	struct instruction *_insn = (insn);		\
++	char *_str = offstr(_insn->sec, _insn->offset); \
++	WARN("  %s: " format, _str, ##__VA_ARGS__);	\
++	free(_str);					\
++})
++
+ #define WARN_ELF(format, ...)				\
+ 	WARN(format ": %s", ##__VA_ARGS__, elf_errmsg(-1))
+ 
+
