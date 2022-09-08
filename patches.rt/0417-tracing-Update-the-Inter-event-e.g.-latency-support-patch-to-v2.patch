@@ -193,7 +193,7 @@ diff --git a/include/linux/tracepoint.h b/include/linux/tracepoint.h
 index 06fe0e9ffcb2..5fa1fb37d587 100644
 --- a/include/linux/tracepoint.h
 +++ b/include/linux/tracepoint.h
-@@ -37,12 +37,9 @@ extern int
+@@ -37,15 +37,12 @@
  tracepoint_probe_register(struct tracepoint *tp, void *probe, void *data);
  extern int
  tracepoint_probe_register_prio(struct tracepoint *tp, void *probe, void *data,
@@ -202,12 +202,15 @@ index 06fe0e9ffcb2..5fa1fb37d587 100644
 -					     void *probe, void *data);
 +			       int prio);
  extern int
+ tracepoint_probe_register_prio_may_exist(struct tracepoint *tp, void *probe, void *data,
+ 					 int prio);
+ extern int
 -tracepoint_probe_unregister(struct tracepoint *tp, void *probe, void *data,
 -			    bool dynamic);
 +tracepoint_probe_unregister(struct tracepoint *tp, void *probe, void *data);
- extern void
- for_each_kernel_tracepoint(void (*fct)(struct tracepoint *tp, void *priv),
- 		void *priv);
+ static inline int
+ tracepoint_probe_register_may_exist(struct tracepoint *tp, void *probe,
+ 				    void *data)
 @@ -212,13 +209,13 @@ extern void syscall_unregfunc(void);
  				   int prio)				\
  	{								\
@@ -3134,13 +3137,12 @@ diff --git a/kernel/tracepoint.c b/kernel/tracepoint.c
 index 12cbc4a144ad..3ce1bf967e6a 100644
 --- a/kernel/tracepoint.c
 +++ b/kernel/tracepoint.c
-@@ -192,14 +192,13 @@ static void *func_remove(struct tracepoint_func **funcs,
-  * Add the probe function to a tracepoint.
+@@ -193,13 +193,13 @@
   */
  static int tracepoint_add_func(struct tracepoint *tp,
--			       struct tracepoint_func *func, int prio,
--			       bool dynamic)
-+			       struct tracepoint_func *func, int prio)
+ 			       struct tracepoint_func *func, int prio,
+-			       bool warn, bool dynamic)
++			       bool warn)
  {
  	struct tracepoint_func *old, *tp_funcs;
  	int ret;
@@ -3202,8 +3204,8 @@ index 12cbc4a144ad..3ce1bf967e6a 100644
  	tp_func.func = probe;
  	tp_func.data = data;
  	tp_func.prio = prio;
--	ret = tracepoint_add_func(tp, &tp_func, prio, dynamic);
-+	ret = tracepoint_add_func(tp, &tp_func, prio);
+-	ret = tracepoint_add_func(tp, &tp_func, prio, true, dynamic);
++	ret = tracepoint_add_func(tp, &tp_func, prio, true);
  	mutex_unlock(&tracepoints_mutex);
  	return ret;
  }

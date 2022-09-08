@@ -24,7 +24,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 
 --- a/include/linux/tracepoint.h
 +++ b/include/linux/tracepoint.h
-@@ -37,9 +37,12 @@ extern int
+@@ -37,12 +37,15 @@
  tracepoint_probe_register(struct tracepoint *tp, void *probe, void *data);
  extern int
  tracepoint_probe_register_prio(struct tracepoint *tp, void *probe, void *data,
@@ -33,12 +33,15 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +extern int dynamic_tracepoint_probe_register(struct tracepoint *tp,
 +					     void *probe, void *data);
  extern int
+ tracepoint_probe_register_prio_may_exist(struct tracepoint *tp, void *probe, void *data,
+ 					 int prio);
+ extern int
 -tracepoint_probe_unregister(struct tracepoint *tp, void *probe, void *data);
 +tracepoint_probe_unregister(struct tracepoint *tp, void *probe, void *data,
 +			    bool dynamic);
- extern void
- for_each_kernel_tracepoint(void (*fct)(struct tracepoint *tp, void *priv),
- 		void *priv);
+ static inline int
+ tracepoint_probe_register_may_exist(struct tracepoint *tp, void *probe,
+ 				    void *data)
 @@ -209,13 +212,13 @@ extern void syscall_unregfunc(void);
  				   int prio)				\
  	{								\
@@ -77,13 +80,12 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	case TRACE_REG_PERF_CLOSE:
 --- a/kernel/tracepoint.c
 +++ b/kernel/tracepoint.c
-@@ -192,12 +192,15 @@ static void *func_remove(struct tracepoi
-  * Add the probe function to a tracepoint.
+@@ -193,12 +193,14 @@
   */
  static int tracepoint_add_func(struct tracepoint *tp,
--			       struct tracepoint_func *func, int prio)
-+			       struct tracepoint_func *func, int prio,
-+			       bool dynamic)
+ 			       struct tracepoint_func *func, int prio,
+-			       bool warn)
++			       bool warn, bool dynamic)
  {
  	struct tracepoint_func *old, *tp_funcs;
  	int ret;
@@ -133,7 +135,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	}
  	rcu_assign_pointer(tp->funcs, tp_funcs);
 @@ -258,7 +267,7 @@ static int tracepoint_remove_func(struct
- }
+ EXPORT_SYMBOL_GPL(tracepoint_probe_register_prio_may_exist);
  
  /**
 - * tracepoint_probe_register -  Connect a probe to a tracepoint
@@ -154,8 +156,8 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	tp_func.func = probe;
  	tp_func.data = data;
  	tp_func.prio = prio;
--	ret = tracepoint_add_func(tp, &tp_func, prio);
-+	ret = tracepoint_add_func(tp, &tp_func, prio, dynamic);
+-	ret = tracepoint_add_func(tp, &tp_func, prio, true);
++	ret = tracepoint_add_func(tp, &tp_func, prio, true, dynamic);
  	mutex_unlock(&tracepoints_mutex);
  	return ret;
  }

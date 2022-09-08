@@ -105,10 +105,10 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
 ---
  arch/x86/include/asm/cpufeatures.h   |    2 +
  arch/x86/include/asm/msr-index.h     |    4 ++
- arch/x86/include/asm/nospec-branch.h |   35 +++++++++++++++---
+ arch/x86/include/asm/nospec-branch.h |   40 +++++++++++++++++----
  arch/x86/kernel/cpu/bugs.c           |   65 ++++++++++++++++++++++++++++++++++-
  arch/x86/kernel/cpu/common.c         |   10 ++++-
- 5 files changed, 106 insertions(+), 10 deletions(-)
+ 5 files changed, 111 insertions(+), 10 deletions(-)
 
 --- a/arch/x86/include/asm/cpufeatures.h
 +++ b/arch/x86/include/asm/cpufeatures.h
@@ -142,11 +142,12 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  #define L1D_FLUSH			BIT(0)	/*
 --- a/arch/x86/include/asm/nospec-branch.h
 +++ b/arch/x86/include/asm/nospec-branch.h
-@@ -138,14 +138,28 @@
+@@ -140,14 +140,29 @@
  #endif
  .endm
  
 +.macro ISSUE_UNBALANCED_RET_GUARD
++	ANNOTATE_INTRA_FUNCTION_CALL
 +	call .Lunbalanced_ret_guard_\@
 +	int3
 +.Lunbalanced_ret_guard_\@:
@@ -172,7 +173,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  .Lskip_rsb_\@:
  #endif
  .endm
-@@ -284,13 +298,20 @@ static inline void vmexit_fill_RSB(void)
+@@ -286,13 +301,24 @@ static inline void vmexit_fill_RSB(void)
  #ifdef CONFIG_RETPOLINE
  	unsigned long loops;
  
@@ -187,6 +188,10 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
 +				   "jmp .Lunbalanced", X86_FEATURE_RSB_VMEXIT_LITE)
 +				   __stringify(__FILL_RETURN_BUFFER(%0,RSB_CLEAR_LOOPS,%1))
 +				   ".Lunbalanced:\n\t"
++				   "999: \n\t"
++				   ".pushsection .discard.intra_function_calls\n\t"
++				   ".long 999b\n\t"
++				   ".popsection\n\t"
 +				   "call .Lunbalanced_ret_guard\n\t"
 +				   "int3\n\t"
 +				   ".Lunbalanced_ret_guard:\n\t"

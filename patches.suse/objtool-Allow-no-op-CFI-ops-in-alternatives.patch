@@ -1,0 +1,59 @@
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Fri, 8 May 2020 12:34:33 +0200
+Subject: objtool: Allow no-op CFI ops in alternatives
+Git-commit: ab3852ab5cb8fd2e2c5bfa176e5f953353836907
+Patch-mainline: v5.8-rc1
+References: bsc#1202396
+
+Randy reported a false-positive:
+
+  arch/x86/hyperv/hv_apic.o: warning: objtool: hv_apic_write()+0x25: alternative modifies stack
+
+What happens is that:
+
+	alternative_io("movl %0, %P1", "xchgl %0, %P1", X86_BUG_11AP,
+ 13d:   89 9d 00 d0 7f ff       mov    %ebx,-0x803000(%rbp)
+
+decodes to an instruction with CFI-ops because it modifies RBP.
+However, due to this being a !frame-pointer build, that should not in
+fact change the CFI state.
+
+So instead of dis-allowing any CFI-op, verify the op would've actually
+changed the CFI state.
+
+Fixes: 7117f16bf460 ("objtool: Fix ORC vs alternatives")
+Reported-by: Randy Dunlap <rdunlap@infradead.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Acked-by: Randy Dunlap <rdunlap@infradead.org>
+Tested-by: Randy Dunlap <rdunlap@infradead.org>
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ tools/objtool/check.c |   11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+--- a/tools/objtool/check.c
++++ b/tools/objtool/check.c
+@@ -1842,16 +1842,17 @@ static int handle_insn_ops(struct instru
+ 	struct stack_op *op;
+ 
+ 	list_for_each_entry(op, &insn->stack_ops, list) {
++		struct cfi_state old_cfi = state->cfi;
+ 		int res;
+ 
+-		if (insn->alt_group) {
+-			WARN_FUNC("alternative modifies stack", insn->sec, insn->offset);
+-			return -1;
+-		}
+-
+ 		res = update_cfi_state(insn, &state->cfi, op);
+ 		if (res)
+ 			return res;
++
++		if (insn->alt_group && memcmp(&state->cfi, &old_cfi, sizeof(struct cfi_state))) {
++			WARN_FUNC("alternative modifies stack", insn->sec, insn->offset);
++			return -1;
++		}
+ 	}
+ 
+ 	return 0;

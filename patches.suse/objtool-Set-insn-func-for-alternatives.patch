@@ -1,0 +1,38 @@
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Mon, 25 Feb 2019 10:31:24 +0100
+Subject: objtool: Set insn->func for alternatives
+Git-commit: a4d09dde9093a04a9b48fb9e5ef3177bdfaff199
+Patch-mainline: v5.2-rc1
+References: bsc#1202396
+
+In preparation of function attributes, we need each instruction to
+have a valid link back to its function.
+
+Therefore make sure we set the function association for alternative
+instruction sequences; they are, after all, still part of the function.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Cc: Borislav Petkov <bp@alien8.de>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ tools/objtool/check.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/tools/objtool/check.c b/tools/objtool/check.c
+index 110ea3d84772..950d0f62d22b 100644
+--- a/tools/objtool/check.c
++++ b/tools/objtool/check.c
+@@ -695,6 +695,7 @@ static int handle_group_alt(struct objtool_file *file,
+ 		last_new_insn = insn;
+ 
+ 		insn->ignore = orig_insn->ignore_alts;
++		insn->func = orig_insn->func;
+ 
+ 		if (insn->type != INSN_JUMP_CONDITIONAL &&
+ 		    insn->type != INSN_JUMP_UNCONDITIONAL)
+
