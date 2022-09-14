@@ -1,0 +1,72 @@
+From: Shyam Prasad N <sprasad@microsoft.com>
+Date: Tue, 8 Feb 2022 17:10:02 +0000
+Subject: [PATCH] cifs: mark sessions for reconnection in helper function
+Git-commit: 2a05137a0575b7d1006bdf4c1beeee9e391e22a0
+References: bsc#1190317
+Patch-mainline: v5.17-rc4
+
+Today we have the code to mark connections and sessions
+(and tcons) for reconnect clubbed with the code to close
+the socket and abort all mids in the same function.
+
+Sometimes, we need to mark connections and sessions
+outside cifsd thread. So as a part of this change, I'm
+splitting this function into two different functions and
+calling them one after the other in cifs_reconnect.
+
+Signed-off-by: Shyam Prasad N <sprasad@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/connect.c |   19 ++++++++++++++-----
+ 1 file changed, 14 insertions(+), 5 deletions(-)
+
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -445,11 +445,6 @@ static void cifs_mark_tcp_ses_conns_for_
+ {
+ 	struct cifs_ses *ses;
+ 	struct cifs_tcon *tcon;
+-	struct mid_q_entry *mid, *nmid;
+-	struct list_head retry_list;
+-
+-	server->maxBuf = 0;
+-	server->max_read = 0;
+ 
+ 	cifs_dbg(FYI, "Mark tcp session as need reconnect\n");
+ 	trace_smb3_reconnect(server->CurrentMid, server->hostname);
+@@ -468,6 +463,16 @@ static void cifs_mark_tcp_ses_conns_for_
+ 			ses->tcon_ipc->need_reconnect = true;
+ 	}
+ 	spin_unlock(&cifs_tcp_ses_lock);
++}
++
++static void
++cifs_abort_connection(struct TCP_Server_Info *server)
++{
++	struct mid_q_entry *mid, *nmid;
++	struct list_head retry_list;
++
++	server->maxBuf = 0;
++	server->max_read = 0;
+ 
+ 	/* do not want to be sending data on a socket we are freeing */
+ 	cifs_dbg(FYI, "%s: tearing down socket\n", __func__);
+@@ -548,6 +553,8 @@ static int __cifs_reconnect(struct TCP_S
+ 
+ 	cifs_mark_tcp_ses_conns_for_reconnect(server);
+ 
++	cifs_abort_connection(server);
++
+ 	do {
+ 		try_to_freeze();
+ 		mutex_lock(&server->srv_mutex);
+@@ -664,6 +671,8 @@ static int reconnect_dfs_server(struct T
+ 
+ 	cifs_mark_tcp_ses_conns_for_reconnect(server);
+ 
++	cifs_abort_connection(server);
++
+ 	do {
+ 		try_to_freeze();
+ 		mutex_lock(&server->srv_mutex);
