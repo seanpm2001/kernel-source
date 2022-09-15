@@ -1,0 +1,89 @@
+From: Thiago Rafael Becker <trbecker@gmail.com>
+Date: Fri, 17 Dec 2021 15:20:22 -0300
+Subject: [PATCH] cifs: sanitize multiple delimiters in prepath
+Git-commit: a31080899d5fdafcccf7f39dd214a814a2c82626
+References: bsc#1190317
+Patch-mainline: v5.16-rc6
+
+[ ematsumiya: move the function to connect.c and call it from
+  cifs_parse_devname() since cifs.ko in SLE12-SP5 doesn't have
+  fs_context infra. Also add an extra check for !pos in cifs_parse_devname() ]
+
+mount.cifs can pass a device with multiple delimiters in it. This will
+cause rename(2) to fail with ENOENT.
+
+V2:
+  - Make sanitize_path more readable.
+  - Fix multiple delimiters between UNC and prepath.
+  - Avoid a memory leak if a bad user starts putting a lot of delimiters
+    in the path on purpose.
+
+BugLink: https://bugzilla.redhat.com/show_bug.cgi?id=2031200
+Fixes: 24e0a1eff9e2 ("cifs: switch to new mount api")
+Cc: stable@vger.kernel.org # 5.11+
+Acked-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Thiago Rafael Becker <trbecker@gmail.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/connect.c |   40 ++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 38 insertions(+), 2 deletions(-)
+
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -1610,6 +1610,42 @@ cifs_parse_smb_version(char *value, stru
+ }
+ 
+ /*
++ * Remove duplicate path delimiters. Windows is supposed to do that
++ * but there are some bugs that prevent rename from working if there are
++ * multiple delimiters.
++ *
++ * Returns a sanitized duplicate of @path. The caller is responsible for
++ * cleaning up the original.
++ */
++#define IS_DELIM(c) ((c) == '/' || (c) == '\\')
++static char *sanitize_path(char *path)
++{
++	char *cursor1 = path, *cursor2 = path;
++
++	/* skip all prepended delimiters */
++	while (IS_DELIM(*cursor1))
++		cursor1++;
++
++	/* copy the first letter */
++	*cursor2 = *cursor1;
++
++	/* copy the remainder... */
++	while (*(cursor1++)) {
++		/* ... skipping all duplicated delimiters */
++		if (IS_DELIM(*cursor1) && IS_DELIM(*cursor2))
++			continue;
++		*(++cursor2) = *cursor1;
++	}
++
++	/* if the last character is a delimiter, skip it */
++	if (IS_DELIM(*(cursor2 - 1)))
++		cursor2--;
++
++	*(cursor2) = '\0';
++	return kstrdup(path, GFP_KERNEL);
++}
++
++/*
+  * Parse a devname into substrings and populate the vol->UNC and vol->prepath
+  * fields with the result. Returns 0 on success and an error otherwise.
+  */
+@@ -1658,10 +1694,10 @@ cifs_parse_devname(const char *devname,
+ 		pos++;
+ 
+ 	/* If pos is NULL then no prepath */
+-	if (!*pos)
++	if (!*pos || !pos)
+ 		return 0;
+ 
+-	vol->prepath = kstrdup(pos, GFP_KERNEL);
++	vol->prepath = sanitize_path(pos);
+ 	if (!vol->prepath)
+ 		return -ENOMEM;
+ 
