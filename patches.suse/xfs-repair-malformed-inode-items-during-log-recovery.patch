@@ -11,14 +11,14 @@ about inode items being too large.
 
 Signed-off-by: Jeff Mahoney <jeffm@suse.com>
 ---
- fs/xfs/libxfs/xfs_log_format.h |   56 ++++++++++++++++++++++++++++++++++
+ fs/xfs/libxfs/xfs_log_format.h |   56 +++++++++++++++++++++++++++++
  fs/xfs/xfs_log_priv.h          |    3 +
- fs/xfs/xfs_log_recover.c       |   66 ++++++++++++++++++++++++++++++++++-------
- 3 files changed, 114 insertions(+), 11 deletions(-)
+ fs/xfs/xfs_log_recover.c       |   79 +++++++++++++++++++++++++++++++++++------
+ 3 files changed, 127 insertions(+), 11 deletions(-)
 
 --- a/fs/xfs/libxfs/xfs_log_format.h
 +++ b/fs/xfs/libxfs/xfs_log_format.h
-@@ -430,6 +430,62 @@ static inline uint xfs_log_dinode_size(i
+@@ -446,6 +446,62 @@ static inline uint xfs_log_dinode_size(i
  	return offsetof(struct xfs_log_dinode, di_next_unlinked);
  }
  
@@ -63,7 +63,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
 +	uint8_t		di_pad2[12];	/* more padding for future expansion */
 +
 +	/* fields only written to during inode creation */
-+	xfs_ictimestamp_t di_crtime;	/* time created */
++	struct xfs_legacy_ictimestamp di_crtime;	/* time created */
 +	xfs_ino_t	di_ino;		/* inode number */
 +	uuid_t		di_uuid;	/* UUID of the filesystem */
 +
@@ -95,10 +95,23 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  #define XLOG_BUF_CANCEL_BUCKET(log, blkno) \
 --- a/fs/xfs/xfs_log_recover.c
 +++ b/fs/xfs/xfs_log_recover.c
-@@ -2968,6 +2968,46 @@ out_free_ip:
+@@ -2968,6 +2968,59 @@ out_free_ip:
  	return error;
  }
  
++static xfs_ictimestamp_t
++repair_malformed_inode_item_ts(struct xfs_legacy_ictimestamp *ts)
++{
++	struct xfs_legacy_ictimestamp	*lits;
++	xfs_ictimestamp_t		its;
++
++	lits = (struct xfs_legacy_ictimestamp *)&its;
++	lits->t_sec = ts->t_sec;
++	lits->t_nsec = ts->t_nsec;
++
++	return its;
++}
++
 +/*
 + * SUSE kernels 3.12.74-60.64.40 through 3.12.74-60.64.99 had a regression
 + * where we would write out malformed inode items that would in turn
@@ -128,8 +141,8 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
 +		fixed.di_changecount	= mal->di_changecount;
 +		fixed.di_lsn		= mal->di_lsn;
 +		fixed.di_flags2		= mal->di_flags2;
-+		fixed.di_crtime.t_sec	= mal->di_crtime.t_sec;
-+		fixed.di_crtime.t_nsec	= mal->di_crtime.t_nsec;
++		fixed.di_crtime		=
++			repair_malformed_inode_item_ts(&mal->di_crtime);
 +		fixed.di_ino		= mal->di_ino;
 +		memcpy(&fixed.di_pad2, mal->di_pad2, sizeof(fixed.di_pad2));
 +		uuid_copy(&fixed.di_uuid, &mal->di_uuid);
@@ -142,7 +155,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  STATIC int
  xlog_recover_inode_pass2(
  	struct xlog			*log,
-@@ -2986,7 +3026,7 @@ xlog_recover_inode_pass2(
+@@ -2986,7 +3039,7 @@ xlog_recover_inode_pass2(
  	int			attr_index;
  	uint			fields;
  	struct xfs_log_dinode	*ldip;
@@ -151,7 +164,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  	int			need_free = 0;
  
  	if (item->ri_buf[0].i_len == sizeof(xfs_inode_log_format_t)) {
-@@ -3049,6 +3089,20 @@ xlog_recover_inode_pass2(
+@@ -3049,6 +3102,20 @@ xlog_recover_inode_pass2(
  		goto out_release;
  	}
  
@@ -172,7 +185,7 @@ Signed-off-by: Jeff Mahoney <jeffm@suse.com>
  	/*
  	 * If the inode has an LSN in it, recover the inode only if it's less
  	 * than the lsn of the transaction we are replaying. Note: we still
-@@ -3141,16 +3195,6 @@ xlog_recover_inode_pass2(
+@@ -3141,16 +3208,6 @@ xlog_recover_inode_pass2(
  		error = -EFSCORRUPTED;
  		goto out_release;
  	}
