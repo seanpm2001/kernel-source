@@ -3,7 +3,7 @@ Date: Tue, 14 Jun 2022 23:15:51 +0200
 Subject: x86/bugs: Enable STIBP for JMP2RET
 Git-commit: e8ec1b6e08a2102d8755ccb06fa26d540f26a2fa
 Patch-mainline: v5.19-rc4
-References: bsc#1199657 CVE-2022-29900 CVE-2022-29901
+References: bsc#1199657 CVE-2022-29900 CVE-2022-29901 bsc#1203271
 
 For untrained return thunks to be fully effective, STIBP must be enabled
 or SMT disabled.
@@ -20,7 +20,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
 
 --- a/arch/x86/kernel/cpu/bugs.c
 +++ b/arch/x86/kernel/cpu/bugs.c
-@@ -732,19 +732,34 @@ static enum retbleed_mitigation retbleed
+@@ -734,19 +734,34 @@ static enum retbleed_mitigation retbleed
  static enum retbleed_mitigation_cmd retbleed_cmd __ro_after_init =
  	RETBLEED_CMD_AUTO;
  
@@ -32,7 +32,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  		return -EINVAL;
  
 -	if (!strcmp(str, "off"))
--		;
+-		retbleed_cmd = RETBLEED_CMD_OFF;
 -	else if (!strcmp(str, "auto"))
 -		retbleed_cmd = RETBLEED_CMD_AUTO;
 -	else if (!strcmp(str, "unret"))
@@ -47,7 +47,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
 +		}
 +
 +		if (!strcmp(str, "off")) {
-+			return -EINVAL;
++			retbleed_cmd = RETBLEED_CMD_OFF;
 +		} else if (!strcmp(str, "auto")) {
 +			retbleed_cmd = RETBLEED_CMD_AUTO;
 +		} else if (!strcmp(str, "unret")) {
@@ -63,7 +63,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  
  	return 0;
  }
-@@ -790,6 +805,10 @@ static void __init retbleed_select_mitig
+@@ -792,6 +807,10 @@ static void __init retbleed_select_mitig
  		setup_force_cpu_cap(X86_FEATURE_RETHUNK);
  		setup_force_cpu_cap(X86_FEATURE_UNRET);
  
@@ -74,7 +74,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  		if (boot_cpu_data.x86_vendor != X86_VENDOR_AMD &&
  		    boot_cpu_data.x86_vendor != X86_VENDOR_HYGON)
  			pr_err(RETBLEED_UNTRAIN_MSG);
-@@ -1040,6 +1059,13 @@ spectre_v2_user_select_mitigation(enum s
+@@ -1026,6 +1045,13 @@ spectre_v2_user_select_mitigation(enum s
  	if (!boot_cpu_has(X86_FEATURE_STIBP))
  		mode = SPECTRE_V2_USER_NONE;
  
@@ -88,7 +88,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  	spectre_v2_user_stibp = mode;
  
  set_mode:
-@@ -2005,10 +2031,18 @@ static ssize_t srbds_show_state(char *bu
+@@ -1979,10 +2005,18 @@ static ssize_t srbds_show_state(char *bu
  
  static ssize_t retbleed_show_state(char *buf)
  {
@@ -113,7 +113,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  }
 --- a/Documentation/admin-guide/kernel-parameters.txt
 +++ b/Documentation/admin-guide/kernel-parameters.txt
-@@ -4374,10 +4374,16 @@
+@@ -4305,10 +4305,16 @@
  			Speculative Code Execution with Return Instructions)
  			vulnerability.
  
