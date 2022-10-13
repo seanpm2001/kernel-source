@@ -1,0 +1,75 @@
+From 57c8454f392dca11a46ac2a59d4bbb11941affd8 Mon Sep 17 00:00:00 2001
+From: Yin Fengwei <fengwei.yin@intel.com>
+Date: Thu, 24 Oct 2019 15:04:20 +0800
+Subject: [PATCH] ACPI: processor_idle: Skip dummy wait if kernel is in guest
+
+References: bnc#1203802
+Patch-mainline: v5.5-rc1
+Git-commit: fa583f71a99c85e52781ed877c82c8757437b680
+
+In function acpi_idle_do_entry(), an ioport access is used for
+dummy wait to guarantee hardware behavior. But it could trigger
+unnecessary VMexit if kernel is running as guest in virtualization
+environment.
+
+If it's in virtualization environment, the deeper C state enter
+operation (inb()) will trap to hypervisor. It's not needed to do
+dummy wait after the inb() call. So we could just remove the
+dummy io port access to avoid unnecessary VMexit.
+
+And keep dummy io port access to maintain timing for native
+environment.
+
+Signed-off-by: Yin Fengwei <fengwei.yin@intel.com>
+Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+---
+ drivers/acpi/processor_idle.c | 21 +++++++++++++++------
+ 1 file changed, 15 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/acpi/processor_idle.c b/drivers/acpi/processor_idle.c
+index 15d17bc6bae3..25cbada18e7c 100644
+--- a/drivers/acpi/processor_idle.c
++++ b/drivers/acpi/processor_idle.c
+@@ -681,6 +681,19 @@ static int acpi_idle_bm_check(void)
+ 	return bm_status;
+ }
+ 
++static void wait_for_freeze(void)
++{
++#ifdef	CONFIG_X86
++	/* No delay is needed if we are in guest */
++	if (boot_cpu_has(X86_FEATURE_HYPERVISOR))
++		return;
++#endif
++	/* Dummy wait op - must do something useless after P_LVL2 read
++	   because chipsets cannot guarantee that STPCLK# signal
++	   gets asserted in time to freeze execution properly. */
++	inl(acpi_gbl_FADT.xpm_timer_block.address);
++}
++
+ /**
+  * acpi_idle_do_entry - enter idle state using the appropriate method
+  * @cx: cstate data
+@@ -697,10 +710,7 @@ static void __cpuidle acpi_idle_do_entry(struct acpi_processor_cx *cx)
+ 	} else {
+ 		/* IO port based C-state */
+ 		inb(cx->address);
+-		/* Dummy wait op - must do something useless after P_LVL2 read
+-		   because chipsets cannot guarantee that STPCLK# signal
+-		   gets asserted in time to freeze execution properly. */
+-		inl(acpi_gbl_FADT.xpm_timer_block.address);
++		wait_for_freeze();
+ 	}
+ }
+ 
+@@ -721,8 +731,7 @@ static int acpi_idle_play_dead(struct cpuidle_device *dev, int index)
+ 			safe_halt();
+ 		else if (cx->entry_method == ACPI_CSTATE_SYSTEMIO) {
+ 			inb(cx->address);
+-			/* See comment in acpi_idle_do_entry() */
+-			inl(acpi_gbl_FADT.xpm_timer_block.address);
++			wait_for_freeze();
+ 		} else
+ 			return -ENODEV;
+ 	}
