@@ -1,0 +1,223 @@
+From 5a0bb066f60fa02f453d7721844eae59f505c06e Mon Sep 17 00:00:00 2001
+From: "Darrick J. Wong" <darrick.wong@oracle.com>
+Date: Mon, 24 Aug 2020 15:15:46 -0700
+Subject: [PATCH] xfs: redefine xfs_timestamp_t
+Git-commit: 5a0bb066f60fa02f453d7721844eae59f505c06e
+Patch-mainline: v5.10-rc1
+References: bsc#1203387
+
+Redefine xfs_timestamp_t as a __be64 typedef in preparation for the
+bigtime functionality.  Preserve the legacy structure format so that we
+can let the compiler take care of masking and shifting.
+
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Gao Xiang <hsiangkao@redhat.com>
+Reviewed-by: Dave Chinner <dchinner@redhat.com>
+Acked-by: Anthony Iliopoulos <ailiop@suse.com>
+
+---
+ fs/xfs/libxfs/xfs_format.h    | 10 +++--
+ fs/xfs/libxfs/xfs_inode_buf.c | 81 ++++++++++++++++++++++++-----------
+ fs/xfs/libxfs/xfs_inode_buf.h |  2 +
+ fs/xfs/xfs_ondisk.h           |  3 +-
+ 4 files changed, 68 insertions(+), 28 deletions(-)
+
+diff --git a/fs/xfs/libxfs/xfs_format.h b/fs/xfs/libxfs/xfs_format.h
+index 2a4f637014fd..f9d41590bc82 100644
+--- a/fs/xfs/libxfs/xfs_format.h
++++ b/fs/xfs/libxfs/xfs_format.h
+@@ -859,12 +859,16 @@ typedef struct xfs_agfl {
+  * seconds and nanoseconds; time zero is the Unix epoch, Jan  1 00:00:00 UTC
+  * 1970, which means that the timestamp epoch is the same as the Unix epoch.
+  * Therefore, the ondisk min and max defined here can be used directly to
+- * constrain the incore timestamps on a Unix system.
++ * constrain the incore timestamps on a Unix system.  Note that we actually
++ * encode a __be64 value on disk.
+  */
+-typedef struct xfs_timestamp {
++typedef __be64 xfs_timestamp_t;
++
++/* Legacy timestamp encoding format. */
++struct xfs_legacy_timestamp {
+ 	__be32		t_sec;		/* timestamp seconds */
+ 	__be32		t_nsec;		/* timestamp nanoseconds */
+-} xfs_timestamp_t;
++};
+ 
+ /*
+  * Smallest possible ondisk seconds value with traditional timestamps.  This
+diff --git a/fs/xfs/libxfs/xfs_inode_buf.c b/fs/xfs/libxfs/xfs_inode_buf.c
+index 0c7744166c60..89c597ccf2cd 100644
+--- a/fs/xfs/libxfs/xfs_inode_buf.c
++++ b/fs/xfs/libxfs/xfs_inode_buf.c
+@@ -209,6 +209,21 @@ xfs_imap_to_bp(
+ 	return 0;
+ }
+ 
++/* Convert an ondisk timestamp to an incore timestamp. */
++struct timespec64
++xfs_inode_from_disk_ts(
++	const xfs_timestamp_t		ts)
++{
++	struct timespec64		tv;
++	struct xfs_legacy_timestamp	*lts;
++
++	lts = (struct xfs_legacy_timestamp *)&ts;
++	tv.tv_sec = (int)be32_to_cpu(lts->t_sec);
++	tv.tv_nsec = (int)be32_to_cpu(lts->t_nsec);
++
++	return tv;
++}
++
+ void
+ xfs_inode_from_disk(
+ 	struct xfs_inode	*ip,
+@@ -245,12 +260,9 @@ xfs_inode_from_disk(
+ 	 * a time before epoch is converted to a time long after epoch
+ 	 * on 64 bit systems.
+ 	 */
+-	inode->i_atime.tv_sec = (int)be32_to_cpu(from->di_atime.t_sec);
+-	inode->i_atime.tv_nsec = (int)be32_to_cpu(from->di_atime.t_nsec);
+-	inode->i_mtime.tv_sec = (int)be32_to_cpu(from->di_mtime.t_sec);
+-	inode->i_mtime.tv_nsec = (int)be32_to_cpu(from->di_mtime.t_nsec);
+-	inode->i_ctime.tv_sec = (int)be32_to_cpu(from->di_ctime.t_sec);
+-	inode->i_ctime.tv_nsec = (int)be32_to_cpu(from->di_ctime.t_nsec);
++	inode->i_atime = xfs_inode_from_disk_ts(from->di_atime);
++	inode->i_mtime = xfs_inode_from_disk_ts(from->di_mtime);
++	inode->i_ctime = xfs_inode_from_disk_ts(from->di_ctime);
+ 	inode->i_generation = be32_to_cpu(from->di_gen);
+ 	inode->i_mode = be16_to_cpu(from->di_mode);
+ 
+@@ -268,13 +280,27 @@ xfs_inode_from_disk(
+ 	if (to->di_version == 3) {
+ 		inode_set_iversion_queried(inode,
+ 					   be64_to_cpu(from->di_changecount));
+-		to->di_crtime.tv_sec = be32_to_cpu(from->di_crtime.t_sec);
+-		to->di_crtime.tv_nsec = be32_to_cpu(from->di_crtime.t_nsec);
++		to->di_crtime = xfs_inode_from_disk_ts(from->di_crtime);
+ 		to->di_flags2 = be64_to_cpu(from->di_flags2);
+ 		to->di_cowextsize = be32_to_cpu(from->di_cowextsize);
+ 	}
+ }
+ 
++/* Convert an incore timestamp to an ondisk timestamp. */
++static inline xfs_timestamp_t
++xfs_inode_to_disk_ts(
++	const struct timespec64		tv)
++{
++	struct xfs_legacy_timestamp	*lts;
++	xfs_timestamp_t			ts;
++
++	lts = (struct xfs_legacy_timestamp *)&ts;
++	lts->t_sec = cpu_to_be32(tv.tv_sec);
++	lts->t_nsec = cpu_to_be32(tv.tv_nsec);
++
++	return ts;
++}
++
+ void
+ xfs_inode_to_disk(
+ 	struct xfs_inode	*ip,
+@@ -295,12 +321,9 @@ xfs_inode_to_disk(
+ 	to->di_projid_hi = cpu_to_be16(from->di_projid_hi);
+ 
+ 	memset(to->di_pad, 0, sizeof(to->di_pad));
+-	to->di_atime.t_sec = cpu_to_be32(inode->i_atime.tv_sec);
+-	to->di_atime.t_nsec = cpu_to_be32(inode->i_atime.tv_nsec);
+-	to->di_mtime.t_sec = cpu_to_be32(inode->i_mtime.tv_sec);
+-	to->di_mtime.t_nsec = cpu_to_be32(inode->i_mtime.tv_nsec);
+-	to->di_ctime.t_sec = cpu_to_be32(inode->i_ctime.tv_sec);
+-	to->di_ctime.t_nsec = cpu_to_be32(inode->i_ctime.tv_nsec);
++	to->di_atime = xfs_inode_to_disk_ts(inode->i_atime);
++	to->di_mtime = xfs_inode_to_disk_ts(inode->i_mtime);
++	to->di_ctime = xfs_inode_to_disk_ts(inode->i_ctime);
+ 	to->di_nlink = cpu_to_be32(inode->i_nlink);
+ 	to->di_gen = cpu_to_be32(inode->i_generation);
+ 	to->di_mode = cpu_to_be16(inode->i_mode);
+@@ -318,8 +341,7 @@ xfs_inode_to_disk(
+ 
+ 	if (from->di_version == 3) {
+ 		to->di_changecount = cpu_to_be64(inode_peek_iversion(inode));
+-		to->di_crtime.t_sec = cpu_to_be32(from->di_crtime.tv_sec);
+-		to->di_crtime.t_nsec = cpu_to_be32(from->di_crtime.tv_nsec);
++		to->di_crtime = xfs_inode_to_disk_ts(from->di_crtime);
+ 		to->di_flags2 = cpu_to_be64(from->di_flags2);
+ 		to->di_cowextsize = cpu_to_be32(from->di_cowextsize);
+ 		to->di_ino = cpu_to_be64(ip->i_ino);
+@@ -332,6 +354,21 @@ xfs_inode_to_disk(
+ 	}
+ }
+ 
++/* Convert a log timestamp to an ondisk timestamp. */
++static inline xfs_timestamp_t
++xfs_log_dinode_to_disk_ts(
++	const xfs_ictimestamp_t		its)
++{
++	struct xfs_legacy_timestamp	*lts;
++	xfs_timestamp_t			ts;
++
++	lts = (struct xfs_legacy_timestamp *)&ts;
++	lts->t_sec = cpu_to_be32(its.t_sec);
++	lts->t_nsec = cpu_to_be32(its.t_nsec);
++
++	return ts;
++}
++
+ void
+ xfs_log_dinode_to_disk(
+ 	struct xfs_log_dinode	*from,
+@@ -349,12 +386,9 @@ xfs_log_dinode_to_disk(
+ 	to->di_projid_hi = cpu_to_be16(from->di_projid_hi);
+ 	memcpy(to->di_pad, from->di_pad, sizeof(to->di_pad));
+ 
+-	to->di_atime.t_sec = cpu_to_be32(from->di_atime.t_sec);
+-	to->di_atime.t_nsec = cpu_to_be32(from->di_atime.t_nsec);
+-	to->di_mtime.t_sec = cpu_to_be32(from->di_mtime.t_sec);
+-	to->di_mtime.t_nsec = cpu_to_be32(from->di_mtime.t_nsec);
+-	to->di_ctime.t_sec = cpu_to_be32(from->di_ctime.t_sec);
+-	to->di_ctime.t_nsec = cpu_to_be32(from->di_ctime.t_nsec);
++	to->di_atime = xfs_log_dinode_to_disk_ts(from->di_atime);
++	to->di_mtime = xfs_log_dinode_to_disk_ts(from->di_mtime);
++	to->di_ctime = xfs_log_dinode_to_disk_ts(from->di_ctime);
+ 
+ 	to->di_size = cpu_to_be64(from->di_size);
+ 	to->di_nblocks = cpu_to_be64(from->di_nblocks);
+@@ -370,8 +404,7 @@ xfs_log_dinode_to_disk(
+ 
+ 	if (from->di_version == 3) {
+ 		to->di_changecount = cpu_to_be64(from->di_changecount);
+-		to->di_crtime.t_sec = cpu_to_be32(from->di_crtime.t_sec);
+-		to->di_crtime.t_nsec = cpu_to_be32(from->di_crtime.t_nsec);
++		to->di_crtime = xfs_log_dinode_to_disk_ts(from->di_crtime);
+ 		to->di_flags2 = cpu_to_be64(from->di_flags2);
+ 		to->di_cowextsize = cpu_to_be32(from->di_cowextsize);
+ 		to->di_ino = cpu_to_be64(from->di_ino);
+diff --git a/fs/xfs/libxfs/xfs_inode_buf.h b/fs/xfs/libxfs/xfs_inode_buf.h
+index 91a80c1258ff..f78e4ebe2d88 100644
+--- a/fs/xfs/libxfs/xfs_inode_buf.h
++++ b/fs/xfs/libxfs/xfs_inode_buf.h
+@@ -83,4 +83,6 @@ void	xfs_inobp_check(struct xfs_mount *, struct xfs_buf *);
+ bool	xfs_dinode_verify(struct xfs_mount *mp, xfs_ino_t ino,
+ 			  struct xfs_dinode *dip);
+ 
++struct timespec64 xfs_inode_from_disk_ts(const xfs_timestamp_t ts);
++
+ #endif	/* __XFS_INODE_BUF_H__ */
+diff --git a/fs/xfs/xfs_ondisk.h b/fs/xfs/xfs_ondisk.h
+index 4d1f489f3353..6d726cc42a7c 100644
+--- a/fs/xfs/xfs_ondisk.h
++++ b/fs/xfs/xfs_ondisk.h
+@@ -53,7 +53,8 @@ xfs_check_ondisk_structs(void)
+ 	XFS_CHECK_STRUCT_SIZE(struct xfs_refcount_rec,		12);
+ 	XFS_CHECK_STRUCT_SIZE(struct xfs_rmap_key,		20);
+ 	XFS_CHECK_STRUCT_SIZE(struct xfs_rmap_rec,		24);
+-	XFS_CHECK_STRUCT_SIZE(struct xfs_timestamp,		8);
++	XFS_CHECK_STRUCT_SIZE(xfs_timestamp_t,			8);
++	XFS_CHECK_STRUCT_SIZE(struct xfs_legacy_timestamp,	8);
+ 	XFS_CHECK_STRUCT_SIZE(xfs_alloc_key_t,			8);
+ 	XFS_CHECK_STRUCT_SIZE(xfs_alloc_ptr_t,			4);
+ 	XFS_CHECK_STRUCT_SIZE(xfs_alloc_rec_t,			8);
+-- 
+2.35.3
+
