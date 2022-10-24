@@ -1,0 +1,134 @@
+From 8d2d878db897d7501aaa2f72e10bb28295bb5498 Mon Sep 17 00:00:00 2001
+From: Christoph Hellwig <hch@lst.de>
+Date: Tue, 12 Nov 2019 08:20:42 -0800
+Subject: [PATCH] xfs: use a struct timespec64 for the in-core crtime
+Git-commit: 8d2d878db897d7501aaa2f72e10bb28295bb5498
+Patch-mainline: v5.5-rc1
+References: bsc#1203387
+
+struct xfs_icdinode is purely an in-memory data structure, so don't use
+a log on-disk structure for it.  This simplifies the code a bit, and
+also reduces our include hell slightly.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Darrick J. Wong <darrick.wong@oracle.com>
+[darrick: fix a minor indenting problem in xfs_trans_ichgtime]
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Acked-by: Anthony Iliopoulos <ailiop@suse.com>
+
+---
+ fs/xfs/libxfs/xfs_inode_buf.c | 8 ++++----
+ fs/xfs/libxfs/xfs_inode_buf.h | 2 +-
+ fs/xfs/xfs_inode.c            | 3 +--
+ fs/xfs/xfs_inode_item.c       | 4 ++--
+ fs/xfs/xfs_iops.c             | 3 +--
+ fs/xfs/xfs_trans_inode.c      | 4 +++-
+ 6 files changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/fs/xfs/libxfs/xfs_inode_buf.c b/fs/xfs/libxfs/xfs_inode_buf.c
+index aa2a77710a4d..0c7744166c60 100644
+--- a/fs/xfs/libxfs/xfs_inode_buf.c
++++ b/fs/xfs/libxfs/xfs_inode_buf.c
+@@ -268,8 +268,8 @@ xfs_inode_from_disk(
+ 	if (to->di_version == 3) {
+ 		inode_set_iversion_queried(inode,
+ 					   be64_to_cpu(from->di_changecount));
+-		to->di_crtime.t_sec = be32_to_cpu(from->di_crtime.t_sec);
+-		to->di_crtime.t_nsec = be32_to_cpu(from->di_crtime.t_nsec);
++		to->di_crtime.tv_sec = be32_to_cpu(from->di_crtime.t_sec);
++		to->di_crtime.tv_nsec = be32_to_cpu(from->di_crtime.t_nsec);
+ 		to->di_flags2 = be64_to_cpu(from->di_flags2);
+ 		to->di_cowextsize = be32_to_cpu(from->di_cowextsize);
+ 	}
+@@ -318,8 +318,8 @@ xfs_inode_to_disk(
+ 
+ 	if (from->di_version == 3) {
+ 		to->di_changecount = cpu_to_be64(inode_peek_iversion(inode));
+-		to->di_crtime.t_sec = cpu_to_be32(from->di_crtime.t_sec);
+-		to->di_crtime.t_nsec = cpu_to_be32(from->di_crtime.t_nsec);
++		to->di_crtime.t_sec = cpu_to_be32(from->di_crtime.tv_sec);
++		to->di_crtime.t_nsec = cpu_to_be32(from->di_crtime.tv_nsec);
+ 		to->di_flags2 = cpu_to_be64(from->di_flags2);
+ 		to->di_cowextsize = cpu_to_be32(from->di_cowextsize);
+ 		to->di_ino = cpu_to_be64(ip->i_ino);
+diff --git a/fs/xfs/libxfs/xfs_inode_buf.h b/fs/xfs/libxfs/xfs_inode_buf.h
+index 5e52bacb7a04..91a80c1258ff 100644
+--- a/fs/xfs/libxfs/xfs_inode_buf.h
++++ b/fs/xfs/libxfs/xfs_inode_buf.h
+@@ -47,7 +47,7 @@ struct xfs_icdinode {
+ 	uint64_t	di_flags2;	/* more random flags */
+ 	uint32_t	di_cowextsize;	/* basic cow extent size for file */
+ 
+-	xfs_ictimestamp_t di_crtime;	/* time created */
++	struct timespec64 di_crtime;	/* time created */
+ };
+ 
+ /*
+diff --git a/fs/xfs/xfs_inode.c b/fs/xfs/xfs_inode.c
+index 4517b897ee6c..f19f2dee1652 100644
+--- a/fs/xfs/xfs_inode.c
++++ b/fs/xfs/xfs_inode.c
+@@ -873,8 +873,7 @@ xfs_ialloc(
+ 		inode_set_iversion(inode, 1);
+ 		ip->i_d.di_flags2 = 0;
+ 		ip->i_d.di_cowextsize = 0;
+-		ip->i_d.di_crtime.t_sec = (int32_t)tv.tv_sec;
+-		ip->i_d.di_crtime.t_nsec = (int32_t)tv.tv_nsec;
++		ip->i_d.di_crtime = tv;
+ 	}
+ 
+ 
+diff --git a/fs/xfs/xfs_inode_item.c b/fs/xfs/xfs_inode_item.c
+index 089cdbfaf993..fe19deb2b917 100644
+--- a/fs/xfs/xfs_inode_item.c
++++ b/fs/xfs/xfs_inode_item.c
+@@ -356,8 +356,8 @@ xfs_inode_to_log_dinode(
+ 
+ 	if (from->di_version == 3) {
+ 		to->di_changecount = inode_peek_iversion(inode);
+-		to->di_crtime.t_sec = from->di_crtime.t_sec;
+-		to->di_crtime.t_nsec = from->di_crtime.t_nsec;
++		to->di_crtime.t_sec = from->di_crtime.tv_sec;
++		to->di_crtime.t_nsec = from->di_crtime.tv_nsec;
+ 		to->di_flags2 = from->di_flags2;
+ 		to->di_cowextsize = from->di_cowextsize;
+ 		to->di_ino = ip->i_ino;
+diff --git a/fs/xfs/xfs_iops.c b/fs/xfs/xfs_iops.c
+index 063e36eb9052..9775e9e2cee9 100644
+--- a/fs/xfs/xfs_iops.c
++++ b/fs/xfs/xfs_iops.c
+@@ -517,8 +517,7 @@ xfs_vn_getattr(
+ 	if (ip->i_d.di_version == 3) {
+ 		if (request_mask & STATX_BTIME) {
+ 			stat->result_mask |= STATX_BTIME;
+-			stat->btime.tv_sec = ip->i_d.di_crtime.t_sec;
+-			stat->btime.tv_nsec = ip->i_d.di_crtime.t_nsec;
++			stat->btime = ip->i_d.di_crtime;
+ 		}
+ 	}
+ 
+diff --git a/fs/xfs/xfs_trans_inode.c b/fs/xfs/xfs_trans_inode.c
+index 4a89da4b6fe7..470876764edd 100644
+--- a/fs/xfs/xfs_trans_inode.c
++++ b/fs/xfs/xfs_trans_inode.c
+@@ -70,7 +70,7 @@ xfs_trans_ichgtime(
+ 	int			flags)
+ {
+ 	struct inode		*inode = VFS_I(ip);
+-	struct timespec		tv;
++	struct timespec64	tv;
+ 
+ 	ASSERT(tp);
+ 	ASSERT(xfs_isilocked(ip, XFS_ILOCK_EXCL));
+@@ -81,6 +81,8 @@ xfs_trans_ichgtime(
+ 		inode->i_mtime = tv;
+ 	if (flags & XFS_ICHGTIME_CHG)
+ 		inode->i_ctime = tv;
++	if (flags & XFS_ICHGTIME_CREATE)
++		ip->i_d.di_crtime = tv;
+ }
+ 
+ /*
+-- 
+2.35.3
+
