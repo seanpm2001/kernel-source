@@ -10,7 +10,7 @@ Hide the new members at the end of this struct.
 
 --- a/include/linux/hyperv.h
 +++ b/include/linux/hyperv.h
-@@ -768,12 +768,6 @@ struct vmbus_channel {
+@@ -784,12 +784,6 @@ struct vmbus_channel {
  	void *channel_callback_context;
  
  	/*
@@ -23,7 +23,7 @@ Hide the new members at the end of this struct.
  	 * A channel can be marked for one of three modes of reading:
  	 *   BATCHED - callback called from taslket and should read
  	 *            channel until empty. Interrupts from the host
-@@ -856,6 +850,12 @@ struct vmbus_channel {
+@@ -872,6 +866,12 @@ struct vmbus_channel {
  	 * Support per-channel state for use by vmbus drivers.
  	 */
  	void *per_channel_state;
@@ -36,12 +36,16 @@ Hide the new members at the end of this struct.
  
  	/*
  	 * Defer freeing channel until after all cpu's have
-@@ -937,6 +937,15 @@ struct vmbus_channel {
+@@ -953,9 +953,19 @@ struct vmbus_channel {
  	bool fuzz_testing_state;
  	u32 fuzz_testing_interrupt_delay;
  	u32 fuzz_testing_message_delay;
 +
 +#ifndef __GENKSYMS__
+ 	/* request/transaction ids for VMBus */
++#define SUSE_vmbus_channel_NEW_requestor 1
+ 	struct vmbus_requestor requestor;
+ 	u32 rqstor_size;
 +	/*
 +	 * Synchronize channel scheduling and channel removal; see the inline
 +	 * comments in vmbus_chan_sched() and vmbus_reset_channel_cb().
@@ -51,4 +55,4 @@ Hide the new members at the end of this struct.
 +#endif
  };
  
- static inline bool is_hvsock_channel(const struct vmbus_channel *c)
+ u64 vmbus_next_request_id(struct vmbus_requestor *rqstor, u64 rqst_addr);
