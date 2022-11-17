@@ -1,0 +1,50 @@
+From beec64d0c9749afedf51c3c10cf52de1d9a89cc0 Mon Sep 17 00:00:00 2001
+From: Christoph Hellwig <hch@lst.de>
+Date: Sat, 24 Jul 2021 09:20:10 +0200
+Subject: [PATCH] scsi: bsg: Remove support for SCSI_IOCTL_SEND_COMMAND
+Git-commit: beec64d0c9749afedf51c3c10cf52de1d9a89cc0
+Patch-mainline: v5.15-rc1
+References: git-fixes
+
+SCSI_IOCTL_SEND_COMMAND has been deprecated longer than bsg exists and has
+been warning for just as long.  More importantly it harcodes SCSI CDBs and
+thus will do the wrong thing on non-SCSI bsg nodes.
+
+(Coly Li: rebased for Linux v4.12 based SUSE kernel)
+
+Link: https://lore.kernel.org/r/20210724072033.1284840-2-hch@lst.de
+Fixes: aa387cc89567 ("block: add bsg helper library")
+Reviewed-by: Bart Van Assche <bvanassche@acm.org>
+Acked-by: Jens Axboe <axboe@kernel.dk>
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ block/bsg.c |    8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+--- a/block/bsg.c
++++ b/block/bsg.c
+@@ -400,10 +400,6 @@ static long bsg_ioctl(struct file *file,
+ 	case SG_GET_RESERVED_SIZE:
+ 	case SG_SET_RESERVED_SIZE:
+ 	case SG_EMULATED_HOST:
+-	case SCSI_IOCTL_SEND_COMMAND: {
+-		void __user *uarg = (void __user *) arg;
+-		return scsi_cmd_ioctl(bd->queue, NULL, file->f_mode, cmd, uarg);
+-	}
+ 	case SG_IO: {
+ 		struct request *rq;
+ 		struct bio *bio, *bidi_bio = NULL;
+@@ -430,6 +426,10 @@ static long bsg_ioctl(struct file *file,
+ 
+ 		return ret;
+ 	}
++	case SCSI_IOCTL_SEND_COMMAND:
++		pr_warn_ratelimited("%s: calling unsupported SCSI_IOCTL_SEND_COMMAND\n",
++				    current->comm);
++		return -EINVAL;
+ 	default:
+ 		return -ENOTTY;
+ 	}
