@@ -1,0 +1,45 @@
+From: Olaf Hering <ohering@suse.de>
+Date: Mon, 9 Nov 2020 11:04:00 +0100
+Patch-mainline: Never, kABI
+Subject: kABI Drivers: hv: vmbus: preserve layout of vmbus_connection.
+References: bsc#1204017
+
+This is an exported global variable.
+Preserve layout of struct vmbus_connection.
+--- a/drivers/hv/hyperv_vmbus.h
++++ b/drivers/hv/hyperv_vmbus.h
+@@ -215,6 +215,11 @@ enum vmbus_connect_state {
+ #define VMBUS_CONNECT_CPU	0
+ 
+ struct vmbus_connection {
++	/*
++	 * CPU on which the initial host contact was made.
++	 */
++#define SUSE_vmbus_connection_UNUSED_connect_cpu 1
++	int connect_cpu; /* unused, preserve SUSE kABI */
+ 	u32 msg_conn_id;
+ 
+ 	atomic_t offer_in_progress;
+@@ -247,9 +252,6 @@ struct vmbus_connection {
+ 	struct list_head chn_list;
+ 	struct mutex channel_mutex;
+ 
+-	/* Array of channels */
+-	struct vmbus_channel **channels;
+-
+ 	/*
+ 	 * An offer message is handled first on the work_queue, and then
+ 	 * is further handled on handle_primary_chan_wq or
+@@ -284,6 +286,12 @@ struct vmbus_connection {
+ 	 * drop to zero.
+ 	 */
+ 	struct completion ready_for_resume_event;
++
++#ifndef __GENKSYMS__
++	/* Array of channels */
++#define SUSE_vmbus_connection_NEW_channels 1
++	struct vmbus_channel **channels;
++#endif
+ };
+ 
+ 

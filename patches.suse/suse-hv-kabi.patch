@@ -157,17 +157,6 @@ not-merged: 54e19d34011fea26d39aa74781131de0ce642a01
  	hv_synic_disable_regs(cpu);
  };
  
---- a/drivers/net/hyperv/hyperv_net.h
-+++ b/drivers/net/hyperv/hyperv_net.h
-@@ -954,6 +955,8 @@ struct net_device_context {
- 	u32 vf_alloc;
- 	/* Serial number of the VF to team with */
- 	u32 vf_serial;
-+
-+	struct netvsc_device_info *saved_netvsc_dev_info;
- };
- 
- /* Per channel data */
 --- a/include/asm-generic/mshyperv.h
 +++ b/include/asm-generic/mshyperv.h
 @@ -166,10 +166,12 @@ static inline int cpumask_to_vpset(struc
@@ -217,9 +206,9 @@ not-merged: 54e19d34011fea26d39aa74781131de0ce642a01
 +	bool fuzz_testing_state;
 +	u32 fuzz_testing_interrupt_delay;
 +	u32 fuzz_testing_message_delay;
- };
- 
- static inline bool is_hvsock_channel(const struct vmbus_channel *c)
+ 	/* callback to generate a request ID from a request address */
+ 	u64 (*next_request_id_callback)(struct vmbus_channel *channel, u64 rqst_addr);
+ 	/* callback to retrieve a request address from a request ID */
 @@ -1180,6 +1184,7 @@ struct hv_device {
  
  	struct vmbus_channel *channel;
