@@ -1,0 +1,63 @@
+From: Olaf Hering <ohering@suse.de>
+Date: Mon, 9 Nov 2020 11:04:00 +0100
+Patch-mainline: Never, kABI
+Subject: kABI Drivers: hv: vmbus: preserve layout of vmbus_channel.
+References: bsc#1204017
+
+A new channel is allocated internally by all in-tree drivers.
+Preserve layout of struct vmbus_channel.
+Hide the new members at the end of this struct.
+
+--- a/include/linux/hyperv.h
++++ b/include/linux/hyperv.h
+@@ -790,12 +790,6 @@ struct vmbus_channel {
+ 	void *channel_callback_context;
+ 
+ 	/*
+-	 * Synchronize channel scheduling and channel removal; see the inline
+-	 * comments in vmbus_chan_sched() and vmbus_reset_channel_cb().
+-	 */
+-	spinlock_t sched_lock;
+-
+-	/*
+ 	 * A channel can be marked for one of three modes of reading:
+ 	 *   BATCHED - callback called from taslket and should read
+ 	 *            channel until empty. Interrupts from the host
+@@ -878,6 +872,12 @@ struct vmbus_channel {
+ 	 * Support per-channel state for use by vmbus drivers.
+ 	 */
+ 	void *per_channel_state;
++	/*
++	 * To support per-cpu lookup mapping of relid to channel,
++	 * link up channels based on their CPU affinity.
++	 */
++#define SUSE_vmbus_channel_UNUSED_percpu_list 1
++	struct list_head percpu_list; /* unused, preserve SUSE kABI */
+ 
+ 	/*
+ 	 * Defer freeing channel until after all cpu's have
+@@ -959,14 +959,24 @@ struct vmbus_channel {
+ 	bool fuzz_testing_state;
+ 	u32 fuzz_testing_interrupt_delay;
+ 	u32 fuzz_testing_message_delay;
++#ifndef __GENKSYMS__
++#define SUSE_vmbus_channel_NEW_request_callback 1
+ 	/* callback to generate a request ID from a request address */
+ 	u64 (*next_request_id_callback)(struct vmbus_channel *channel, u64 rqst_addr);
+ 	/* callback to retrieve a request address from a request ID */
+ 	u64 (*request_addr_callback)(struct vmbus_channel *channel, u64 rqst_id);
+ 
++#define SUSE_vmbus_channel_NEW_requestor 1
+ 	/* request/transaction ids for VMBus */
+ 	struct vmbus_requestor requestor;
+ 	u32 rqstor_size;
++	/*
++	 * Synchronize channel scheduling and channel removal; see the inline
++	 * comments in vmbus_chan_sched() and vmbus_reset_channel_cb().
++	 */
++#define SUSE_vmbus_channel_NEW_sched_lock 1
++	spinlock_t sched_lock;
++#endif
+ };
+ 
+ #define lock_requestor(channel, flags)					\
