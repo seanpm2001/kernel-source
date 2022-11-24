@@ -1,0 +1,166 @@
+From c779a9cdf7c65291b94ad174e003348bc2ab7cdf Mon Sep 17 00:00:00 2001
+From: A Sun <as1033x@comcast.net>
+Date: Thu, 13 Apr 2017 05:06:47 -0300
+Subject: [PATCH] [media] mceusb: TX -EPIPE (urb status = -32) lockup fix
+Git-commit: c779a9cdf7c65291b94ad174e003348bc2ab7cdf
+References: git-fixes
+Patch-mainline: v4.13-rc1
+
+Once IR blasting or mceusb device commands fail with mce_async_callback()
+TX -EPIPE error, all subsequent TX to device then fail with the same error.
+...
+[  249.986174] mceusb 1-1.2:1.0: requesting 38000 HZ carrier
+[  249.986210] mceusb 1-1.2:1.0: send request called (size=0x4)
+[  249.986256] mceusb 1-1.2:1.0: send request complete (res=0)
+[  249.986403] mceusb 1-1.2:1.0: Error: request urb status = -32 (TX HALT)
+[  249.999885] mceusb 1-1.2:1.0: send request called (size=0x3)
+[  249.999929] mceusb 1-1.2:1.0: send request complete (res=0)
+[  250.000013] mceusb 1-1.2:1.0: Error: request urb status = -32 (TX HALT)
+[  250.019830] mceusb 1-1.2:1.0: send request called (size=0x21)
+[  250.019868] mceusb 1-1.2:1.0: send request complete (res=0)
+[  250.020007] mceusb 1-1.2:1.0: Error: request urb status = -32 (TX HALT)
+...
+
+Fault simulation/injection is by executing the following USB operation
+in a mceusb instrumented driver, prior to TX I/O.
+    retval = usb_control_msg(ir->usbdev, usb_sndctrlpipe(ir->usbdev, 0),
+	USB_REQ_SET_FEATURE, USB_RECIP_ENDPOINT,
+	USB_ENDPOINT_HALT, usb_pipeendpoint(ir->pipe_out),
+	NULL, 0, USB_CTRL_SET_TIMEOUT);
+    dev_dbg(ir->dev, "set halt retval, %d", retval);
+
+After setting halt state for the TX endpoint, perform an lirc "irsend"
+to generate TX traffic to device. After the TX HALT, the patch restores
+subsequent TX to working state.
+...
+[  508.009638] mceusb 1-1.2:1.0: send request called (size=0x3)
+[  508.009697] mceusb 1-1.2:1.0: send request complete (res=0)
+[  508.009847] mce_async_callback()
+[  508.009864] mceusb 1-1.2:1.0: Error: request urb status = -32 (TX HALT)
+[  508.009890] mceusb 1-1.2:1.0: kevent 0 scheduled
+[  508.021552] mceusb 1-1.2:1.0: send request called (size=0x21)
+[  508.021598] mceusb 1-1.2:1.0: send request complete (res=0)
+[  508.021963] mce_async_callback()
+[  508.021981] mceusb 1-1.2:1.0: tx data: 84 b0 0c 8c 0c 84 8c 0c 8c 0c 84 8c 0c 8c 0c 84 98 0c 98 0c 84 98 0c 8c 0c 84 8c 0c 8c 0c 81 8c 80 (length=33)
+[  508.021997] mceusb 1-1.2:1.0: Raw IR data, 0 pulse/space samples
+[  508.066627] mceusb 1-1.2:1.0: send request called (size=0x3)
+[  508.066669] mceusb 1-1.2:1.0: send request complete (res=0)
+[  508.066841] mce_async_callback()
+[  508.066858] mceusb 1-1.2:1.0: tx data: 9f 08 03 (length=3)
+...
+
+Signed-off-by: A Sun <as1033x@comcast.net>
+Signed-off-by: Sean Young <sean@mess.org>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@s-opensource.com>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/media/rc/mceusb.c | 53 +++++++++++++++++++++++++--------------
+ 1 file changed, 34 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/media/rc/mceusb.c b/drivers/media/rc/mceusb.c
+index 1e08c7dc0e82..4530237cbb67 100644
+--- a/drivers/media/rc/mceusb.c
++++ b/drivers/media/rc/mceusb.c
+@@ -419,6 +419,7 @@ struct mceusb_dev {
+ 	struct urb *urb_in;
+ 	unsigned int pipe_in;
+ 	struct usb_endpoint_descriptor *usb_ep_out;
++	unsigned int pipe_out;
+ 
+ 	/* buffers and dma */
+ 	unsigned char *buf_in;
+@@ -739,6 +740,11 @@ static void mce_async_callback(struct urb *urb)
+ 		break;
+ 
+ 	case -EPIPE:
++		dev_err(ir->dev, "Error: request urb status = %d (TX HALT)",
++			urb->status);
++		mceusb_defer_kevent(ir, EVENT_TX_HALT);
++		break;
++
+ 	default:
+ 		dev_err(ir->dev, "Error: request urb status = %d", urb->status);
+ 		break;
+@@ -753,7 +759,7 @@ static void mce_async_callback(struct urb *urb)
+ static void mce_request_packet(struct mceusb_dev *ir, unsigned char *data,
+ 								int size)
+ {
+-	int res, pipe;
++	int res;
+ 	struct urb *async_urb;
+ 	struct device *dev = ir->dev;
+ 	unsigned char *async_buf;
+@@ -771,19 +777,14 @@ static void mce_request_packet(struct mceusb_dev *ir, unsigned char *data,
+ 	}
+ 
+ 	/* outbound data */
+-	if (usb_endpoint_xfer_int(ir->usb_ep_out)) {
+-		pipe = usb_sndintpipe(ir->usbdev,
+-				 ir->usb_ep_out->bEndpointAddress);
+-		usb_fill_int_urb(async_urb, ir->usbdev, pipe, async_buf,
+-				 size, mce_async_callback, ir,
++	if (usb_endpoint_xfer_int(ir->usb_ep_out))
++		usb_fill_int_urb(async_urb, ir->usbdev, ir->pipe_out,
++				 async_buf, size, mce_async_callback, ir,
+ 				 ir->usb_ep_out->bInterval);
+-	} else {
+-		pipe = usb_sndbulkpipe(ir->usbdev,
+-				 ir->usb_ep_out->bEndpointAddress);
+-		usb_fill_bulk_urb(async_urb, ir->usbdev, pipe,
+-				 async_buf, size, mce_async_callback,
+-				 ir);
+-	}
++	else
++		usb_fill_bulk_urb(async_urb, ir->usbdev, ir->pipe_out,
++				  async_buf, size, mce_async_callback, ir);
++
+ 	memcpy(async_buf, data, size);
+ 
+ 	dev_dbg(dev, "send request called (size=%#x)", size);
+@@ -1222,16 +1223,24 @@ static void mceusb_deferred_kevent(struct work_struct *work)
+ 		if (status < 0) {
+ 			dev_err(ir->dev, "rx clear halt error %d",
+ 				status);
+-			return;
+ 		}
+ 		clear_bit(EVENT_RX_HALT, &ir->kevent_flags);
+-		status = usb_submit_urb(ir->urb_in, GFP_KERNEL);
+-		if (status < 0) {
+-			dev_err(ir->dev, "rx unhalt submit urb error %d",
+-				status);
+-			return;
++		if (status == 0) {
++			status = usb_submit_urb(ir->urb_in, GFP_KERNEL);
++			if (status < 0) {
++				dev_err(ir->dev,
++					"rx unhalt submit urb error %d",
++					status);
++			}
+ 		}
+ 	}
++
++	if (test_bit(EVENT_TX_HALT, &ir->kevent_flags)) {
++		status = usb_clear_halt(ir->usbdev, ir->pipe_out);
++		if (status < 0)
++			dev_err(ir->dev, "tx clear halt error %d", status);
++		clear_bit(EVENT_TX_HALT, &ir->kevent_flags);
++	}
+ }
+ 
+ static struct rc_dev *mceusb_init_rc_dev(struct mceusb_dev *ir)
+@@ -1386,6 +1395,12 @@ static int mceusb_dev_probe(struct usb_interface *intf,
+ 
+ 	/* Saving usb interface data for use by the transmitter routine */
+ 	ir->usb_ep_out = ep_out;
++	if (usb_endpoint_xfer_int(ep_out))
++		ir->pipe_out = usb_sndintpipe(ir->usbdev,
++					      ep_out->bEndpointAddress);
++	else
++		ir->pipe_out = usb_sndbulkpipe(ir->usbdev,
++					       ep_out->bEndpointAddress);
+ 
+ 	if (dev->descriptor.iManufacturer
+ 	    && usb_string(dev, dev->descriptor.iManufacturer,
+-- 
+2.35.3
+

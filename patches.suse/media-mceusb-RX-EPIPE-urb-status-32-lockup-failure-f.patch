@@ -1,0 +1,186 @@
+From a06854a600f6ccb72f097d86a44688949b867906 Mon Sep 17 00:00:00 2001
+From: A Sun <as1033x@comcast.net>
+Date: Sun, 26 Mar 2017 15:28:08 -0300
+Subject: [PATCH] [media] mceusb: RX -EPIPE (urb status = -32) lockup failure
+ fix
+Git-commit: a06854a600f6ccb72f097d86a44688949b867906
+References: git-fixes
+Patch-mainline: v4.13-rc1
+
+RX -EPIPE failure with infinite loop and flooding of
+[ 2851.966506] mceusb 1-1.2:1.0: Error: urb status = -32
+log message at 8000 messages per second.
+Bug trigger appears to be normal, but heavy, IR receiver use.
+Driver and Linux host become unusable after error.
+Also seen at https://sourceforge.net/p/lirc/mailman/message/34886165/
+
+Fix:
+
+Message reports RX usb halt (stall) condition requiring usb_clear_halt()
+call in non-interrupt context to recover. Add driver workqueue call to
+perform this recovery based on method in use for the usbnet device driver.
+
+Signed-off-by: A Sun <as1033x@comcast.net>
+Signed-off-by: Sean Young <sean@mess.org>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@s-opensource.com>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/media/rc/mceusb.c | 74 ++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 73 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/rc/mceusb.c b/drivers/media/rc/mceusb.c
+index 17e75cd8399a..1e08c7dc0e82 100644
+--- a/drivers/media/rc/mceusb.c
++++ b/drivers/media/rc/mceusb.c
+@@ -36,12 +36,13 @@
+ #include <linux/device.h>
+ #include <linux/module.h>
+ #include <linux/slab.h>
++#include <linux/workqueue.h>
+ #include <linux/usb.h>
+ #include <linux/usb/input.h>
+ #include <linux/pm_wakeup.h>
+ #include <media/rc-core.h>
+ 
+-#define DRIVER_VERSION	"1.92"
++#define DRIVER_VERSION	"1.93"
+ #define DRIVER_AUTHOR	"Jarod Wilson <jarod@redhat.com>"
+ #define DRIVER_DESC	"Windows Media Center Ed. eHome Infrared Transceiver " \
+ 			"device driver"
+@@ -416,6 +417,7 @@ struct mceusb_dev {
+ 	/* usb */
+ 	struct usb_device *usbdev;
+ 	struct urb *urb_in;
++	unsigned int pipe_in;
+ 	struct usb_endpoint_descriptor *usb_ep_out;
+ 
+ 	/* buffers and dma */
+@@ -453,6 +455,16 @@ struct mceusb_dev {
+ 	u8 num_rxports;		/* number of receive sensors */
+ 	u8 txports_cabled;	/* bitmask of transmitters with cable */
+ 	u8 rxports_active;	/* bitmask of active receive sensors */
++
++	/*
++	 * support for async error handler mceusb_deferred_kevent()
++	 * where usb_clear_halt(), usb_reset_configuration(),
++	 * usb_reset_device(), etc. must be done in process context
++	 */
++	struct work_struct kevent;
++	unsigned long kevent_flags;
++#		define EVENT_TX_HALT	0
++#		define EVENT_RX_HALT	1
+ };
+ 
+ /* MCE Device Command Strings, generally a port and command pair */
+@@ -686,6 +698,21 @@ static void mceusb_dev_printdata(struct mceusb_dev *ir, char *buf,
+ #endif
+ }
+ 
++/*
++ * Schedule work that can't be done in interrupt handlers
++ * (mceusb_dev_recv() and mce_async_callback()) nor tasklets.
++ * Invokes mceusb_deferred_kevent() for recovering from
++ * error events specified by the kevent bit field.
++ */
++static void mceusb_defer_kevent(struct mceusb_dev *ir, int kevent)
++{
++	set_bit(kevent, &ir->kevent_flags);
++	if (!schedule_work(&ir->kevent))
++		dev_err(ir->dev, "kevent %d may have been dropped", kevent);
++	else
++		dev_dbg(ir->dev, "kevent %d scheduled", kevent);
++}
++
+ static void mce_async_callback(struct urb *urb)
+ {
+ 	struct mceusb_dev *ir;
+@@ -1053,6 +1080,11 @@ static void mceusb_dev_recv(struct urb *urb)
+ 		return;
+ 
+ 	case -EPIPE:
++		dev_err(ir->dev, "Error: urb status = %d (RX HALT)",
++			urb->status);
++		mceusb_defer_kevent(ir, EVENT_RX_HALT);
++		return;
++
+ 	default:
+ 		dev_err(ir->dev, "Error: urb status = %d", urb->status);
+ 		break;
+@@ -1171,6 +1203,37 @@ static void mceusb_flash_led(struct mceusb_dev *ir)
+ 	mce_async_out(ir, FLASH_LED, sizeof(FLASH_LED));
+ }
+ 
++/*
++ * Workqueue function
++ * for resetting or recovering device after occurrence of error events
++ * specified in ir->kevent bit field.
++ * Function runs (via schedule_work()) in non-interrupt context, for
++ * calls here (such as usb_clear_halt()) requiring non-interrupt context.
++ */
++static void mceusb_deferred_kevent(struct work_struct *work)
++{
++	struct mceusb_dev *ir =
++		container_of(work, struct mceusb_dev, kevent);
++	int status;
++
++	if (test_bit(EVENT_RX_HALT, &ir->kevent_flags)) {
++		usb_unlink_urb(ir->urb_in);
++		status = usb_clear_halt(ir->usbdev, ir->pipe_in);
++		if (status < 0) {
++			dev_err(ir->dev, "rx clear halt error %d",
++				status);
++			return;
++		}
++		clear_bit(EVENT_RX_HALT, &ir->kevent_flags);
++		status = usb_submit_urb(ir->urb_in, GFP_KERNEL);
++		if (status < 0) {
++			dev_err(ir->dev, "rx unhalt submit urb error %d",
++				status);
++			return;
++		}
++	}
++}
++
+ static struct rc_dev *mceusb_init_rc_dev(struct mceusb_dev *ir)
+ {
+ 	struct usb_device *udev = ir->usbdev;
+@@ -1304,6 +1367,7 @@ static int mceusb_dev_probe(struct usb_interface *intf,
+ 	if (!ir)
+ 		goto mem_alloc_fail;
+ 
++	ir->pipe_in = pipe;
+ 	ir->buf_in = usb_alloc_coherent(dev, maxp, GFP_ATOMIC, &ir->dma_in);
+ 	if (!ir->buf_in)
+ 		goto buf_in_alloc_fail;
+@@ -1333,6 +1397,12 @@ static int mceusb_dev_probe(struct usb_interface *intf,
+ 		snprintf(name + strlen(name), sizeof(name) - strlen(name),
+ 			 " %s", buf);
+ 
++	/*
++	 * Initialize async USB error handler before registering
++	 * or activating any mceusb RX and TX functions
++	 */
++	INIT_WORK(&ir->kevent, mceusb_deferred_kevent);
++
+ 	ir->rc = mceusb_init_rc_dev(ir);
+ 	if (!ir->rc)
+ 		goto rc_dev_fail;
+@@ -1386,6 +1456,7 @@ static int mceusb_dev_probe(struct usb_interface *intf,
+ 
+ 	/* Error-handling path */
+ rc_dev_fail:
++	cancel_work_sync(&ir->kevent);
+ 	usb_put_dev(ir->usbdev);
+ 	usb_kill_urb(ir->urb_in);
+ 	usb_free_urb(ir->urb_in);
+@@ -1411,6 +1482,7 @@ static void mceusb_dev_disconnect(struct usb_interface *intf)
+ 		return;
+ 
+ 	ir->usbdev = NULL;
++	cancel_work_sync(&ir->kevent);
+ 	rc_unregister_device(ir->rc);
+ 	usb_kill_urb(ir->urb_in);
+ 	usb_free_urb(ir->urb_in);
+-- 
+2.35.3
+
