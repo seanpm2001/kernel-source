@@ -5,31 +5,41 @@ Subject: [PATCH] Fix releasing of old bundles in xfrm_bundle_lookup()
 Patch-mainline: Never, affected logic dropped upstream in 4.14
 References: bsc#1201264 bsc#1190397 bsc#1199617
 
-Function xfrm_bundle_lookup() releases old bundles using
-dst_release_immediate() which immediately destroys any dst_entry linked
-in a given bundle that has its reference count dropped to zero. This can
-result in a use-after-free as an dst_entry can be accessed in a RCU
-read-side critical section without holding its reference.
+Functions xfrm_bundle_lookup() and xfrm_bundle_flo_delete() release old
+bundles using dst_release_immediate() which immediately destroys any
+dst_entry linked in a given bundle that has its reference count dropped
+to zero. This can result in a use-after-free as an dst_entry can be
+accessed in a RCU read-side critical section without holding its
+reference.
 
-Specifically, xfrm_bundle_lookup() could immediately destroy a final
-rtable/dst_entry that is linked by a bundle while an interrupted code in
-__mkroute_output() (running with rcu_read_lock()) was still checking its
-validity.
+Specifically, xfrm_bundle_lookup()/xfrm_bundle_flo_delete() could
+immediately destroy a final rtable/dst_entry that is linked by a bundle
+while an interrupted code in __mkroute_output() (running with
+rcu_read_lock()) was still checking its validity.
 
 Fix this problem by using dst_release() instead of
-dst_release_immediate() to put old bundles in xfrm_bundle_lookup().
+dst_release_immediate() to put old bundles in these functions.
 
 Signed-off-by: Petr Pavlu <petr.pavlu@suse.com>
 Reviewed-by: Jiri Bohac <jbohac@suse.cz>
 ---
- net/xfrm/xfrm_policy.c | 6 +++---
- 1 file changed, 3 insertions(+), 3 deletions(-)
+ net/xfrm/xfrm_policy.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/net/xfrm/xfrm_policy.c b/net/xfrm/xfrm_policy.c
-index 89bbe40736f9..7c6a62146033 100644
+index 722990d4e47d..0fa6c726362d 100644
 --- a/net/xfrm/xfrm_policy.c
 +++ b/net/xfrm/xfrm_policy.c
-@@ -2089,7 +2089,7 @@ xfrm_bundle_lookup(struct net *net, const struct flowi *fl, u16 family, u8 dir,
+@@ -1598,7 +1598,7 @@ static void xfrm_bundle_flo_delete(struct flow_cache_object *flo)
+ 
+ 	/* Mark DST_OBSOLETE_DEAD to fail the next xfrm_dst_check() */
+ 	dst->obsolete = DST_OBSOLETE_DEAD;
+-	dst_release_immediate(dst);
++	dst_release(dst);
+ }
+ 
+ static const struct flow_cache_ops xfrm_bundle_fc_ops = {
+@@ -2092,7 +2092,7 @@ xfrm_bundle_lookup(struct net *net, const struct flowi *fl, u16 family, u8 dir,
  			 * xfrm_dst_check()
  			 */
  			xdst->u.dst.obsolete = DST_OBSOLETE_DEAD;
@@ -38,7 +48,7 @@ index 89bbe40736f9..7c6a62146033 100644
  			xdst = NULL;
  			num_pols = 0;
  			num_xfrms = 0;
-@@ -2138,7 +2138,7 @@ xfrm_bundle_lookup(struct net *net, const struct flowi *fl, u16 family, u8 dir,
+@@ -2141,7 +2141,7 @@ xfrm_bundle_lookup(struct net *net, const struct flowi *fl, u16 family, u8 dir,
  		xdst->num_pols = 0;
  		/* Mark DST_OBSOLETE_DEAD to fail the next xfrm_dst_check() */
  		xdst->u.dst.obsolete = DST_OBSOLETE_DEAD;
@@ -47,7 +57,7 @@ index 89bbe40736f9..7c6a62146033 100644
  	}
  
  	/* We do need to return one reference for original caller */
-@@ -2167,7 +2167,7 @@ xfrm_bundle_lookup(struct net *net, const struct flowi *fl, u16 family, u8 dir,
+@@ -2170,7 +2170,7 @@ xfrm_bundle_lookup(struct net *net, const struct flowi *fl, u16 family, u8 dir,
  	if (xdst != NULL) {
  		/* Mark DST_OBSOLETE_DEAD to fail the next xfrm_dst_check() */
  		xdst->u.dst.obsolete = DST_OBSOLETE_DEAD;
