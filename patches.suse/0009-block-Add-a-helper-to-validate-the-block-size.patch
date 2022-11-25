@@ -1,0 +1,40 @@
+From 570b1cac477643cbf01a45fa5d018430a1fddbce Mon Sep 17 00:00:00 2001
+From: Xie Yongji <xieyongji@bytedance.com>
+Date: Tue, 26 Oct 2021 22:40:12 +0800
+Subject: [PATCH] block: Add a helper to validate the block size
+Git-commit: 570b1cac477643cbf01a45fa5d018430a1fddbce
+Patch-mainline: v5.16-rc1
+References: git-fixes
+
+There are some duplicated codes to validate the block
+size in block drivers. This limitation actually comes
+from block layer, so this patch tries to add a new block
+layer helper for that.
+
+(Coly Li: rebase for Linux v4.12 based SUSE kernel)
+
+Signed-off-by: Xie Yongji <xieyongji@bytedance.com>
+Link: https://lore.kernel.org/r/20211026144015.188-2-xieyongji@bytedance.com
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ include/linux/blkdev.h |    7 +++++++
+ 1 file changed, 7 insertions(+)
+
+--- a/include/linux/blkdev.h
++++ b/include/linux/blkdev.h
+@@ -308,6 +308,13 @@ static inline unsigned short req_get_iop
+ 	return req->ioprio;
+ }
+ 
++static inline int blk_validate_block_size(unsigned int bsize)
++{
++	if (bsize < 512 || bsize > PAGE_SIZE || !is_power_of_2(bsize))
++		return -EINVAL;
++	return 0;
++}
++
+ #include <linux/elevator.h>
+ 
+ struct blk_queue_ctx;
