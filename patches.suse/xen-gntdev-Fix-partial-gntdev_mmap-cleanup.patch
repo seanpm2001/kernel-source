@@ -1,0 +1,43 @@
+Patch-mainline: v4.15-rc8
+Git-commit: cf2acf66ad43abb39735568f55e1f85f9844e990
+References: git-fixes
+From: Ross Lagerwall <ross.lagerwall@citrix.com>
+Date: Tue, 9 Jan 2018 12:10:22 +0000
+Subject: [PATCH] xen/gntdev: Fix partial gntdev_mmap() cleanup
+
+When cleaning up after a partially successful gntdev_mmap(), unmap the
+successfully mapped grant pages otherwise Xen will kill the domain if
+in debug mode (Attempt to implicitly unmap a granted PTE) or Linux will
+kill the process and emit "BUG: Bad page map in process" if Xen is in
+release mode.
+
+This is only needed when use_ptemod is true because gntdev_put_map()
+will unmap grant pages itself when use_ptemod is false.
+
+Signed-off-by: Ross Lagerwall <ross.lagerwall@citrix.com>
+Reviewed-by: Boris Ostrovsky <boris.ostrovsky@oracle.com>
+Signed-off-by: Boris Ostrovsky <boris.ostrovsky@oracle.com>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+---
+ drivers/xen/gntdev.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/xen/gntdev.c b/drivers/xen/gntdev.c
+index d3391a1e3796..bd56653b9bbc 100644
+--- a/drivers/xen/gntdev.c
++++ b/drivers/xen/gntdev.c
+@@ -1071,8 +1071,10 @@ static int gntdev_mmap(struct file *flip, struct vm_area_struct *vma)
+ out_unlock_put:
+ 	mutex_unlock(&priv->lock);
+ out_put_map:
+-	if (use_ptemod)
++	if (use_ptemod) {
+ 		map->vma = NULL;
++		unmap_grant_pages(map, 0, map->count);
++	}
+ 	gntdev_put_map(priv, map);
+ 	return err;
+ }
+-- 
+2.35.3
+
