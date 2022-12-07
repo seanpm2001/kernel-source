@@ -44,6 +44,29 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  arch/x86/kernel/cpu/bugs.c                      |   43 ++++++++++++++++++------
  6 files changed, 77 insertions(+), 13 deletions(-)
 
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -3987,6 +3987,9 @@
+ 				       disabling SMT if necessary for
+ 				       the full mitigation (only on Zen1
+ 				       and older without STIBP).
++			ibpb	     - mitigate short speculation windows on
++				       basic block boundaries too. Safe, highest
++				       perf impact.
+ 			unret        - force enable untrained return thunks,
+ 				       only effective on AMD f15h-f17h
+ 				       based systems.
+--- a/arch/x86/entry/Makefile
++++ b/arch/x86/entry/Makefile
+@@ -6,7 +6,7 @@ OBJECT_FILES_NON_STANDARD_entry_64_compa
+ 
+ CFLAGS_syscall_64.o		+= $(call cc-option,-Wno-override-init,)
+ CFLAGS_syscall_32.o		+= $(call cc-option,-Wno-override-init,)
+-obj-y				:= entry_$(BITS).o thunk_$(BITS).o syscall_$(BITS).o
++obj-y				:= entry.o entry_$(BITS).o thunk_$(BITS).o syscall_$(BITS).o
+ obj-y				+= common.o
+ 
+ obj-y				+= vdso/
 --- /dev/null
 +++ b/arch/x86/entry/entry.S
 @@ -0,0 +1,32 @@
@@ -79,20 +102,9 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
 +EXPORT_SYMBOL_GPL(entry_ibpb);
 +
 +.popsection
---- a/arch/x86/entry/Makefile
-+++ b/arch/x86/entry/Makefile
-@@ -6,7 +6,7 @@ OBJECT_FILES_NON_STANDARD_entry_64_compa
- 
- CFLAGS_syscall_64.o		+= $(call cc-option,-Wno-override-init,)
- CFLAGS_syscall_32.o		+= $(call cc-option,-Wno-override-init,)
--obj-y				:= entry_$(BITS).o thunk_$(BITS).o syscall_$(BITS).o
-+obj-y				:= entry.o entry_$(BITS).o thunk_$(BITS).o syscall_$(BITS).o
- obj-y				+= common.o
- 
- obj-y				+= vdso/
 --- a/arch/x86/include/asm/cpufeatures.h
 +++ b/arch/x86/include/asm/cpufeatures.h
-@@ -283,7 +283,7 @@
+@@ -282,7 +282,7 @@
  #define X86_FEATURE_CQM_MBM_LOCAL	(11*32+ 3) /* LLC Local MBM monitoring */
  #define X86_FEATURE_FENCE_SWAPGS_USER	(11*32+ 4) /* "" LFENCE in user entry SWAPGS path */
  #define X86_FEATURE_FENCE_SWAPGS_KERNEL	(11*32+ 5) /* "" LFENCE in kernel entry SWAPGS path */
@@ -103,7 +115,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  #define X86_FEATURE_RETPOLINE_LFENCE	(11*32+13) /* "" Use LFENCE for Spectre variant 2 */
 --- a/arch/x86/include/asm/nospec-branch.h
 +++ b/arch/x86/include/asm/nospec-branch.h
-@@ -155,14 +155,17 @@
+@@ -157,14 +157,17 @@
   * return thunk isn't mapped into the userspace tables (then again, AMD
   * typically has NO_MELTDOWN).
   *
@@ -123,7 +135,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  #endif
  .endm
  
-@@ -185,6 +188,7 @@
+@@ -187,6 +190,7 @@
  
  extern void __x86_return_thunk(void);
  extern void zen_untrain_ret(void);
@@ -155,7 +167,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  	[RETBLEED_MITIGATION_IBRS]	= "Mitigation: IBRS",
  	[RETBLEED_MITIGATION_EIBRS]	= "Mitigation: Enhanced IBRS",
  };
-@@ -920,6 +923,8 @@ static int __init retbleed_parse_cmdline
+@@ -917,6 +920,8 @@ static int __init retbleed_parse_cmdline
  			retbleed_cmd = RETBLEED_CMD_AUTO;
  		} else if (!strcmp(str, "unret")) {
  			retbleed_cmd = RETBLEED_CMD_UNRET;
@@ -164,7 +176,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  		} else if (!strcmp(str, "nosmt")) {
  			retbleed_nosmt = true;
  		} else {
-@@ -934,11 +939,13 @@ static int __init retbleed_parse_cmdline
+@@ -931,11 +936,13 @@ static int __init retbleed_parse_cmdline
  early_param("retbleed", retbleed_parse_cmdline);
  
  #define RETBLEED_UNTRAIN_MSG "WARNING: BTB untrained return thunk mitigation is only effective on AMD/Hygon!\n"
@@ -176,10 +188,10 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  {
 +	bool mitigate_smt = false;
 +
- 	if (!boot_cpu_has_bug(X86_BUG_RETBLEED))
+ 	if (!boot_cpu_has_bug(X86_BUG_RETBLEED) || cpu_mitigations_off())
  		return;
  
-@@ -950,11 +957,21 @@ static void __init retbleed_select_mitig
+@@ -947,11 +954,21 @@ static void __init retbleed_select_mitig
  		retbleed_mitigation = RETBLEED_MITIGATION_UNRET;
  		break;
  
@@ -203,7 +215,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  
  		/*
  		 * The Intel mitigation (IBRS) was already selected in
-@@ -970,26 +987,34 @@ static void __init retbleed_select_mitig
+@@ -967,26 +984,34 @@ static void __init retbleed_select_mitig
  		if (!IS_ENABLED(CONFIG_RETPOLINE) ||
  		    !IS_ENABLED(CONFIG_CC_HAS_RETURN_THUNK)) {
  			pr_err(RETBLEED_COMPILER_MSG);
@@ -244,15 +256,3 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  	/*
  	 * Let IBRS trump all on Intel without affecting the effects of the
  	 * retbleed= cmdline option.
---- a/Documentation/admin-guide/kernel-parameters.txt
-+++ b/Documentation/admin-guide/kernel-parameters.txt
-@@ -3986,6 +3986,9 @@
- 				       disabling SMT if necessary for
- 				       the full mitigation (only on Zen1
- 				       and older without STIBP).
-+			ibpb	     - mitigate short speculation windows on
-+				       basic block boundaries too. Safe, highest
-+				       perf impact.
- 			unret        - force enable untrained return thunks,
- 				       only effective on AMD f15h-f17h
- 				       based systems.
