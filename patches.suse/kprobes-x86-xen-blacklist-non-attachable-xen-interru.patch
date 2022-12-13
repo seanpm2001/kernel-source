@@ -1,0 +1,44 @@
+Patch-mainline: v5.0-rc1
+Git-commit: bf9445a33ae6ac2f0822d2f1ce1365408387d568
+References: git-fixes
+From: Andrea Righi <righi.andrea@gmail.com>
+Date: Mon, 10 Dec 2018 16:12:57 +0100
+Subject: [PATCH] kprobes/x86/xen: blacklist non-attachable xen interrupt
+ functions
+
+Blacklist symbols in Xen probe-prohibited areas, so that user can see
+these prohibited symbols in debugfs.
+
+See also: a50480cb6d61.
+
+Signed-off-by: Andrea Righi <righi.andrea@gmail.com>
+Acked-by: Masami Hiramatsu <mhiramat@kernel.org>
+Signed-off-by: Boris Ostrovsky <boris.ostrovsky@oracle.com>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+---
+ arch/x86/xen/xen-asm_64.S | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/arch/x86/xen/xen-asm_64.S b/arch/x86/xen/xen-asm_64.S
+index bb1c2da0381d..1e9ef0ba30a5 100644
+--- a/arch/x86/xen/xen-asm_64.S
++++ b/arch/x86/xen/xen-asm_64.S
+@@ -12,6 +12,7 @@
+ #include <asm/segment.h>
+ #include <asm/asm-offsets.h>
+ #include <asm/thread_info.h>
++#include <asm/asm.h>
+ 
+ #include <xen/interface/xen.h>
+ 
+@@ -24,6 +25,7 @@ ENTRY(xen_\name)
+ 	pop %r11
+ 	jmp  \name
+ END(xen_\name)
++_ASM_NOKPROBE(xen_\name)
+ .endm
+ 
+ xen_pv_trap divide_error
+-- 
+2.35.3
+

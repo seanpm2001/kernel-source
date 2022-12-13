@@ -129,9 +129,9 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  #endif /* _ASM_X86_CPUFEATURES_H */
 --- a/arch/x86/include/asm/msr-index.h
 +++ b/arch/x86/include/asm/msr-index.h
-@@ -129,6 +129,10 @@
- 						 * bit available to control VERW
- 						 * behavior.
+@@ -138,6 +138,10 @@
+ 						 * are restricted to targets in
+ 						 * kernel.
  						 */
 +#define ARCH_CAP_PBRSB_NO		BIT(24)	/*
 +						 * Not susceptible to Post-Barrier
@@ -206,61 +206,61 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  
 --- a/arch/x86/kernel/cpu/bugs.c
 +++ b/arch/x86/kernel/cpu/bugs.c
-@@ -1361,6 +1361,53 @@ static enum spectre_v2_mitigation __init
+@@ -1358,6 +1358,53 @@ static enum spectre_v2_mitigation __init
  	return SPECTRE_V2_RETPOLINE;
  }
  
 +static void __init spectre_v2_determine_rsb_fill_type_at_vmexit(enum spectre_v2_mitigation mode)
 +{
-+	/*
-+	 * Similar to context switches, there are two types of RSB attacks
-+	 * after VM exit:
-+	 *
-+	 * 1) RSB underflow
-+	 *
-+	 * 2) Poisoned RSB entry
-+	 *
-+	 * When retpoline is enabled, both are mitigated by filling/clearing
-+	 * the RSB.
-+	 *
-+	 * When IBRS is enabled, while #1 would be mitigated by the IBRS branch
-+	 * prediction isolation protections, RSB still needs to be cleared
-+	 * because of #2.  Note that SMEP provides no protection here, unlike
-+	 * user-space-poisoned RSB entries.
-+	 *
-+	 * eIBRS should protect against RSB poisoning, but if the EIBRS_PBRSB
-+	 * bug is present then a LITE version of RSB protection is required,
-+	 * just a single call needs to retire before a RET is executed.
-+	 */
-+	switch (mode) {
-+	case SPECTRE_V2_NONE:
-+		return;
++       /*
++        * Similar to context switches, there are two types of RSB attacks
++        * after VM exit:
++        *
++        * 1) RSB underflow
++        *
++        * 2) Poisoned RSB entry
++        *
++        * When retpoline is enabled, both are mitigated by filling/clearing
++        * the RSB.
++        *
++        * When IBRS is enabled, while #1 would be mitigated by the IBRS branch
++        * prediction isolation protections, RSB still needs to be cleared
++        * because of #2.  Note that SMEP provides no protection here, unlike
++        * user-space-poisoned RSB entries.
++        *
++        * eIBRS should protect against RSB poisoning, but if the EIBRS_PBRSB
++        * bug is present then a LITE version of RSB protection is required,
++        * just a single call needs to retire before a RET is executed.
++        */
++       switch (mode) {
++       case SPECTRE_V2_NONE:
++               return;
 +
-+	case SPECTRE_V2_EIBRS_LFENCE:
-+	case SPECTRE_V2_EIBRS:
-+		if (boot_cpu_has_bug(X86_BUG_EIBRS_PBRSB)) {
-+			setup_force_cpu_cap(X86_FEATURE_RSB_VMEXIT_LITE);
-+			pr_info("Spectre v2 / PBRSB-eIBRS: Retire a single CALL on VMEXIT\n");
-+		}
-+		return;
++       case SPECTRE_V2_EIBRS_LFENCE:
++       case SPECTRE_V2_EIBRS:
++               if (boot_cpu_has_bug(X86_BUG_EIBRS_PBRSB)) {
++                       setup_force_cpu_cap(X86_FEATURE_RSB_VMEXIT_LITE);
++                       pr_info("Spectre v2 / PBRSB-eIBRS: Retire a single CALL on VMEXIT\n");
++               }
++               return;
 +
-+	case SPECTRE_V2_EIBRS_RETPOLINE:
-+	case SPECTRE_V2_RETPOLINE:
-+	case SPECTRE_V2_LFENCE:
-+	case SPECTRE_V2_IBRS:
-+		setup_force_cpu_cap(X86_FEATURE_RSB_VMEXIT);
-+		pr_info("Spectre v2 / SpectreRSB : Filling RSB on VMEXIT\n");
-+		return;
-+	}
++       case SPECTRE_V2_EIBRS_RETPOLINE:
++       case SPECTRE_V2_RETPOLINE:
++       case SPECTRE_V2_LFENCE:
++       case SPECTRE_V2_IBRS:
++               setup_force_cpu_cap(X86_FEATURE_RSB_VMEXIT);
++               pr_info("Spectre v2 / SpectreRSB : Filling RSB on VMEXIT\n");
++               return;
++       }
 +
-+	pr_warn_once("Unknown Spectre v2 mode, disabling RSB mitigation at VM exit");
-+	dump_stack();
++       pr_warn_once("Unknown Spectre v2 mode, disabling RSB mitigation at VM exit");
++       dump_stack();
 +}
 +
- static void __init spectre_v2_select_mitigation(void)
+ /* Disable in-kernel use of non-RSB RET predictors */
+ static void __init spec_ctrl_disable_kernel_rrsba(void)
  {
- 	enum spectre_v2_mitigation_cmd cmd = spectre_v2_parse_cmdline();
-@@ -1537,6 +1584,8 @@ static void __init spectre_v2_select_mit
+@@ -1560,6 +1607,8 @@ static void __init spectre_v2_select_mit
  		pr_info("Enabling Restricted Speculation for firmware calls\n");
  	}
  
@@ -269,7 +269,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  	/* Set up IBPB and STIBP depending on the general spectre V2 command */
  	spectre_v2_cmd = cmd;
  }
-@@ -2110,6 +2159,19 @@ static ssize_t srbds_show_state(char *bu
+@@ -2133,6 +2182,19 @@ static ssize_t srbds_show_state(char *bu
  	return sprintf(buf, "%s\n", srbds_strings[srbds_mitigation]);
  }
  
@@ -289,7 +289,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  static ssize_t spectre_v2_show_state(char *buf)
  {
  	if (spectre_v2_enabled == SPECTRE_V2_LFENCE)
-@@ -2122,12 +2184,13 @@ static ssize_t spectre_v2_show_state(cha
+@@ -2145,12 +2207,13 @@ static ssize_t spectre_v2_show_state(cha
  	    spectre_v2_enabled == SPECTRE_V2_EIBRS_LFENCE)
  		return sprintf(buf, "Vulnerable: eIBRS+LFENCE with unprivileged eBPF and SMT\n");
  

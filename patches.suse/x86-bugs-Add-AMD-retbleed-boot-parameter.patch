@@ -3,7 +3,7 @@ Date: Tue, 14 Jun 2022 23:15:50 +0200
 Subject: x86/bugs: Add AMD retbleed= boot parameter
 Git-commit: 7fbf47c7ce50b38a64576b150e7011ae73d54669
 Patch-mainline: v5.19-rc4
-References: bsc#1199657 CVE-2022-29900 CVE-2022-29901 bsc#1203271
+References: bsc#1199657 CVE-2022-29900 CVE-2022-29901 bsc#1203271 bsc#1206032
 
 Add the "retbleed=<value>" boot parameter to select a mitigation for
 RETBleed. Possible values are "off", "auto" and "unret"
@@ -23,12 +23,36 @@ Reviewed-by: Josh Poimboeuf <jpoimboe@kernel.org>
 [ Enable CC_HAS_RETURN_THUNK unconditionally as our compilers support it. ]
 Signed-off-by: Borislav Petkov <bp@suse.de>
 ---
- Documentation/admin-guide/kernel-parameters.txt |   14 +++
+ Documentation/admin-guide/kernel-parameters.txt |   15 +++
  arch/x86/Kconfig                                |    3 
  arch/x86/Makefile                               |    3 
  arch/x86/kernel/cpu/bugs.c                      |  108 +++++++++++++++++++++++-
- 4 files changed, 127 insertions(+), 1 deletion(-)
+ 4 files changed, 128 insertions(+), 1 deletion(-)
 
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -3977,6 +3977,21 @@
+ 
+ 	retain_initrd	[RAM] Keep initrd memory after extraction
+ 
++	retbleed=	[X86] Control mitigation of RETBleed (Arbitrary
++			Speculative Code Execution with Return Instructions)
++			vulnerability.
++
++			off         - unconditionally disable
++			auto        - automatically select a migitation
++			unret       - force enable untrained return thunks,
++				      only effective on AMD Zen {1,2}
++				      based systems.
++
++			Selecting 'auto' will choose a mitigation method at run
++			time according to the CPU.
++
++			Not specifying this option is equivalent to retbleed=auto.
++
+ 	rfkill.default_state=
+ 		0	"airplane mode".  All wifi, bluetooth, wimax, gps, fm,
+ 			etc. communication is blocked by default.
 --- a/arch/x86/Kconfig
 +++ b/arch/x86/Kconfig
 @@ -442,6 +442,9 @@ config SLS
@@ -41,6 +65,18 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  config X86_CPU_RESCTRL
  	bool "x86 CPU resource control support"
  	depends on X86 && (CPU_SUP_INTEL || CPU_SUP_AMD)
+--- a/arch/x86/Makefile
++++ b/arch/x86/Makefile
+@@ -241,6 +241,9 @@ ifdef CONFIG_SLS
+   KBUILD_CFLAGS += $(call cc-option,-mharden-sls=all)
+ endif
+ 
++# RETHUNK
++KBUILD_CFLAGS += $(call cc-option,-mfunction-return=thunk-extern)
++
+ archscripts: scripts_basic
+ 	$(Q)$(MAKE) $(build)=arch/x86/tools relocs
+ 
 --- a/arch/x86/kernel/cpu/bugs.c
 +++ b/arch/x86/kernel/cpu/bugs.c
 @@ -35,6 +35,7 @@
@@ -114,7 +150,7 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
 +
 +static void __init retbleed_select_mitigation(void)
 +{
-+	if (!boot_cpu_has_bug(X86_BUG_RETBLEED))
++	if (!boot_cpu_has_bug(X86_BUG_RETBLEED) || cpu_mitigations_off())
 +		return;
 +
 +	switch (retbleed_cmd) {
@@ -179,38 +215,3 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  }
  
  static ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr,
---- a/arch/x86/Makefile
-+++ b/arch/x86/Makefile
-@@ -241,6 +241,9 @@ ifdef CONFIG_SLS
-   KBUILD_CFLAGS += $(call cc-option,-mharden-sls=all)
- endif
- 
-+# RETHUNK
-+KBUILD_CFLAGS += $(call cc-option,-mfunction-return=thunk-extern)
-+
- archscripts: scripts_basic
- 	$(Q)$(MAKE) $(build)=arch/x86/tools relocs
- 
---- a/Documentation/admin-guide/kernel-parameters.txt
-+++ b/Documentation/admin-guide/kernel-parameters.txt
-@@ -3977,6 +3977,20 @@
- 
- 	retain_initrd	[RAM] Keep initrd memory after extraction
- 
-+	retbleed=	[X86] Control mitigation of RETBleed (Arbitrary
-+			Speculative Code Execution with Return Instructions)
-+			vulnerability.
-+
-+			auto        - automatically select a migitation
-+			unret       - force enable untrained return thunks,
-+				      only effective on AMD Zen {1,2}
-+				      based systems.
-+
-+			Selecting 'auto' will choose a mitigation method at run
-+			time according to the CPU.
-+
-+			Not specifying this option is equivalent to retbleed=auto.
-+
- 	rfkill.default_state=
- 		0	"airplane mode".  All wifi, bluetooth, wimax, gps, fm,
- 			etc. communication is blocked by default.

@@ -17,10 +17,35 @@ Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
 
 Signed-off-by: Borislav Petkov <bp@suse.de>
 ---
- Documentation/admin-guide/kernel-parameters.txt |   14 ++++--
+ Documentation/admin-guide/kernel-parameters.txt |   16 +++++--
  arch/x86/kernel/cpu/bugs.c                      |   51 +++++++++++++++++-------
- 2 files changed, 47 insertions(+), 18 deletions(-)
+ 2 files changed, 48 insertions(+), 19 deletions(-)
 
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -3981,11 +3981,17 @@
+ 			Speculative Code Execution with Return Instructions)
+ 			vulnerability.
+ 
+-			off         - unconditionally disable
+-			auto        - automatically select a migitation
+-			unret       - force enable untrained return thunks,
+-				      only effective on AMD Zen {1,2}
+-				      based systems.
++			off          - no mitigation
++			auto         - automatically select a migitation
++			auto,nosmt   - automatically select a mitigation,
++				       disabling SMT if necessary for
++				       the full mitigation (only on Zen1
++				       and older without STIBP).
++			unret        - force enable untrained return thunks,
++				       only effective on AMD f15h-f17h
++				       based systems.
++			unret,nosmt  - like unret, will disable SMT when STIBP
++			               is not available.
+ 
+ 			Selecting 'auto' will choose a mitigation method at run
+ 			time according to the CPU.
 --- a/arch/x86/kernel/cpu/bugs.c
 +++ b/arch/x86/kernel/cpu/bugs.c
 @@ -856,19 +856,31 @@ static enum retbleed_mitigation retbleed
@@ -98,26 +123,3 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  
  	return sprintf(buf, "%s\n", retbleed_strings[retbleed_mitigation]);
  }
---- a/Documentation/admin-guide/kernel-parameters.txt
-+++ b/Documentation/admin-guide/kernel-parameters.txt
-@@ -3981,10 +3981,16 @@
- 			Speculative Code Execution with Return Instructions)
- 			vulnerability.
- 
--			auto        - automatically select a migitation
--			unret       - force enable untrained return thunks,
--				      only effective on AMD Zen {1,2}
--				      based systems.
-+			auto         - automatically select a migitation
-+			auto,nosmt   - automatically select a mitigation,
-+				       disabling SMT if necessary for
-+				       the full mitigation (only on Zen1
-+				       and older without STIBP).
-+			unret        - force enable untrained return thunks,
-+				       only effective on AMD f15h-f17h
-+				       based systems.
-+			unret,nosmt  - like unret, will disable SMT when STIBP
-+			               is not available.
- 
- 			Selecting 'auto' will choose a mitigation method at run
- 			time according to the CPU.

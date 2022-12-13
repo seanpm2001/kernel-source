@@ -1,0 +1,39 @@
+From 1cc3e4aaaa0e0fed1e0ca378860fcbdea6fae386 Mon Sep 17 00:00:00 2001
+From: Sabrina Dubroca <sd@queasysnail.net>
+Date: Tue, 10 Oct 2017 17:07:12 +0200
+Subject: [PATCH 04/11] macsec: fix memory leaks when skb_to_sgvec fails
+Patch-mainline: v4.14-rc6
+Git-commit: 5aba2ba5030b66a6f8c93049b718556f9aacd7c6
+References: git-fixes
+
+Fixes: cda7ea690350 ("macsec: check return value of skb_to_sgvec always")
+Signed-off-by: Sabrina Dubroca <sd@queasysnail.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/macsec.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/net/macsec.c b/drivers/net/macsec.c
+index 6661f48356c1..e22c191c3343 100644
+--- a/drivers/net/macsec.c
++++ b/drivers/net/macsec.c
+@@ -750,6 +750,7 @@ static struct sk_buff *macsec_encrypt(struct sk_buff *skb,
+ 	sg_init_table(sg, ret);
+ 	ret = skb_to_sgvec(skb, sg, 0, skb->len);
+ 	if (unlikely(ret < 0)) {
++		aead_request_free(req);
+ 		macsec_txsa_put(tx_sa);
+ 		kfree_skb(skb);
+ 		return ERR_PTR(ret);
+@@ -966,6 +967,7 @@ static struct sk_buff *macsec_decrypt(struct sk_buff *skb,
+ 	sg_init_table(sg, ret);
+ 	ret = skb_to_sgvec(skb, sg, 0, skb->len);
+ 	if (unlikely(ret < 0)) {
++		aead_request_free(req);
+ 		kfree_skb(skb);
+ 		return ERR_PTR(ret);
+ 	}
+-- 
+2.16.4
+
