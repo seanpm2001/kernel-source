@@ -24,20 +24,15 @@ For spectre v2 mitigation, when a user selects a mitigation that
 protects indirect CALLs and JMPs against BHI and intramode-BTI, set
 RRSBA_DIS_S also to protect RETs for RSB-underflow case.
 
-[js]
- * eIBRS not supported -- drop
- * SPECTRE_V2_RETPOLINE has a different name -- rename
- * write_spec_ctrl_current() not present yet -- replace by wrmsrl()
-
 Signed-off-by: Pawan Gupta <pawan.kumar.gupta@linux.intel.com>
 Signed-off-by: Borislav Petkov <bp@suse.de>
 Signed-off-by: Jiri Slaby <jslaby@suse.cz>
 ---
- arch/x86/include/asm/cpufeatures.h |    1 +
+ arch/x86/include/asm/cpufeatures.h |    2 +-
  arch/x86/include/asm/msr-index.h   |    9 +++++++++
- arch/x86/kernel/cpu/bugs.c         |   24 ++++++++++++++++++++++++
+ arch/x86/kernel/cpu/bugs.c         |   26 ++++++++++++++++++++++++++
  arch/x86/kernel/cpu/scattered.c    |    1 +
- 4 files changed, 35 insertions(+)
+ 4 files changed, 37 insertions(+), 1 deletion(-)
 
 --- a/arch/x86/include/asm/cpufeatures.h
 +++ b/arch/x86/include/asm/cpufeatures.h
@@ -46,7 +41,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  #define X86_FEATURE_FENCE_SWAPGS_KERNEL	(11*32+ 5) /* "" LFENCE in kernel entry SWAPGS path */
  #define X86_FEATURE_ENTRY_IBPB		(11*32+10) /* "" Issue an IBPB on kernel entry */
 -/* FREE!				(11*32+11) */
-+#define X86_FEATURE_RRSBA_CTRL          (11*32+11) /* "" RET prediction control */
++#define X86_FEATURE_RRSBA_CTRL		(11*32+11) /* "" RET prediction control */
  #define X86_FEATURE_RETPOLINE		(11*32+12) /* "" Generic Retpoline mitigation for Spectre variant 2 */
  #define X86_FEATURE_RETPOLINE_LFENCE	(11*32+13) /* "" Use LFENCE for Spectre variant 2 */
  #define X86_FEATURE_RETHUNK		(11*32+14) /* "" Use REturn THUNK */
@@ -61,9 +56,9 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  
  #define MSR_IA32_PRED_CMD		0x00000049 /* Prediction Command */
  #define PRED_CMD_IBPB			BIT(0)	   /* Indirect Branch Prediction Barrier */
-@@ -101,6 +103,13 @@
- 						 * Writeback and invalidate the
- 						 * L1 data cache.
+@@ -129,6 +131,13 @@
+ 						 * bit available to control VERW
+ 						 * behavior.
  						 */
 +#define ARCH_CAP_RRSBA			BIT(19)	/*
 +						 * Indicates RET may use predictors
@@ -73,8 +68,8 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
 +						 * kernel.
 +						 */
  
- #define MSR_IA32_BBL_CR_CTL		0x00000119
- #define MSR_IA32_BBL_CR_CTL3		0x0000011e
+ #define MSR_IA32_FLUSH_CMD		0x0000010b
+ #define L1D_FLUSH			BIT(0)	/*
 --- a/arch/x86/kernel/cpu/bugs.c
 +++ b/arch/x86/kernel/cpu/bugs.c
 @@ -1358,6 +1358,22 @@ static enum spectre_v2_mitigation __init
@@ -84,23 +79,23 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
 +/* Disable in-kernel use of non-RSB RET predictors */
 +static void __init spec_ctrl_disable_kernel_rrsba(void)
 +{
-+       u64 ia32_cap;
++	u64 ia32_cap;
 +
-+       if (!boot_cpu_has(X86_FEATURE_RRSBA_CTRL))
-+               return;
++	if (!boot_cpu_has(X86_FEATURE_RRSBA_CTRL))
++		return;
 +
-+       ia32_cap = x86_read_arch_cap_msr();
++	ia32_cap = x86_read_arch_cap_msr();
 +
-+       if (ia32_cap & ARCH_CAP_RRSBA) {
-+               x86_spec_ctrl_base |= SPEC_CTRL_RRSBA_DIS_S;
-+               wrmsrl(MSR_IA32_SPEC_CTRL, x86_spec_ctrl_base);
-+       }
++	if (ia32_cap & ARCH_CAP_RRSBA) {
++		x86_spec_ctrl_base |= SPEC_CTRL_RRSBA_DIS_S;
++		write_spec_ctrl_current(x86_spec_ctrl_base, true);
++	}
 +}
 +
  static void __init spectre_v2_select_mitigation(void)
  {
  	enum spectre_v2_mitigation_cmd cmd = spectre_v2_parse_cmdline();
-@@ -1451,6 +1467,14 @@ static void __init spectre_v2_select_mit
+@@ -1451,6 +1467,16 @@ static void __init spectre_v2_select_mit
  		break;
  	}
  
@@ -109,7 +104,9 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
 +	 * JMPs gets protection against BHI and Intramode-BTI, but RET
 +	 * prediction from a non-RSB predictor is still a risk.
 +	 */
-+	if (mode == SPECTRE_V2_RETPOLINE)
++	if (mode == SPECTRE_V2_EIBRS_LFENCE ||
++	    mode == SPECTRE_V2_EIBRS_RETPOLINE ||
++	    mode == SPECTRE_V2_RETPOLINE)
 +		spec_ctrl_disable_kernel_rrsba();
 +
  	spectre_v2_enabled = mode;
