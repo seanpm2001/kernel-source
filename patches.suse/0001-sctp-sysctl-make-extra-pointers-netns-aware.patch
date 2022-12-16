@@ -1,4 +1,4 @@
-From cc9f1d70ad8080b84ffb9c6ed3d8110a1786e775 Mon Sep 17 00:00:00 2001
+From 775e6d53e9942316a914d0adbc83bdee7fb5734f Mon Sep 17 00:00:00 2001
 From: Firo Yang <firo.yang@suse.com>
 Date: Fri, 16 Dec 2022 07:53:39 +0100
 Subject: [PATCH 1/1] sctp: sysctl: make extra pointers netns aware
@@ -42,14 +42,14 @@ Reviewed-by: Jakub Kicinski <kuba@kernel.org>
 Acked-by: Marcelo Ricardo Leitner <marcelo.leitner@gmail.com>
 Signed-off-by: Firo Yang <firo.yang@suse.com>
 ---
- net/sctp/sysctl.c | 53 +++++++++++++++++++++++++++++------------------
- 1 file changed, 33 insertions(+), 20 deletions(-)
+ net/sctp/sysctl.c | 33 ++++++++++++++++++++++-----------
+ 1 file changed, 22 insertions(+), 11 deletions(-)
 
 diff --git a/net/sctp/sysctl.c b/net/sctp/sysctl.c
-index 1250751bca1b..8b8d539cd2ff 100644
+index 1250751bca1b..0b660fba93ff 100644
 --- a/net/sctp/sysctl.c
 +++ b/net/sctp/sysctl.c
-@@ -82,17 +82,17 @@ static struct ctl_table sctp_table[] = {
+@@ -82,17 +82,16 @@ static struct ctl_table sctp_table[] = {
  	{ /* sentinel */ }
  };
  
@@ -60,7 +60,6 @@ index 1250751bca1b..8b8d539cd2ff 100644
 + */
 +#define SCTP_RTO_MIN_IDX       0
 +#define SCTP_RTO_MAX_IDX       1
-+#define SCTP_PF_RETRANS_IDX    2
 +
  static struct ctl_table sctp_net_table[] = {
 -	{
@@ -77,7 +76,7 @@ index 1250751bca1b..8b8d539cd2ff 100644
  		.procname	= "rto_min",
  		.data		= &init_net.sctp.rto_min,
  		.maxlen		= sizeof(unsigned int),
-@@ -101,7 +101,7 @@ static struct ctl_table sctp_net_table[] = {
+@@ -101,7 +100,7 @@ static struct ctl_table sctp_net_table[] = {
  		.extra1         = SYSCTL_ONE,
  		.extra2         = &init_net.sctp.rto_max
  	},
@@ -86,19 +85,10 @@ index 1250751bca1b..8b8d539cd2ff 100644
  		.procname	= "rto_max",
  		.data		= &init_net.sctp.rto_max,
  		.maxlen		= sizeof(unsigned int),
-@@ -110,6 +110,24 @@ static struct ctl_table sctp_net_table[] = {
+@@ -110,6 +109,15 @@ static struct ctl_table sctp_net_table[] = {
  		.extra1         = &init_net.sctp.rto_min,
  		.extra2         = &timer_max
  	},
-+	[SCTP_PF_RETRANS_IDX] = {
-+		.procname	= "pf_retrans",
-+		.data		= &init_net.sctp.pf_retrans,
-+		.maxlen		= sizeof(int),
-+		.mode		= 0644,
-+		.proc_handler	= proc_dointvec_minmax,
-+		.extra1		= SYSCTL_ZERO,
-+		.extra2		= &init_net.sctp.ps_retrans,
-+	},
 +	{
 +		.procname	= "rto_initial",
 +		.data		= &init_net.sctp.rto_initial,
@@ -111,29 +101,12 @@ index 1250751bca1b..8b8d539cd2ff 100644
  	{
  		.procname	= "rto_alpha_exp_divisor",
  		.data		= &init_net.sctp.rto_alpha,
-@@ -205,15 +223,6 @@ static struct ctl_table sctp_net_table[] = {
- 		.extra1		= SYSCTL_ONE,
- 		.extra2		= SYSCTL_INT_MAX,
- 	},
--	{
--		.procname	= "pf_retrans",
--		.data		= &init_net.sctp.pf_retrans,
--		.maxlen		= sizeof(int),
--		.mode		= 0644,
--		.proc_handler	= proc_dointvec_minmax,
--		.extra1		= SYSCTL_ZERO,
--		.extra2		= SYSCTL_INT_MAX,
--	},
- 	{
- 		.procname	= "sndbuf_policy",
- 		.data		= &init_net.sctp.sndbuf_policy,
-@@ -472,6 +481,10 @@ int sctp_sysctl_net_register(struct net *net)
+@@ -472,6 +480,9 @@ int sctp_sysctl_net_register(struct net *net)
  	for (i = 0; table[i].data; i++)
  		table[i].data += (char *)(&net->sctp) - (char *)&init_net.sctp;
  
 +	table[SCTP_RTO_MIN_IDX].extra2 = &net->sctp.rto_max;
 +	table[SCTP_RTO_MAX_IDX].extra1 = &net->sctp.rto_min;
-+	table[SCTP_PS_RETRANS_IDX].extra1 = &net->sctp.pf_retrans;
 +
  	net->sctp.sysctl_header = register_net_sysctl(net, "net/sctp", table);
  	if (net->sctp.sysctl_header == NULL) {
