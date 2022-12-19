@@ -1,0 +1,48 @@
+From: Adrian Hunter <adrian.hunter@intel.com>
+Date: Tue, 11 Aug 2020 16:39:36 +0300
+Subject: scsi: ufs: Improve interrupt handling for shared interrupts
+Git-commit: 127d5f7c4b653b8be5eb3b2c7bbe13728f9003ff
+Patch-mainline: v5.9-rc2
+References: git-fixes
+
+For shared interrupts, the interrupt status might be zero, so check that
+first.
+
+Link: https://lore.kernel.org/r/20200811133936.19171-2-adrian.hunter@intel.com
+Reviewed-by: Avri Altman <avri.altman@wdc.com>
+Signed-off-by: Adrian Hunter <adrian.hunter@intel.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/ufs/ufshcd.c |    6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+--- a/drivers/scsi/ufs/ufshcd.c
++++ b/drivers/scsi/ufs/ufshcd.c
+@@ -5522,7 +5522,7 @@ static void ufshcd_sl_intr(struct ufs_hb
+  */
+ static irqreturn_t ufshcd_intr(int irq, void *__hba)
+ {
+-	u32 intr_status, enabled_intr_status;
++	u32 intr_status, enabled_intr_status = 0;
+ 	irqreturn_t retval = IRQ_NONE;
+ 	struct ufs_hba *hba = __hba;
+ 	int retries = hba->nutrs;
+@@ -5536,7 +5536,7 @@ static irqreturn_t ufshcd_intr(int irq,
+ 	 * read, make sure we handle them by checking the interrupt status
+ 	 * again in a loop until we process all of the reqs before returning.
+ 	 */
+-	do {
++	while (intr_status && retries--) {
+ 		enabled_intr_status =
+ 			intr_status & ufshcd_readl(hba, REG_INTERRUPT_ENABLE);
+ 		if (intr_status)
+@@ -5547,7 +5547,7 @@ static irqreturn_t ufshcd_intr(int irq,
+ 		}
+ 
+ 		intr_status = ufshcd_readl(hba, REG_INTERRUPT_STATUS);
+-	} while (intr_status && --retries);
++	}
+ 
+ 	spin_unlock(hba->host->host_lock);
+ 	return retval;
