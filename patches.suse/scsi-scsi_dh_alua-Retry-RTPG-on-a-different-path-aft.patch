@@ -24,20 +24,12 @@ Signed-off-by: Martin Wilck <mwilck@suse.com>
 Signed-off-by: Hannes Reinecke <hare@suse.de>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
 ---
- drivers/scsi/device_handler/scsi_dh_alua.c |   71 ++++++++++++++++++++++++++++-
- 1 file changed, 69 insertions(+), 2 deletions(-)
+ drivers/scsi/device_handler/scsi_dh_alua.c |   70 +++++++++++++++++++++++++++--
+ 1 file changed, 67 insertions(+), 3 deletions(-)
 
 --- a/drivers/scsi/device_handler/scsi_dh_alua.c
 +++ b/drivers/scsi/device_handler/scsi_dh_alua.c
-@@ -54,6 +54,7 @@
- #define ALUA_FAILOVER_TIMEOUT		60
- #define ALUA_FAILOVER_RETRIES		5
- #define ALUA_RTPG_DELAY_MSECS		5
-+#define ALUA_RTPG_RETRY_DELAY		2
- 
- /* device handler flags */
- #define ALUA_OPTIMIZE_STPG		0x01
-@@ -101,6 +102,7 @@ struct alua_dh_data {
+@@ -102,6 +102,7 @@ struct alua_dh_data {
  	struct scsi_device	*sdev;
  	int			init_error;
  	struct mutex		init_mutex;
@@ -45,7 +37,7 @@ Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
  };
  
  struct alua_queue_data {
-@@ -567,6 +569,8 @@ static int alua_rtpg(struct scsi_device
+@@ -569,6 +570,8 @@ static int alua_rtpg(struct scsi_device
  			kfree(buff);
  			if (driver_byte(retval) == DRIVER_ERROR)
  				return SCSI_DH_DEV_TEMP_BUSY;
@@ -54,7 +46,7 @@ Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
  			return SCSI_DH_IO;
  		}
  
-@@ -791,6 +795,51 @@ static unsigned alua_stpg(struct scsi_de
+@@ -805,6 +808,51 @@ static unsigned alua_stpg(struct scsi_de
  	return SCSI_DH_RETRY;
  }
  
@@ -106,7 +98,7 @@ Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
  static void alua_rtpg_work(struct work_struct *work)
  {
  	struct alua_port_group *pg =
-@@ -799,6 +848,7 @@ static void alua_rtpg_work(struct work_s
+@@ -813,6 +861,7 @@ static void alua_rtpg_work(struct work_s
  	LIST_HEAD(qdata_list);
  	int err = SCSI_DH_OK;
  	struct alua_queue_data *qdata, *tmp;
@@ -114,7 +106,7 @@ Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
  	unsigned long flags;
  
  	spin_lock_irqsave(&pg->lock, flags);
-@@ -830,8 +880,19 @@ static void alua_rtpg_work(struct work_s
+@@ -846,9 +895,18 @@ static void alua_rtpg_work(struct work_s
  		}
  		err = alua_rtpg(sdev, pg);
  		spin_lock_irqsave(&pg->lock, flags);
@@ -128,14 +120,14 @@ Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
 +		if (err == SCSI_DH_RETRY || err == SCSI_DH_IMM_RETRY ||
 +		    pg->flags & ALUA_PG_RUN_RTPG) {
  			pg->flags &= ~ALUA_PG_RUNNING;
+-			if (!pg->interval && !(pg->flags & ALUA_PG_RUN_RTPG))
 +			if (err == SCSI_DH_IMM_RETRY)
 +				pg->interval = 0;
 +			else if (!pg->interval && !(pg->flags & ALUA_PG_RUN_RTPG))
-+				pg->interval = ALUA_RTPG_RETRY_DELAY;
+ 				pg->interval = ALUA_RTPG_RETRY_DELAY;
  			pg->flags |= ALUA_PG_RUN_RTPG;
  			spin_unlock_irqrestore(&pg->lock, flags);
- 			queue_delayed_work(kaluad_wq, &pg->rtpg_work,
-@@ -858,6 +919,12 @@ static void alua_rtpg_work(struct work_s
+@@ -876,6 +934,12 @@ static void alua_rtpg_work(struct work_s
  	}
  
  	list_splice_init(&pg->rtpg_list, &qdata_list);
@@ -148,7 +140,7 @@ Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
  	pg->rtpg_sdev = NULL;
  	spin_unlock_irqrestore(&pg->lock, flags);
  
-@@ -942,6 +1009,7 @@ static int alua_initialize(struct scsi_d
+@@ -960,6 +1024,7 @@ static int alua_initialize(struct scsi_d
  	int err = SCSI_DH_DEV_UNSUPP, tpgs;
  
  	mutex_lock(&h->init_mutex);
@@ -156,7 +148,7 @@ Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
  	tpgs = alua_check_tpgs(sdev);
  	if (tpgs != TPGS_MODE_NONE)
  		err = alua_check_vpd(sdev, h, tpgs);
-@@ -1060,7 +1128,6 @@ static void alua_check(struct scsi_devic
+@@ -1078,7 +1143,6 @@ static void alua_check(struct scsi_devic
  		return;
  	}
  	rcu_read_unlock();
