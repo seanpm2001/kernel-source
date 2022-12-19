@@ -1,0 +1,42 @@
+From: Finn Thain <fthain@telegraphics.com.au>
+Date: Thu, 27 Sep 2018 11:17:11 +1000
+Subject: scsi: NCR5380: Withhold disconnect privilege for REQUEST SENSE
+Git-commit: 7c8ed783c2faa1e3f741844ffac41340338ea0f4
+Patch-mainline: v4.20-rc1
+References: git-fixes
+
+This is mostly needed because an AztecMonster II target has been observed
+disconnecting REQUEST SENSE commands and then failing to reselect properly.
+
+Suggested-by: Michael Schmitz <schmitzmic@gmail.com>
+Tested-by: Michael Schmitz <schmitzmic@gmail.com>
+Signed-off-by: Finn Thain <fthain@telegraphics.com.au>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/NCR5380.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/scsi/NCR5380.c b/drivers/scsi/NCR5380.c
+index 7be1ba2b9e4e..5226164cfa65 100644
+--- a/drivers/scsi/NCR5380.c
++++ b/drivers/scsi/NCR5380.c
+@@ -936,6 +936,8 @@ static bool NCR5380_select(struct Scsi_Host *instance, struct scsi_cmnd *cmd)
+ 	int len;
+ 	int err;
+ 	bool ret = true;
++	bool can_disconnect = instance->irq != NO_IRQ &&
++			      cmd->cmnd[0] != REQUEST_SENSE;
+ 
+ 	NCR5380_dprint(NDEBUG_ARBITRATION, instance);
+ 	dsprintk(NDEBUG_ARBITRATION, instance, "starting arbitration, id = %d\n",
+@@ -1159,7 +1161,7 @@ static bool NCR5380_select(struct Scsi_Host *instance, struct scsi_cmnd *cmd)
+ 
+ 	dsprintk(NDEBUG_SELECTION, instance, "target %d selected, going into MESSAGE OUT phase.\n",
+ 	         scmd_id(cmd));
+-	tmp[0] = IDENTIFY(((instance->irq == NO_IRQ) ? 0 : 1), cmd->device->lun);
++	tmp[0] = IDENTIFY(can_disconnect, cmd->device->lun);
+ 
+ 	len = 1;
+ 	data = tmp;
+
