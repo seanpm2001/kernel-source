@@ -1,0 +1,34 @@
+From: Christoph Hellwig <hch@lst.de>
+Date: Thu, 11 Oct 2018 16:17:15 +0200
+Subject: scsi: dc395x: fix DMA API usage in sg_update_list
+Git-commit: 6c404a68bf83b4135a8a9aa1c388ebdf98e8ba7f
+Patch-mainline: v4.20-rc1
+References: git-fixes
+
+We need to transfer device ownership to the CPU before we can manipulate
+the mapped data.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/dc395x.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/scsi/dc395x.c b/drivers/scsi/dc395x.c
+index 8d7a26a33951..f3b65e5efe2b 100644
+--- a/drivers/scsi/dc395x.c
++++ b/drivers/scsi/dc395x.c
+@@ -1871,6 +1871,11 @@ static void sg_update_list(struct ScsiReqBlk *srb, u32 left)
+ 			xferred -= psge->length;
+ 		} else {
+ 			/* Partial SG entry done */
++			pci_dma_sync_single_for_cpu(srb->dcb->
++					    acb->dev,
++					    srb->sg_bus_addr,
++					    SEGMENTX_LEN,
++					    PCI_DMA_TODEVICE);
+ 			psge->length -= xferred;
+ 			psge->address += xferred;
+ 			srb->sg_index = idx;
+
