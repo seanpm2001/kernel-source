@@ -1,0 +1,37 @@
+From: Finn Thain <fthain@telegraphics.com.au>
+Date: Thu, 27 Sep 2018 11:17:11 +1000
+Subject: scsi: NCR5380: Check for invalid reselection target
+Git-commit: 7ef55f6744c45e3d7c85a3f74ada39b67ac741dd
+Patch-mainline: v4.20-rc1
+References: git-fixes
+
+The X3T9.2 specification (draft) says, under "6.1.4.1 RESELECTION", that "the
+initiator shall not respond to a RESELECTION phase if other than two SCSI ID
+bits are on the DATA BUS." This issue (too many bits set) has been observed in
+the wild, so add a check.
+
+Tested-by: Michael Schmitz <schmitzmic@gmail.com>
+Signed-off-by: Finn Thain <fthain@telegraphics.com.au>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/NCR5380.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/scsi/NCR5380.c b/drivers/scsi/NCR5380.c
+index e96a48b9e86c..3058b68b6740 100644
+--- a/drivers/scsi/NCR5380.c
++++ b/drivers/scsi/NCR5380.c
+@@ -2016,6 +2016,11 @@ static void NCR5380_reselect(struct Scsi_Host *instance)
+ 	NCR5380_write(MODE_REG, MR_BASE);
+ 
+ 	target_mask = NCR5380_read(CURRENT_SCSI_DATA_REG) & ~(hostdata->id_mask);
++	if (!target_mask || target_mask & (target_mask - 1)) {
++		shost_printk(KERN_WARNING, instance,
++			     "reselect: bad target_mask 0x%02x\n", target_mask);
++		return;
++	}
+ 
+ 	dsprintk(NDEBUG_RESELECTION, instance, "reselect\n");
+ 
+
