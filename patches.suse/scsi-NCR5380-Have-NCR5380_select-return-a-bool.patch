@@ -1,0 +1,133 @@
+From: Finn Thain <fthain@telegraphics.com.au>
+Date: Thu, 27 Sep 2018 11:17:11 +1000
+Subject: scsi: NCR5380: Have NCR5380_select() return a bool
+Git-commit: dad8261e643849ea134c7cd5c8e794e31d93b9eb
+Patch-mainline: v4.20-rc1
+References: git-fixes
+
+The return value is taken to mean "retry" or "don't retry". Change it to bool
+to improve readability. Fix related comments. No functional change.
+
+Tested-by: Michael Schmitz <schmitzmic@gmail.com>
+Signed-off-by: Finn Thain <fthain@telegraphics.com.au>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/NCR5380.c |   40 ++++++++++++++++++----------------------
+ drivers/scsi/NCR5380.h |    2 +-
+ 2 files changed, 19 insertions(+), 23 deletions(-)
+
+--- a/drivers/scsi/NCR5380.c
++++ b/drivers/scsi/NCR5380.c
+@@ -901,20 +901,16 @@ static irqreturn_t __maybe_unused NCR538
+ 	return IRQ_RETVAL(handled);
+ }
+ 
+-/*
+- * Function : int NCR5380_select(struct Scsi_Host *instance,
+- * struct scsi_cmnd *cmd)
+- *
+- * Purpose : establishes I_T_L or I_T_L_Q nexus for new or existing command,
+- * including ARBITRATION, SELECTION, and initial message out for
+- * IDENTIFY and queue messages.
++/**
++ * NCR5380_select - attempt arbitration and selection for a given command
++ * @instance: the Scsi_Host instance
++ * @cmd: the scsi_cmnd to execute
+  *
+- * Inputs : instance - instantiation of the 5380 driver on which this
+- * target lives, cmd - SCSI command to execute.
++ * This routine establishes an I_T_L nexus for a SCSI command. This involves
++ * ARBITRATION, SELECTION and MESSAGE OUT phases and an IDENTIFY message.
+  *
+- * Returns cmd if selection failed but should be retried,
+- * NULL if selection failed and should not be retried, or
+- * NULL if selection succeeded (hostdata->connected == cmd).
++ * Returns true if the operation should be retried.
++ * Returns false if it should not be retried.
+  *
+  * Side effects :
+  * If bus busy, arbitration failed, etc, NCR5380_select() will exit
+@@ -922,16 +918,15 @@ static irqreturn_t __maybe_unused NCR538
+  * SELECT_ENABLE will be set appropriately, the NCR5380
+  * will cease to drive any SCSI bus signals.
+  *
+- * If successful : I_T_L or I_T_L_Q nexus will be established,
+- * instance->connected will be set to cmd.
++ * If successful : the I_T_L nexus will be established, and
++ * hostdata->connected will be set to cmd.
+  * SELECT interrupt will be disabled.
+  *
+  * If failed (no target) : cmd->scsi_done() will be called, and the
+  * cmd->result host byte set to DID_BAD_TARGET.
+  */
+ 
+-static struct scsi_cmnd *NCR5380_select(struct Scsi_Host *instance,
+-                                        struct scsi_cmnd *cmd)
++static bool NCR5380_select(struct Scsi_Host *instance, struct scsi_cmnd *cmd)
+ 	__releases(&hostdata->lock) __acquires(&hostdata->lock)
+ {
+ 	struct NCR5380_hostdata *hostdata = shost_priv(instance);
+@@ -939,6 +934,7 @@ static struct scsi_cmnd *NCR5380_select(
+ 	unsigned char *data;
+ 	int len;
+ 	int err;
++	bool ret = true;
+ 
+ 	NCR5380_dprint(NDEBUG_ARBITRATION, instance);
+ 	dsprintk(NDEBUG_ARBITRATION, instance, "starting arbitration, id = %d\n",
+@@ -947,7 +943,7 @@ static struct scsi_cmnd *NCR5380_select(
+ 	/*
+ 	 * Arbitration and selection phases are slow and involve dropping the
+ 	 * lock, so we have to watch out for EH. An exception handler may
+-	 * change 'selecting' to NULL. This function will then return NULL
++	 * change 'selecting' to NULL. This function will then return false
+ 	 * so that the caller will forget about 'cmd'. (During information
+ 	 * transfer phases, EH may change 'connected' to NULL.)
+ 	 */
+@@ -1120,7 +1116,7 @@ static struct scsi_cmnd *NCR5380_select(
+ 			cmd->result = DID_BAD_TARGET << 16;
+ 			complete_cmd(instance, cmd);
+ 			dsprintk(NDEBUG_SELECTION, instance, "target did not respond within 250ms\n");
+-			cmd = NULL;
++			ret = false;
+ 		}
+ 		goto out;
+ 	}
+@@ -1170,7 +1166,7 @@ static struct scsi_cmnd *NCR5380_select(
+ 		cmd->result = DID_ERROR << 16;
+ 		complete_cmd(instance, cmd);
+ 		dsprintk(NDEBUG_SELECTION, instance, "IDENTIFY message transfer failed\n");
+-		cmd = NULL;
++		ret = false;
+ 		goto out;
+ 	}
+ 
+@@ -1185,13 +1181,13 @@ static struct scsi_cmnd *NCR5380_select(
+ 
+ 	initialize_SCp(cmd);
+ 
+-	cmd = NULL;
++	ret = false;
+ 
+ out:
+ 	if (!hostdata->selecting)
+-		return NULL;
++		return NULL;	/* lduncan: should this be returning "false"? */
+ 	hostdata->selecting = NULL;
+-	return cmd;
++	return ret;
+ }
+ 
+ /*
+--- a/drivers/scsi/NCR5380.h
++++ b/drivers/scsi/NCR5380.h
+@@ -274,7 +274,7 @@ static irqreturn_t NCR5380_intr(int irq,
+ static void NCR5380_main(struct work_struct *work);
+ static const char *NCR5380_info(struct Scsi_Host *instance);
+ static void NCR5380_reselect(struct Scsi_Host *instance);
+-static struct scsi_cmnd *NCR5380_select(struct Scsi_Host *, struct scsi_cmnd *);
++static bool NCR5380_select(struct Scsi_Host *, struct scsi_cmnd *);
+ static int NCR5380_transfer_dma(struct Scsi_Host *instance, unsigned char *phase, int *count, unsigned char **data);
+ static int NCR5380_transfer_pio(struct Scsi_Host *instance, unsigned char *phase, int *count, unsigned char **data);
+ static int NCR5380_poll_politely2(struct NCR5380_hostdata *,
