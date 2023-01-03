@@ -1,0 +1,29 @@
+From: Lin Yi <teroincn@163.com>
+Date: Mon, 10 Jun 2019 10:16:56 +0800
+Subject: [PATCH] net :sunrpc :clnt :Fix xps refcount imbalance on the error
+ path
+Git-commit: b96226148491505318228ac52624956bd98f9e0c
+Patch-mainline: v5.2
+References: git-fixes
+
+rpc_clnt_add_xprt take a reference to struct rpc_xprt_switch, but forget
+to release it before return, may lead to a memory leak.
+
+Signed-off-by: Lin Yi <teroincn@163.com>
+Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ net/sunrpc/clnt.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/net/sunrpc/clnt.c
++++ b/net/sunrpc/clnt.c
+@@ -2839,6 +2839,7 @@ int rpc_clnt_add_xprt(struct rpc_clnt *c
+ 	xprt = xprt_iter_xprt(&clnt->cl_xpi);
+ 	if (xps == NULL || xprt == NULL) {
+ 		rcu_read_unlock();
++		xprt_switch_put(xps);
+ 		return -EAGAIN;
+ 	}
+ 	resvport = xprt->resvport;
