@@ -50,7 +50,7 @@ Acked-by: NeilBrown <neilb@suse.com>
 
 --- a/fs/nfs/write.c
 +++ b/fs/nfs/write.c
-@@ -1413,6 +1413,8 @@ static void nfs_initiate_write(struct nf
+@@ -1410,6 +1410,8 @@ static void nfs_initiate_write(struct nf
  {
  	int priority = flush_task_priority(how);
  
@@ -61,7 +61,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  
 --- a/net/sunrpc/clnt.c
 +++ b/net/sunrpc/clnt.c
-@@ -1061,8 +1061,6 @@ void rpc_task_set_client(struct rpc_task
+@@ -1086,8 +1086,6 @@ void rpc_task_set_client(struct rpc_task
  			task->tk_flags |= RPC_TASK_SOFT;
  		if (clnt->cl_noretranstimeo)
  			task->tk_flags |= RPC_TASK_NO_RETRANS_TIMEOUT;
@@ -136,7 +136,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  	if (size <= RPC_BUFFER_MAXSIZE)
 --- a/net/sunrpc/xprt.c
 +++ b/net/sunrpc/xprt.c
-@@ -993,6 +993,9 @@ bool xprt_prepare_transmit(struct rpc_ta
+@@ -987,6 +987,9 @@ bool xprt_prepare_transmit(struct rpc_ta
  		task->tk_status = -EAGAIN;
  		goto out_unlock;
  	}
@@ -148,7 +148,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  	spin_unlock_bh(&xprt->transport_lock);
 --- a/net/sunrpc/xprtrdma/transport.c
 +++ b/net/sunrpc/xprtrdma/transport.c
-@@ -257,13 +257,17 @@ xprt_rdma_connect_worker(struct work_str
+@@ -261,13 +261,17 @@ xprt_rdma_connect_worker(struct work_str
  	struct rpcrdma_xprt *r_xprt = container_of(work, struct rpcrdma_xprt,
  						   rx_connect_worker.work);
  	struct rpc_xprt *xprt = &r_xprt->rx_xprt;
@@ -166,7 +166,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  
  	xprt_clear_connecting(xprt);
  }
-@@ -667,8 +671,6 @@ xprt_rdma_allocate(struct rpc_task *task
+@@ -671,8 +675,6 @@ xprt_rdma_allocate(struct rpc_task *task
  	flags = RPCRDMA_DEF_GFP;
  	if (RPC_IS_ASYNC(task))
  		flags = GFP_NOWAIT | __GFP_NOWARN;
@@ -177,7 +177,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  		goto out_fail;
 --- a/net/sunrpc/xprtsock.c
 +++ b/net/sunrpc/xprtsock.c
-@@ -2224,7 +2224,10 @@ static void xs_udp_setup_socket(struct w
+@@ -2227,7 +2227,10 @@ static void xs_udp_setup_socket(struct w
  	struct rpc_xprt *xprt = &transport->xprt;
  	struct socket *sock = transport->sock;
  	int status = -EIO;
@@ -188,15 +188,15 @@ Acked-by: NeilBrown <neilb@suse.com>
  	sock = xs_create_sock(xprt, transport,
  			xs_addr(xprt)->sa_family, SOCK_DGRAM,
  			IPPROTO_UDP, false);
-@@ -2244,6 +2247,7 @@ out:
- 	xprt_unlock_connect(xprt, transport);
+@@ -2247,6 +2250,7 @@ out:
  	xprt_clear_connecting(xprt);
+ 	xprt_unlock_connect(xprt, transport);
  	xprt_wake_pending_tasks(xprt, status);
 +	current_restore_flags(pflags, PF_MEMALLOC);
  }
  
  /**
-@@ -2415,7 +2419,10 @@ static void xs_tcp_setup_socket(struct w
+@@ -2416,7 +2420,10 @@ static void xs_tcp_setup_socket(struct w
  	struct socket *sock = transport->sock;
  	struct rpc_xprt *xprt = &transport->xprt;
  	int status = -EIO;
@@ -207,7 +207,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  	if (!sock) {
  		sock = xs_create_sock(xprt, transport,
  				xs_addr(xprt)->sa_family, SOCK_STREAM,
-@@ -2451,7 +2458,7 @@ static void xs_tcp_setup_socket(struct w
+@@ -2452,7 +2459,7 @@ static void xs_tcp_setup_socket(struct w
  	case -EINPROGRESS:
  	case -EALREADY:
  		xprt_unlock_connect(xprt, transport);
@@ -216,9 +216,9 @@ Acked-by: NeilBrown <neilb@suse.com>
  	case -EINVAL:
  		/* Happens, for instance, if the user specified a link
  		 * local IPv6 address without a scope-id.
-@@ -2474,6 +2481,8 @@ out:
- 	xprt_unlock_connect(xprt, transport);
+@@ -2475,6 +2482,8 @@ out:
  	xprt_clear_connecting(xprt);
+ 	xprt_unlock_connect(xprt, transport);
  	xprt_wake_pending_tasks(xprt, status);
 +out_restore:
 +	current_restore_flags(pflags, PF_MEMALLOC);
