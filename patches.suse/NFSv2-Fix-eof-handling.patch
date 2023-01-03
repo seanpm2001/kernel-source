@@ -1,0 +1,29 @@
+From: Trond Myklebust <trond.myklebust@hammerspace.com>
+Date: Mon, 26 Aug 2019 20:41:16 -0400
+Subject: [PATCH] NFSv2: Fix eof handling
+Git-commit: 71affe9be45a5c60b9772e1b2701710712637274
+Patch-mainline: v5.3
+References: git-fixes
+
+If we received a reply from the server with a zero length read and
+no error, then that implies we are at eof.
+
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/proc.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/fs/nfs/proc.c
++++ b/fs/nfs/proc.c
+@@ -588,7 +588,8 @@ static int nfs_read_done(struct rpc_task
+ 		/* Emulate the eof flag, which isn't normally needed in NFSv2
+ 		 * as it is guaranteed to always return the file attributes
+ 		 */
+-		if (hdr->args.offset + hdr->res.count >= hdr->res.fattr->size)
++		if ((hdr->res.count == 0 && hdr->args.count > 0) ||
++		    hdr->args.offset + hdr->res.count >= hdr->res.fattr->size)
+ 			hdr->res.eof = 1;
+ 	}
+ 	return 0;
