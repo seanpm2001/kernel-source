@@ -1,0 +1,36 @@
+From 09b4438db13fa83b6219aee5993711a2aa2a0c64 Mon Sep 17 00:00:00 2001
+From: Nicholas Piggin <npiggin@gmail.com>
+Date: Sat, 15 Sep 2018 01:30:45 +1000
+Subject: [PATCH] powerpc/64s/hash: Fix stab_rr off by one initialization
+
+References: bsc#1065729
+Patch-mainline: v4.20-rc1
+Git-commit: 09b4438db13fa83b6219aee5993711a2aa2a0c64
+
+This causes SLB alloation to start 1 beyond the start of the SLB.
+There is no real problem because after it wraps it stats behaving
+properly, it's just surprisig to see when looking at SLB traces.
+
+Signed-off-by: Nicholas Piggin <npiggin@gmail.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/mm/slb.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/powerpc/mm/slb.c b/arch/powerpc/mm/slb.c
+index e941189d9bd6..07ece013856b 100644
+--- a/arch/powerpc/mm/slb.c
++++ b/arch/powerpc/mm/slb.c
+@@ -425,7 +425,7 @@ void slb_initialize(void)
+ #endif
+ 	}
+ 
+-	get_paca()->stab_rr = SLB_NUM_BOLTED;
++	get_paca()->stab_rr = SLB_NUM_BOLTED - 1;
+ 
+ 	lflags = SLB_VSID_KERNEL | linear_llp;
+ 	vflags = SLB_VSID_KERNEL | vmalloc_llp;
+-- 
+2.35.3
+
