@@ -1,0 +1,173 @@
+From: NeilBrown <neilb@suse.de>
+Date: Mon, 7 Mar 2022 10:41:44 +1100
+Subject: [PATCH] NFS: swap IO handling is slightly different for O_DIRECT IO
+Git-commit: 64158668ac8b31626a8ce48db4cad08496eb8340
+Patch-mainline: v5.18
+References: git-fixes
+
+1/ Taking the i_rwsem for swap IO triggers lockdep warnings regarding
+   possible deadlocks with "fs_reclaim".  These deadlocks could, I believe,
+   eventuate if a buffered read on the swapfile was attempted.
+
+   We don't need coherence with the page cache for a swap file, and
+   buffered writes are forbidden anyway.  There is no other need for
+   i_rwsem during direct IO.  So never take it for swap_rw()
+
+2/ generic_write_checks() explicitly forbids writes to swap, and
+   performs checks that are not needed for swap.  So bypass it
+   for swap_rw().
+
+Signed-off-by: NeilBrown <neilb@suse.de>
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/direct.c        |   42 ++++++++++++++++++++++++++++--------------
+ fs/nfs/file.c          |    4 ++--
+ include/linux/nfs_fs.h |    8 ++++----
+ 3 files changed, 34 insertions(+), 20 deletions(-)
+
+--- a/fs/nfs/direct.c
++++ b/fs/nfs/direct.c
+@@ -288,8 +288,8 @@ ssize_t nfs_direct_IO(struct kiocb *iocb
+ 	VM_BUG_ON(iov_iter_count(iter) != PAGE_SIZE);
+ 
+ 	if (iov_iter_rw(iter) == READ)
+-		return nfs_file_direct_read(iocb, iter);
+-	return nfs_file_direct_write(iocb, iter);
++		return nfs_file_direct_read(iocb, iter, true);
++	return nfs_file_direct_write(iocb, iter, true);
+ }
+ 
+ static void nfs_direct_release_pages(struct page **pages, unsigned int npages)
+@@ -553,6 +553,7 @@ static ssize_t nfs_direct_read_schedule_
+  * nfs_file_direct_read - file direct read operation for NFS files
+  * @iocb: target I/O control block
+  * @iter: vector of user buffers into which to read data
++ * @swap: flag indicating this is swap IO, not O_DIRECT IO
+  *
+  * We use this function for direct reads instead of calling
+  * generic_file_aio_read() in order to avoid gfar's check to see if
+@@ -568,7 +569,8 @@ static ssize_t nfs_direct_read_schedule_
+  * client must read the updated atime from the server back into its
+  * cache.
+  */
+-ssize_t nfs_file_direct_read(struct kiocb *iocb, struct iov_iter *iter)
++ssize_t nfs_file_direct_read(struct kiocb *iocb, struct iov_iter *iter,
++			     bool swap)
+ {
+ 	struct file *file = iocb->ki_filp;
+ 	struct address_space *mapping = file->f_mapping;
+@@ -610,12 +612,14 @@ ssize_t nfs_file_direct_read(struct kioc
+ 	if (iter_is_iovec(iter))
+ 		dreq->flags = NFS_ODIRECT_SHOULD_DIRTY;
+ 
+-	nfs_start_io_direct(inode);
++	if (!swap)
++		nfs_start_io_direct(inode);
+ 
+ 	NFS_I(inode)->read_io += count;
+ 	requested = nfs_direct_read_schedule_iovec(dreq, iter, iocb->ki_pos);
+ 
+-	nfs_end_io_direct(inode);
++	if (!swap)
++		nfs_end_io_direct(inode);
+ 
+ 	if (requested > 0) {
+ 		result = nfs_direct_wait(dreq);
+@@ -972,6 +976,7 @@ static ssize_t nfs_direct_write_schedule
+  * nfs_file_direct_write - file direct write operation for NFS files
+  * @iocb: target I/O control block
+  * @iter: vector of user buffers from which to write data
++ * @swap: flag indicating this is swap IO, not O_DIRECT IO
+  *
+  * We use this function for direct writes instead of calling
+  * generic_file_aio_write() in order to avoid taking the inode
+@@ -988,7 +993,8 @@ static ssize_t nfs_direct_write_schedule
+  * Note that O_APPEND is not supported for NFS direct writes, as there
+  * is no atomic O_APPEND write facility in the NFS protocol.
+  */
+-ssize_t nfs_file_direct_write(struct kiocb *iocb, struct iov_iter *iter)
++ssize_t nfs_file_direct_write(struct kiocb *iocb, struct iov_iter *iter,
++			      bool swap)
+ {
+ 	ssize_t result = -EINVAL, requested;
+ 	size_t count;
+@@ -1002,7 +1008,11 @@ ssize_t nfs_file_direct_write(struct kio
+ 	dfprintk(FILE, "NFS: direct write(%pD2, %zd@%Ld)\n",
+ 		file, iov_iter_count(iter), (long long) iocb->ki_pos);
+ 
+-	result = generic_write_checks(iocb, iter);
++	if (swap)
++		/* bypass generic checks */
++		result =  iov_iter_count(iter);
++	else
++		result = generic_write_checks(iocb, iter);
+ 	if (result <= 0)
+ 		return result;
+ 	count = result;
+@@ -1032,16 +1042,20 @@ ssize_t nfs_file_direct_write(struct kio
+ 	if (!is_sync_kiocb(iocb))
+ 		dreq->iocb = iocb;
+ 
+-	nfs_start_io_direct(inode);
++	if (swap) {
++		requested = nfs_direct_write_schedule_iovec(dreq, iter, pos);
++	} else {
++		nfs_start_io_direct(inode);
+ 
+-	requested = nfs_direct_write_schedule_iovec(dreq, iter, pos);
++		requested = nfs_direct_write_schedule_iovec(dreq, iter, pos);
+ 
+-	if (mapping->nrpages) {
+-		invalidate_inode_pages2_range(mapping,
+-					      pos >> PAGE_SHIFT, end);
+-	}
++		if (mapping->nrpages) {
++			invalidate_inode_pages2_range(mapping,
++						      pos >> PAGE_SHIFT, end);
++		}
+ 
+-	nfs_end_io_direct(inode);
++		nfs_end_io_direct(inode);
++	}
+ 
+ 	if (requested > 0) {
+ 		result = nfs_direct_wait(dreq);
+--- a/fs/nfs/file.c
++++ b/fs/nfs/file.c
+@@ -168,7 +168,7 @@ nfs_file_read(struct kiocb *iocb, struct
+ 	ssize_t result;
+ 
+ 	if (iocb->ki_flags & IOCB_DIRECT)
+-		return nfs_file_direct_read(iocb, to);
++		return nfs_file_direct_read(iocb, to, false);
+ 
+ 	dprintk("NFS: read(%pD2, %zu@%lu)\n",
+ 		iocb->ki_filp,
+@@ -613,7 +613,7 @@ ssize_t nfs_file_write(struct kiocb *ioc
+ 		return result;
+ 
+ 	if (iocb->ki_flags & IOCB_DIRECT)
+-		return nfs_file_direct_write(iocb, from);
++		return nfs_file_direct_write(iocb, from, false);
+ 
+ 	dprintk("NFS: write(%pD2, %zu@%Ld)\n",
+ 		file, iov_iter_count(from), (long long) iocb->ki_pos);
+--- a/include/linux/nfs_fs.h
++++ b/include/linux/nfs_fs.h
+@@ -441,10 +441,10 @@ static inline struct rpc_cred *nfs_file_
+  * linux/fs/nfs/direct.c
+  */
+ extern ssize_t nfs_direct_IO(struct kiocb *, struct iov_iter *);
+-extern ssize_t nfs_file_direct_read(struct kiocb *iocb,
+-			struct iov_iter *iter);
+-extern ssize_t nfs_file_direct_write(struct kiocb *iocb,
+-			struct iov_iter *iter);
++ssize_t nfs_file_direct_read(struct kiocb *iocb,
++			     struct iov_iter *iter, bool swap);
++ssize_t nfs_file_direct_write(struct kiocb *iocb,
++			      struct iov_iter *iter, bool swap);
+ 
+ /*
+  * linux/fs/nfs/dir.c

@@ -1,0 +1,51 @@
+From: Olga Kornievskaia <kolga@netapp.com>
+Date: Thu, 4 Oct 2018 14:45:00 -0400
+Subject: [PATCH] NFSv4.x: fix lock recovery during delegation recall
+Git-commit: 44f411c353bf6d98d5a34f8f1b8605d43b2e50b8
+Patch-mainline: v4.20
+References: git-fixes
+
+Running "./nfstest_delegation --runtest recall26" uncovers that
+client doesn't recover the lock when we have an appending open,
+where the initial open got a write delegation.
+
+Instead of checking for the passed in open context against
+the file lock's open context. Check that the state is the same.
+
+Signed-off-by: Olga Kornievskaia <kolga@netapp.com>
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/delegation.c |    6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+--- a/fs/nfs/delegation.c
++++ b/fs/nfs/delegation.c
+@@ -92,7 +92,7 @@ int nfs4_check_delegation(struct inode *
+ 	return nfs4_do_check_delegation(inode, flags, false);
+ }
+ 
+-static int nfs_delegation_claim_locks(struct nfs_open_context *ctx, struct nfs4_state *state, const nfs4_stateid *stateid)
++static int nfs_delegation_claim_locks(struct nfs4_state *state, const nfs4_stateid *stateid)
+ {
+ 	struct inode *inode = state->inode;
+ 	struct file_lock *fl;
+@@ -107,7 +107,7 @@ static int nfs_delegation_claim_locks(st
+ 	spin_lock(&flctx->flc_lock);
+ restart:
+ 	list_for_each_entry(fl, list, fl_list) {
+-		if (nfs_file_open_context(fl->fl_file) != ctx)
++		if (nfs_file_open_context(fl->fl_file)->state != state)
+ 			continue;
+ 		spin_unlock(&flctx->flc_lock);
+ 		status = nfs4_lock_delegation_recall(fl, state, stateid);
+@@ -154,7 +154,7 @@ again:
+ 		seq = raw_seqcount_begin(&sp->so_reclaim_seqcount);
+ 		err = nfs4_open_delegation_recall(ctx, state, stateid, type);
+ 		if (!err)
+-			err = nfs_delegation_claim_locks(ctx, state, stateid);
++			err = nfs_delegation_claim_locks(state, stateid);
+ 		if (!err && read_seqcount_retry(&sp->so_reclaim_seqcount, seq))
+ 			err = -EAGAIN;
+ 		mutex_unlock(&sp->so_delegreturn_mutex);

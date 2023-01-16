@@ -1,0 +1,90 @@
+From: "J. Bruce Fields" <bfields@redhat.com>
+Date: Mon, 26 Nov 2018 11:36:52 -0500
+Subject: [PATCH] lockd: fix decoding of TEST results
+Git-commit: b8db159239b3f51e2b909859935cc25cb3ff3eed
+Patch-mainline: v5.0
+References: git-fixes
+
+We fail to advance the read pointer when reading the stat.oh field that
+identifies the lock-holder in a TEST result.
+
+This turns out not to matter if the server is knfsd, which always
+returns a zero-length field.  But other servers (Ganesha is an example)
+may not do this.  The result is bad values in fcntl F_GETLK results.
+
+Fix this.
+
+Signed-off-by: J. Bruce Fields <bfields@redhat.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/lockd/clnt4xdr.c |   22 ++++++----------------
+ fs/lockd/clntxdr.c  |   22 ++++++----------------
+ 2 files changed, 12 insertions(+), 32 deletions(-)
+
+--- a/fs/lockd/clnt4xdr.c
++++ b/fs/lockd/clnt4xdr.c
+@@ -127,24 +127,14 @@ static void encode_netobj(struct xdr_str
+ static int decode_netobj(struct xdr_stream *xdr,
+ 			 struct xdr_netobj *obj)
+ {
+-	u32 length;
+-	__be32 *p;
++	ssize_t ret;
+ 
+-	p = xdr_inline_decode(xdr, 4);
+-	if (unlikely(p == NULL))
+-		goto out_overflow;
+-	length = be32_to_cpup(p++);
+-	if (unlikely(length > XDR_MAX_NETOBJ))
+-		goto out_size;
+-	obj->len = length;
+-	obj->data = (u8 *)p;
++	ret = xdr_stream_decode_opaque_inline(xdr, (void *)&obj->data,
++						XDR_MAX_NETOBJ);
++	if (unlikely(ret < 0))
++		return -EIO;
++	obj->len = ret;
+ 	return 0;
+-out_size:
+-	dprintk("NFS: returned netobj was too long: %u\n", length);
+-	return -EIO;
+-out_overflow:
+-	print_overflow_msg(__func__, xdr);
+-	return -EIO;
+ }
+ 
+ /*
+--- a/fs/lockd/clntxdr.c
++++ b/fs/lockd/clntxdr.c
+@@ -124,24 +124,14 @@ static void encode_netobj(struct xdr_str
+ static int decode_netobj(struct xdr_stream *xdr,
+ 			 struct xdr_netobj *obj)
+ {
+-	u32 length;
+-	__be32 *p;
++	ssize_t ret;
+ 
+-	p = xdr_inline_decode(xdr, 4);
+-	if (unlikely(p == NULL))
+-		goto out_overflow;
+-	length = be32_to_cpup(p++);
+-	if (unlikely(length > XDR_MAX_NETOBJ))
+-		goto out_size;
+-	obj->len = length;
+-	obj->data = (u8 *)p;
++	ret = xdr_stream_decode_opaque_inline(xdr, (void *)&obj->data,
++			XDR_MAX_NETOBJ);
++	if (unlikely(ret < 0))
++		return -EIO;
++	obj->len = ret;
+ 	return 0;
+-out_size:
+-	dprintk("NFS: returned netobj was too long: %u\n", length);
+-	return -EIO;
+-out_overflow:
+-	print_overflow_msg(__func__, xdr);
+-	return -EIO;
+ }
+ 
+ /*

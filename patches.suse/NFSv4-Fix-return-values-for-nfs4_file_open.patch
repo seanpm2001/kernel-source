@@ -1,0 +1,45 @@
+From: Trond Myklebust <trond.myklebust@hammerspace.com>
+Date: Fri, 9 Aug 2019 15:03:11 -0400
+Subject: [PATCH] NFSv4: Fix return values for nfs4_file_open()
+Git-commit: 90cf500e338ab3f3c0f126ba37e36fb6a9058441
+Patch-mainline: v5.3
+References: git-fixes
+
+Currently, we are translating RPC level errors such as timeouts,
+as well as interrupts etc into EOPENSTALE, which forces a single
+replay of the open attempt. What we actually want to do is
+force the replay only in the cases where the returned error
+indicates that the file may have changed on the server.
+
+So the fix is to spell out the exact set of errors where we want
+to return EOPENSTALE.
+
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/nfs4file.c |   12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+--- a/fs/nfs/nfs4file.c
++++ b/fs/nfs/nfs4file.c
+@@ -75,13 +75,13 @@ nfs4_file_open(struct inode *inode, stru
+ 	if (IS_ERR(inode)) {
+ 		err = PTR_ERR(inode);
+ 		switch (err) {
+-		case -EPERM:
+-		case -EACCES:
+-		case -EDQUOT:
+-		case -ENOSPC:
+-		case -EROFS:
+-			goto out_put_ctx;
+ 		default:
++			goto out_put_ctx;
++		case -ENOENT:
++		case -ESTALE:
++		case -EISDIR:
++		case -ENOTDIR:
++		case -ELOOP:
+ 			goto out_drop;
+ 		}
+ 	}

@@ -31,11 +31,11 @@ Acked-by: NeilBrown <neilb@suse.com>
 -		err = nfs4_open_delegation_recall(ctx, state, stateid, type);
 +		err = nfs4_open_delegation_recall(ctx, state, stateid);
  		if (!err)
- 			err = nfs_delegation_claim_locks(ctx, state, stateid);
+ 			err = nfs_delegation_claim_locks(state, stateid);
  		if (!err && read_seqcount_retry(&sp->so_reclaim_seqcount, seq))
 --- a/fs/nfs/delegation.h
 +++ b/fs/nfs/delegation.h
-@@ -59,7 +59,7 @@ void nfs_reap_expired_delegations(struct
+@@ -60,7 +60,7 @@ void nfs_reap_expired_delegations(struct
  
  /* NFSv4 delegation-related procedures */
  int nfs4_proc_delegreturn(struct inode *inode, struct rpc_cred *cred, const nfs4_stateid *stateid, int issync);
@@ -46,7 +46,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  bool nfs4_refresh_delegation_stateid(nfs4_stateid *dst, struct inode *inode);
 --- a/fs/nfs/nfs4proc.c
 +++ b/fs/nfs/nfs4proc.c
-@@ -2029,12 +2029,10 @@ static int nfs4_handle_delegation_recall
+@@ -2031,12 +2031,10 @@ static int nfs4_handle_delegation_recall
  		case -NFS4ERR_BAD_HIGH_SLOT:
  		case -NFS4ERR_CONN_NOT_BOUND_TO_SESSION:
  		case -NFS4ERR_DEADSESSION:
@@ -59,7 +59,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  			/* Don't recall a delegation if it was lost */
  			nfs4_schedule_lease_recovery(server->nfs_client);
  			return -EAGAIN;
-@@ -2055,7 +2053,6 @@ static int nfs4_handle_delegation_recall
+@@ -2057,7 +2055,6 @@ static int nfs4_handle_delegation_recall
  			return -EAGAIN;
  		case -NFS4ERR_DELAY:
  		case -NFS4ERR_GRACE:
@@ -67,7 +67,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  			ssleep(1);
  			return -EAGAIN;
  		case -ENOMEM:
-@@ -2071,8 +2068,7 @@ static int nfs4_handle_delegation_recall
+@@ -2073,8 +2070,7 @@ static int nfs4_handle_delegation_recall
  }
  
  int nfs4_open_delegation_recall(struct nfs_open_context *ctx,
@@ -77,7 +77,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  {
  	struct nfs_server *server = NFS_SERVER(state->inode);
  	struct nfs4_opendata *opendata;
-@@ -2083,19 +2079,23 @@ int nfs4_open_delegation_recall(struct n
+@@ -2085,19 +2081,23 @@ int nfs4_open_delegation_recall(struct n
  	if (IS_ERR(opendata))
  		return PTR_ERR(opendata);
  	nfs4_stateid_copy(&opendata->o_arg.u.delegation, stateid);
