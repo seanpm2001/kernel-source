@@ -1,0 +1,121 @@
+From: Tigran Mkrtchyan <tigran.mkrtchyan@desy.de>
+Date: Wed, 21 Nov 2018 12:25:41 +0100
+Subject: [PATCH] flexfiles: use per-mirror specified stateid for IO
+Git-commit: bb21ce0ad227b69ec0f83279297ee44232105d96
+Patch-mainline: v4.20
+References: git-fixes
+
+rfc8435 says:
+
+  For tight coupling, ffds_stateid provides the stateid to be used by
+  the client to access the file.
+
+However current implementation replaces per-mirror provided stateid with
+by open or lock stateid.
+
+Ensure that per-mirror stateid is used by ff_layout_write_prepare_v4 and
+nfs4_ff_layout_prepare_ds.
+
+Signed-off-by: Tigran Mkrtchyan <tigran.mkrtchyan@desy.de>
+Signed-off-by: Rick Macklem <rmacklem@uoguelph.ca>
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/flexfilelayout/flexfilelayout.c    |   21 +++++++++------------
+ fs/nfs/flexfilelayout/flexfilelayout.h    |    4 ++++
+ fs/nfs/flexfilelayout/flexfilelayoutdev.c |   19 +++++++++++++++++++
+ 3 files changed, 32 insertions(+), 12 deletions(-)
+
+--- a/fs/nfs/flexfilelayout/flexfilelayout.c
++++ b/fs/nfs/flexfilelayout/flexfilelayout.c
+@@ -1401,12 +1401,7 @@ static void ff_layout_read_prepare_v4(st
+ 				task))
+ 		return;
+ 
+-	if (ff_layout_read_prepare_common(task, hdr))
+-		return;
+-
+-	if (nfs4_set_rw_stateid(&hdr->args.stateid, hdr->args.context,
+-			hdr->args.lock_context, FMODE_READ) == -EIO)
+-		rpc_exit(task, -EIO); /* lost lock, terminate I/O */
++	ff_layout_read_prepare_common(task, hdr);
+ }
+ 
+ static void ff_layout_read_call_done(struct rpc_task *task, void *data)
+@@ -1575,12 +1570,7 @@ static void ff_layout_write_prepare_v4(s
+ 				task))
+ 		return;
+ 
+-	if (ff_layout_write_prepare_common(task, hdr))
+-		return;
+-
+-	if (nfs4_set_rw_stateid(&hdr->args.stateid, hdr->args.context,
+-			hdr->args.lock_context, FMODE_WRITE) == -EIO)
+-		rpc_exit(task, -EIO); /* lost lock, terminate I/O */
++	ff_layout_write_prepare_common(task, hdr);
+ }
+ 
+ static void ff_layout_write_call_done(struct rpc_task *task, void *data)
+@@ -1770,6 +1760,10 @@ ff_layout_read_pagelist(struct nfs_pgio_
+ 	fh = nfs4_ff_layout_select_ds_fh(lseg, idx);
+ 	if (fh)
+ 		hdr->args.fh = fh;
++
++	if (!nfs4_ff_layout_select_ds_stateid(lseg, idx, &hdr->args.stateid))
++		goto out_failed;
++
+ 	/*
+ 	 * Note that if we ever decide to split across DSes,
+ 	 * then we may need to handle dense-like offsets.
+@@ -1832,6 +1826,9 @@ ff_layout_write_pagelist(struct nfs_pgio
+ 	if (fh)
+ 		hdr->args.fh = fh;
+ 
++	if (!nfs4_ff_layout_select_ds_stateid(lseg, idx, &hdr->args.stateid))
++		goto out_failed;
++
+ 	/*
+ 	 * Note that if we ever decide to split across DSes,
+ 	 * then we may need to handle dense-like offsets.
+--- a/fs/nfs/flexfilelayout/flexfilelayout.h
++++ b/fs/nfs/flexfilelayout/flexfilelayout.h
+@@ -219,6 +219,10 @@ unsigned int ff_layout_fetch_ds_ioerr(st
+ 		unsigned int maxnum);
+ struct nfs_fh *
+ nfs4_ff_layout_select_ds_fh(struct pnfs_layout_segment *lseg, u32 mirror_idx);
++int
++nfs4_ff_layout_select_ds_stateid(struct pnfs_layout_segment *lseg,
++				u32 mirror_idx,
++				nfs4_stateid *stateid);
+ 
+ struct nfs4_pnfs_ds *
+ nfs4_ff_layout_prepare_ds(struct pnfs_layout_segment *lseg, u32 ds_idx,
+--- a/fs/nfs/flexfilelayout/flexfilelayoutdev.c
++++ b/fs/nfs/flexfilelayout/flexfilelayoutdev.c
+@@ -368,6 +368,25 @@ out:
+ 	return fh;
+ }
+ 
++int
++nfs4_ff_layout_select_ds_stateid(struct pnfs_layout_segment *lseg,
++				u32 mirror_idx,
++				nfs4_stateid *stateid)
++{
++	struct nfs4_ff_layout_mirror *mirror = FF_LAYOUT_COMP(lseg, mirror_idx);
++
++	if (!ff_layout_mirror_valid(lseg, mirror, false)) {
++		pr_err_ratelimited("NFS: %s: No data server for mirror offset index %d\n",
++			__func__, mirror_idx);
++		goto out;
++	}
++
++	nfs4_stateid_copy(stateid, &mirror->stateid);
++	return 1;
++out:
++	return 0;
++}
++
+ /**
+  * nfs4_ff_layout_prepare_ds - prepare a DS connection for an RPC call
+  * @lseg: the layout segment we're operating on

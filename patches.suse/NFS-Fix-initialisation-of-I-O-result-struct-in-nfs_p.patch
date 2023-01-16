@@ -1,0 +1,31 @@
+From: Trond Myklebust <trond.myklebust@hammerspace.com>
+Date: Wed, 14 Aug 2019 14:19:09 -0400
+Subject: [PATCH] NFS: Fix initialisation of I/O result struct in
+ nfs_pgio_rpcsetup
+Git-commit: 17d8c5d145000070c581f2a8aa01edc7998582ab
+Patch-mainline: v5.3
+References: git-fixes
+
+Initialise the result count to 0 rather than initialising it to the
+argument count. The reason is that we want to ensure we record the
+I/O stats correctly in the case where an error is returned (for
+instance in the layoutstats).
+
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/pagelist.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/fs/nfs/pagelist.c
++++ b/fs/nfs/pagelist.c
+@@ -581,7 +581,7 @@ static void nfs_pgio_rpcsetup(struct nfs
+ 	}
+ 
+ 	hdr->res.fattr   = &hdr->fattr;
+-	hdr->res.count   = count;
++	hdr->res.count   = 0;
+ 	hdr->res.eof     = 0;
+ 	hdr->res.verf    = &hdr->verf;
+ 	nfs_fattr_init(&hdr->fattr);
