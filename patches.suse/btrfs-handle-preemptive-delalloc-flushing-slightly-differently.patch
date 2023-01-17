@@ -1,0 +1,199 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Wed, 28 Apr 2021 13:38:48 -0400
+Subject: btrfs: handle preemptive delalloc flushing slightly differently
+Git-commit: 385f421f18be653d21ccfd6520fbddf206ad43eb
+Patch-mainline: v5.14-rc1
+References: bsc#1202528
+
+If we decide to flush delalloc from the preemptive flusher, we really do
+not want to wait on ordered extents, as it gains us nothing.  However
+there was logic to go ahead and wait on ordered extents if there was
+more ordered bytes than delalloc bytes.  We do not want this behavior,
+so pass through whether this flushing is for preemption, and do not wait
+for ordered extents if that's the case.  Also break out of the shrink
+loop after the first flushing, as we just want to one shot shrink
+delalloc.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/btrfs/space-info.c |  132 +++++++-------------------------------------------
+ 1 file changed, 19 insertions(+), 113 deletions(-)
+
+--- a/fs/btrfs/space-info.c
++++ b/fs/btrfs/space-info.c
+@@ -373,7 +373,8 @@ static inline u64 calc_reclaim_items_nr(
+  */
+ static void shrink_delalloc(struct btrfs_fs_info *fs_info,
+ 			    struct btrfs_space_info *space_info,
+-			    u64 to_reclaim, bool wait_ordered)
++			    u64 to_reclaim, bool wait_ordered,
++			    bool for_preempt)
+ {
+ 	struct btrfs_trans_handle *trans;
+ 	u64 delalloc_bytes;
+@@ -410,7 +411,7 @@ static void shrink_delalloc(struct btrfs
+ 	 * ordered extents, otherwise we'll waste time trying to flush delalloc
+ 	 * that likely won't give us the space back we need.
+ 	 */
+-	if (ordered_bytes > delalloc_bytes)
++	if (ordered_bytes > delalloc_bytes && !for_preempt)
+ 		wait_ordered = true;
+ 
+ 	loops = 0;
+@@ -428,6 +429,14 @@ static void shrink_delalloc(struct btrfs
+ 				break;
+ 		}
+ 
++		/*
++		 * If we are for preemption we just want a one-shot of delalloc
++		 * flushing so we can stop flushing if we decide we don't need
++		 * to anymore.
++		 */
++		if (for_preempt)
++			break;
++
+ 		spin_lock(&space_info->lock);
+ 		if (list_empty(&space_info->tickets) &&
+ 		    list_empty(&space_info->priority_tickets)) {
+@@ -443,110 +452,6 @@ static void shrink_delalloc(struct btrfs
+ 	}
+ }
+ 
+-/**
+- * maybe_commit_transaction - possibly commit the transaction if its ok to
+- * @root - the root we're allocating for
+- * @bytes - the number of bytes we want to reserve
+- * @force - force the commit
+- *
+- * This will check to make sure that committing the transaction will actually
+- * get us somewhere and then commit the transaction if it does.  Otherwise it
+- * will return -ENOSPC.
+- */
+-static int may_commit_transaction(struct btrfs_fs_info *fs_info,
+-				  struct btrfs_space_info *space_info)
+-{
+-	struct reserve_ticket *ticket = NULL;
+-	struct btrfs_block_rsv *delayed_rsv = &fs_info->delayed_block_rsv;
+-	struct btrfs_block_rsv *delayed_refs_rsv = &fs_info->delayed_refs_rsv;
+-	struct btrfs_block_rsv *trans_rsv = &fs_info->trans_block_rsv;
+-	struct btrfs_trans_handle *trans;
+-	u64 reclaim_bytes = 0;
+-	u64 bytes_needed = 0;
+-	u64 cur_free_bytes = 0;
+-
+-	trans = (struct btrfs_trans_handle *)current->journal_info;
+-	if (trans)
+-		return -EAGAIN;
+-
+-	spin_lock(&space_info->lock);
+-	cur_free_bytes = btrfs_space_info_used(space_info, true);
+-	if (cur_free_bytes < space_info->total_bytes)
+-		cur_free_bytes = space_info->total_bytes - cur_free_bytes;
+-	else
+-		cur_free_bytes = 0;
+-
+-	if (!list_empty(&space_info->priority_tickets))
+-		ticket = list_first_entry(&space_info->priority_tickets,
+-					  struct reserve_ticket, list);
+-	else if (!list_empty(&space_info->tickets))
+-		ticket = list_first_entry(&space_info->tickets,
+-					  struct reserve_ticket, list);
+-	if (ticket)
+-		bytes_needed = ticket->bytes;
+-
+-	if (bytes_needed > cur_free_bytes)
+-		bytes_needed -= cur_free_bytes;
+-	else
+-		bytes_needed = 0;
+-	spin_unlock(&space_info->lock);
+-
+-	if (!bytes_needed)
+-		return 0;
+-
+-	trans = btrfs_join_transaction(fs_info->extent_root);
+-	if (IS_ERR(trans))
+-		return PTR_ERR(trans);
+-
+-	/*
+-	 * See if there is enough pinned space to make this reservation, or if
+-	 * we have block groups that are going to be freed, allowing us to
+-	 * possibly do a chunk allocation the next loop through.
+-	 */
+-	if (test_bit(BTRFS_TRANS_HAVE_FREE_BGS, &trans->transaction->flags) ||
+-	    __percpu_counter_compare(&space_info->total_bytes_pinned,
+-				   bytes_needed,
+-				   BTRFS_TOTAL_BYTES_PINNED_BATCH) >= 0)
+-		goto commit;
+-
+-	/*
+-	 * See if there is some space in the delayed insertion reserve for this
+-	 * reservation.  If the space_info's don't match (like for DATA or
+-	 * SYSTEM) then just go enospc, reclaiming this space won't recover any
+-	 * space to satisfy those reservations.
+-	 */
+-	if (space_info != delayed_rsv->space_info)
+-		goto enospc;
+-
+-	spin_lock(&delayed_rsv->lock);
+-	reclaim_bytes += delayed_rsv->reserved;
+-	spin_unlock(&delayed_rsv->lock);
+-
+-	spin_lock(&delayed_refs_rsv->lock);
+-	reclaim_bytes += delayed_refs_rsv->reserved;
+-	spin_unlock(&delayed_refs_rsv->lock);
+-
+-	spin_lock(&trans_rsv->lock);
+-	reclaim_bytes += trans_rsv->reserved;
+-	spin_unlock(&trans_rsv->lock);
+-
+-	if (reclaim_bytes >= bytes_needed)
+-		goto commit;
+-	bytes_needed -= reclaim_bytes;
+-
+-	if (__percpu_counter_compare(&space_info->total_bytes_pinned,
+-				   bytes_needed,
+-				   BTRFS_TOTAL_BYTES_PINNED_BATCH) < 0) {
+-		goto enospc;
+-	}
+-
+-commit:
+-	return btrfs_commit_transaction(trans);
+-enospc:
+-	btrfs_end_transaction(trans);
+-	return -ENOSPC;
+-}
+-
+ static int flush_space(struct btrfs_fs_info *fs_info,
+ 		       struct btrfs_space_info *space_info, u64 num_bytes,
+ 		       enum btrfs_flush_state state, bool for_preempt)
+@@ -575,7 +480,7 @@ static int flush_space(struct btrfs_fs_i
+ 	case FLUSH_DELALLOC:
+ 	case FLUSH_DELALLOC_WAIT:
+ 		shrink_delalloc(fs_info, space_info, num_bytes,
+-				state == FLUSH_DELALLOC_WAIT);
++				state == FLUSH_DELALLOC_WAIT, for_preempt);
+ 		break;
+ 	case FLUSH_DELAYED_REFS_NR:
+ 	case FLUSH_DELAYED_REFS:
+@@ -1075,12 +980,13 @@ static void btrfs_preempt_reclaim_metada
+  *   the information it needs to make the right decision.
+  *
+  * COMMIT_TRANS
+- *   This is where we reclaim all of the pinned space generated by the previous
+- *   two stages.  We will not commit the transaction if we don't think we're
+- *   likely to satisfy our request, which means if our current free space +
+- *   total_bytes_pinned < reservation we will not commit.  This is why the
+- *   previous states are actually important, to make sure we know for sure
+- *   whether committing the transaction will allow us to make progress.
++ *     This will commit the transaction.  Historically we had a lot of logic
++ *     surrounding whether or not we'd commit the transaction, but this waits born
++ *     out of a pre-tickets era where we could end up committing the transaction
++ *     thousands of times in a row without making progress.  Now thanks to our
++ *     ticketing system we know if we're not making progress and can error
++ *     everybody out after a few commits rather than burning the disk hoping for
++ *     a different answer.
+  *
+  * ALLOC_CHUNK_FORCE
+  *   For data we start with alloc chunk force, however we could have been full

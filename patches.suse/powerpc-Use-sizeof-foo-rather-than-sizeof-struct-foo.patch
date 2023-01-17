@@ -1,0 +1,357 @@
+From a0828cf57acce9bf941539e1f633e9a91f9df57d Mon Sep 17 00:00:00 2001
+From: Markus Elfring <elfring@users.sourceforge.net>
+Date: Thu, 19 Jan 2017 17:15:30 +0100
+Subject: [PATCH] powerpc: Use sizeof(*foo) rather than sizeof(struct foo)
+
+References: FATE#322448, bsc#1054914, git-fixes
+Patch-mainline: v4.17-rc1
+Git-commit: a0828cf57acce9bf941539e1f633e9a91f9df57d
+
+It's slightly less error prone to use sizeof(*foo) rather than
+specifying the type.
+
+Signed-off-by: Markus Elfring <elfring@users.sourceforge.net>
+[mpe: Consolidate into one patch, rewrite change log]
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kernel/nvram_64.c                      |  9 +++------
+ arch/powerpc/oprofile/cell/spu_task_sync.c          |  2 +-
+ arch/powerpc/oprofile/cell/vma_map.c                |  4 ++--
+ arch/powerpc/platforms/4xx/msi.c                    |  2 +-
+ arch/powerpc/platforms/4xx/ocm.c                    |  2 +-
+ arch/powerpc/platforms/cell/axon_msi.c              |  2 +-
+ arch/powerpc/platforms/cell/spider-pci.c            |  2 +-
+ arch/powerpc/platforms/cell/spufs/lscsa_alloc.c     |  2 +-
+ arch/powerpc/platforms/powermac/low_i2c.c           |  2 +-
+ arch/powerpc/platforms/powermac/pfunc_core.c        |  4 ++--
+ arch/powerpc/platforms/powernv/opal-flash.c         |  4 ++--
+ arch/powerpc/platforms/powernv/opal-hmi.c           |  2 +-
+ arch/powerpc/platforms/powernv/opal-imc.c           | 10 +++++-----
+ arch/powerpc/platforms/powernv/opal-memory-errors.c |  2 +-
+ arch/powerpc/platforms/powernv/opal-psr.c           |  2 +-
+ arch/powerpc/platforms/powernv/opal-sensor-groups.c |  4 ++--
+ arch/powerpc/platforms/powernv/opal-xscom.c         |  2 +-
+ arch/powerpc/platforms/powernv/pci-ioda.c           |  2 +-
+ arch/powerpc/platforms/ps3/mm.c                     |  6 ++----
+ drivers/macintosh/rack-meter.c                      |  2 +-
+ 20 files changed, 31 insertions(+), 36 deletions(-)
+
+diff --git a/arch/powerpc/kernel/nvram_64.c b/arch/powerpc/kernel/nvram_64.c
+index 496d6393bd41..ba681dac7b46 100644
+--- a/arch/powerpc/kernel/nvram_64.c
++++ b/arch/powerpc/kernel/nvram_64.c
+@@ -207,8 +207,7 @@ int nvram_write_os_partition(struct nvram_os_partition *part,
+ 
+ 	tmp_index = part->index;
+ 
+-	rc = ppc_md.nvram_write((char *)&info, sizeof(struct err_log_info),
+-				&tmp_index);
++	rc = ppc_md.nvram_write((char *)&info, sizeof(info), &tmp_index);
+ 	if (rc <= 0) {
+ 		pr_err("%s: Failed nvram_write (%d)\n", __func__, rc);
+ 		return rc;
+@@ -244,9 +243,7 @@ int nvram_read_partition(struct nvram_os_partition *part, char *buff,
+ 	tmp_index = part->index;
+ 
+ 	if (part->os_partition) {
+-		rc = ppc_md.nvram_read((char *)&info,
+-					sizeof(struct err_log_info),
+-					&tmp_index);
++		rc = ppc_md.nvram_read((char *)&info, sizeof(info), &tmp_index);
+ 		if (rc <= 0) {
+ 			pr_err("%s: Failed nvram_read (%d)\n", __func__, rc);
+ 			return rc;
+@@ -1173,7 +1170,7 @@ int __init nvram_scan_partitions(void)
+ 			       "detected: 0-length partition\n");
+ 			goto out;
+ 		}
+-		tmp_part = kmalloc(sizeof(struct nvram_partition), GFP_KERNEL);
++		tmp_part = kmalloc(sizeof(*tmp_part), GFP_KERNEL);
+ 		err = -ENOMEM;
+ 		if (!tmp_part) {
+ 			printk(KERN_ERR "nvram_scan_partitions: kmalloc failed\n");
+diff --git a/arch/powerpc/oprofile/cell/spu_task_sync.c b/arch/powerpc/oprofile/cell/spu_task_sync.c
+index 44d67b167e0b..2668cc414e4e 100644
+--- a/arch/powerpc/oprofile/cell/spu_task_sync.c
++++ b/arch/powerpc/oprofile/cell/spu_task_sync.c
+@@ -208,7 +208,7 @@ prepare_cached_spu_info(struct spu *spu, unsigned long objectId)
+ 	/* Create cached_info and set spu_info[spu->number] to point to it.
+ 	 * spu->number is a system-wide value, not a per-node value.
+ 	 */
+-	info = kzalloc(sizeof(struct cached_info), GFP_KERNEL);
++	info = kzalloc(sizeof(*info), GFP_KERNEL);
+ 	if (!info) {
+ 		printk(KERN_ERR "SPU_PROF: "
+ 		       "%s, line %d: create vma_map failed\n",
+diff --git a/arch/powerpc/oprofile/cell/vma_map.c b/arch/powerpc/oprofile/cell/vma_map.c
+index c579b16845da..f40e37316dd6 100644
+--- a/arch/powerpc/oprofile/cell/vma_map.c
++++ b/arch/powerpc/oprofile/cell/vma_map.c
+@@ -69,8 +69,8 @@ vma_map_add(struct vma_to_fileoffset_map *map, unsigned int vma,
+ 	    unsigned int size, unsigned int offset, unsigned int guard_ptr,
+ 	    unsigned int guard_val)
+ {
+-	struct vma_to_fileoffset_map *new =
+-		kzalloc(sizeof(struct vma_to_fileoffset_map), GFP_KERNEL);
++	struct vma_to_fileoffset_map *new = kzalloc(sizeof(*new), GFP_KERNEL);
++
+ 	if (!new) {
+ 		printk(KERN_ERR "SPU_PROF: %s, line %d: malloc failed\n",
+ 		       __func__, __LINE__);
+diff --git a/arch/powerpc/platforms/cell/axon_msi.c b/arch/powerpc/platforms/cell/axon_msi.c
+index 6ea3f248b155..326d34e2aa02 100644
+--- a/arch/powerpc/platforms/cell/axon_msi.c
++++ b/arch/powerpc/platforms/cell/axon_msi.c
+@@ -342,7 +342,7 @@ static int axon_msi_probe(struct platform_device *device)
+ 
+ 	pr_devel("axon_msi: setting up dn %pOF\n", dn);
+ 
+-	msic = kzalloc(sizeof(struct axon_msic), GFP_KERNEL);
++	msic = kzalloc(sizeof(*msic), GFP_KERNEL);
+ 	if (!msic) {
+ 		printk(KERN_ERR "axon_msi: couldn't allocate msic for %pOF\n",
+ 		       dn);
+diff --git a/arch/powerpc/platforms/cell/spider-pci.c b/arch/powerpc/platforms/cell/spider-pci.c
+index d1e61e273e64..1200d0dea512 100644
+--- a/arch/powerpc/platforms/cell/spider-pci.c
++++ b/arch/powerpc/platforms/cell/spider-pci.c
+@@ -133,7 +133,7 @@ int __init spiderpci_iowa_init(struct iowa_bus *bus, void *data)
+ 	pr_debug("SPIDERPCI-IOWA:Bus initialize for spider(%pOF)\n",
+ 		 np);
+ 
+-	priv = kzalloc(sizeof(struct spiderpci_iowa_private), GFP_KERNEL);
++	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+ 	if (!priv) {
+ 		pr_err("SPIDERPCI-IOWA:"
+ 		       "Can't allocate struct spiderpci_iowa_private");
+diff --git a/arch/powerpc/platforms/cell/spufs/lscsa_alloc.c b/arch/powerpc/platforms/cell/spufs/lscsa_alloc.c
+index b847e9403566..d9de848dae47 100644
+--- a/arch/powerpc/platforms/cell/spufs/lscsa_alloc.c
++++ b/arch/powerpc/platforms/cell/spufs/lscsa_alloc.c
+@@ -36,7 +36,7 @@ int spu_alloc_lscsa(struct spu_state *csa)
+ 	struct spu_lscsa *lscsa;
+ 	unsigned char *p;
+ 
+-	lscsa = vzalloc(sizeof(struct spu_lscsa));
++	lscsa = vzalloc(sizeof(*lscsa));
+ 	if (!lscsa)
+ 		return -ENOMEM;
+ 	csa->lscsa = lscsa;
+diff --git a/arch/powerpc/platforms/powermac/low_i2c.c b/arch/powerpc/platforms/powermac/low_i2c.c
+index 3408f315ef48..fa89f30e7f27 100644
+--- a/arch/powerpc/platforms/powermac/low_i2c.c
++++ b/arch/powerpc/platforms/powermac/low_i2c.c
+@@ -492,7 +492,7 @@ static struct pmac_i2c_host_kw *__init kw_i2c_host_init(struct device_node *np)
+ 	const u32		*psteps, *prate, *addrp;
+ 	u32			steps;
+ 
+-	host = kzalloc(sizeof(struct pmac_i2c_host_kw), GFP_KERNEL);
++	host = kzalloc(sizeof(*host), GFP_KERNEL);
+ 	if (host == NULL) {
+ 		printk(KERN_ERR "low_i2c: Can't allocate host for %pOF\n",
+ 		       np);
+diff --git a/arch/powerpc/platforms/powermac/pfunc_core.c b/arch/powerpc/platforms/powermac/pfunc_core.c
+index df3c93bef228..e0462fedcdb8 100644
+--- a/arch/powerpc/platforms/powermac/pfunc_core.c
++++ b/arch/powerpc/platforms/powermac/pfunc_core.c
+@@ -643,7 +643,7 @@ static int pmf_add_function_prop(struct pmf_device *dev, void *driverdata,
+ 
+ 	while (length >= 12) {
+ 		/* Allocate a structure */
+-		func = kzalloc(sizeof(struct pmf_function), GFP_KERNEL);
++		func = kzalloc(sizeof(*func), GFP_KERNEL);
+ 		if (func == NULL)
+ 			goto bail;
+ 		kref_init(&func->ref);
+@@ -719,7 +719,7 @@ int pmf_register_driver(struct device_node *np,
+ 		return -EBUSY;
+ 	}
+ 
+-	dev = kzalloc(sizeof(struct pmf_device), GFP_KERNEL);
++	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
+ 	if (dev == NULL) {
+ 		DBG("pmf: no memory !\n");
+ 		return -ENOMEM;
+diff --git a/arch/powerpc/platforms/powernv/opal-flash.c b/arch/powerpc/platforms/powernv/opal-flash.c
+index 2fa3ac80cb4e..1cb0b895a236 100644
+--- a/arch/powerpc/platforms/powernv/opal-flash.c
++++ b/arch/powerpc/platforms/powernv/opal-flash.c
+@@ -418,12 +418,12 @@ static int alloc_image_buf(char *buffer, size_t count)
+ 	void *addr;
+ 	int size;
+ 
+-	if (count < sizeof(struct image_header_t)) {
++	if (count < sizeof(image_header)) {
+ 		pr_warn("FLASH: Invalid candidate image\n");
+ 		return -EINVAL;
+ 	}
+ 
+-	memcpy(&image_header, (void *)buffer, sizeof(struct image_header_t));
++	memcpy(&image_header, (void *)buffer, sizeof(image_header));
+ 	image_data.size = be32_to_cpu(image_header.size);
+ 	pr_debug("FLASH: Candidate image size = %u\n", image_data.size);
+ 
+diff --git a/arch/powerpc/platforms/powernv/opal-hmi.c b/arch/powerpc/platforms/powernv/opal-hmi.c
+index c9e1a4ff295c..4efc95b4c7d4 100644
+--- a/arch/powerpc/platforms/powernv/opal-hmi.c
++++ b/arch/powerpc/platforms/powernv/opal-hmi.c
+@@ -314,7 +314,7 @@ static int opal_handle_hmi_event(struct notifier_block *nb,
+ 		pr_err("HMI: out of memory, Opal message event not handled\n");
+ 		return -ENOMEM;
+ 	}
+-	memcpy(&msg_node->hmi_evt, hmi_evt, sizeof(struct OpalHMIEvent));
++	memcpy(&msg_node->hmi_evt, hmi_evt, sizeof(*hmi_evt));
+ 
+ 	spin_lock_irqsave(&opal_hmi_evt_lock, flags);
+ 	list_add(&msg_node->list, &opal_hmi_evt_list);
+diff --git a/arch/powerpc/platforms/powernv/opal-imc.c b/arch/powerpc/platforms/powernv/opal-imc.c
+index f6f55ab4980e..2a14fda5ea26 100644
+--- a/arch/powerpc/platforms/powernv/opal-imc.c
++++ b/arch/powerpc/platforms/powernv/opal-imc.c
+@@ -110,11 +110,11 @@ static int imc_get_mem_addr_nest(struct device_node *node,
+ 	if (nr_chips <= 0)
+ 		return -ENODEV;
+ 
+-	base_addr_arr = kcalloc(nr_chips, sizeof(u64), GFP_KERNEL);
++	base_addr_arr = kcalloc(nr_chips, sizeof(*base_addr_arr), GFP_KERNEL);
+ 	if (!base_addr_arr)
+ 		return -ENOMEM;
+ 
+-	chipid_arr = kcalloc(nr_chips, sizeof(u32), GFP_KERNEL);
++	chipid_arr = kcalloc(nr_chips, sizeof(*chipid_arr), GFP_KERNEL);
+ 	if (!chipid_arr)
+ 		return -ENOMEM;
+ 
+@@ -125,8 +125,8 @@ static int imc_get_mem_addr_nest(struct device_node *node,
+ 								nr_chips))
+ 		goto error;
+ 
+-	pmu_ptr->mem_info = kcalloc(nr_chips, sizeof(struct imc_mem_info),
+-								GFP_KERNEL);
++	pmu_ptr->mem_info = kcalloc(nr_chips, sizeof(*pmu_ptr->mem_info),
++				    GFP_KERNEL);
+ 	if (!pmu_ptr->mem_info)
+ 		goto error;
+ 
+@@ -161,7 +161,7 @@ static int imc_pmu_create(struct device_node *parent, int pmu_index, int domain)
+ 	u32 offset;
+ 
+ 	/* memory for pmu */
+-	pmu_ptr = kzalloc(sizeof(struct imc_pmu), GFP_KERNEL);
++	pmu_ptr = kzalloc(sizeof(*pmu_ptr), GFP_KERNEL);
+ 	if (!pmu_ptr)
+ 		return -ENOMEM;
+ 
+diff --git a/arch/powerpc/platforms/powernv/opal-memory-errors.c b/arch/powerpc/platforms/powernv/opal-memory-errors.c
+index 8ddc1accf199..dcb42bcb5efa 100644
+--- a/arch/powerpc/platforms/powernv/opal-memory-errors.c
++++ b/arch/powerpc/platforms/powernv/opal-memory-errors.c
+@@ -112,7 +112,7 @@ static int opal_memory_err_event(struct notifier_block *nb,
+ 		       "handled\n");
+ 		return -ENOMEM;
+ 	}
+-	memcpy(&msg_node->msg, msg, sizeof(struct opal_msg));
++	memcpy(&msg_node->msg, msg, sizeof(msg_node->msg));
+ 
+ 	spin_lock_irqsave(&opal_mem_err_lock, flags);
+ 	list_add(&msg_node->list, &opal_memory_err_list);
+diff --git a/arch/powerpc/platforms/powernv/opal-psr.c b/arch/powerpc/platforms/powernv/opal-psr.c
+index 7313b7fc9071..74986b35cf77 100644
+--- a/arch/powerpc/platforms/powernv/opal-psr.c
++++ b/arch/powerpc/platforms/powernv/opal-psr.c
+@@ -136,7 +136,7 @@ void __init opal_psr_init(void)
+ 		return;
+ 	}
+ 
+-	psr_attrs = kcalloc(of_get_child_count(psr), sizeof(struct psr_attr),
++	psr_attrs = kcalloc(of_get_child_count(psr), sizeof(*psr_attrs),
+ 			    GFP_KERNEL);
+ 	if (!psr_attrs)
+ 		return;
+diff --git a/arch/powerpc/platforms/powernv/opal-sensor-groups.c b/arch/powerpc/platforms/powernv/opal-sensor-groups.c
+index 7e5a235ebf76..541c9ea04a32 100644
+--- a/arch/powerpc/platforms/powernv/opal-sensor-groups.c
++++ b/arch/powerpc/platforms/powernv/opal-sensor-groups.c
+@@ -166,13 +166,13 @@ void __init opal_sensor_groups_init(void)
+ 		if (!nr_attrs)
+ 			continue;
+ 
+-		sgs[i].sgattrs = kcalloc(nr_attrs, sizeof(struct sg_attr),
++		sgs[i].sgattrs = kcalloc(nr_attrs, sizeof(*sgs[i].sgattrs),
+ 					 GFP_KERNEL);
+ 		if (!sgs[i].sgattrs)
+ 			goto out_sgs_sgattrs;
+ 
+ 		sgs[i].sg.attrs = kcalloc(nr_attrs + 1,
+-					  sizeof(struct attribute *),
++					  sizeof(*sgs[i].sg.attrs),
+ 					  GFP_KERNEL);
+ 
+ 		if (!sgs[i].sg.attrs) {
+diff --git a/arch/powerpc/platforms/powernv/opal-xscom.c b/arch/powerpc/platforms/powernv/opal-xscom.c
+index 81c0a943dea9..22d5e1110dbb 100644
+--- a/arch/powerpc/platforms/powernv/opal-xscom.c
++++ b/arch/powerpc/platforms/powernv/opal-xscom.c
+@@ -46,7 +46,7 @@ static scom_map_t opal_scom_map(struct device_node *dev, u64 reg, u64 count)
+ 			__func__, dev);
+ 		return SCOM_MAP_INVALID;
+ 	}
+-	m = kmalloc(sizeof(struct opal_scom_map), GFP_KERNEL);
++	m = kmalloc(sizeof(*m), GFP_KERNEL);
+ 	if (!m)
+ 		return NULL;
+ 	m->chip = be32_to_cpup(gcid);
+diff --git a/arch/powerpc/platforms/powernv/pci-ioda.c b/arch/powerpc/platforms/powernv/pci-ioda.c
+index a6c92c78c9b2..6c307f0650bb 100644
+--- a/arch/powerpc/platforms/powernv/pci-ioda.c
++++ b/arch/powerpc/platforms/powernv/pci-ioda.c
+@@ -3843,7 +3843,7 @@ static void __init pnv_pci_init_ioda_phb(struct device_node *np,
+ 	phb_id = be64_to_cpup(prop64);
+ 	pr_debug("  PHB-ID  : 0x%016llx\n", phb_id);
+ 
+-	phb = memblock_virt_alloc(sizeof(struct pnv_phb), 0);
++	phb = memblock_virt_alloc(sizeof(*phb), 0);
+ 
+ 	/* Allocate PCI controller */
+ 	phb->hose = hose = pcibios_alloc_controller(np);
+diff --git a/arch/powerpc/platforms/ps3/mm.c b/arch/powerpc/platforms/ps3/mm.c
+index 7f870ec29daf..8c7009d001d9 100644
+--- a/arch/powerpc/platforms/ps3/mm.c
++++ b/arch/powerpc/platforms/ps3/mm.c
+@@ -524,8 +524,7 @@ static int dma_sb_map_pages(struct ps3_dma_region *r, unsigned long phys_addr,
+ 	int result;
+ 	struct dma_chunk *c;
+ 
+-	c = kzalloc(sizeof(struct dma_chunk), GFP_ATOMIC);
+-
++	c = kzalloc(sizeof(*c), GFP_ATOMIC);
+ 	if (!c) {
+ 		result = -ENOMEM;
+ 		goto fail_alloc;
+@@ -570,8 +569,7 @@ static int dma_ioc0_map_pages(struct ps3_dma_region *r, unsigned long phys_addr,
+ 
+ 	DBG(KERN_ERR "%s: phy=%#lx, lpar%#lx, len=%#lx\n", __func__,
+ 	    phys_addr, ps3_mm_phys_to_lpar(phys_addr), len);
+-	c = kzalloc(sizeof(struct dma_chunk), GFP_ATOMIC);
+-
++	c = kzalloc(sizeof(*c), GFP_ATOMIC);
+ 	if (!c) {
+ 		result = -ENOMEM;
+ 		goto fail_alloc;
+diff --git a/drivers/macintosh/rack-meter.c b/drivers/macintosh/rack-meter.c
+index 910b5b6f96b1..190c9efeace5 100644
+--- a/drivers/macintosh/rack-meter.c
++++ b/drivers/macintosh/rack-meter.c
+@@ -397,7 +397,7 @@ static int rackmeter_probe(struct macio_dev* mdev,
+ 	}
+ 
+ 	/* Create and initialize our instance data */
+-	rm = kzalloc(sizeof(struct rackmeter), GFP_KERNEL);
++	rm = kzalloc(sizeof(*rm), GFP_KERNEL);
+ 	if (rm == NULL) {
+ 		printk(KERN_ERR "rackmeter: failed to allocate memory !\n");
+ 		rc = -ENOMEM;
+-- 
+2.35.3
+

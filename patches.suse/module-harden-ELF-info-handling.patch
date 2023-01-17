@@ -1,0 +1,280 @@
+From: Frank van der Linden <fllinden@amazon.com>
+Date: Thu, 14 Jan 2021 22:21:46 +0000
+Subject: module: harden ELF info handling
+Git-commit: ec2a29593c83ed71a7f16e3243941ebfcf75fdf6
+Patch-mainline: v5.12-rc1
+References: git-fixes
+
+5fdc7db644 ("module: setup load info before module_sig_check()")
+moved the ELF setup, so that it was done before the signature
+check. This made the module name available to signature error
+messages.
+
+However, the checks for ELF correctness in setup_load_info
+are not sufficient to prevent bad memory references due to
+corrupted offset fields, indices, etc.
+
+So, there's a regression in behavior here: a corrupt and unsigned
+(or badly signed) module, which might previously have been rejected
+immediately, can now cause an oops/crash.
+
+Harden ELF handling for module loading by doing the following:
+
+- Move the signature check back up so that it comes before ELF
+  initialization. It's best to do the signature check to see
+  if we can trust the module, before using the ELF structures
+  inside it. This also makes checks against info->len
+  more accurate again, as this field will be reduced by the
+  length of the signature in mod_check_sig().
+
+  The module name is now once again not available for error
+  messages during the signature check, but that seems like
+  a fair tradeoff.
+
+- Check if sections have offset / size fields that at least don't
+  exceed the length of the module.
+
+- Check if sections have section name offsets that don't fall
+  outside the section name table.
+
+- Add a few other sanity checks against invalid section indices,
+  etc.
+
+This is not an exhaustive consistency check, but the idea is to
+at least get through the signature and blacklist checks without
+crashing because of corrupted ELF info, and to error out gracefully
+for most issues that would have caused problems later on.
+
+Fixes: 5fdc7db6448a ("module: setup load info before module_sig_check()")
+Signed-off-by: Frank van der Linden <fllinden@amazon.com>
+Signed-off-by: Jessica Yu <jeyu@kernel.org>
+Acked-by: Petr Pavlu <petr.pavlu@suse.com>
+[ ppavlu:
+  Reworked the original changes to kernel/module_signature.c and
+  kernel/module_signing.c as they rely on additional upstream patches
+  that were not taken.
+]
+---
+ kernel/module.c         |  139 ++++++++++++++++++++++++++++++++++++++++++------
+ kernel/module_signing.c |    6 --
+ 2 files changed, 124 insertions(+), 21 deletions(-)
+
+--- a/kernel/module.c
++++ b/kernel/module.c
+@@ -2778,9 +2778,33 @@ static int module_sig_check(struct load_
+ }
+ #endif /* !CONFIG_MODULE_SIG */
+ 
+-/* Sanity checks against invalid binaries, wrong arch, weird elf version. */
+-static int elf_header_check(struct load_info *info)
++static int validate_section_offset(struct load_info *info, Elf_Shdr *shdr)
+ {
++	unsigned long secend;
++
++	/*
++	 * Check for both overflow and offset/size being
++	 * too large.
++	 */
++	secend = shdr->sh_offset + shdr->sh_size;
++	if (secend < shdr->sh_offset || secend > info->len)
++		return -ENOEXEC;
++
++	return 0;
++}
++
++/*
++ * Sanity checks against invalid binaries, wrong arch, weird elf version.
++ *
++ * Also do basic validity checks against section offsets and sizes, the
++ * section name string table, and the indices used for it (sh_name).
++ */
++static int elf_validity_check(struct load_info *info)
++{
++	unsigned int i;
++	Elf_Shdr *shdr, *strhdr;
++	int err;
++
+ 	if (info->len < sizeof(*(info->hdr)))
+ 		return -ENOEXEC;
+ 
+@@ -2790,11 +2814,78 @@ static int elf_header_check(struct load_
+ 	    || info->hdr->e_shentsize != sizeof(Elf_Shdr))
+ 		return -ENOEXEC;
+ 
++	/*
++	 * e_shnum is 16 bits, and sizeof(Elf_Shdr) is
++	 * known and small. So e_shnum * sizeof(Elf_Shdr)
++	 * will not overflow unsigned long on any platform.
++	 */
+ 	if (info->hdr->e_shoff >= info->len
+ 	    || (info->hdr->e_shnum * sizeof(Elf_Shdr) >
+ 		info->len - info->hdr->e_shoff))
+ 		return -ENOEXEC;
+ 
++	info->sechdrs = (void *)info->hdr + info->hdr->e_shoff;
++
++	/*
++	 * Verify if the section name table index is valid.
++	 */
++	if (info->hdr->e_shstrndx == SHN_UNDEF
++	    || info->hdr->e_shstrndx >= info->hdr->e_shnum)
++		return -ENOEXEC;
++
++	strhdr = &info->sechdrs[info->hdr->e_shstrndx];
++	err = validate_section_offset(info, strhdr);
++	if (err < 0)
++		return err;
++
++	/*
++	 * The section name table must be NUL-terminated, as required
++	 * by the spec. This makes strcmp and pr_* calls that access
++	 * strings in the section safe.
++	 */
++	info->secstrings = (void *)info->hdr + strhdr->sh_offset;
++	if (info->secstrings[strhdr->sh_size - 1] != '\0')
++		return -ENOEXEC;
++
++	/*
++	 * The code assumes that section 0 has a length of zero and
++	 * an addr of zero, so check for it.
++	 */
++	if (info->sechdrs[0].sh_type != SHT_NULL
++	    || info->sechdrs[0].sh_size != 0
++	    || info->sechdrs[0].sh_addr != 0)
++		return -ENOEXEC;
++
++	for (i = 1; i < info->hdr->e_shnum; i++) {
++		shdr = &info->sechdrs[i];
++		switch (shdr->sh_type) {
++		case SHT_NULL:
++		case SHT_NOBITS:
++			continue;
++		case SHT_SYMTAB:
++			if (shdr->sh_link == SHN_UNDEF
++			    || shdr->sh_link >= info->hdr->e_shnum)
++				return -ENOEXEC;
++			/* fallthrough */
++		default:
++			err = validate_section_offset(info, shdr);
++			if (err < 0) {
++				pr_err("Invalid ELF section in module (section %u type %u)\n",
++					i, shdr->sh_type);
++				return err;
++			}
++
++			if (shdr->sh_flags & SHF_ALLOC) {
++				if (shdr->sh_name >= strhdr->sh_size) {
++					pr_err("Invalid ELF section name in module (section %u type %u)\n",
++					       i, shdr->sh_type);
++					return -ENOEXEC;
++				}
++			}
++			break;
++		}
++	}
++
+ 	return 0;
+ }
+ 
+@@ -2891,11 +2982,6 @@ static int rewrite_section_headers(struc
+ 
+ 	for (i = 1; i < info->hdr->e_shnum; i++) {
+ 		Elf_Shdr *shdr = &info->sechdrs[i];
+-		if (shdr->sh_type != SHT_NOBITS
+-		    && info->len < shdr->sh_offset + shdr->sh_size) {
+-			pr_err("Module len %lu truncated\n", info->len);
+-			return -ENOEXEC;
+-		}
+ 
+ 		/* Mark all sections sh_addr with their address in the
+ 		   temporary image. */
+@@ -2927,11 +3013,6 @@ static int setup_load_info(struct load_i
+ {
+ 	unsigned int i;
+ 
+-	/* Set up the convenience variables */
+-	info->sechdrs = (void *)info->hdr + info->hdr->e_shoff;
+-	info->secstrings = (void *)info->hdr
+-		+ info->sechdrs[info->hdr->e_shstrndx].sh_offset;
+-
+ 	info->index.mod = find_sec(info, ".gnu.linkonce.this_module");
+ 	if (!info->index.mod) {
+ 		pr_warn("No module found in object\n");
+@@ -3609,23 +3690,49 @@ static int load_module(struct load_info
+ 	long err = 0;
+ 	char *after_dashes;
+ 
+-	err = elf_header_check(info);
++	/*
++	 * Do the signature check (if any) first. All that
++	 * the signature check needs is info->len, it does
++	 * not need any of the section info. That can be
++	 * set up later. This will minimize the chances
++	 * of a corrupt module causing problems before
++	 * we even get to the signature check.
++	 *
++	 * The check will also adjust info->len by stripping
++	 * off the sig length at the end of the module, making
++	 * checks against info->len more correct.
++	 */
++	err = module_sig_check(info, flags);
++	if (err)
++		goto free_copy;
++
++	/*
++	 * Do basic sanity checks against the ELF header and
++	 * sections.
++	 */
++	err = elf_validity_check(info);
+-	if (err)
++	if (err) {
++		pr_err("Module has invalid ELF structures\n");
+ 		goto free_copy;
++	}
+ 
++	/*
++	 * Everything checks out, so set up the section info
++	 * in the info structure.
++	 */
+ 	err = setup_load_info(info, flags);
+ 	if (err)
+ 		goto free_copy;
+ 
++	/*
++	 * Now that we know we have the correct module name, check
++	 * if it's blacklisted.
++	 */
+ 	if (blacklisted(info->mod->name)) {
+ 		err = -EPERM;
+ 		goto free_copy;
+ 	}
+ 
+-	err = module_sig_check(info, flags);
+-	if (err)
+-		goto free_copy;
+-
+ 	err = rewrite_section_headers(info, flags);
+ 	if (err)
+ 		goto free_copy;
+--- a/kernel/module_signing.c
++++ b/kernel/module_signing.c
+@@ -66,8 +66,7 @@ int mod_verify_sig(const void *mod, stru
+ 	info->len = modlen;
+ 
+ 	if (ms.id_type != PKEY_ID_PKCS7) {
+-		pr_err("%s: Module is not signed with expected PKCS#7 message\n",
+-		       info->mod->name);
++		pr_err("Module is not signed with expected PKCS#7 message\n");
+ 		return -ENOPKG;
+ 	}
+ 
+@@ -78,8 +77,7 @@ int mod_verify_sig(const void *mod, stru
+ 	    ms.__pad[0] != 0 ||
+ 	    ms.__pad[1] != 0 ||
+ 	    ms.__pad[2] != 0) {
+-		pr_err("%s: PKCS#7 signature info has unexpected non-zero params\n",
+-		       info->mod->name);
++		pr_err("PKCS#7 signature info has unexpected non-zero params\n");
+ 		return -EBADMSG;
+ 	}
+ 

@@ -31,9 +31,9 @@ Acked-by: Jean Delvare <jdelvare@suse.de>
 +}
 +early_param("disable_fixed_phb", parse_disable_fixed_phb);
 +
- /*
-  * This function should run under locking protection, specifically
-  * hose_spinlock.
+ static int get_phb_number(struct device_node *dn)
+ {
+ 	int ret, phb_id = -1;
 @@ -83,6 +91,9 @@ static int get_phb_number(struct device_
  	u32 prop_32;
  	u64 prop;
@@ -46,7 +46,7 @@ Acked-by: Jean Delvare <jdelvare@suse.de>
  	 * the respective device-tree properties. Firstly, try powernv by
 @@ -101,6 +112,7 @@ static int get_phb_number(struct device_
  	if ((phb_id >= 0) && !test_and_set_bit(phb_id, phb_bitmap))
- 		return phb_id;
+ 		goto out_unlock;
  
 + dynamic:
  	/*

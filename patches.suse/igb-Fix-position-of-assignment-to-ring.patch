@@ -1,0 +1,45 @@
+From cb4ca620db16ece8452623d116fe549ec39ae806 Mon Sep 17 00:00:00 2001
+From: Jedrzej Jagielski <jedrzej.jagielski@intel.com>
+Date: Fri, 11 Jun 2021 22:42:17 +0000
+Subject: [PATCH 08/21] igb: Fix position of assignment to *ring
+Git-commit: 382a7c20d9253bcd5715789b8179528d0f3de72c
+Patch-mainline: v5.14-rc2
+References: git-fixes
+
+Assignment to *ring should be done after correctness check of the
+argument queue.
+
+Fixes: 91db364236c8 ("igb: Refactor igb_configure_cbs()")
+Signed-off-by: Jedrzej Jagielski <jedrzej.jagielski@intel.com>
+Acked-by: Vinicius Costa Gomes <vinicius.gomes@intel.com>
+Tested-by: Tony Brelinski <tonyx.brelinski@intel.com>
+Signed-off-by: Tony Nguyen <anthony.l.nguyen@intel.com>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/intel/igb/igb_main.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/intel/igb/igb_main.c b/drivers/net/ethernet/intel/igb/igb_main.c
+index e9e3e82b1d69..5d951461d455 100644
+--- a/drivers/net/ethernet/intel/igb/igb_main.c
++++ b/drivers/net/ethernet/intel/igb/igb_main.c
+@@ -1699,14 +1699,15 @@ static bool is_any_cbs_enabled(struct igb_adapter *adapter)
+  **/
+ static void igb_config_tx_modes(struct igb_adapter *adapter, int queue)
+ {
+-	struct igb_ring *ring = adapter->tx_ring[queue];
+ 	struct net_device *netdev = adapter->netdev;
+ 	struct e1000_hw *hw = &adapter->hw;
++	struct igb_ring *ring;
+ 	u32 tqavcc, tqavctrl;
+ 	u16 value;
+ 
+ 	WARN_ON(hw->mac.type != e1000_i210);
+ 	WARN_ON(queue < 0 || queue > 1);
++	ring = adapter->tx_ring[queue];
+ 
+ 	if (ring->cbs_enable || queue == 0) {
+ 		/* i210 does not allow the queue 0 to be in the Strict
+-- 
+2.16.4
+

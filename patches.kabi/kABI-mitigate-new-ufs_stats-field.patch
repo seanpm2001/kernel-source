@@ -1,0 +1,34 @@
+From: Lee Duncan <lduncan@suse.com>
+Date: Mon 19 Dec 2022 09:29:37 AM PST
+Subject: kABI: mitigate new ufs_stats field
+References: git-fixes
+Patch-mainline: never, kABI workaround
+
+This structure is allocated form one place,
+so it should be fine to add this field at the
+end of the struct, just in case somehow somebody
+has an old verrsion.
+---
+ drivers/scsi/ufs/ufshcd.h |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+--- a/drivers/scsi/ufs/ufshcd.h
++++ b/drivers/scsi/ufs/ufshcd.h
+@@ -650,7 +650,6 @@ struct ufs_hba {
+ 	u32 saved_err;
+ 	u32 saved_uic_err;
+ 	struct ufs_stats ufs_stats;
+-	bool silence_err_logs;
+ 
+ 	/* Device management request data */
+ 	struct ufs_dev_cmd dev_cmd;
+@@ -708,6 +707,9 @@ struct ufs_hba {
+ 	struct rw_semaphore clk_scaling_lock;
+ 	struct ufs_desc_size desc_size;
+ 	atomic_t scsi_block_reqs_cnt;
++#ifndef	__GENKSYMS__
++	bool silence_err_logs;
++#endif
+ };
+ 
+ /* Returns true if clocks can be gated. Otherwise false */

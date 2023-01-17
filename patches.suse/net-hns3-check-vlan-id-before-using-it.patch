@@ -1,0 +1,37 @@
+From 5edca8a06d56d28281cafc362c338633d7fb9333 Mon Sep 17 00:00:00 2001
+From: liaoguojia <liaoguojia@huawei.com>
+Date: Wed, 15 Sep 2021 21:52:10 +0800
+Subject: [PATCH 06/21] net: hns3: check vlan id before using it
+Git-commit: ef39d632608e66f428c1246836fd060cf4818d67
+Patch-mainline: v5.15-rc3
+References: git-fixes
+
+The input parameters may not be reliable, so check the vlan id before
+using it, otherwise may set wrong vlan id into hardware.
+
+Fixes: dc8131d846d4 ("net: hns3: Fix for packet loss due wrong filter config in VLAN tbls")
+Signed-off-by: liaoguojia <liaoguojia@huawei.com>
+Signed-off-by: Guangbin Huang <huangguangbin2@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
+index fedc86cbe60e..a554f733da08 100644
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
+@@ -7347,6 +7347,9 @@ static int hclge_set_vlan_filter_hw(struct hclge_dev *hdev, __be16 proto,
+ 	if (is_kill && !vlan_id)
+ 		return 0;
+ 
++	if (vlan_id >= VLAN_N_VID)
++		return -EINVAL;
++
+ 	ret = hclge_set_vf_vlan_common(hdev, vport_id, is_kill, vlan_id,
+ 				       0, proto);
+ 	if (ret) {
+-- 
+2.16.4
+

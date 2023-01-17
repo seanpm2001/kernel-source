@@ -1,0 +1,42 @@
+From cd5ff94577e004e0a4457e70d0ef3a030f4010b8 Mon Sep 17 00:00:00 2001
+From: zhong jiang <zhongjiang@huawei.com>
+Date: Wed, 26 Sep 2018 20:09:32 +0800
+Subject: [PATCH] powerpc/xive: Move a dereference below a NULL test
+
+References: bsc#1065729
+Patch-mainline: v4.20-rc1
+Git-commit: cd5ff94577e004e0a4457e70d0ef3a030f4010b8
+
+Move the dereference of xc below the NULL test.
+
+Signed-off-by: zhong jiang <zhongjiang@huawei.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/sysdev/xive/common.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/arch/powerpc/sysdev/xive/common.c b/arch/powerpc/sysdev/xive/common.c
+index 959a2a62f233..9824074ec1b5 100644
+--- a/arch/powerpc/sysdev/xive/common.c
++++ b/arch/powerpc/sysdev/xive/common.c
+@@ -1010,12 +1010,13 @@ static void xive_ipi_eoi(struct irq_data *d)
+ {
+ 	struct xive_cpu *xc = __this_cpu_read(xive_cpu);
+ 
+-	DBG_VERBOSE("IPI eoi: irq=%d [0x%lx] (HW IRQ 0x%x) pending=%02x\n",
+-		    d->irq, irqd_to_hwirq(d), xc->hw_ipi, xc->pending_prio);
+-
+ 	/* Handle possible race with unplug and drop stale IPIs */
+ 	if (!xc)
+ 		return;
++
++	DBG_VERBOSE("IPI eoi: irq=%d [0x%lx] (HW IRQ 0x%x) pending=%02x\n",
++		    d->irq, irqd_to_hwirq(d), xc->hw_ipi, xc->pending_prio);
++
+ 	xive_do_source_eoi(xc->hw_ipi, &xc->ipi_data);
+ 	xive_do_queue_eoi(xc);
+ }
+-- 
+2.35.3
+

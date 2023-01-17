@@ -1,0 +1,79 @@
+From 5135e9cf2e26ab75bc8f480f14f91c28e24f131e Mon Sep 17 00:00:00 2001
+From: Radhey Shyam Pandey <radhey.shyam.pandey@xilinx.com>
+Date: Thu, 28 Jun 2018 18:41:47 +0530
+Subject: [PATCH 3/7] net: emaclite: Simplify if-else statements
+Git-commit: aa5848bc4043abf92c0b72a636bbc0cbe2828fed
+Patch-mainline: v4.19-rc1
+References: git-fixes
+
+Remove else as it is not required with if doing a return.
+It also coalesce the format onto a single line and add the
+missing space after the comma. Fixes below checkpatch warning-
+
+WARNING: else is not generally useful after a break or return
+
+Signed-off-by: Radhey Shyam Pandey <radhey.shyam.pandey@xilinx.com>
+Signed-off-by: Michal Simek <michal.simek@xilinx.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/xilinx/xilinx_emaclite.c | 34 +++++++++++++--------------
+ 1 file changed, 16 insertions(+), 18 deletions(-)
+
+diff --git a/drivers/net/ethernet/xilinx/xilinx_emaclite.c b/drivers/net/ethernet/xilinx/xilinx_emaclite.c
+index f4aefea36221..8aed1ead302a 100644
+--- a/drivers/net/ethernet/xilinx/xilinx_emaclite.c
++++ b/drivers/net/ethernet/xilinx/xilinx_emaclite.c
+@@ -566,19 +566,18 @@ static void xemaclite_tx_handler(struct net_device *dev)
+ 	struct net_local *lp = netdev_priv(dev);
+ 
+ 	dev->stats.tx_packets++;
+-	if (lp->deferred_skb) {
+-		if (xemaclite_send_data(lp,
+-					(u8 *) lp->deferred_skb->data,
+-					lp->deferred_skb->len) != 0)
+-			return;
+-		else {
+-			dev->stats.tx_bytes += lp->deferred_skb->len;
+-			dev_kfree_skb_irq(lp->deferred_skb);
+-			lp->deferred_skb = NULL;
+-			netif_trans_update(dev); /* prevent tx timeout */
+-			netif_wake_queue(dev);
+-		}
+-	}
++	if (!lp->deferred_skb)
++		return;
++
++	if (xemaclite_send_data(lp, (u8 *) lp->deferred_skb->data,
++				lp->deferred_skb->len))
++		return;
++
++	dev->stats.tx_bytes += lp->deferred_skb->len;
++	dev_kfree_skb_irq(lp->deferred_skb);
++	lp->deferred_skb = NULL;
++	netif_trans_update(dev); /* prevent tx timeout */
++	netif_wake_queue(dev);
+ }
+ 
+ /**
+@@ -1054,13 +1053,12 @@ static bool get_bool(struct platform_device *ofdev, const char *s)
+ {
+ 	u32 *p = (u32 *)of_get_property(ofdev->dev.of_node, s, NULL);
+ 
+-	if (p) {
+-		return (bool)*p;
+-	} else {
+-		dev_warn(&ofdev->dev, "Parameter %s not found,"
+-			"defaulting to false\n", s);
++	if (!p) {
++		dev_warn(&ofdev->dev, "Parameter %s not found, defaulting to false\n", s);
+ 		return false;
+ 	}
++
++	return (bool)*p;
+ }
+ 
+ static const struct net_device_ops xemaclite_netdev_ops;
+-- 
+2.16.4
+

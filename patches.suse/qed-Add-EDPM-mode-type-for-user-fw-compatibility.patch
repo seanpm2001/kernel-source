@@ -1,0 +1,83 @@
+From 3ddff27183bd2de40130d9412d0a87ebef75fc34 Mon Sep 17 00:00:00 2001
+From: Yuval Basson <yuval.bason@marvell.com>
+Date: Tue, 26 May 2020 09:41:20 +0300
+Subject: [PATCH] qed: Add EDPM mode type for user-fw compatibility
+Git-commit: ff937b916eb6316fe4644564a572ed3b5867bc1f
+Patch-mainline: v5.8-rc1
+References: git-fixes
+
+In older FW versions the completion flag was treated as the ack flag in
+edpm messages. Expose the FW option of setting which mode the QP is in
+by adding a flag to the qedr <-> qed API.
+
+Flag is added for backward compatibility with libqedr.
+This flag will be set by qedr after determining whether the libqedr is
+using the updated version.
+
+Fixes: f10939403352 ("qed: Add support for QP verbs")
+Signed-off-by: Yuval Basson <yuval.bason@marvell.com>
+Signed-off-by: Michal Kalderon <michal.kalderon@marvell.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/qlogic/qed/qed_rdma.c | 1 +
+ drivers/net/ethernet/qlogic/qed/qed_rdma.h | 1 +
+ drivers/net/ethernet/qlogic/qed/qed_roce.c | 3 +++
+ include/linux/qed/qed_rdma_if.h            | 3 +++
+ 4 files changed, 8 insertions(+)
+
+diff --git a/drivers/net/ethernet/qlogic/qed/qed_rdma.c b/drivers/net/ethernet/qlogic/qed/qed_rdma.c
+index f900fde448db..3025ec19a551 100644
+--- a/drivers/net/ethernet/qlogic/qed/qed_rdma.c
++++ b/drivers/net/ethernet/qlogic/qed/qed_rdma.c
+@@ -1313,6 +1313,7 @@ qed_rdma_create_qp(void *rdma_cxt,
+ 		rc = qed_iwarp_create_qp(p_hwfn, qp, out_params);
+ 		qp->qpid = qp->icid;
+ 	} else {
++		qp->edpm_mode = GET_FIELD(in_params->flags, QED_ROCE_EDPM_MODE);
+ 		rc = qed_roce_alloc_cid(p_hwfn, &qp->icid);
+ 		qp->qpid = ((0xFF << 16) | qp->icid);
+ 	}
+diff --git a/drivers/net/ethernet/qlogic/qed/qed_rdma.h b/drivers/net/ethernet/qlogic/qed/qed_rdma.h
+index 3689fe3e5935..f4328e3a2c7e 100644
+--- a/drivers/net/ethernet/qlogic/qed/qed_rdma.h
++++ b/drivers/net/ethernet/qlogic/qed/qed_rdma.h
+@@ -172,6 +172,7 @@ struct qed_rdma_qp {
+ 	void *shared_queue;
+ 	dma_addr_t shared_queue_phys_addr;
+ 	struct qed_iwarp_ep *ep;
++	u8 edpm_mode;
+ };
+ 
+ #if IS_ENABLED(CONFIG_QED_RDMA)
+diff --git a/drivers/net/ethernet/qlogic/qed/qed_roce.c b/drivers/net/ethernet/qlogic/qed/qed_roce.c
+index 6e6563b51d68..9f90d856f896 100644
+--- a/drivers/net/ethernet/qlogic/qed/qed_roce.c
++++ b/drivers/net/ethernet/qlogic/qed/qed_roce.c
+@@ -451,6 +451,9 @@ static int qed_roce_sp_create_requester(struct qed_hwfn *p_hwfn,
+ 		  ROCE_CREATE_QP_REQ_RAMROD_DATA_RNR_NAK_CNT,
+ 		  qp->rnr_retry_cnt);
+ 
++	SET_FIELD(p_ramrod->flags2,
++		  ROCE_CREATE_QP_REQ_RAMROD_DATA_EDPM_MODE, qp->edpm_mode);
++
+ 	p_ramrod->max_ord = qp->max_rd_atomic_req;
+ 	p_ramrod->traffic_class = qp->traffic_class_tos;
+ 	p_ramrod->hop_limit = qp->hop_limit_ttl;
+diff --git a/include/linux/qed/qed_rdma_if.h b/include/linux/qed/qed_rdma_if.h
+index 898f595ea3d6..612a062b4540 100644
+--- a/include/linux/qed/qed_rdma_if.h
++++ b/include/linux/qed/qed_rdma_if.h
+@@ -320,6 +320,9 @@ struct qed_rdma_create_qp_in_params {
+ 	u64 rq_pbl_ptr;
+ 	u16 srq_id;
+ 	u8 stats_queue;
++	u8 flags;
++#define QED_ROCE_EDPM_MODE_MASK      0x1
++#define QED_ROCE_EDPM_MODE_SHIFT     0
+ };
+ 
+ struct qed_rdma_create_qp_out_params {
+-- 
+2.16.4
+

@@ -40,6 +40,8 @@ call the fc_rport_create() twice for the same rport.
 	kernel: host1: rport fffce5: Received PLOGI request
 	kernel: host1: rport fffce5: Received PLOGI in state Delete - send busy
 
+[lduncan: refreshed to apply]
+
 Link: https://lore.kernel.org/r/20200622101212.3922-2-jhasan@marvell.com
 Reviewed-by: Girish Basrur <gbasrur@marvell.com>
 Reviewed-by: Saurav Kashyap <skashyap@marvell.com>
@@ -53,7 +55,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
 
 --- a/drivers/scsi/libfc/fc_rport.c
 +++ b/drivers/scsi/libfc/fc_rport.c
-@@ -144,8 +144,10 @@ struct fc_rport_priv *fc_rport_create(st
+@@ -145,8 +145,10 @@ struct fc_rport_priv *fc_rport_create(st
  	lockdep_assert_held(&lport->disc.disc_mutex);
  
  	rdata = fc_rport_lookup(lport, port_id);
@@ -63,5 +65,5 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		return rdata;
 +	}
  
- 	rdata = kzalloc(sizeof(*rdata) + lport->rport_priv_size, GFP_KERNEL);
- 	if (!rdata)
+ 	if (lport->rport_priv_size > 0)
+ 		rport_priv_size = lport->rport_priv_size;

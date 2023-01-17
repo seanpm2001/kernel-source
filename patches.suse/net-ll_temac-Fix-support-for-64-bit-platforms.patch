@@ -1,0 +1,93 @@
+From b2deb52cd000385faa2cbbe863a4024cafd425b4 Mon Sep 17 00:00:00 2001
+From: Esben Haabendal <esben@geanix.com>
+Date: Tue, 30 Apr 2019 09:17:50 +0200
+Subject: [PATCH 5/7] net: ll_temac: Fix support for 64-bit platforms
+Git-commit: d84aec42151b489c4ca6e342ff5233c4789f5b90
+Patch-mainline: v5.2-rc1
+References: git-fixes
+
+The use of buffer descriptor APP4 field (32-bit) for storing skb pointer
+obviously does not work on 64-bit platforms.
+As APP3 is also unused, we can use that to store the other half of 64-bit
+pointer values.
+
+Contrary to what is hinted at in commit message of commit 15bfe05c8d63
+("net: ethernet: xilinx: Mark XILINX_LL_TEMAC broken on 64-bit")
+there are no other pointers stored in cdmac_bd.
+
+Signed-off-by: Esben Haabendal <esben@geanix.com>
+Reviewed-by: Andrew Lunn <andrew@lunn.ch>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/xilinx/ll_temac_main.c | 35 ++++++++++++++++++++++++++---
+ 1 file changed, 32 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/ethernet/xilinx/ll_temac_main.c b/drivers/net/ethernet/xilinx/ll_temac_main.c
+index a366c18260f8..0d1a99cd2799 100644
+--- a/drivers/net/ethernet/xilinx/ll_temac_main.c
++++ b/drivers/net/ethernet/xilinx/ll_temac_main.c
+@@ -617,11 +617,39 @@ static void temac_adjust_link(struct net_device *ndev)
+ 	mutex_unlock(&lp->indirect_mutex);
+ }
+ 
++#ifdef CONFIG_64BIT
++
++void ptr_to_txbd(void *p, struct cdmac_bd *bd)
++{
++	bd->app3 = (u32)(((u64)p) >> 32);
++	bd->app4 = (u32)((u64)p & 0xFFFFFFFF);
++}
++
++void *ptr_from_txbd(struct cdmac_bd *bd)
++{
++	return (void *)(((u64)(bd->app3) << 32) | bd->app4);
++}
++
++#else
++
++void ptr_to_txbd(void *p, struct cmdac_bd *bd)
++{
++	bd->app4 = (u32)p;
++}
++
++void *ptr_from_txbd(struct cdmac_bd *bd)
++{
++	return (void *)(bd->app4);
++}
++
++#endif
++
+ static void temac_start_xmit_done(struct net_device *ndev)
+ {
+ 	struct temac_local *lp = netdev_priv(ndev);
+ 	struct cdmac_bd *cur_p;
+ 	unsigned int stat = 0;
++	struct sk_buff *skb;
+ 
+ 	cur_p = &lp->tx_bd_v[lp->tx_bd_ci];
+ 	stat = cur_p->app0;
+@@ -629,8 +657,9 @@ static void temac_start_xmit_done(struct net_device *ndev)
+ 	while (stat & STS_CTRL_APP0_CMPLT) {
+ 		dma_unmap_single(ndev->dev.parent, cur_p->phys, cur_p->len,
+ 				 DMA_TO_DEVICE);
+-		if (cur_p->app4)
+-			dev_consume_skb_irq((struct sk_buff *)cur_p->app4);
++		skb = (struct sk_buff *)ptr_from_txbd(cur_p);
++		if (skb)
++			dev_consume_skb_irq(skb);
+ 		cur_p->app0 = 0;
+ 		cur_p->app1 = 0;
+ 		cur_p->app2 = 0;
+@@ -721,7 +750,7 @@ static int temac_start_xmit(struct sk_buff *skb, struct net_device *ndev)
+ 	cur_p->len = skb_headlen(skb);
+ 	cur_p->phys = dma_map_single(ndev->dev.parent, skb->data,
+ 				     skb_headlen(skb), DMA_TO_DEVICE);
+-	cur_p->app4 = (unsigned long)skb;
++	ptr_to_txbd((void *)skb, cur_p);
+ 
+ 	for (ii = 0; ii < num_frag; ii++) {
+ 		lp->tx_bd_tail++;
+-- 
+2.16.4
+

@@ -1,0 +1,60 @@
+From 83510e3cc63b58e4f3831b5b001a3722af405903 Mon Sep 17 00:00:00 2001
+From: Esben Haabendal <esben@geanix.com>
+Date: Tue, 30 Apr 2019 09:17:59 +0200
+Subject: [PATCH 1/4] net: ll_temac: Enable DMA when ready, not before
+Git-commit: 73f7375d3ed6ad372f1e9404007a0c866063d773
+Patch-mainline: v5.2-rc1
+References: git-fixes
+
+As soon as TAILDESCR_PTR is written, DMA transfers might start.
+Let's ensure we are ready to receive DMA IRQ's before doing that.
+
+Signed-off-by: Esben Haabendal <esben@geanix.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/xilinx/ll_temac_main.c | 15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/ethernet/xilinx/ll_temac_main.c b/drivers/net/ethernet/xilinx/ll_temac_main.c
+index 357e7c104409..10a28cea72be 100644
+--- a/drivers/net/ethernet/xilinx/ll_temac_main.c
++++ b/drivers/net/ethernet/xilinx/ll_temac_main.c
+@@ -295,17 +295,21 @@ static int temac_dma_bd_init(struct net_device *ndev)
+ 					  CHNL_CTRL_IRQ_IOE);
+ 	/* 0xff010283 */
+ 
+-	lp->dma_out(lp, RX_CURDESC_PTR,  lp->rx_bd_p);
+-	lp->dma_out(lp, RX_TAILDESC_PTR,
+-		       lp->rx_bd_p + (sizeof(*lp->rx_bd_v) * (RX_BD_NUM - 1)));
+-	lp->dma_out(lp, TX_CURDESC_PTR, lp->tx_bd_p);
+-
+ 	/* Init descriptor indexes */
+ 	lp->tx_bd_ci = 0;
+ 	lp->tx_bd_next = 0;
+ 	lp->tx_bd_tail = 0;
+ 	lp->rx_bd_ci = 0;
+ 
++	/* Enable RX DMA transfers */
++	wmb();
++	lp->dma_out(lp, RX_CURDESC_PTR,  lp->rx_bd_p);
++	lp->dma_out(lp, RX_TAILDESC_PTR,
++		       lp->rx_bd_p + (sizeof(*lp->rx_bd_v) * (RX_BD_NUM - 1)));
++
++	/* Prepare for TX DMA transfer */
++	lp->dma_out(lp, TX_CURDESC_PTR, lp->tx_bd_p);
++
+ 	return 0;
+ 
+ out:
+@@ -802,6 +806,7 @@ static int temac_start_xmit(struct sk_buff *skb, struct net_device *ndev)
+ 	skb_tx_timestamp(skb);
+ 
+ 	/* Kick off the transfer */
++	wmb();
+ 	lp->dma_out(lp, TX_TAILDESC_PTR, tail_p); /* DMA start */
+ 
+ 	return NETDEV_TX_OK;
+-- 
+2.16.4
+

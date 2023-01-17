@@ -13,14 +13,14 @@ Signed-off-by: Josef Bacik <josef@toxicpanda.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 Acked-by: Nikolay Borisov <nborisov@suse.com>
 ---
- fs/btrfs/extent-tree.c |   83 +++----------------------------------------------
- fs/btrfs/space-info.c  |   69 ++++++++++++++++++++++++++++++++++++++++
+ fs/btrfs/extent-tree.c |   81 +++----------------------------------------------
+ fs/btrfs/space-info.c  |   67 ++++++++++++++++++++++++++++++++++++++++
  fs/btrfs/space-info.h  |    3 +
- 3 files changed, 78 insertions(+), 77 deletions(-)
+ 3 files changed, 76 insertions(+), 75 deletions(-)
 
 --- a/fs/btrfs/extent-tree.c
 +++ b/fs/btrfs/extent-tree.c
-@@ -4368,11 +4368,6 @@ static void force_metadata_allocation(st
+@@ -4365,11 +4365,6 @@ static void force_metadata_allocation(st
  	rcu_read_unlock();
  }
  
@@ -32,7 +32,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  static int should_alloc_chunk(struct btrfs_fs_info *fs_info,
  			      struct btrfs_space_info *sinfo, int force)
  {
-@@ -4602,71 +4597,6 @@ out:
+@@ -4599,69 +4594,6 @@ out:
  	return ret;
  }
  
@@ -73,9 +73,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 -
 -	used += space_info->bytes_may_use;
 -
--	spin_lock(&fs_info->free_chunk_lock);
--	avail = fs_info->free_chunk_space;
--	spin_unlock(&fs_info->free_chunk_lock);
+-	avail = atomic64_read(&fs_info->free_chunk_space);
 -
 -	/*
 -	 * If we have dup, raid1 or raid10 then only half of the free
@@ -104,7 +102,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  static void btrfs_writeback_inodes_sb_nr(struct btrfs_fs_info *fs_info,
  					 unsigned long nr_pages, int nr_items)
  {
-@@ -4982,15 +4912,15 @@ btrfs_calc_reclaim_metadata_size(struct
+@@ -4979,15 +4911,15 @@ btrfs_calc_reclaim_metadata_size(struct
  		return to_reclaim;
  
  	to_reclaim = min_t(u64, num_online_cpus() * SZ_1M, SZ_16M);
@@ -124,7 +122,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		expected = div_factor_fine(space_info->total_bytes, 95);
  	else
  		expected = div_factor_fine(space_info->total_bytes, 90);
-@@ -5241,8 +5171,7 @@ static int __reserve_metadata_bytes(stru
+@@ -5238,8 +5170,7 @@ static int __reserve_metadata_bytes(stru
  		trace_btrfs_space_reservation(fs_info, "space_info",
  					      space_info->flags, orig_bytes, 1);
  		ret = 0;
@@ -134,7 +132,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  		update_bytes_may_use(fs_info, space_info, orig_bytes);
  		trace_btrfs_space_reservation(fs_info, "space_info",
  					      space_info->flags, orig_bytes, 1);
-@@ -5555,7 +5484,7 @@ again:
+@@ -5552,7 +5483,7 @@ again:
  		 * adding the ticket space would be a double count.
  		 */
  		if (check_overcommit &&
@@ -145,7 +143,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  			list_del_init(&ticket->list);
 --- a/fs/btrfs/space-info.c
 +++ b/fs/btrfs/space-info.c
-@@ -173,3 +173,72 @@ struct btrfs_space_info *btrfs_find_spac
+@@ -173,3 +173,70 @@ struct btrfs_space_info *btrfs_find_spac
  	rcu_read_unlock();
  	return NULL;
  }
@@ -191,9 +189,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 +
 +	used += space_info->bytes_may_use;
 +
-+	spin_lock(&fs_info->free_chunk_lock);
-+	avail = fs_info->free_chunk_space;
-+	spin_unlock(&fs_info->free_chunk_lock);
++	avail = atomic64_read(&fs_info->free_chunk_space);
 +
 +	/*
 +	 * If we have dup, raid1 or raid10 then only half of the free

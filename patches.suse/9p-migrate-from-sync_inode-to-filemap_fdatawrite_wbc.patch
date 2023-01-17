@@ -1,0 +1,35 @@
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Wed, 14 Jul 2021 14:47:24 -0400
+Subject: 9p: migrate from sync_inode to filemap_fdatawrite_wbc
+Git-commit: 25d23cd01621b740ce3e8f4f0fab40e24d163462
+Patch-mainline: v5.15-rc1
+References: bsc#1202528
+
+We're going to remove sync_inode, so migrate to filemap_fdatawrite_wbc
+instead.
+
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Nikolay Borisov <nborisov@suse.com>
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+Acked-by: Nikolay Borisov <nborisov@suse.com>
+---
+ fs/9p/vfs_file.c |    6 +-----
+ 1 file changed, 1 insertion(+), 5 deletions(-)
+
+--- a/fs/9p/vfs_file.c
++++ b/fs/9p/vfs_file.c
+@@ -637,11 +637,7 @@ static void v9fs_mmap_vm_close(struct vm
+ 
+ 	inode = file_inode(vma->vm_file);
+ 
+-	if (!mapping_cap_writeback_dirty(inode->i_mapping))
+-		wbc.nr_to_write = 0;
+-
+-	might_sleep();
+-	sync_inode(inode, &wbc);
++	filemap_fdatawrite_wbc(inode->i_mapping, &wbc);
+ }
+ 
+ 

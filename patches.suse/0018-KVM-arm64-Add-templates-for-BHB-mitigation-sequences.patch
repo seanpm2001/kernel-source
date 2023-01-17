@@ -21,30 +21,26 @@ install them.
 Signed-off-by: James Morse <james.morse@arm.com>
 Signed-off-by: Matthias Brugger <mbrugger@suse.com>
 ---
- arch/arm64/include/asm/cpucaps.h |  1 +
- arch/arm64/include/asm/kvm_mmu.h |  2 +-
- arch/arm64/include/asm/mmu.h     |  6 +++
- arch/arm64/kernel/bpi.S          | 50 ++++++++++++++++++++++
- arch/arm64/kernel/cpu_errata.c   | 71 +++++++++++++++++++++++++++++++-
+ arch/arm64/include/asm/cpucaps.h |    1 
+ arch/arm64/include/asm/kvm_mmu.h |    2 -
+ arch/arm64/include/asm/mmu.h     |    6 +++
+ arch/arm64/kernel/bpi.S          |   50 +++++++++++++++++++++++++++
+ arch/arm64/kernel/cpu_errata.c   |   71 +++++++++++++++++++++++++++++++++++++--
  5 files changed, 127 insertions(+), 3 deletions(-)
 
-diff --git a/arch/arm64/include/asm/cpucaps.h b/arch/arm64/include/asm/cpucaps.h
-index 69c2957d1bf36..eb504c57f324d 100644
 --- a/arch/arm64/include/asm/cpucaps.h
 +++ b/arch/arm64/include/asm/cpucaps.h
-@@ -54,6 +54,7 @@
- #define ARM64_HAS_CACHE_DIC			33
+@@ -55,6 +55,7 @@
  #define ARM64_MISMATCHED_CACHE_TYPE		34
  #define ARM64_WORKAROUND_1542419		35
-+#define ARM64_SPECTRE_BHB			28
+ #define ARM64_WORKAROUND_1742098		36
++#define ARM64_SPECTRE_BHB			37
  
  /* kabi: reserve 36 - 40 for future cpu capabilities */
  #define ARM64_NCAPS				40
-diff --git a/arch/arm64/include/asm/kvm_mmu.h b/arch/arm64/include/asm/kvm_mmu.h
-index 77015f4cf2bfd..f30d18dbac48e 100644
 --- a/arch/arm64/include/asm/kvm_mmu.h
 +++ b/arch/arm64/include/asm/kvm_mmu.h
-@@ -434,7 +434,7 @@ static inline void *kvm_get_hyp_vector(void)
+@@ -434,7 +434,7 @@ static inline void *kvm_get_hyp_vector(v
  	struct bp_hardening_data *data = arm64_get_bp_hardening_data();
  	void *vect = kvm_ksym_ref(__kvm_hyp_vector);
  
@@ -53,8 +49,6 @@ index 77015f4cf2bfd..f30d18dbac48e 100644
  		vect = __bp_harden_hyp_vecs_start +
  		       data->hyp_vectors_slot * SZ_2K;
  
-diff --git a/arch/arm64/include/asm/mmu.h b/arch/arm64/include/asm/mmu.h
-index d31bab89efa42..9c53141993481 100644
 --- a/arch/arm64/include/asm/mmu.h
 +++ b/arch/arm64/include/asm/mmu.h
 @@ -90,6 +90,12 @@ typedef void (*bp_hardening_cb_t)(void);
@@ -70,8 +64,6 @@ index d31bab89efa42..9c53141993481 100644
  };
  
  #ifdef CONFIG_HARDEN_BRANCH_PREDICTOR
-diff --git a/arch/arm64/kernel/bpi.S b/arch/arm64/kernel/bpi.S
-index 5a64ff2740906..cdcf2197b72be 100644
 --- a/arch/arm64/kernel/bpi.S
 +++ b/arch/arm64/kernel/bpi.S
 @@ -65,3 +65,53 @@ ENTRY(__smccc_workaround_1_smc_start)
@@ -128,11 +120,9 @@ index 5a64ff2740906..cdcf2197b72be 100644
 +	ldp     x0, x1, [sp, #(8 * 0)]
 +	add     sp, sp, #(8 * 2)
 +ENTRY(__spectre_bhb_loop_k32_end)
-diff --git a/arch/arm64/kernel/cpu_errata.c b/arch/arm64/kernel/cpu_errata.c
-index 64fc527f19654..bce8e9b25f9d6 100644
 --- a/arch/arm64/kernel/cpu_errata.c
 +++ b/arch/arm64/kernel/cpu_errata.c
-@@ -110,6 +110,14 @@ DEFINE_PER_CPU_READ_MOSTLY(struct bp_hardening_data, bp_hardening_data);
+@@ -110,6 +110,14 @@ DEFINE_PER_CPU_READ_MOSTLY(struct bp_har
  #ifdef CONFIG_KVM
  extern char __smccc_workaround_1_smc_start[];
  extern char __smccc_workaround_1_smc_end[];
@@ -147,7 +137,7 @@ index 64fc527f19654..bce8e9b25f9d6 100644
  
  static void __copy_hyp_vect_bpi(int slot, const char *hyp_vecs_start,
  				const char *hyp_vecs_end)
-@@ -123,12 +131,14 @@ static void __copy_hyp_vect_bpi(int slot, const char *hyp_vecs_start,
+@@ -123,12 +131,14 @@ static void __copy_hyp_vect_bpi(int slot
  	flush_icache_range((uintptr_t)dst, (uintptr_t)dst + SZ_2K);
  }
  
@@ -164,7 +154,7 @@ index 64fc527f19654..bce8e9b25f9d6 100644
  	int cpu, slot = -1;
  
  	/*
-@@ -158,6 +168,7 @@ static void install_bp_hardening_cb(bp_hardening_cb_t fn,
+@@ -158,6 +168,7 @@ static void install_bp_hardening_cb(bp_h
  
  	__this_cpu_write(bp_hardening_data.hyp_vectors_slot, slot);
  	__this_cpu_write(bp_hardening_data.fn, fn);
@@ -172,7 +162,7 @@ index 64fc527f19654..bce8e9b25f9d6 100644
  	spin_unlock(&bp_lock);
  }
  #else
-@@ -903,3 +914,59 @@ enum mitigation_state arm64_get_spectre_bhb_state(void)
+@@ -919,3 +930,59 @@ enum mitigation_state arm64_get_spectre_
  {
  	return spectre_bhb_state;
  }
@@ -232,6 +222,3 @@ index 64fc527f19654..bce8e9b25f9d6 100644
 +
 +void kvm_setup_bhb_slot(const char *hyp_vecs_start) { };
 +#endif
--- 
-2.34.1
-

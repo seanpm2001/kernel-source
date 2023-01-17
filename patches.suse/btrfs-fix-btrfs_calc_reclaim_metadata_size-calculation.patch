@@ -31,12 +31,12 @@ Signed-off-by: Josef Bacik <josef@toxicpanda.com>
 Signed-off-by: David Sterba <dsterba@suse.com>
 Acked-by: Nikolay Borisov <nborisov@suse.com>
 ---
- fs/btrfs/space-info.c |   44 ++++++++++++++++++++++++++++++++++----------
- 1 file changed, 34 insertions(+), 10 deletions(-)
+ fs/btrfs/space-info.c |   43 ++++++++++++++++++++++++++++++++++---------
+ 1 file changed, 34 insertions(+), 9 deletions(-)
 
 --- a/fs/btrfs/space-info.c
 +++ b/fs/btrfs/space-info.c
-@@ -182,26 +182,19 @@ static inline u64 calc_global_rsv_need_s
+@@ -182,26 +182,20 @@ static inline u64 calc_global_rsv_need_s
  	return (global->size << 1);
  }
  
@@ -55,7 +55,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
 -	/* Don't overcommit when in mixed mode. */
 -	if (space_info->flags & BTRFS_BLOCK_GROUP_DATA)
 -		return 0;
--
+ 
  	if (space_info->flags & BTRFS_BLOCK_GROUP_METADATA)
  		profile = btrfs_metadata_alloc_profile(fs_info);
  	else
@@ -63,10 +63,10 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
 -	used = btrfs_space_info_used(space_info, true);
 -
- 	spin_lock(&fs_info->free_chunk_lock);
- 	avail = fs_info->free_chunk_space;
- 	spin_unlock(&fs_info->free_chunk_lock);
-@@ -224,6 +217,22 @@ int btrfs_can_overcommit(struct btrfs_fs
+ 	avail = atomic64_read(&fs_info->free_chunk_space);
+ 
+ 	/*
+@@ -222,6 +216,22 @@ int btrfs_can_overcommit(struct btrfs_fs
  		avail >>= 3;
  	else
  		avail >>= 1;
@@ -89,7 +89,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  
  	if (used + bytes < space_info->total_bytes + avail)
  		return 1;
-@@ -643,6 +652,7 @@ btrfs_calc_reclaim_metadata_size(struct
+@@ -642,6 +652,7 @@ btrfs_calc_reclaim_metadata_size(struct
  {
  	struct reserve_ticket *ticket;
  	u64 used;
@@ -97,7 +97,7 @@ Acked-by: Nikolay Borisov <nborisov@suse.com>
  	u64 expected;
  	u64 to_reclaim = 0;
  
-@@ -650,6 +660,20 @@ btrfs_calc_reclaim_metadata_size(struct
+@@ -649,6 +660,20 @@ btrfs_calc_reclaim_metadata_size(struct
  		to_reclaim += ticket->bytes;
  	list_for_each_entry(ticket, &space_info->priority_tickets, list)
  		to_reclaim += ticket->bytes;

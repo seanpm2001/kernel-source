@@ -1,0 +1,35 @@
+From 978b5ad02b11613b57067f402c43fdb7262ec6a2 Mon Sep 17 00:00:00 2001
+From: Esben Haabendal <esben@geanix.com>
+Date: Tue, 30 Apr 2019 09:17:55 +0200
+Subject: [PATCH 2/4] net: ll_temac: Fix iommu/swiotlb leak
+Git-commit: a8c9bd3ba84084b6cca704d5b21ee0ba971b748b
+Patch-mainline: v5.2-rc1
+References: git-fixes
+
+Unmap the actual buffer length, not the amount of data received, avoiding
+resource exhaustion of swiotlb (seen on x86_64 platform).
+
+Signed-off-by: Esben Haabendal <esben@geanix.com>
+Reviewed-by: Andrew Lunn <andrew@lunn.ch>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/xilinx/ll_temac_main.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/xilinx/ll_temac_main.c b/drivers/net/ethernet/xilinx/ll_temac_main.c
+index 10a28cea72be..acf3eceea02a 100644
+--- a/drivers/net/ethernet/xilinx/ll_temac_main.c
++++ b/drivers/net/ethernet/xilinx/ll_temac_main.c
+@@ -835,7 +835,7 @@ static void ll_temac_recv(struct net_device *ndev)
+ 		length = be32_to_cpu(cur_p->app4) & 0x3FFF;
+ 
+ 		dma_unmap_single(ndev->dev.parent, be32_to_cpu(cur_p->phys),
+-				 length, DMA_FROM_DEVICE);
++				 XTE_MAX_JUMBO_FRAME_SIZE, DMA_FROM_DEVICE);
+ 
+ 		skb_put(skb, length);
+ 		skb->protocol = eth_type_trans(skb, ndev);
+-- 
+2.16.4
+

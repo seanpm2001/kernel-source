@@ -1,0 +1,71 @@
+From 98c4f78dcdd8cec112d1cbc5e9a792ee6e5ab7a6 Mon Sep 17 00:00:00 2001
+From: "Darrick J. Wong" <darrick.wong@oracle.com>
+Date: Wed, 22 Nov 2017 12:21:07 -0800
+Subject: [PATCH] xfs: always free inline data before resetting inode fork
+ during ifree
+Git-commit: 98c4f78dcdd8cec112d1cbc5e9a792ee6e5ab7a6
+Patch-mainline: v4.15-rc2
+References: bsc#1202017
+
+In xfs_ifree, we reset the data/attr forks to extents format without
+bothering to free any inline data buffer that might still be around
+after all the blocks have been truncated off the file.  Prior to commit
+43518812d2 ("xfs: remove support for inlining data/extents into the
+inode fork") nobody noticed because the leftover inline data after
+truncation was small enough to fit inside the inline buffer inside the
+fork itself.
+
+However, now that we've removed the inline buffer, we /always/ have to
+free the inline data buffer or else we leak them like crazy.  This test
+was found by turning on kmemleak for generic/001 or generic/388.
+
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Acked-by: Anthony Iliopoulos <ailiop@suse.com>
+
+---
+ fs/xfs/xfs_inode.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/fs/xfs/xfs_inode.c b/fs/xfs/xfs_inode.c
+index 61d1cb7dc10d..801274126648 100644
+--- a/fs/xfs/xfs_inode.c
++++ b/fs/xfs/xfs_inode.c
+@@ -2400,6 +2400,24 @@ xfs_ifree_cluster(
+ 	return 0;
+ }
+ 
++/*
++ * Free any local-format buffers sitting around before we reset to
++ * extents format.
++ */
++static inline void
++xfs_ifree_local_data(
++	struct xfs_inode	*ip,
++	int			whichfork)
++{
++	struct xfs_ifork	*ifp;
++
++	if (XFS_IFORK_FORMAT(ip, whichfork) != XFS_DINODE_FMT_LOCAL)
++		return;
++
++	ifp = XFS_IFORK_PTR(ip, whichfork);
++	xfs_idata_realloc(ip, -ifp->if_bytes, whichfork);
++}
++
+ /*
+  * This is called to return an inode to the inode free list.
+  * The inode should already be truncated to 0 length and have
+@@ -2437,6 +2455,9 @@ xfs_ifree(
+ 	if (error)
+ 		return error;
+ 
++	xfs_ifree_local_data(ip, XFS_DATA_FORK);
++	xfs_ifree_local_data(ip, XFS_ATTR_FORK);
++
+ 	VFS_I(ip)->i_mode = 0;		/* mark incore inode as free */
+ 	ip->i_d.di_flags = 0;
+ 	ip->i_d.di_dmevmask = 0;
+-- 
+2.35.3
+

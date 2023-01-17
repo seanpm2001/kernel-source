@@ -1,0 +1,95 @@
+From: David Howells <dhowells@redhat.com>
+Date: Thu, 17 Mar 2022 14:28:34 +0000
+Subject: [PATCH] cifs: Split the smb3_add_credits tracepoint
+Git-commit: 1ddff774164f1bcd0fcf988f7a5bb24270fbdf2c
+References: bsc#1190317
+Patch-mainline: v5.18-rc2
+
+Split the smb3_add_credits tracepoint to make it more obvious when looking
+at the logs which line corresponds to what credit change.  Also add a
+tracepoint for credit overflow when it's being added back.
+
+Note that it might be better to add another field to the tracepoint for
+the information rather than splitting it.  It would also be useful to store
+the MID potentially, though that isn't available when the credits are first
+obtained.
+
+Signed-off-by: David Howells <dhowells@redhat.com>
+cc: Shyam Prasad N <nspmangalore@gmail.com>
+cc: Rohith Surabattula <rohiths.msft@gmail.com>
+cc: linux-cifs@vger.kernel.org
+Acked-by: Paulo Alcantara (SUSE) <pc@cjr.nz>
+Reviewed-by: Enzo Matsumiya <ematsumiya@suse.de>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/connect.c |    2 +-
+ fs/cifs/smb2ops.c |    8 +++++---
+ fs/cifs/trace.h   |    7 +++++++
+ 3 files changed, 13 insertions(+), 4 deletions(-)
+
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -1203,7 +1203,7 @@ smb2_add_credits_from_hdr(char *buffer,
+ 		spin_unlock(&server->req_lock);
+ 		wake_up(&server->request_q);
+ 
+-		trace_smb3_add_credits(server->CurrentMid,
++		trace_smb3_hdr_credits(server->CurrentMid,
+ 				server->hostname, scredits,
+ 				le16_to_cpu(shdr->CreditRequest));
+ 		cifs_server_dbg(FYI, "%s: added %u credits total=%d\n",
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -80,6 +80,8 @@ smb2_add_credits(struct TCP_Server_Info
+ 	if (*val > 65000) {
+ 		*val = 65000; /* Don't get near 64K credits, avoid srv bugs */
+ 		printk_once(KERN_WARNING "server overflowed SMB3 credits\n");
++		trace_smb3_overflow_credits(server->CurrentMid,
++					    server->hostname, *val, add);
+ 	}
+ 	server->in_flight--;
+ 	if (server->in_flight == 0 &&
+@@ -217,7 +219,7 @@ smb2_wait_mtu_credits(struct TCP_Server_
+ 	}
+ 	spin_unlock(&server->req_lock);
+ 
+-	trace_smb3_add_credits(server->CurrentMid,
++	trace_smb3_wait_credits(server->CurrentMid,
+ 			server->hostname, scredits, -(credits->value));
+ 	cifs_dbg(FYI, "%s: removed %u credits total=%d\n",
+ 			__func__, credits->value, scredits);
+@@ -262,7 +264,7 @@ smb2_adjust_credits(struct TCP_Server_In
+ 	wake_up(&server->request_q);
+ 	credits->value = new_val;
+ 
+-	trace_smb3_add_credits(server->CurrentMid,
++	trace_smb3_adj_credits(server->CurrentMid,
+ 			server->hostname, scredits, credits->value - new_val);
+ 	cifs_dbg(FYI, "%s: adjust added %u credits total=%d\n",
+ 			__func__, credits->value - new_val, scredits);
+@@ -2413,7 +2415,7 @@ smb2_is_status_pending(char *buf, struct
+ 		spin_unlock(&server->req_lock);
+ 		wake_up(&server->request_q);
+ 
+-		trace_smb3_add_credits(server->CurrentMid,
++		trace_smb3_pend_credits(server->CurrentMid,
+ 				server->hostname, scredits, le16_to_cpu(shdr->CreditRequest));
+ 		cifs_dbg(FYI, "%s: status pending add %u credits total=%d\n",
+ 				__func__, le16_to_cpu(shdr->CreditRequest), scredits);
+--- a/fs/cifs/trace.h
++++ b/fs/cifs/trace.h
+@@ -916,6 +916,13 @@ DEFINE_SMB3_CREDIT_EVENT(credit_timeout)
+ DEFINE_SMB3_CREDIT_EVENT(insufficient_credits);
+ DEFINE_SMB3_CREDIT_EVENT(too_many_credits);
+ DEFINE_SMB3_CREDIT_EVENT(add_credits);
++DEFINE_SMB3_CREDIT_EVENT(adj_credits);
++DEFINE_SMB3_CREDIT_EVENT(hdr_credits);
++DEFINE_SMB3_CREDIT_EVENT(nblk_credits);
++DEFINE_SMB3_CREDIT_EVENT(pend_credits);
++DEFINE_SMB3_CREDIT_EVENT(wait_credits);
++DEFINE_SMB3_CREDIT_EVENT(waitff_credits);
++DEFINE_SMB3_CREDIT_EVENT(overflow_credits);
+ DEFINE_SMB3_CREDIT_EVENT(set_credits);
+ 
+ #endif /* _CIFS_TRACE_H */

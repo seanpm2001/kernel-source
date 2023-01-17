@@ -54,6 +54,10 @@ Provides:       %name-srchash-@COMMIT_FULL@
 Provides:       linux
 Provides:       multiversion(kernel)
 Source0:        @TARBALL_URL@linux-%srcversion.tar.xz
+%if "@TARBALL_URL@" != ""
+Source1:        @TARBALL_URL@linux-%srcversion.tar.sign
+Source2:        linux.keyring
+%endif
 Source3:        kernel-source.rpmlintrc
 Source14:       series.conf
 Source16:       guards
@@ -130,6 +134,10 @@ Recommends:     bison
 Recommends:     flex
 Recommends:     libelf-devel
 Recommends:     openssl-devel
+# pahole needed for BTF
+%if 0%{?suse_version} > 1500 || 0%{?sle_version} > 150300
+Recommends:     dwarves >= 1.22
+%endif
 # dracut no longer carries installkernel
 %if 0%{?suse_version} > 1500 || 0%{?sle_version} > 150300
 Recommends:     kernel-install-tools
@@ -189,6 +197,10 @@ AutoReqProv:    off
 Provides:       %name-vanilla = %version-%source_rel
 Provides:       multiversion(kernel)
 Requires:       kernel-macros
+# dracut no longer carries installkernel
+%if 0%{?suse_version} > 1500 || 0%{?sle_version} > 150300
+Recommends:     kernel-install-tools
+%endif
 
 %description vanilla
 Vanilla Linux kernel sources with minor build fixes.
@@ -210,6 +222,7 @@ pushd %{buildroot}/usr/src
 
 # Unpack the vanilla kernel sources
 tar -xf %{S:0}
+find . -xtype l -delete -printf "deleted '%f'\n"
 if test "%srcversion" != "%kernelrelease%variant"; then
 	mv linux-%srcversion linux-%kernelrelease%variant
 fi

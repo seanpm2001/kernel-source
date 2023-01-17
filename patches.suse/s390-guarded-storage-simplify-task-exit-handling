@@ -1,0 +1,74 @@
+From: Heiko Carstens <heiko.carstens@de.ibm.com>
+Date: Mon, 11 Sep 2017 11:24:23 +0200
+Subject: s390/guarded storage: simplify task exit handling
+Git-commit: 7b83c6297d2fc7350997e86188df84c27fd59530
+Patch-mainline: v4.15-rc1
+References: bsc#1203254 LTC#199911
+
+Free data structures required for guarded storage from
+arch_release_task_struct(). This allows to simplify the code a bit,
+and also makes the semantics a bit easier: arch_release_task_struct()
+is never called from the task that is being removed.
+
+In addition this allows to get rid of exit_thread() in a later patch.
+
+Signed-off-by: Heiko Carstens <heiko.carstens@de.ibm.com>
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Acked-by: Petr Tesarik <ptesarik@suse.com>
+---
+ arch/s390/include/asm/processor.h  |    4 ++--
+ arch/s390/kernel/guarded_storage.c |    9 +++------
+ arch/s390/kernel/process.c         |    3 +--
+ 3 files changed, 6 insertions(+), 10 deletions(-)
+
+--- a/arch/s390/include/asm/processor.h
++++ b/arch/s390/include/asm/processor.h
+@@ -220,8 +220,8 @@ void show_cacheinfo(struct seq_file *m);
+ /* Free all resources held by a thread. */
+ extern void release_thread(struct task_struct *);
+ 
+-/* Free guarded storage control block for current */
+-void exit_thread_gs(void);
++/* Free guarded storage control block */
++void guarded_storage_release(struct task_struct *tsk);
+ 
+ unsigned long get_wchan(struct task_struct *p);
+ #define task_pt_regs(tsk) ((struct pt_regs *) \
+--- a/arch/s390/kernel/guarded_storage.c
++++ b/arch/s390/kernel/guarded_storage.c
+@@ -11,13 +11,10 @@
+ #include <asm/guarded_storage.h>
+ #include "entry.h"
+ 
+-void exit_thread_gs(void)
++void guarded_storage_release(struct task_struct *tsk)
+ {
+-	preempt_disable();
+-	kfree(current->thread.gs_cb);
+-	kfree(current->thread.gs_bc_cb);
+-	current->thread.gs_cb = current->thread.gs_bc_cb = NULL;
+-	preempt_enable();
++	kfree(tsk->thread.gs_cb);
++	kfree(tsk->thread.gs_bc_cb);
+ }
+ 
+ static int gs_enable(void)
+--- a/arch/s390/kernel/process.c
++++ b/arch/s390/kernel/process.c
+@@ -48,8 +48,6 @@ extern void kernel_thread_starter(void);
+  */
+ void exit_thread(struct task_struct *tsk)
+ {
+-	if (tsk == current)
+-		exit_thread_gs();
+ }
+ 
+ void flush_thread(void)
+@@ -63,6 +61,7 @@ void release_thread(struct task_struct *
+ void arch_release_task_struct(struct task_struct *tsk)
+ {
+ 	runtime_instr_release(tsk);
++	guarded_storage_release(tsk);
+ }
+ 
+ int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)

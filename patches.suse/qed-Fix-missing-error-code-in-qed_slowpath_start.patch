@@ -1,0 +1,40 @@
+From 0fef1d5840520d1c928f4256b2c3b73514bc4185 Mon Sep 17 00:00:00 2001
+From: chongjiapeng <jiapeng.chong@linux.alibaba.com>
+Date: Sat, 9 Oct 2021 16:09:26 +0800
+Subject: [PATCH 14/21] qed: Fix missing error code in qed_slowpath_start()
+Git-commit: a5a14ea7b4e55604acb0dc9d88fdb4cb6945bc77
+Patch-mainline: v5.15-rc6
+References: git-fixes
+
+The error code is missing in this code scenario, add the error code
+'-EINVAL' to the return value 'rc'.
+
+Eliminate the follow smatch warning:
+
+drivers/net/ethernet/qlogic/qed/qed_main.c:1298 qed_slowpath_start()
+warn: missing error code 'rc'.
+
+Reported-by: Abaci Robot <abaci@linux.alibaba.com>
+Fixes: d51e4af5c209 ("qed: aRFS infrastructure support")
+Signed-off-by: chongjiapeng <jiapeng.chong@linux.alibaba.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/qlogic/qed/qed_main.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/net/ethernet/qlogic/qed/qed_main.c b/drivers/net/ethernet/qlogic/qed/qed_main.c
+index 81a9746b5cb6..297dc6aa5c63 100644
+--- a/drivers/net/ethernet/qlogic/qed/qed_main.c
++++ b/drivers/net/ethernet/qlogic/qed/qed_main.c
+@@ -1229,6 +1229,7 @@ static int qed_slowpath_start(struct qed_dev *cdev,
+ 			} else {
+ 				DP_NOTICE(cdev,
+ 					  "Failed to acquire PTT for aRFS\n");
++				rc = -EINVAL;
+ 				goto err;
+ 			}
+ 		}
+-- 
+2.16.4
+

@@ -1,0 +1,38 @@
+From 216c3087a346db8d7c8a064d2b8f0f49e4694934 Mon Sep 17 00:00:00 2001
+From: Madhavan Srinivasan <maddy@linux.vnet.ibm.com>
+Date: Tue, 16 Apr 2019 15:18:29 +0530
+Subject: [PATCH] powerpc/perf: Add privileged access check for thread_imc
+
+References: FATE#322448, bsc#1054914, git-fixes
+Patch-mainline: v5.2-rc1
+Git-commit: 216c3087a346db8d7c8a064d2b8f0f49e4694934
+
+Add code to restrict user access to thread_imc pmu since
+some event report privilege level information.
+
+Fixes: f74c89bd80fb3 ("powerpc/perf: Add thread IMC PMU support")
+Signed-off-by: Madhavan Srinivasan <maddy@linux.vnet.ibm.com>
+Signed-off-by: Anju T Sudhakar <anju@linux.vnet.ibm.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/perf/imc-pmu.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/arch/powerpc/perf/imc-pmu.c b/arch/powerpc/perf/imc-pmu.c
+index 23092a359ce0..975837d85a80 100644
+--- a/arch/powerpc/perf/imc-pmu.c
++++ b/arch/powerpc/perf/imc-pmu.c
+@@ -864,6 +864,9 @@ static int thread_imc_event_init(struct perf_event *event)
+ 	if (event->attr.type != event->pmu->type)
+ 		return -ENOENT;
+ 
++	if (!capable(CAP_SYS_ADMIN))
++		return -EACCES;
++
+ 	/* Sampling not supported */
+ 	if (event->hw.sample_period)
+ 		return -EINVAL;
+-- 
+2.35.3
+

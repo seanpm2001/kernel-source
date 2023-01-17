@@ -1,0 +1,255 @@
+From: Enzo Matsumiya <ematsumiya@suse.de>
+Date: Wed, 17 Aug 2022 16:08:34 -0300
+Subject: [PATCH] cifs: remove useless parameter 'is_fsctl' from SMB2_ioctl()
+Git-commit: 400d0ad63b190895e29f43bc75b1260111d3fd34
+References: bsc#1190317
+Patch-mainline: v6.0-rc2
+
+SMB2_ioctl() is always called with is_fsctl = true, so doesn't make any
+sense to have it at all.
+
+Thus, always set SMB2_0_IOCTL_IS_FSCTL flag on the request.
+
+Also, as per MS-SMB2 3.3.5.15 "Receiving an SMB2 IOCTL Request", servers
+must fail the request if the request flags is zero anyway.
+
+Signed-off-by: Enzo Matsumiya <ematsumiya@suse.de>
+Reviewed-by: Tom Talpey <tom@talpey.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/smb2file.c  |    1 -
+ fs/cifs/smb2ops.c   |   32 ++++++++++++--------------------
+ fs/cifs/smb2pdu.c   |   20 +++++++++-----------
+ fs/cifs/smb2proto.h |    4 ++--
+ 4 files changed, 23 insertions(+), 34 deletions(-)
+
+--- a/fs/cifs/smb2file.c
++++ b/fs/cifs/smb2file.c
+@@ -74,7 +74,6 @@ smb2_open_file(const unsigned int xid, s
+ 		nr_ioctl_req.Reserved = 0;
+ 		rc = SMB2_ioctl(xid, oparms->tcon, fid->persistent_fid,
+ 			fid->volatile_fid, FSCTL_LMR_REQUEST_RESILIENCY,
+-			true /* is_fsctl */,
+ 			(char *)&nr_ioctl_req, sizeof(nr_ioctl_req),
+ 			CIFSMaxBufSize, NULL, NULL /* no return info */);
+ 		if (rc == -EOPNOTSUPP) {
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -611,7 +611,7 @@ SMB3_request_interfaces(const unsigned i
+ 	struct cifs_ses *ses = tcon->ses;
+ 
+ 	rc = SMB2_ioctl(xid, tcon, NO_FILE_ID, NO_FILE_ID,
+-			FSCTL_QUERY_NETWORK_INTERFACE_INFO, true /* is_fsctl */,
++			FSCTL_QUERY_NETWORK_INTERFACE_INFO,
+ 			NULL /* no data input */, 0 /* no data input */,
+ 			CIFSMaxBufSize, (char **)&out_buf, &ret_data_len);
+ 	if (rc == -EOPNOTSUPP) {
+@@ -1523,9 +1523,8 @@ SMB2_request_res_key(const unsigned int
+ 	struct resume_key_req *res_key;
+ 
+ 	rc = SMB2_ioctl(xid, tcon, persistent_fid, volatile_fid,
+-			FSCTL_SRV_REQUEST_RESUME_KEY, true /* is_fsctl */,
+-			NULL, 0 /* no input */, CIFSMaxBufSize,
+-			(char **)&res_key, &ret_data_len);
++			FSCTL_SRV_REQUEST_RESUME_KEY, NULL, 0 /* no input */,
++			CIFSMaxBufSize, (char **)&res_key, &ret_data_len);
+ 
+ 	if (rc == -EOPNOTSUPP) {
+ 		pr_warn_once("Server share %s does not support copy range\n", tcon->treeName);
+@@ -1666,7 +1665,7 @@ smb2_ioctl_query_info(const unsigned int
+ 		rqst[1].rq_nvec = SMB2_IOCTL_IOV_SIZE;
+ 
+ 		rc = SMB2_ioctl_init(tcon, &rqst[1], COMPOUND_FID, COMPOUND_FID,
+-				     qi.info_type, true, buffer, qi.output_buffer_length,
++				     qi.info_type, buffer, qi.output_buffer_length,
+ 				     CIFSMaxBufSize - MAX_SMB2_CREATE_RESPONSE_SIZE -
+ 				     MAX_SMB2_CLOSE_RESPONSE_SIZE);
+ 	} else if (qi.flags == PASSTHRU_SET_INFO) {
+@@ -1836,9 +1835,8 @@ smb2_copychunk_range(const unsigned int
+ 		retbuf = NULL;
+ 		rc = SMB2_ioctl(xid, tcon, trgtfile->fid.persistent_fid,
+ 			trgtfile->fid.volatile_fid, FSCTL_SRV_COPYCHUNK_WRITE,
+-			true /* is_fsctl */, (char *)pcchunk,
+-			sizeof(struct copychunk_ioctl),	CIFSMaxBufSize,
+-			(char **)&retbuf, &ret_data_len);
++			(char *)pcchunk, sizeof(struct copychunk_ioctl),
++			CIFSMaxBufSize, (char **)&retbuf, &ret_data_len);
+ 		if (rc == 0) {
+ 			if (ret_data_len !=
+ 					sizeof(struct copychunk_ioctl_rsp)) {
+@@ -1998,7 +1996,6 @@ static bool smb2_set_sparse(const unsign
+ 
+ 	rc = SMB2_ioctl(xid, tcon, cfile->fid.persistent_fid,
+ 			cfile->fid.volatile_fid, FSCTL_SET_SPARSE,
+-			true /* is_fctl */,
+ 			&setsparse, 1, CIFSMaxBufSize, NULL, NULL);
+ 	if (rc) {
+ 		tcon->broken_sparse_sup = true;
+@@ -2081,7 +2078,6 @@ smb2_duplicate_extents(const unsigned in
+ 	rc = SMB2_ioctl(xid, tcon, trgtfile->fid.persistent_fid,
+ 			trgtfile->fid.volatile_fid,
+ 			FSCTL_DUPLICATE_EXTENTS_TO_FILE,
+-			true /* is_fsctl */,
+ 			(char *)&dup_ext_buf,
+ 			sizeof(struct duplicate_extents_to_file),
+ 			CIFSMaxBufSize, NULL,
+@@ -2116,7 +2112,6 @@ smb3_set_integrity(const unsigned int xi
+ 	return SMB2_ioctl(xid, tcon, cfile->fid.persistent_fid,
+ 			cfile->fid.volatile_fid,
+ 			FSCTL_SET_INTEGRITY_INFORMATION,
+-			true /* is_fsctl */,
+ 			(char *)&integr_info,
+ 			sizeof(struct fsctl_set_integrity_information_req),
+ 			CIFSMaxBufSize, NULL,
+@@ -2169,7 +2164,6 @@ smb3_enum_snapshots(const unsigned int x
+ 	rc = SMB2_ioctl(xid, tcon, cfile->fid.persistent_fid,
+ 			cfile->fid.volatile_fid,
+ 			FSCTL_SRV_ENUMERATE_SNAPSHOTS,
+-			true /* is_fsctl */,
+ 			NULL, 0 /* no input data */, max_response_size,
+ 			(char **)&retbuf,
+ 			&ret_data_len);
+@@ -2874,7 +2868,6 @@ smb2_get_dfs_refer(const unsigned int xi
+ 	do {
+ 		rc = SMB2_ioctl(xid, tcon, NO_FILE_ID, NO_FILE_ID,
+ 				FSCTL_DFS_GET_REFERRALS,
+-				true /* is_fsctl */,
+ 				(char *)dfs_req, dfs_req_size, CIFSMaxBufSize,
+ 				(char **)&dfs_rsp, &dfs_rsp_size);
+ 		if (!is_retryable_error(rc))
+@@ -3078,8 +3071,7 @@ smb2_query_symlink(const unsigned int xi
+ 	rqst[1].rq_nvec = SMB2_IOCTL_IOV_SIZE;
+ 
+ 	rc = SMB2_ioctl_init(tcon, &rqst[1], fid.persistent_fid,
+-			     fid.volatile_fid, FSCTL_GET_REPARSE_POINT,
+-			     true /* is_fctl */, NULL, 0,
++			     fid.volatile_fid, FSCTL_GET_REPARSE_POINT, NULL, 0,
+ 			     CIFSMaxBufSize -
+ 			     MAX_SMB2_CREATE_RESPONSE_SIZE -
+ 			     MAX_SMB2_CLOSE_RESPONSE_SIZE);
+@@ -3401,7 +3393,7 @@ static long smb3_zero_range(struct file
+ 	fsctl_buf.BeyondFinalZero = cpu_to_le64(offset + len);
+ 
+ 	rc = SMB2_ioctl(xid, tcon, cfile->fid.persistent_fid,
+-			cfile->fid.volatile_fid, FSCTL_SET_ZERO_DATA, true,
++			cfile->fid.volatile_fid, FSCTL_SET_ZERO_DATA,
+ 			(char *)&fsctl_buf,
+ 			sizeof(struct file_zero_data_information),
+ 			0, NULL, NULL);
+@@ -3463,7 +3455,7 @@ static long smb3_punch_hole(struct file
+ 
+ 	rc = SMB2_ioctl(xid, tcon, cfile->fid.persistent_fid,
+ 			cfile->fid.volatile_fid, FSCTL_SET_ZERO_DATA,
+-			true /* is_fctl */, (char *)&fsctl_buf,
++			(char *)&fsctl_buf,
+ 			sizeof(struct file_zero_data_information),
+ 			CIFSMaxBufSize, NULL, NULL);
+ 	free_xid(xid);
+@@ -3522,7 +3514,7 @@ static int smb3_simple_fallocate_range(u
+ 	in_data.length = cpu_to_le64(len);
+ 	rc = SMB2_ioctl(xid, tcon, cfile->fid.persistent_fid,
+ 			cfile->fid.volatile_fid,
+-			FSCTL_QUERY_ALLOCATED_RANGES, true,
++			FSCTL_QUERY_ALLOCATED_RANGES,
+ 			(char *)&in_data, sizeof(in_data),
+ 			1024 * sizeof(struct file_allocated_range_buffer),
+ 			(char **)&out_data, &out_data_len);
+@@ -3834,7 +3826,7 @@ static loff_t smb3_llseek(struct file *f
+ 
+ 	rc = SMB2_ioctl(xid, tcon, cfile->fid.persistent_fid,
+ 			cfile->fid.volatile_fid,
+-			FSCTL_QUERY_ALLOCATED_RANGES, true,
++			FSCTL_QUERY_ALLOCATED_RANGES,
+ 			(char *)&in_data, sizeof(in_data),
+ 			sizeof(struct file_allocated_range_buffer),
+ 			(char **)&out_data, &out_data_len);
+@@ -3893,7 +3885,7 @@ static int smb3_fiemap(struct cifs_tcon
+ 
+ 	rc = SMB2_ioctl(xid, tcon, cfile->fid.persistent_fid,
+ 			cfile->fid.volatile_fid,
+-			FSCTL_QUERY_ALLOCATED_RANGES, true,
++			FSCTL_QUERY_ALLOCATED_RANGES,
+ 			(char *)&in_data, sizeof(in_data),
+ 			1024 * sizeof(struct file_allocated_range_buffer),
+ 			(char **)&out_data, &out_data_len);
+--- a/fs/cifs/smb2pdu.c
++++ b/fs/cifs/smb2pdu.c
+@@ -1030,7 +1030,7 @@ int smb3_validate_negotiate(const unsign
+ 	}
+ 
+ 	rc = SMB2_ioctl(xid, tcon, NO_FILE_ID, NO_FILE_ID,
+-		FSCTL_VALIDATE_NEGOTIATE_INFO, true /* is_fsctl */,
++		FSCTL_VALIDATE_NEGOTIATE_INFO,
+ 		(char *)pneg_inbuf, inbuflen, CIFSMaxBufSize,
+ 		(char **)&pneg_rsp, &rsplen);
+ 	if (rc == -EOPNOTSUPP) {
+@@ -2845,7 +2845,7 @@ creat_exit:
+ int
+ SMB2_ioctl_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
+ 		u64 persistent_fid, u64 volatile_fid, u32 opcode,
+-		bool is_fsctl, char *in_data, u32 indatalen,
++		char *in_data, u32 indatalen,
+ 		__u32 max_response_size)
+ {
+ 	struct smb2_ioctl_req *req;
+@@ -2919,10 +2919,8 @@ SMB2_ioctl_init(struct cifs_tcon *tcon,
+ 	req->sync_hdr.CreditCharge =
+ 		cpu_to_le16(DIV_ROUND_UP(max(indatalen, max_response_size),
+ 					 SMB2_MAX_BUFFER_SIZE));
+-	if (is_fsctl)
+-		req->Flags = cpu_to_le32(SMB2_0_IOCTL_IS_FSCTL);
+-	else
+-		req->Flags = 0;
++	/* always an FSCTL (for now) */
++	req->Flags = cpu_to_le32(SMB2_0_IOCTL_IS_FSCTL);
+ 
+ 	/* validate negotiate request must be signed - see MS-SMB2 3.2.5.5 */
+ 	if (opcode == FSCTL_VALIDATE_NEGOTIATE_INFO)
+@@ -2949,9 +2947,9 @@ SMB2_ioctl_free(struct smb_rqst *rqst)
+  */
+ int
+ SMB2_ioctl(const unsigned int xid, struct cifs_tcon *tcon, u64 persistent_fid,
+-	   u64 volatile_fid, u32 opcode, bool is_fsctl,
+-	   char *in_data, u32 indatalen, u32 max_out_data_len,
+-	   char **out_data, u32 *plen /* returned data len */)
++	   u64 volatile_fid, u32 opcode, char *in_data, u32 indatalen,
++	   u32 max_out_data_len, char **out_data,
++	   u32 *plen /* returned data len */)
+ {
+ 	struct smb_rqst rqst;
+ 	struct smb2_ioctl_rsp *rsp = NULL;
+@@ -2992,7 +2990,7 @@ SMB2_ioctl(const unsigned int xid, struc
+ 	rqst.rq_nvec = SMB2_IOCTL_IOV_SIZE;
+ 
+ 	rc = SMB2_ioctl_init(tcon, &rqst, persistent_fid, volatile_fid, opcode,
+-			     is_fsctl, in_data, indatalen, max_out_data_len);
++			     in_data, indatalen, max_out_data_len);
+ 	if (rc)
+ 		goto ioctl_exit;
+ 
+@@ -3083,7 +3081,7 @@ SMB2_set_compression(const unsigned int
+ 			cpu_to_le16(COMPRESSION_FORMAT_DEFAULT);
+ 
+ 	rc = SMB2_ioctl(xid, tcon, persistent_fid, volatile_fid,
+-			FSCTL_SET_COMPRESSION, true /* is_fsctl */,
++			FSCTL_SET_COMPRESSION,
+ 			(char *)&fsctl_input /* data input */,
+ 			2 /* in data len */, CIFSMaxBufSize /* max out data */,
+ 			&ret_data /* out data */, NULL);
+--- a/fs/cifs/smb2proto.h
++++ b/fs/cifs/smb2proto.h
+@@ -153,11 +153,11 @@ extern int SMB2_open_init(struct cifs_tc
+ extern void SMB2_open_free(struct smb_rqst *rqst);
+ extern int SMB2_ioctl(const unsigned int xid, struct cifs_tcon *tcon,
+ 		     u64 persistent_fid, u64 volatile_fid, u32 opcode,
+-		     bool is_fsctl, char *in_data, u32 indatalen, u32 maxoutlen,
++		     char *in_data, u32 indatalen, u32 maxoutlen,
+ 		     char **out_data, u32 *plen /* returned data len */);
+ extern int SMB2_ioctl_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
+ 			   u64 persistent_fid, u64 volatile_fid, u32 opcode,
+-			   bool is_fsctl, char *in_data, u32 indatalen,
++			   char *in_data, u32 indatalen,
+ 			   __u32 max_response_size);
+ extern void SMB2_ioctl_free(struct smb_rqst *rqst);
+ extern int SMB2_change_notify(const unsigned int xid, struct cifs_tcon *tcon,

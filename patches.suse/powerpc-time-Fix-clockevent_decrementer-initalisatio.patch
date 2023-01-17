@@ -1,0 +1,50 @@
+From b4d16ab58c41ff0125822464bdff074cebd0fe47 Mon Sep 17 00:00:00 2001
+From: Michael Ellerman <mpe@ellerman.id.au>
+Date: Wed, 17 Oct 2018 23:39:41 +1100
+Subject: [PATCH] powerpc/time: Fix clockevent_decrementer initalisation for PR
+ KVM
+
+References: bsc#1065729
+Patch-mainline: v4.20-rc1
+Git-commit: b4d16ab58c41ff0125822464bdff074cebd0fe47
+
+In the recent commit 8b78fdb045de ("powerpc/time: Use
+clockevents_register_device(), fixing an issue with large
+decrementer") we changed the way we initialise the decrementer
+clockevent(s).
+
+We no longer initialise the mult & shift values of
+decrementer_clockevent itself.
+
+This has the effect of breaking PR KVM, because it uses those values
+in kvmppc_emulate_dec(). The symptom is guest kernels spin forever
+mid-way through boot.
+
+For now fix it by assigning back to decrementer_clockevent the mult
+and shift values.
+
+Fixes: 8b78fdb045de ("powerpc/time: Use clockevents_register_device(), fixing an issue with large decrementer")
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kernel/time.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/arch/powerpc/kernel/time.c b/arch/powerpc/kernel/time.c
+index 40868f3ee113..68e8f963d108 100644
+--- a/arch/powerpc/kernel/time.c
++++ b/arch/powerpc/kernel/time.c
+@@ -989,6 +989,10 @@ static void register_decrementer_clockevent(int cpu)
+ 
+ 	printk_once(KERN_DEBUG "clockevent: %s mult[%x] shift[%d] cpu[%d]\n",
+ 		    dec->name, dec->mult, dec->shift, cpu);
++
++	/* Set values for KVM, see kvm_emulate_dec() */
++	decrementer_clockevent.mult = dec->mult;
++	decrementer_clockevent.shift = dec->shift;
+ }
+ 
+ static void enable_large_decrementer(void)
+-- 
+2.35.3
+

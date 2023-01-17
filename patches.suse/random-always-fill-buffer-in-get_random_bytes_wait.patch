@@ -1,0 +1,39 @@
+From: "Jason A. Donenfeld" <Jason@zx2c4.com>
+Date: Sun, 4 Feb 2018 23:07:46 +0100
+Subject: random: always fill buffer in get_random_bytes_wait
+Git-commit: 25e3fca492035a2e1d4ac6e3b1edd9c1acd48897
+Patch-mainline: v4.17-rc1
+References: git-fixes
+
+In the unfortunate event that a developer fails to check the return
+value of get_random_bytes_wait, or simply wants to make a "best effort"
+attempt, for whatever that's worth, it's much better to still fill the
+buffer with _something_ rather than catastrophically failing in the case
+of an interruption. This is both a defense in depth measure against
+inevitable programming bugs, as well as a means of making the API a bit
+more useful.
+
+Signed-off-by: Jason A. Donenfeld <Jason@zx2c4.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ include/linux/random.h | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/include/linux/random.h b/include/linux/random.h
+index 4024f7d9c77d..2ddf13b4281e 100644
+--- a/include/linux/random.h
++++ b/include/linux/random.h
+@@ -85,10 +85,8 @@ static inline unsigned long get_random_canary(void)
+ static inline int get_random_bytes_wait(void *buf, int nbytes)
+ {
+ 	int ret = wait_for_random_bytes();
+-	if (unlikely(ret))
+-		return ret;
+ 	get_random_bytes(buf, nbytes);
+-	return 0;
++	return ret;
+ }
+ 
+ #define declare_get_random_var_wait(var) \
+

@@ -1,0 +1,33 @@
+From: Qian Cai <quic_qiancai@quicinc.com>
+Date: Fri, 24 Jun 2022 07:13:38 -0400
+Subject: crypto: arm64/gcm - Select AEAD for GHASH_ARM64_CE
+
+Git-commit: fac76f2260893dde5aa05bb693b4c13e8ed0454b
+Patch-mainline: v6.0-rc1
+References: git-fixes
+
+Otherwise, we could fail to compile.
+
+ld: arch/arm64/crypto/ghash-ce-glue.o: in function 'ghash_ce_mod_exit':
+ghash-ce-glue.c:(.exit.text+0x24): undefined reference to 'crypto_unregister_aead'
+ld: arch/arm64/crypto/ghash-ce-glue.o: in function 'ghash_ce_mod_init':
+ghash-ce-glue.c:(.init.text+0x34): undefined reference to 'crypto_register_aead'
+
+Fixes: 537c1445ab0b ("crypto: arm64/gcm - implement native driver using v8 Crypto Extensions")
+Signed-off-by: Qian Cai <quic_qiancai@quicinc.com>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Signed-off-by: Mian Yousaf Kaukab <ykaukab@suse.de>
+---
+ arch/arm64/crypto/Kconfig |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/arch/arm64/crypto/Kconfig
++++ b/arch/arm64/crypto/Kconfig
+@@ -35,6 +35,7 @@ config CRYPTO_GHASH_ARM64_CE
+ 	select CRYPTO_GF128MUL
+ 	select CRYPTO_AES
+ 	select CRYPTO_AES_ARM64
++	select CRYPTO_AEAD
+ 
+ config CRYPTO_CRCT10DIF_ARM64_CE
+ 	tristate "CRCT10DIF digest algorithm using PMULL instructions"

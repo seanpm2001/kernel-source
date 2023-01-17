@@ -1,0 +1,47 @@
+From: Dario Faggioli <dfaggioli@suse.com>
+Date: Thu Oct 13 18:19:43 2022
+Subject: kABI: fix kABI after "KVM: Add infrastructure and macro to mark VM as bugged"
+Patch-mainline: never, SUSE kABI
+References: bsc#1200788 CVE-2022-2153
+
+Patch "KVM: Add infrastructure and macro to mark VM as bugged"
+breaks kABI. The kvm struct has several holes, e.g.:
+
+    /* --- cacheline 37 boundary (2368 bytes) --- */
+    atomic_t                   online_vcpus;         /*  2368     4 */
+    int                        created_vcpus;        /*  2372     4 */
+    int                        last_boosted_vcpu;    /*  2376     4 */
+
+    /* XXX 4 bytes hole, try to pack */
+
+    struct list_head           vm_list;              /*  2384    16 */
+    struct mutex               lock;                 /*  2400    32 */
+    /* --- cacheline 38 boundary (2432 bytes) --- */
+
+Move the new member there as a workaround.
+
+Signed-off-by: Dario Faggioli <dfaggioli@suse.com>
+---
+ include/linux/kvm_host.h |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/include/linux/kvm_host.h
++++ b/include/linux/kvm_host.h
+@@ -405,6 +405,9 @@
+ 	atomic_t online_vcpus;
+ 	int created_vcpus;
+ 	int last_boosted_vcpu;
++#ifndef __GENKSYMS__
++	bool vm_bugged;
++#endif
+ 	struct list_head vm_list;
+ 	struct mutex lock;
+ 	struct kvm_io_bus __rcu *buses[KVM_NR_BUSES];
+@@ -449,7 +452,6 @@
+ 	struct srcu_struct srcu;
+ 	struct srcu_struct irq_srcu;
+ 	pid_t userspace_pid;
+-	bool vm_bugged;
+ };
+ 
+ #define kvm_err(fmt, ...) \

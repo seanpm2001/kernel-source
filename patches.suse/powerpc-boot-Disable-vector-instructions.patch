@@ -1,0 +1,43 @@
+From e8e132e6885962582784b6fa16a80d07ea739c0f Mon Sep 17 00:00:00 2001
+From: Joel Stanley <joel@jms.id.au>
+Date: Wed, 10 Oct 2018 13:15:22 +1030
+Subject: [PATCH] powerpc/boot: Disable vector instructions
+
+References: bsc#1065729
+Patch-mainline: v4.20-rc1
+Git-commit: e8e132e6885962582784b6fa16a80d07ea739c0f
+
+This will avoid auto-vectorisation when building with higher
+optimisation levels.
+
+We don't know if the machine can support VSX and even if it's present
+it's probably not going to be enabled at this point in boot.
+
+These flag were both added prior to GCC 4.6 which is the minimum
+compiler version supported by upstream, thanks to Segher for the
+details.
+
+Signed-off-by: Joel Stanley <joel@jms.id.au>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/boot/Makefile | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/powerpc/boot/Makefile b/arch/powerpc/boot/Makefile
+--- a/arch/powerpc/boot/Makefile
++++ b/arch/powerpc/boot/Makefile
+@@ -32,8 +32,8 @@ else
+ compress-$(CONFIG_KERNEL_XZ)   := CONFIG_KERNEL_XZ
+ 
+ BOOTCFLAGS    := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
+-		 -fno-strict-aliasing -Os -msoft-float -pipe \
+-		 -fomit-frame-pointer -fno-builtin -fPIC -nostdinc \
++		 -fno-strict-aliasing -Os -msoft-float -mno-altivec -mno-vsx \
++		 -pipe -fomit-frame-pointer -fno-builtin -fPIC -nostdinc \
+ 		 -D$(compress-y)
+ 
+ BOOTCC := $(CC)
+-- 
+2.35.3
+

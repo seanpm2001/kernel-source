@@ -48,15 +48,13 @@ Override node_reclaim_distance for AMD Zen.
 
 Signed-off-by: Matt Fleming <mfleming@suse.de>
 ---
- arch/x86/kernel/cpu/amd.c | 5 +++++
- include/linux/topology.h  | 3 +++
- kernel/sched/topology.c   | 3 ++-
- mm/khugepaged.c           | 2 +-
- mm/page_alloc.c           | 2 +-
+ arch/x86/kernel/cpu/amd.c |    5 +++++
+ include/linux/topology.h  |    3 +++
+ kernel/sched/topology.c   |    3 ++-
+ mm/khugepaged.c           |    2 +-
+ mm/page_alloc.c           |    2 +-
  5 files changed, 12 insertions(+), 3 deletions(-)
 
-diff --git a/arch/x86/kernel/cpu/amd.c b/arch/x86/kernel/cpu/amd.c
-index 57bb2100e05b..bb2f3e98efbf 100644
 --- a/arch/x86/kernel/cpu/amd.c
 +++ b/arch/x86/kernel/cpu/amd.c
 @@ -7,6 +7,7 @@
@@ -67,19 +65,17 @@ index 57bb2100e05b..bb2f3e98efbf 100644
  #include <asm/processor.h>
  #include <asm/apic.h>
  #include <asm/cacheinfo.h>
-@@ -812,6 +813,10 @@ static void init_amd_zn(struct cpuinfo_x86 *c)
- {
- 	set_cpu_cap(c, X86_FEATURE_ZEN);
+@@ -905,6 +906,10 @@ static void init_amd_zn(struct cpuinfo_x
+ 		if (!cpu_has(c, X86_FEATURE_CPB))
+ 			set_cpu_cap(c, X86_FEATURE_CPB);
  
 +#ifdef CONFIG_NUMA
 +	node_reclaim_distance = 32;
 +#endif
 +
- 	/*
- 	 * Fix erratum 1076: CPB feature bit not being set in CPUID.
- 	 * Always set it, except when running under a hypervisor.
-diff --git a/include/linux/topology.h b/include/linux/topology.h
-index cb0775e1ee4b..74b484354ac9 100644
+ 		/*
+ 		 * Zen3 (Fam19 model < 0x10) parts are not susceptible to
+ 		 * Branch Type Confusion, but predate the allocation of the
 --- a/include/linux/topology.h
 +++ b/include/linux/topology.h
 @@ -59,6 +59,9 @@ int arch_update_cpu_topology(void);
@@ -92,8 +88,6 @@ index cb0775e1ee4b..74b484354ac9 100644
  #ifndef PENALTY_FOR_NODE_WITH_CPUS
  #define PENALTY_FOR_NODE_WITH_CPUS	(1)
  #endif
-diff --git a/kernel/sched/topology.c b/kernel/sched/topology.c
-index 8b646058fb57..57b4afe6387a 100644
 --- a/kernel/sched/topology.c
 +++ b/kernel/sched/topology.c
 @@ -1070,6 +1070,7 @@ static int *sched_domains_numa_distance;
@@ -104,7 +98,7 @@ index 8b646058fb57..57b4afe6387a 100644
  #endif
  
  /*
-@@ -1191,7 +1192,7 @@ sd_init(struct sched_domain_topology_level *tl,
+@@ -1191,7 +1192,7 @@ sd_init(struct sched_domain_topology_lev
  		sd->idle_idx = 2;
  
  		sd->flags |= SD_SERIALIZE;
@@ -113,11 +107,9 @@ index 8b646058fb57..57b4afe6387a 100644
  			sd->flags &= ~(SD_BALANCE_EXEC |
  				       SD_BALANCE_FORK |
  				       SD_WAKE_AFFINE);
-diff --git a/mm/khugepaged.c b/mm/khugepaged.c
-index 2c2813d90cb2..859f6fd0cb84 100644
 --- a/mm/khugepaged.c
 +++ b/mm/khugepaged.c
-@@ -690,7 +690,7 @@ static bool khugepaged_scan_abort(int nid)
+@@ -690,7 +690,7 @@ static bool khugepaged_scan_abort(int ni
  	for (i = 0; i < MAX_NUMNODES; i++) {
  		if (!khugepaged_node_load[i])
  			continue;
@@ -126,11 +118,9 @@ index 2c2813d90cb2..859f6fd0cb84 100644
  			return true;
  	}
  	return false;
-diff --git a/mm/page_alloc.c b/mm/page_alloc.c
-index b8ba38dc77f4..0c8b489c0f0c 100644
 --- a/mm/page_alloc.c
 +++ b/mm/page_alloc.c
-@@ -3191,7 +3191,7 @@ bool zone_watermark_ok_safe(struct zone *z, unsigned int order,
+@@ -3238,7 +3238,7 @@ bool zone_watermark_ok_safe(struct zone
  static bool zone_allows_reclaim(struct zone *local_zone, struct zone *zone)
  {
  	return node_distance(zone_to_nid(local_zone), zone_to_nid(zone)) <=
@@ -139,6 +129,3 @@ index b8ba38dc77f4..0c8b489c0f0c 100644
  }
  #else	/* CONFIG_NUMA */
  static bool zone_allows_reclaim(struct zone *local_zone, struct zone *zone)
--- 
-2.13.7
-

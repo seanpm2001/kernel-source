@@ -1,0 +1,110 @@
+From: Chuck Lever <chuck.lever@oracle.com>
+Date: Tue, 27 Mar 2018 10:51:22 -0400
+Subject: [PATCH] sunrpc: Re-purpose trace_svc_process
+Git-commit: 0b9547bf6b94317b3f8e2496dc2b44cb6e599b01
+Patch-mainline: v4.17
+References: bsc#1205006
+
+Currently, trace_svc_process has two call sites:
+
+1. Just after a call to svc_send. svc_send already invokes
+   trace_svc_send with the same arguments just before returning
+
+2. Just before a call to svc_drop. svc_drop already invokes
+   trace_svc_drop with the same arguments just after it is called
+
+Therefore trace_svc_process does not provide any additional
+information not already provided by these other trace points.
+
+However, it would be useful to record the incoming RPC procedure.
+So reuse trace_svc_process for this purpose.
+
+[[ NOTE: though the upstream patch doesn't mention this, the
+  tracepoint call after svc_send() will ALWAYS crash as ->qq_xprt
+  will be NULL.  So this patch fixes a bug that will trigger if
+  this tracepoint is enabled.
+  - neilb
+]]
+
+Signed-off-by: Chuck Lever <chuck.lever@oracle.com>
+Signed-off-by: J. Bruce Fields <bfields@redhat.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ include/trace/events/sunrpc.h |   30 ++++++++++++++++++++++++++----
+ net/sunrpc/svc.c              |    9 +++------
+ 2 files changed, 29 insertions(+), 10 deletions(-)
+
+--- a/include/trace/events/sunrpc.h
++++ b/include/trace/events/sunrpc.h
+@@ -473,6 +473,32 @@ TRACE_EVENT(svc_recv,
+ 			show_rqstp_flags(__entry->flags))
+ );
+ 
++TRACE_EVENT(svc_process,
++	TP_PROTO(const struct svc_rqst *rqst, const char *name),
++
++	TP_ARGS(rqst, name),
++
++	TP_STRUCT__entry(
++		__field(u32, xid)
++		__field(u32, vers)
++		__field(u32, proc)
++		__string(service, name)
++		__string(addr, rqst->rq_xprt->xpt_remotebuf)
++	),
++
++	TP_fast_assign(
++		__entry->xid = be32_to_cpu(rqst->rq_xid);
++		__entry->vers = rqst->rq_vers;
++		__entry->proc = rqst->rq_proc;
++		__assign_str(service, name);
++		__assign_str(addr, rqst->rq_xprt->xpt_remotebuf);
++	),
++
++	TP_printk("addr=%s xid=0x%08x service=%s vers=%u proc=%u",
++			__get_str(addr), __entry->xid,
++			__get_str(service), __entry->vers, __entry->proc)
++);
++
+ DECLARE_EVENT_CLASS(svc_rqst_event,
+ 
+ 	TP_PROTO(struct svc_rqst *rqst),
+@@ -529,10 +555,6 @@ DECLARE_EVENT_CLASS(svc_rqst_status,
+ 		  __entry->status, show_rqstp_flags(__entry->flags))
+ );
+ 
+-DEFINE_EVENT(svc_rqst_status, svc_process,
+-	TP_PROTO(struct svc_rqst *rqst, int status),
+-	TP_ARGS(rqst, status));
+-
+ DEFINE_EVENT(svc_rqst_status, svc_send,
+ 	TP_PROTO(struct svc_rqst *rqst, int status),
+ 	TP_ARGS(rqst, status));
+--- a/net/sunrpc/svc.c
++++ b/net/sunrpc/svc.c
+@@ -1277,6 +1277,7 @@ svc_process_common(struct svc_rqst *rqst
+ 
+ 	/* Syntactic check complete */
+ 	serv->sv_stats->rpccnt++;
++	trace_svc_process(rqstp, progp->pg_name);
+ 
+ 	/* Build the reply header. */
+ 	statp = resv->iov_base +resv->iov_len;
+@@ -1454,14 +1455,10 @@ svc_process(struct svc_rqst *rqstp)
+ 	}
+ 
+ 	/* Returns 1 for send, 0 for drop */
+-	if (likely(svc_process_common(rqstp, argv, resv))) {
+-		int ret = svc_send(rqstp);
++	if (likely(svc_process_common(rqstp, argv, resv)))
++		return svc_send(rqstp);
+ 
+-		trace_svc_process(rqstp, ret);
+-		return ret;
+-	}
+ out_drop:
+-	trace_svc_process(rqstp, 0);
+ 	svc_drop(rqstp);
+ 	return 0;
+ }

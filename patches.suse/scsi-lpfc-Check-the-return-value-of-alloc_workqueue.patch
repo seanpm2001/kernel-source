@@ -1,0 +1,36 @@
+From: William Dean <williamsukatube@gmail.com>
+Date: Sat, 23 Jul 2022 14:40:27 +0800
+Subject: scsi: lpfc: Check the return value of alloc_workqueue()
+Git-commit: f00e0d7714895d10790e2bac4df00727ddb9abff
+Patch-mainline: v6.0-rc1
+References: git-fixes
+
+The function alloc_workqueue() in lpfc_sli4_driver_resource_setup() can
+fail, but there is no check of its return value. The return value should be
+checked.
+
+Link: https://lore.kernel.org/r/20220723064027.2956623-1-williamsukatube@163.com
+Fixes: 3cee98db2610 ("scsi: lpfc: Fix crash on driver unload in wq free")
+Reported-by: Hacash Robot <hacashRobot@santino.com>
+Reviewed-by: James Smart <jsmart2021@gmail.com>
+Signed-off-by: William Dean <williamsukatube@gmail.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/lpfc/lpfc_init.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/scsi/lpfc/lpfc_init.c b/drivers/scsi/lpfc/lpfc_init.c
+index 4a0eadd1c22c..c69c5a0979ec 100644
+--- a/drivers/scsi/lpfc/lpfc_init.c
++++ b/drivers/scsi/lpfc/lpfc_init.c
+@@ -7948,6 +7948,8 @@ lpfc_sli4_driver_resource_setup(struct lpfc_hba *phba)
+ 
+ 	/* The lpfc_wq workqueue for deferred irq use */
+ 	phba->wq = alloc_workqueue("lpfc_wq", WQ_MEM_RECLAIM, 0);
++	if (!phba->wq)
++		return -ENOMEM;
+ 
+ 	/*
+ 	 * Initialize timers used by driver
+

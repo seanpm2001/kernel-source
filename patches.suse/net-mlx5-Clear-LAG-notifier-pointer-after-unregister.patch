@@ -1,0 +1,41 @@
+From c559609deab26a38de3a72987281a8bf02d3514e Mon Sep 17 00:00:00 2001
+From: Eli Cohen <eli@mellanox.com>
+Date: Wed, 19 Feb 2020 09:03:28 +0200
+Subject: [PATCH] net/mlx5: Clear LAG notifier pointer after unregister
+Git-commit: 0b136454741b2f6cb18d55e355d396db9248b2ab
+Patch-mainline: v5.6
+References: git-fixes
+
+After returning from unregister_netdevice_notifier_dev_net(), set the
+notifier_call field to NULL so successive call to mlx5_lag_add() will
+function as expected.
+
+Fixes: 7907f23adc18 ("net/mlx5: Implement RoCE LAG feature")
+Signed-off-by: Eli Cohen <eli@mellanox.com>
+Reviewed-by: Vlad Buslov <vladbu@mellanox.com>
+Reviewed-by: Raed Salem <raeds@mellanox.com>
+Signed-off-by: Saeed Mahameed <saeedm@mellanox.com>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/mellanox/mlx5/core/lag.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/lag.c b/drivers/net/ethernet/mellanox/mlx5/core/lag.c
+index 582b2f18010a..82f2bb36935b 100644
+--- a/drivers/net/ethernet/mellanox/mlx5/core/lag.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/lag.c
+@@ -542,8 +542,10 @@ void mlx5_lag_remove(struct mlx5_core_dev *dev)
+ 			break;
+ 
+ 	if (i == MLX5_MAX_PORTS) {
+-		if (ldev->nb.notifier_call)
++		if (ldev->nb.notifier_call) {
+ 			unregister_netdevice_notifier(&ldev->nb);
++			ldev->nb.notifier_call = NULL;
++		}
+ 		cancel_delayed_work_sync(&ldev->bond_work);
+ 		mlx5_lag_dev_free(ldev);
+ 	}
+-- 
+2.16.4
+

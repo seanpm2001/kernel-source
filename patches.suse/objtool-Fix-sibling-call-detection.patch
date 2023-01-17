@@ -1,0 +1,180 @@
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 6 Mar 2019 12:58:15 +0100
+Subject: objtool: Fix sibling call detection
+Git-commit: 54262aa2830151f89699fa8a6c5aa05f0992e672
+Patch-mainline: v5.2-rc1
+References: bsc#1202396
+
+It turned out that we failed to detect some sibling calls;
+specifically those without relocation records; like:
+
+  $ ./objdump-func.sh defconfig-build/mm/kasan/generic.o __asan_loadN
+  0000 0000000000000840 <__asan_loadN>:
+  0000  840:      48 8b 0c 24             mov    (%rsp),%rcx
+  0004  844:      31 d2                   xor    %edx,%edx
+  0006  846:      e9 45 fe ff ff          jmpq   690 <check_memory_region>
+
+So extend the cross-function jump to also consider those that are not
+between known (or newly detected) parent/child functions, as
+sibling-cals when they jump to the start of the function.
+
+The second part of that condition is to deal with random jumps to the
+middle of other function, as can be found in
+arch/x86/lib/copy_user_64.S for example.
+
+This then (with later patches applied) makes the above recognise the
+sibling call:
+
+  mm/kasan/generic.o: warning: objtool: __asan_loadN()+0x6: call to check_memory_region() with UACCESS enabled
+
+Also make sure to set insn->call_dest for sibling calls so we can know
+who we're calling. This is useful information when printing validation
+warnings later.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Cc: Borislav Petkov <bp@alien8.de>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+Acked-by: Miroslav Benes <mbenes@suse.cz>
+---
+ tools/objtool/check.c | 86 ++++++++++++++++++++++++++++++++-------------------
+ 1 file changed, 55 insertions(+), 31 deletions(-)
+
+diff --git a/tools/objtool/check.c b/tools/objtool/check.c
+index 5264a305d658..8118361295dd 100644
+--- a/tools/objtool/check.c
++++ b/tools/objtool/check.c
+@@ -515,7 +515,8 @@ static int add_jump_destinations(struct objtool_file *file)
+ 			continue;
+ 		} else {
+ 			/* sibling call */
+-			insn->jump_dest = 0;
++			insn->call_dest = rela->sym;
++			insn->jump_dest = NULL;
+ 			continue;
+ 		}
+ 
+@@ -537,25 +538,38 @@ static int add_jump_destinations(struct objtool_file *file)
+ 		}
+ 
+ 		/*
+-		 * For GCC 8+, create parent/child links for any cold
+-		 * subfunctions.  This is _mostly_ redundant with a similar
+-		 * initialization in read_symbols().
+-		 *
+-		 * If a function has aliases, we want the *first* such function
+-		 * in the symbol table to be the subfunction's parent.  In that
+-		 * case we overwrite the initialization done in read_symbols().
+-		 *
+-		 * However this code can't completely replace the
+-		 * read_symbols() code because this doesn't detect the case
+-		 * where the parent function's only reference to a subfunction
+-		 * is through a switch table.
++		 * Cross-function jump.
+ 		 */
+ 		if (insn->func && insn->jump_dest->func &&
+-		    insn->func != insn->jump_dest->func &&
+-		    !strstr(insn->func->name, ".cold.") &&
+-		    strstr(insn->jump_dest->func->name, ".cold.")) {
+-			insn->func->cfunc = insn->jump_dest->func;
+-			insn->jump_dest->func->pfunc = insn->func;
++		    insn->func != insn->jump_dest->func) {
++
++			/*
++			 * For GCC 8+, create parent/child links for any cold
++			 * subfunctions.  This is _mostly_ redundant with a
++			 * similar initialization in read_symbols().
++			 *
++			 * If a function has aliases, we want the *first* such
++			 * function in the symbol table to be the subfunction's
++			 * parent.  In that case we overwrite the
++			 * initialization done in read_symbols().
++			 *
++			 * However this code can't completely replace the
++			 * read_symbols() code because this doesn't detect the
++			 * case where the parent function's only reference to a
++			 * subfunction is through a switch table.
++			 */
++			if (!strstr(insn->func->name, ".cold.") &&
++			    strstr(insn->jump_dest->func->name, ".cold.")) {
++				insn->func->cfunc = insn->jump_dest->func;
++				insn->jump_dest->func->pfunc = insn->func;
++
++			} else if (insn->jump_dest->func->pfunc != insn->func->pfunc &&
++				   insn->jump_dest->offset == insn->jump_dest->func->offset) {
++
++				/* sibling class */
++				insn->call_dest = insn->jump_dest->func;
++				insn->jump_dest = NULL;
++			}
+ 		}
+ 	}
+ 
+@@ -1785,6 +1799,17 @@ static bool insn_state_match(struct instruction *insn, struct insn_state *state)
+ 	return false;
+ }
+ 
++static int validate_sibling_call(struct instruction *insn, struct insn_state *state)
++{
++	if (has_modified_stack_frame(state)) {
++		WARN_FUNC("sibling call from callable instruction with modified stack frame",
++				insn->sec, insn->offset);
++		return 1;
++	}
++
++	return 0;
++}
++
+ /*
+  * Follow the branch starting at the given instruction, and recursively follow
+  * any other branches (jumps).  Meanwhile, track the frame pointer state at
+@@ -1935,9 +1960,14 @@ static int validate_branch(struct objtool_file *file, struct instruction *first,
+ 
+ 		case INSN_JUMP_CONDITIONAL:
+ 		case INSN_JUMP_UNCONDITIONAL:
+-			if (insn->jump_dest &&
+-			    (!func || !insn->jump_dest->func ||
+-			     insn->jump_dest->func->pfunc == func)) {
++			if (func && !insn->jump_dest) {
++				ret = validate_sibling_call(insn, &state);
++				if (ret)
++					return ret;
++
++			} else if (insn->jump_dest &&
++				   (!func || !insn->jump_dest->func ||
++				    insn->jump_dest->func->pfunc == func)) {
+ 				ret = validate_branch(file, insn->jump_dest,
+ 						      state);
+ 				if (ret) {
+@@ -1945,11 +1975,6 @@ static int validate_branch(struct objtool_file *file, struct instruction *first,
+ 						BT_FUNC("(branch)", insn);
+ 					return ret;
+ 				}
+-
+-			} else if (func && has_modified_stack_frame(&state)) {
+-				WARN_FUNC("sibling call from callable instruction with modified stack frame",
+-					  sec, insn->offset);
+-				return 1;
+ 			}
+ 
+ 			if (insn->type == INSN_JUMP_UNCONDITIONAL)
+@@ -1958,11 +1983,10 @@ static int validate_branch(struct objtool_file *file, struct instruction *first,
+ 			break;
+ 
+ 		case INSN_JUMP_DYNAMIC:
+-			if (func && list_empty(&insn->alts) &&
+-			    has_modified_stack_frame(&state)) {
+-				WARN_FUNC("sibling call from callable instruction with modified stack frame",
+-					  sec, insn->offset);
+-				return 1;
++			if (func && list_empty(&insn->alts)) {
++				ret = validate_sibling_call(insn, &state);
++				if (ret)
++					return ret;
+ 			}
+ 
+ 			return 0;
+

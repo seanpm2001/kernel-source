@@ -1,0 +1,50 @@
+From 9917c9432835e8944840ed4b7f9ef6bca7219a7f Mon Sep 17 00:00:00 2001
+From: "Jason A. Donenfeld" <Jason@zx2c4.com>
+Date: Sun, 4 Jun 2017 04:16:25 +0200
+Subject: [PATCH 03/11] macsec: check return value of skb_to_sgvec always
+Patch-mainline: v4.13-rc1
+Git-commit: cda7ea6903502af34015000e16be290a79f07638
+References: git-fixes
+
+Signed-off-by: Jason A. Donenfeld <Jason@zx2c4.com>
+Cc: Sabrina Dubroca <sd@queasysnail.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/macsec.c | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/macsec.c b/drivers/net/macsec.c
+index 27d7fc3034a8..6661f48356c1 100644
+--- a/drivers/net/macsec.c
++++ b/drivers/net/macsec.c
+@@ -748,7 +748,12 @@ static struct sk_buff *macsec_encrypt(struct sk_buff *skb,
+ 	macsec_fill_iv(iv, secy->sci, pn);
+ 
+ 	sg_init_table(sg, ret);
+-	skb_to_sgvec(skb, sg, 0, skb->len);
++	ret = skb_to_sgvec(skb, sg, 0, skb->len);
++	if (unlikely(ret < 0)) {
++		macsec_txsa_put(tx_sa);
++		kfree_skb(skb);
++		return ERR_PTR(ret);
++	}
+ 
+ 	if (tx_sc->encrypt) {
+ 		int len = skb->len - macsec_hdr_len(sci_present) -
+@@ -959,7 +964,11 @@ static struct sk_buff *macsec_decrypt(struct sk_buff *skb,
+ 	macsec_fill_iv(iv, sci, ntohl(hdr->packet_number));
+ 
+ 	sg_init_table(sg, ret);
+-	skb_to_sgvec(skb, sg, 0, skb->len);
++	ret = skb_to_sgvec(skb, sg, 0, skb->len);
++	if (unlikely(ret < 0)) {
++		kfree_skb(skb);
++		return ERR_PTR(ret);
++	}
+ 
+ 	if (hdr->tci_an & MACSEC_TCI_E) {
+ 		/* confidentiality: ethernet + macsec header
+-- 
+2.16.4
+

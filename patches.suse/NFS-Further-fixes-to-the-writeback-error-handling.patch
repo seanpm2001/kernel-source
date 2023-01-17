@@ -19,8 +19,8 @@ Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
 Acked-by: NeilBrown <neilb@suse.com>
 
 ---
- fs/nfs/write.c |   37 +++++++++++++++++--------------------
- 1 file changed, 17 insertions(+), 20 deletions(-)
+ fs/nfs/write.c |   38 ++++++++++++++++++--------------------
+ 1 file changed, 18 insertions(+), 20 deletions(-)
 
 --- a/fs/nfs/write.c
 +++ b/fs/nfs/write.c
@@ -36,17 +36,18 @@ Acked-by: NeilBrown <neilb@suse.com>
  {
  	struct nfs_page *req;
  	int ret = 0;
-@@ -664,12 +665,12 @@ static int nfs_page_async_flush(struct n
+@@ -664,12 +665,13 @@ static int nfs_page_async_flush(struct n
  		/*
  		 * Remove the problematic req upon fatal errors on the server
  		 */
 -		if (nfs_error_is_fatal(ret)) {
-+		if (nfs_error_is_fatal_on_server(ret))
++		if (nfs_error_is_fatal(ret))
  			nfs_context_set_write_error(req->wb_context, ret);
 -			if (nfs_error_is_fatal_on_server(ret))
 -				goto out_launder;
 -		} else
 -			ret = -EAGAIN;
++		if (nfs_error_is_fatal_on_server(ret))
 +			goto out_launder;
 +		if (wbc->sync_mode == WB_SYNC_NONE)
 +			ret = AOP_WRITEPAGE_ACTIVATE;
@@ -54,7 +55,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  		nfs_redirty_request(req);
  	} else
  		nfs_add_stats(page_file_mapping(page)->host,
-@@ -684,15 +685,8 @@ out_launder:
+@@ -684,15 +686,8 @@ out_launder:
  static int nfs_do_writepage(struct page *page, struct writeback_control *wbc,
  			    struct nfs_pageio_descriptor *pgio)
  {
@@ -71,7 +72,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  }
  
  /*
-@@ -752,11 +746,14 @@ int nfs_writepages(struct address_space
+@@ -752,11 +747,14 @@ int nfs_writepages(struct address_space
  	if (ioc)
  		nfs_io_completion_init(ioc, nfs_io_completion_commit, inode);
  
