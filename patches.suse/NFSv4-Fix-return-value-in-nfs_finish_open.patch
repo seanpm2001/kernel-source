@@ -1,0 +1,33 @@
+From: Trond Myklebust <trond.myklebust@hammerspace.com>
+Date: Fri, 9 Aug 2019 12:15:07 -0400
+Subject: [PATCH] NFSv4: Fix return value in nfs_finish_open()
+Git-commit: 9821421a291b548ef4369c6998745baa36ddecd5
+Patch-mainline: v5.3
+References: git-fixes
+
+If the file turns out to be of the wrong type after opening, we want
+to revalidate the path and retry, so return EOPENSTALE rather than
+ESTALE.
+
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/dir.c |    6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+--- a/fs/nfs/dir.c
++++ b/fs/nfs/dir.c
+@@ -1522,8 +1522,10 @@ static int nfs_finish_open(struct nfs_op
+ 	err = finish_open(file, dentry, do_open, opened);
+ 	if (err)
+ 		goto out;
+-	nfs_file_set_open_context(file, ctx);
+-
++	if (S_ISREG(file->f_path.dentry->d_inode->i_mode))
++		nfs_file_set_open_context(file, ctx);
++	else
++		err = -EOPENSTALE;
+ out:
+ 	return err;
+ }

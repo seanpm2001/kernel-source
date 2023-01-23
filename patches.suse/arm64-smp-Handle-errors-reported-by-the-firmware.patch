@@ -1,0 +1,32 @@
+From: Suzuki K Poulose <Suzuki.Poulose@arm.com>
+Date: Mon, 10 Dec 2018 18:07:33 +0000
+Subject: arm64: smp: Handle errors reported by the firmware
+Git-commit: f357b3a7e17af7736d67d8267edc1ed3d1dd9391
+Patch-mainline: v5.0-rc1
+References: git-fixes
+
+The __cpu_up() routine ignores the errors reported by the firmware
+for a CPU bringup operation and looks for the error status set by the
+booting CPU. If the CPU never entered the kernel, we could end up
+in assuming stale error status, which otherwise would have been
+set/cleared appropriately by the booting CPU.
+
+Reported-by: Steve Capper <steve.capper@arm.com>
+Cc: Will Deacon <will.deacon@arm.com>
+Signed-off-by: Suzuki K Poulose <suzuki.poulose@arm.com>
+Signed-off-by: Will Deacon <will.deacon@arm.com>
+Acked-by: Ivan T. Ivanov <iivanov@suse.de>
+---
+ arch/arm64/kernel/smp.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/arch/arm64/kernel/smp.c
++++ b/arch/arm64/kernel/smp.c
+@@ -141,6 +141,7 @@ int __cpu_up(unsigned int cpu, struct ta
+ 		}
+ 	} else {
+ 		pr_err("CPU%u: failed to boot: %d\n", cpu, ret);
++		return ret;
+ 	}
+ 
+ 	secondary_data.task = NULL;
