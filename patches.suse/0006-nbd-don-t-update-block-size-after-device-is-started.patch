@@ -30,7 +30,7 @@ Signed-off-by: Coly Li <colyli@suse.de>
 
 --- a/drivers/block/nbd.c
 +++ b/drivers/block/nbd.c
-@@ -239,7 +239,7 @@ static void nbd_size_clear(struct nbd_de
+@@ -276,7 +276,7 @@ static void nbd_size_clear(struct nbd_de
  	}
  }
  
@@ -39,7 +39,7 @@ Signed-off-by: Coly Li <colyli@suse.de>
  {
  	struct nbd_config *config = nbd->config;
  	struct block_device *bdev = bdget_disk(nbd->disk, 0);
-@@ -255,7 +255,8 @@ static void nbd_size_update(struct nbd_d
+@@ -292,7 +292,8 @@ static void nbd_size_update(struct nbd_d
  	if (bdev) {
  		if (bdev->bd_disk) {
  			bd_set_size(bdev, config->bytesize);
@@ -49,7 +49,7 @@ Signed-off-by: Coly Li <colyli@suse.de>
  		} else
  			bdev->bd_invalidated = 1;
  		bdput(bdev);
-@@ -270,7 +271,7 @@ static void nbd_size_set(struct nbd_devi
+@@ -307,7 +308,7 @@ static void nbd_size_set(struct nbd_devi
  	config->blksize = blocksize;
  	config->bytesize = blocksize * nr_blocks;
  	if (nbd->task_recv != NULL)
@@ -58,9 +58,9 @@ Signed-off-by: Coly Li <colyli@suse.de>
  }
  
  static void nbd_complete_rq(struct request *req)
-@@ -1128,7 +1129,7 @@ static int nbd_start_device(struct nbd_d
+@@ -1242,7 +1243,7 @@ static int nbd_start_device(struct nbd_d
  		args->index = i;
- 		queue_work(recv_workqueue, &args->work);
+ 		queue_work(nbd->recv_workq, &args->work);
  	}
 -	nbd_size_update(nbd);
 +	nbd_size_update(nbd, true);

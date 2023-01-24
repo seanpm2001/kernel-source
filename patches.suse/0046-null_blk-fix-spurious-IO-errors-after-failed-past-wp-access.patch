@@ -1,0 +1,52 @@
+From ff77042296d0a54535ddf74412c5ae92cb4ec76a Mon Sep 17 00:00:00 2001
+From: Alexey Dobriyan <adobriyan@gmail.com>
+Date: Wed, 12 Feb 2020 23:23:20 +0300
+Subject: [PATCH] null_blk: fix spurious IO errors after failed past-wp access
+Git-commit: ff77042296d0a54535ddf74412c5ae92cb4ec76a
+Patch-mainline: v5.7-rc1
+References: git-fixes
+
+Steps to reproduce:
+
+	BLKRESETZONE zone 0
+
+	// force EIO
+	pwrite(fd, buf, 4096, 4096);
+
+	[issue more IO including zone ioctls]
+
+It will start failing randomly including IO to unrelated zones because of
+->error "reuse". Trigger can be partition detection as well if test is not
+run immediately which is even more entertaining.
+
+The fix is of course to clear ->error where necessary.
+
+(Coly Li: rebased for Linux v4.12 based SUSE kernel)
+
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Alexey Dobriyan (SK hynix) <adobriyan@gmail.com>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/block/null_blk.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/drivers/block/null_blk.c
++++ b/drivers/block/null_blk.c
+@@ -628,6 +628,7 @@ static struct nullb_cmd *__alloc_cmd(str
+ 	if (tag != -1U) {
+ 		cmd = &nq->cmds[tag];
+ 		cmd->tag = tag;
++		cmd->error = BLK_STS_OK;
+ 		cmd->nq = nq;
+ 		if (nq->dev->irqmode == NULL_IRQ_TIMER) {
+ 			hrtimer_init(&cmd->timer, CLOCK_MONOTONIC,
+@@ -1445,6 +1446,7 @@ static blk_status_t null_queue_rq(struct
+ 		cmd->timer.function = null_cmd_timer_expired;
+ 	}
+ 	cmd->rq = bd->rq;
++	cmd->error = BLK_STS_OK;
+ 	cmd->nq = nq;
+ 
+ 	blk_mq_start_request(bd->rq);
