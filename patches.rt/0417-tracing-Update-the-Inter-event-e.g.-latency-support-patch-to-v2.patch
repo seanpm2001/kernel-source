@@ -14,26 +14,24 @@ version of it, posted as
 Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
 Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 ---
- Documentation/trace/events.txt      |   37 +-
- include/linux/trace_events.h        |    3 -
- include/linux/tracepoint-defs.h     |    1 +
- include/linux/tracepoint.h          |   11 +-
- kernel/trace/ring_buffer.c          |  104 +--
- kernel/trace/trace.c                |   23 +-
- kernel/trace/trace.h                |    5 +-
- kernel/trace/trace_events.c         |   20 +-
- kernel/trace/trace_events_hist.c    | 1242 ++++++++++++++++-----------
- kernel/trace/trace_events_trigger.c |   16 +-
- kernel/trace/tracing_map.c          |  138 +--
- kernel/trace/tracing_map.h          |   10 +-
- kernel/tracepoint.c                 |   36 +-
- 13 files changed, 868 insertions(+), 778 deletions(-)
+ Documentation/trace/events.txt      |   37 -
+ include/linux/trace_events.h        |    3 
+ include/linux/tracepoint-defs.h     |    1 
+ include/linux/tracepoint.h          |   11 
+ kernel/trace/ring_buffer.c          |  106 ---
+ kernel/trace/trace.c                |   23 
+ kernel/trace/trace.h                |    5 
+ kernel/trace/trace_events.c         |   20 
+ kernel/trace/trace_events_hist.c    | 1242 +++++++++++++++++++++---------------
+ kernel/trace/trace_events_trigger.c |   16 
+ kernel/trace/tracing_map.c          |  138 +---
+ kernel/trace/tracing_map.h          |   10 
+ kernel/tracepoint.c                 |   35 -
+ 13 files changed, 869 insertions(+), 778 deletions(-)
 
-diff --git a/Documentation/trace/events.txt b/Documentation/trace/events.txt
-index 20e4fd4fd367..9bd4b7f966b5 100644
 --- a/Documentation/trace/events.txt
 +++ b/Documentation/trace/events.txt
-@@ -2177,7 +2177,7 @@ A note on inter-event timestamps: If $common_timestamp is used in a
+@@ -2177,7 +2177,7 @@ A note on inter-event timestamps: If $co
  histogram, the trace buffer is automatically switched over to using
  absolute timestamps and the "global" trace clock, in order to avoid
  bogus timestamp differences with other clocks that aren't coherent
@@ -42,7 +40,7 @@ index 20e4fd4fd367..9bd4b7f966b5 100644
  trace clocks instead, using the "clock=XXX" hist trigger attribute,
  where XXX is any of the clocks listed in the tracing/trace_clock
  pseudo-file.
-@@ -2210,14 +2210,15 @@ Either keys or values can be saved and retrieved in this way.  This
+@@ -2210,14 +2210,15 @@ Either keys or values can be saved and r
  creates a variable named 'ts0' for a histogram entry with the key
  'next_pid':
  
@@ -69,7 +67,7 @@ index 20e4fd4fd367..9bd4b7f966b5 100644
  
  If a variable isn't a key variable or prefixed with 'vals=', the
  associated event field will be saved in a variable but won't be summed
-@@ -2237,7 +2238,15 @@ Multiple variables can be assigned at the same time.  The below would
+@@ -2237,7 +2238,15 @@ Multiple variables can be assigned at th
  result in both ts0 and b being created as variables, with both
  common_timestamp and field1 additionally being summed as values:
  
@@ -149,11 +147,9 @@ index 20e4fd4fd367..9bd4b7f966b5 100644
  
      # echo 'hist:keys=next_pid:\
              wakeup_lat=$common_timestamp.usecs-$ts0:\
-diff --git a/include/linux/trace_events.h b/include/linux/trace_events.h
-index 0f26132487b4..f2c926c65961 100644
 --- a/include/linux/trace_events.h
 +++ b/include/linux/trace_events.h
-@@ -324,7 +324,6 @@ enum {
+@@ -327,7 +327,6 @@ enum {
  	EVENT_FILE_FL_TRIGGER_MODE_BIT,
  	EVENT_FILE_FL_TRIGGER_COND_BIT,
  	EVENT_FILE_FL_PID_FILTER_BIT,
@@ -161,7 +157,7 @@ index 0f26132487b4..f2c926c65961 100644
  };
  
  /*
-@@ -339,7 +338,6 @@ enum {
+@@ -342,7 +341,6 @@ enum {
   *  TRIGGER_MODE  - When set, invoke the triggers associated with the event
   *  TRIGGER_COND  - When set, one or more triggers has an associated filter
   *  PID_FILTER    - When set, the event is filtered based on pid
@@ -169,7 +165,7 @@ index 0f26132487b4..f2c926c65961 100644
   */
  enum {
  	EVENT_FILE_FL_ENABLED		= (1 << EVENT_FILE_FL_ENABLED_BIT),
-@@ -351,7 +349,6 @@ enum {
+@@ -354,7 +352,6 @@ enum {
  	EVENT_FILE_FL_TRIGGER_MODE	= (1 << EVENT_FILE_FL_TRIGGER_MODE_BIT),
  	EVENT_FILE_FL_TRIGGER_COND	= (1 << EVENT_FILE_FL_TRIGGER_COND_BIT),
  	EVENT_FILE_FL_PID_FILTER	= (1 << EVENT_FILE_FL_PID_FILTER_BIT),
@@ -177,8 +173,6 @@ index 0f26132487b4..f2c926c65961 100644
  };
  
  struct trace_event_file {
-diff --git a/include/linux/tracepoint-defs.h b/include/linux/tracepoint-defs.h
-index 7220259a32cb..86ba084a09bf 100644
 --- a/include/linux/tracepoint-defs.h
 +++ b/include/linux/tracepoint-defs.h
 @@ -32,6 +32,7 @@ struct tracepoint {
@@ -189,11 +183,9 @@ index 7220259a32cb..86ba084a09bf 100644
  };
  
  struct bpf_raw_event_map {
-diff --git a/include/linux/tracepoint.h b/include/linux/tracepoint.h
-index 06fe0e9ffcb2..5fa1fb37d587 100644
 --- a/include/linux/tracepoint.h
 +++ b/include/linux/tracepoint.h
-@@ -37,15 +37,12 @@
+@@ -37,15 +37,12 @@ extern int
  tracepoint_probe_register(struct tracepoint *tp, void *probe, void *data);
  extern int
  tracepoint_probe_register_prio(struct tracepoint *tp, void *probe, void *data,
@@ -211,7 +203,7 @@ index 06fe0e9ffcb2..5fa1fb37d587 100644
  static inline int
  tracepoint_probe_register_may_exist(struct tracepoint *tp, void *probe,
  				    void *data)
-@@ -212,13 +209,13 @@ extern void syscall_unregfunc(void);
+@@ -222,13 +219,13 @@ extern void syscall_unregfunc(void);
  				   int prio)				\
  	{								\
  		return tracepoint_probe_register_prio(&__tracepoint_##name, \
@@ -227,11 +219,9 @@ index 06fe0e9ffcb2..5fa1fb37d587 100644
  	}								\
  	static inline void						\
  	check_trace_callback_type_##name(void (*cb)(data_proto))	\
-diff --git a/kernel/trace/ring_buffer.c b/kernel/trace/ring_buffer.c
-index d7d8a1336c17..f26be0946533 100644
 --- a/kernel/trace/ring_buffer.c
 +++ b/kernel/trace/ring_buffer.c
-@@ -143,7 +143,7 @@ int ring_buffer_print_entry_header(struct trace_seq *s)
+@@ -143,7 +143,7 @@ int ring_buffer_print_entry_header(struc
  
  enum {
  	RB_LEN_TIME_EXTEND = 8,
@@ -240,7 +230,7 @@ index d7d8a1336c17..f26be0946533 100644
  };
  
  #define skip_time_extend(event) \
-@@ -192,9 +192,11 @@ rb_event_length(struct ring_buffer_event *event)
+@@ -192,9 +192,11 @@ rb_event_length(struct ring_buffer_event
  		return  event->array[0] + RB_EVNT_HDR_SIZE;
  
  	case RINGBUF_TYPE_TIME_EXTEND:
@@ -253,7 +243,7 @@ index d7d8a1336c17..f26be0946533 100644
  	case RINGBUF_TYPE_DATA:
  		return rb_event_data_length(event);
  	default:
-@@ -2613,93 +2615,29 @@ rb_wakeups(struct ring_buffer *buffer, struct ring_buffer_per_cpu *cpu_buffer)
+@@ -2670,93 +2672,29 @@ rb_wakeups(struct ring_buffer *buffer, s
   * The lock and unlock are done within a preempt disable section.
   * The current_context per_cpu variable can only be modified
   * by the current task between lock and unlock. But it can
@@ -299,9 +289,7 @@ index d7d8a1336c17..f26be0946533 100644
 - * is allowed, and this is done by the TRANSITION bit. If the TRANSITION
 - * bit is already set, then it is considered a recursion and the function
 - * ends. Otherwise, the TRANSITION bit is set, and that bit is returned.
-+ * be modified more than once via an interrupt. There are four
-+ * different contexts that we need to consider.
-  *
+- *
 - * On the trace_recursive_unlock(), the TRANSITION bit will be the first
 - * to be cleared. Even if it wasn't the context that set it. That is,
 - * if an interrupt comes in while NORMAL bit is set and the ring buffer
@@ -313,12 +301,15 @@ index d7d8a1336c17..f26be0946533 100644
 - * code that set the TRANSITION bit will then clear the NMI bit when it
 - * calls trace_recursive_unlock(). If another NMI comes in, it will
 - * set the TRANSITION bit and continue.
++ * be modified more than once via an interrupt. There are four
++ * different contexts that we need to consider.
+  *
+- * Note: The TRANSITION bit only handles a single transition between context.
 + *  Normal context.
 + *  SoftIRQ context
 + *  IRQ context
 + *  NMI context
-  *
-- * Note: The TRANSITION bit only handles a single transition between context.
++ *
 + * If for some reason the ring buffer starts to recurse, we
 + * only allow that to happen at most 4 times (one for each
 + * context). If it happens 5 times, then we consider this a
@@ -362,7 +353,7 @@ index d7d8a1336c17..f26be0946533 100644
  
  	return 0;
  }
-@@ -2707,7 +2645,9 @@ trace_recursive_lock(struct ring_buffer_per_cpu *cpu_buffer)
+@@ -2764,7 +2702,9 @@ trace_recursive_lock(struct ring_buffer_
  static __always_inline void
  trace_recursive_unlock(struct ring_buffer_per_cpu *cpu_buffer)
  {
@@ -373,11 +364,9 @@ index d7d8a1336c17..f26be0946533 100644
  }
  
  /**
-diff --git a/kernel/trace/trace.c b/kernel/trace/trace.c
-index a9454d6efc4a..ff1956768a2f 100644
 --- a/kernel/trace/trace.c
 +++ b/kernel/trace/trace.c
-@@ -6127,8 +6127,23 @@ static int tracing_clock_open(struct inode *inode, struct file *file)
+@@ -6145,8 +6145,23 @@ static int tracing_clock_open(struct ino
  
  int tracing_set_time_stamp_abs(struct trace_array *tr, bool abs)
  {
@@ -401,7 +390,7 @@ index a9454d6efc4a..ff1956768a2f 100644
  	ring_buffer_set_time_stamp_abs(tr->trace_buffer.buffer, abs);
  
  	/*
-@@ -6138,14 +6153,14 @@ int tracing_set_time_stamp_abs(struct trace_array *tr, bool abs)
+@@ -6156,14 +6171,14 @@ int tracing_set_time_stamp_abs(struct tr
  	tracing_reset_online_cpus(&tr->trace_buffer);
  
  #ifdef CONFIG_TRACER_MAX_TRACE
@@ -419,7 +408,7 @@ index a9454d6efc4a..ff1956768a2f 100644
  }
  
  struct ftrace_buffer_info {
-@@ -7606,6 +7621,7 @@ static int instance_mkdir(const char *name)
+@@ -7667,6 +7682,7 @@ static int instance_mkdir(const char *na
  
  	INIT_LIST_HEAD(&tr->systems);
  	INIT_LIST_HEAD(&tr->events);
@@ -427,7 +416,7 @@ index a9454d6efc4a..ff1956768a2f 100644
  
  	if (allocate_trace_buffers(tr, trace_buf_size) < 0)
  		goto out_free_tr;
-@@ -8346,6 +8362,7 @@ __init static int tracer_alloc_buffers(void)
+@@ -8407,6 +8423,7 @@ __init static int tracer_alloc_buffers(v
  
  	INIT_LIST_HEAD(&global_trace.systems);
  	INIT_LIST_HEAD(&global_trace.events);
@@ -435,8 +424,6 @@ index a9454d6efc4a..ff1956768a2f 100644
  	list_add(&global_trace.list, &ftrace_trace_arrays);
  
  	apply_trace_boot_options();
-diff --git a/kernel/trace/trace.h b/kernel/trace/trace.h
-index 411dbb49bb2d..d078d878e3ef 100644
 --- a/kernel/trace/trace.h
 +++ b/kernel/trace/trace.h
 @@ -270,6 +270,8 @@ struct trace_array {
@@ -448,7 +435,7 @@ index 411dbb49bb2d..d078d878e3ef 100644
  };
  
  enum {
-@@ -1327,9 +1329,6 @@ __event_trigger_test_discard(struct trace_event_file *file,
+@@ -1327,9 +1329,6 @@ __event_trigger_test_discard(struct trac
  	    !filter_match_preds(file->filter, entry))
  		goto discard;
  
@@ -458,11 +445,9 @@ index 411dbb49bb2d..d078d878e3ef 100644
  	if ((file->flags & EVENT_FILE_FL_PID_FILTER) &&
  	    trace_event_ignore_this_pid(file))
  		goto discard;
-diff --git a/kernel/trace/trace_events.c b/kernel/trace/trace_events.c
-index 9e824b5522a6..1a5eb4b00b9b 100644
 --- a/kernel/trace/trace_events.c
 +++ b/kernel/trace/trace_events.c
-@@ -299,7 +299,7 @@ int trace_event_reg(struct trace_event_call *call,
+@@ -299,7 +299,7 @@ int trace_event_reg(struct trace_event_c
  	case TRACE_REG_UNREGISTER:
  		tracepoint_probe_unregister(call->tp,
  					    call->class->probe,
@@ -471,7 +456,7 @@ index 9e824b5522a6..1a5eb4b00b9b 100644
  		return 0;
  
  #ifdef CONFIG_PERF_EVENTS
-@@ -310,7 +310,7 @@ int trace_event_reg(struct trace_event_call *call,
+@@ -310,7 +310,7 @@ int trace_event_reg(struct trace_event_c
  	case TRACE_REG_PERF_UNREGISTER:
  		tracepoint_probe_unregister(call->tp,
  					    call->class->perf_probe,
@@ -480,7 +465,7 @@ index 9e824b5522a6..1a5eb4b00b9b 100644
  		return 0;
  	case TRACE_REG_PERF_OPEN:
  	case TRACE_REG_PERF_CLOSE:
-@@ -1366,8 +1366,8 @@ static int subsystem_open(struct inode *inode, struct file *filp)
+@@ -1368,8 +1368,8 @@ static int subsystem_open(struct inode *
  		return -ENODEV;
  
  	/* Make sure the system still exists */
@@ -490,7 +475,7 @@ index 9e824b5522a6..1a5eb4b00b9b 100644
  	list_for_each_entry(tr, &ftrace_trace_arrays, list) {
  		list_for_each_entry(dir, &tr->systems, list) {
  			if (dir == inode->i_private) {
-@@ -1381,8 +1381,8 @@ static int subsystem_open(struct inode *inode, struct file *filp)
+@@ -1383,8 +1383,8 @@ static int subsystem_open(struct inode *
  		}
  	}
   exit_loop:
@@ -500,7 +485,7 @@ index 9e824b5522a6..1a5eb4b00b9b 100644
  
  	if (!system)
  		return -ENODEV;
-@@ -2271,15 +2271,15 @@ static void __add_event_to_tracers(struct trace_event_call *call);
+@@ -2273,15 +2273,15 @@ static void __add_event_to_tracers(struc
  int trace_add_event_call(struct trace_event_call *call)
  {
  	int ret;
@@ -518,7 +503,7 @@ index 9e824b5522a6..1a5eb4b00b9b 100644
  	return ret;
  }
  
-@@ -2333,13 +2333,13 @@ int trace_remove_event_call(struct trace_event_call *call)
+@@ -2335,13 +2335,13 @@ int trace_remove_event_call(struct trace
  {
  	int ret;
  
@@ -534,7 +519,7 @@ index 9e824b5522a6..1a5eb4b00b9b 100644
  
  	return ret;
  }
-@@ -2406,8 +2406,8 @@ static int trace_module_notify(struct notifier_block *self,
+@@ -2408,8 +2408,8 @@ static int trace_module_notify(struct no
  {
  	struct module *mod = data;
  
@@ -544,7 +529,7 @@ index 9e824b5522a6..1a5eb4b00b9b 100644
  	switch (val) {
  	case MODULE_STATE_COMING:
  		trace_module_add_events(mod);
-@@ -2416,8 +2416,8 @@ static int trace_module_notify(struct notifier_block *self,
+@@ -2418,8 +2418,8 @@ static int trace_module_notify(struct no
  		trace_module_remove_events(mod);
  		break;
  	}
@@ -554,8 +539,6 @@ index 9e824b5522a6..1a5eb4b00b9b 100644
  
  	return 0;
  }
-diff --git a/kernel/trace/trace_events_hist.c b/kernel/trace/trace_events_hist.c
-index 19c8ac5600cb..501c4e5876f6 100644
 --- a/kernel/trace/trace_events_hist.c
 +++ b/kernel/trace/trace_events_hist.c
 @@ -28,6 +28,8 @@
@@ -675,7 +658,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  		return;
  
  	strcpy(last_hist_cmd, str);
-@@ -365,10 +388,10 @@ static void hist_err(char *str, char *var)
+@@ -365,10 +388,10 @@ static void hist_err(char *str, char *va
  {
  	int maxlen = MAX_FILTER_STR_VAL - 1;
  
@@ -696,7 +679,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	u64			fields[];
  };
  
-@@ -425,24 +447,163 @@ static int synth_event_define_fields(struct trace_event_call *call)
+@@ -425,24 +447,163 @@ static int synth_event_define_fields(str
  	struct synth_trace_event trace;
  	int offset = offsetof(typeof(trace), fields);
  	struct synth_event *event = call->data;
@@ -863,7 +846,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  static enum print_line_t print_synth_event(struct trace_iterator *iter,
  					   int flags,
  					   struct trace_event *event)
-@@ -451,25 +612,39 @@ static enum print_line_t print_synth_event(struct trace_iterator *iter,
+@@ -451,25 +612,39 @@ static enum print_line_t print_synth_eve
  	struct trace_seq *s = &iter->seq;
  	struct synth_trace_event *entry;
  	struct synth_event *se;
@@ -909,7 +892,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	}
  end:
  	trace_seq_putc(s, '\n');
-@@ -488,27 +663,34 @@ static notrace void trace_event_raw_event_synth(void *__data,
+@@ -488,27 +663,34 @@ static notrace void trace_event_raw_even
  	struct trace_event_file *trace_file = __data;
  	struct synth_trace_event *entry;
  	struct trace_event_buffer fbuffer;
@@ -951,7 +934,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	trace_event_buffer_commit(&fbuffer);
  }
-@@ -522,6 +704,7 @@ static void free_synth_event_print_fmt(struct trace_event_call *call)
+@@ -522,6 +704,7 @@ static void free_synth_event_print_fmt(s
  static int __set_synth_event_print_fmt(struct synth_event *event,
  				       char *buf, int len)
  {
@@ -959,7 +942,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	int pos = 0;
  	int i;
  
-@@ -530,15 +713,16 @@ static int __set_synth_event_print_fmt(struct synth_event *event,
+@@ -530,15 +713,16 @@ static int __set_synth_event_print_fmt(s
  
  	pos += snprintf(buf + pos, LEN_OR_ZERO, "\"");
  	for (i = 0; i < event->n_fields; i++) {
@@ -979,7 +962,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	}
  
  #undef LEN_OR_ZERO
-@@ -567,43 +751,6 @@ static int set_synth_event_print_fmt(struct trace_event_call *call)
+@@ -567,43 +751,6 @@ static int set_synth_event_print_fmt(str
  	return 0;
  }
  
@@ -1023,7 +1006,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  static void free_synth_field(struct synth_field *field)
  {
  	kfree(field->type);
-@@ -611,54 +758,6 @@ static void free_synth_field(struct synth_field *field)
+@@ -611,54 +758,6 @@ static void free_synth_field(struct synt
  	kfree(field);
  }
  
@@ -1078,7 +1061,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  static struct synth_field *parse_synth_field(char *field_type,
  					     char *field_name)
  {
-@@ -687,8 +786,10 @@ static struct synth_field *parse_synth_field(char *field_type,
+@@ -687,8 +786,10 @@ static struct synth_field *parse_synth_f
  		goto free;
  	}
  	strcat(field->type, field_type);
@@ -1090,7 +1073,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	field->size = synth_field_size(field->type);
  	if (!field->size) {
-@@ -696,6 +797,9 @@ static struct synth_field *parse_synth_field(char *field_type,
+@@ -696,6 +797,9 @@ static struct synth_field *parse_synth_f
  		goto free;
  	}
  
@@ -1100,7 +1083,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	field->is_signed = synth_field_signed(field->type);
  
  	field->name = kstrdup(field_name, GFP_KERNEL);
-@@ -737,6 +841,8 @@ static struct tracepoint *alloc_synth_tracepoint(char *name)
+@@ -737,6 +841,8 @@ static struct tracepoint *alloc_synth_tr
  		goto free;
  	}
  
@@ -1109,7 +1092,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	return tp;
   free:
  	free_synth_tracepoint(tp);
-@@ -744,26 +850,29 @@ static struct tracepoint *alloc_synth_tracepoint(char *name)
+@@ -744,26 +850,29 @@ static struct tracepoint *alloc_synth_tr
  	return ERR_PTR(ret);
  }
  
@@ -1147,7 +1130,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  		}
  	}
  }
-@@ -809,11 +918,14 @@ static int register_synth_event(struct synth_event *event)
+@@ -809,11 +918,14 @@ static int register_synth_event(struct s
  		goto out;
  	}
  	call->flags = TRACE_EVENT_FL_TRACEPOINT;
@@ -1163,7 +1146,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	if (ret) {
  		pr_warn("Failed to register synthetic event: %s\n",
  			trace_event_name(call));
-@@ -822,7 +934,9 @@ static int register_synth_event(struct synth_event *event)
+@@ -822,7 +934,9 @@ static int register_synth_event(struct s
  
  	ret = set_synth_event_print_fmt(call);
  	if (ret < 0) {
@@ -1173,7 +1156,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  		goto err;
  	}
   out:
-@@ -837,7 +951,9 @@ static int unregister_synth_event(struct synth_event *event)
+@@ -837,7 +951,9 @@ static int unregister_synth_event(struct
  	struct trace_event_call *call = &event->call;
  	int ret;
  
@@ -1183,7 +1166,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	if (ret) {
  		pr_warn("Failed to remove synthetic event: %s\n",
  			trace_event_name(call));
-@@ -924,48 +1040,19 @@ static void action_trace(struct hist_trigger_data *hist_data,
+@@ -924,48 +1040,19 @@ static void action_trace(struct hist_tri
  			 struct ring_buffer_event *rbe,
  			 struct action_data *data, u64 *var_ref_vals)
  {
@@ -1235,7 +1218,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	struct synth_event *event = NULL;
  	bool delete_event = false;
  	int i, n_fields = 0, ret = 0;
-@@ -981,7 +1068,7 @@ static int create_synth_event(int argc, char **argv)
+@@ -981,7 +1068,7 @@ static int create_synth_event(int argc,
  	 */
  	if (argc < 1) {
  		ret = -EINVAL;
@@ -1244,7 +1227,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	}
  
  	name = argv[0];
-@@ -993,21 +1080,22 @@ static int create_synth_event(int argc, char **argv)
+@@ -993,21 +1080,22 @@ static int create_synth_event(int argc,
  	event = find_synth_event(name);
  	if (event) {
  		if (delete_event) {
@@ -1272,7 +1255,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	}
  
  	for (i = 1; i < argc - 1; i++) {
-@@ -1015,16 +1103,21 @@ static int create_synth_event(int argc, char **argv)
+@@ -1015,16 +1103,21 @@ static int create_synth_event(int argc,
  			continue;
  		if (n_fields == SYNTH_FIELDS_MAX) {
  			ret = -EINVAL;
@@ -1298,7 +1281,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	}
  
  	event = alloc_synth_event(name, n_fields, fields);
-@@ -1055,7 +1148,7 @@ static int release_all_synth_events(void)
+@@ -1055,7 +1148,7 @@ static int release_all_synth_events(void
  	mutex_lock(&synth_event_mutex);
  
  	list_for_each_entry(event, &synth_event_list, list) {
@@ -1307,7 +1290,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  			ret = -EBUSY;
  			goto out;
  		}
-@@ -1217,10 +1310,11 @@ static struct hist_field *find_var_ref(struct hist_trigger_data *hist_data,
+@@ -1217,10 +1310,11 @@ static struct hist_field *find_var_ref(s
  static struct hist_field *find_any_var_ref(struct hist_trigger_data *hist_data,
  					   unsigned int var_idx)
  {
@@ -1320,7 +1303,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  		found = find_var_ref(var_data->hist_data, hist_data, var_idx);
  		if (found)
  			break;
-@@ -1250,9 +1344,10 @@ static bool check_var_refs(struct hist_trigger_data *hist_data)
+@@ -1250,9 +1344,10 @@ static bool check_var_refs(struct hist_t
  
  static struct hist_var_data *find_hist_vars(struct hist_trigger_data *hist_data)
  {
@@ -1332,7 +1315,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  		if (var_data->hist_data == hist_data) {
  			found = var_data;
  			break;
-@@ -1265,40 +1360,56 @@ static struct hist_var_data *find_hist_vars(struct hist_trigger_data *hist_data)
+@@ -1265,40 +1360,56 @@ static struct hist_var_data *find_hist_v
  static bool has_hist_vars(struct hist_trigger_data *hist_data)
  {
  	struct hist_field *hist_field;
@@ -1397,7 +1380,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	struct hist_var_data *var_data;
  
  	var_data = find_hist_vars(hist_data);
-@@ -1311,6 +1422,8 @@ static void remove_hist_vars(struct hist_trigger_data *hist_data)
+@@ -1311,6 +1422,8 @@ static void remove_hist_vars(struct hist
  	list_del(&var_data->list);
  
  	kfree(var_data);
@@ -1406,7 +1389,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  }
  
  static struct hist_field *find_var_field(struct hist_trigger_data *hist_data,
-@@ -1350,7 +1463,8 @@ static struct hist_field *find_var(struct trace_event_file *file,
+@@ -1350,7 +1463,8 @@ static struct hist_field *find_var(struc
  	return NULL;
  }
  
@@ -1416,7 +1399,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  					      const char *event_name,
  					      const char *var_name)
  {
-@@ -1360,7 +1474,7 @@ static struct trace_event_file *find_var_file(const char *system,
+@@ -1360,7 +1474,7 @@ static struct trace_event_file *find_var
  	struct trace_event_file *file;
  	const char *name;
  
@@ -1425,7 +1408,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  		var_hist_data = var_data->hist_data;
  		file = var_hist_data->event_file;
  		call = file->event_call;
-@@ -1402,14 +1516,15 @@ static struct hist_field *find_file_var(struct trace_event_file *file,
+@@ -1402,14 +1516,15 @@ static struct hist_field *find_file_var(
  	return NULL;
  }
  
@@ -1443,7 +1426,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	if (!file)
  		return NULL;
  
-@@ -1770,6 +1885,8 @@ static int hist_trigger_elt_data_alloc(struct tracing_map_elt *elt)
+@@ -1770,6 +1885,8 @@ static int hist_trigger_elt_data_alloc(s
  
  	n_str = hist_data->n_field_var_str + hist_data->n_max_var_str;
  
@@ -1452,7 +1435,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	for (i = 0; i < n_str; i++) {
  		elt_data->field_var_str[i] = kzalloc(size, GFP_KERNEL);
  		if (!elt_data->field_var_str[i]) {
-@@ -1781,18 +1898,6 @@ static int hist_trigger_elt_data_alloc(struct tracing_map_elt *elt)
+@@ -1781,18 +1898,6 @@ static int hist_trigger_elt_data_alloc(s
  	return 0;
  }
  
@@ -1471,7 +1454,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  static void hist_trigger_elt_data_init(struct tracing_map_elt *elt)
  {
  	struct hist_elt_data *private_data = elt->private_data;
-@@ -1803,16 +1908,41 @@ static void hist_trigger_elt_data_init(struct tracing_map_elt *elt)
+@@ -1803,16 +1908,41 @@ static void hist_trigger_elt_data_init(s
  
  static const struct tracing_map_ops hist_trigger_elt_data_ops = {
  	.elt_alloc	= hist_trigger_elt_data_alloc,
@@ -1506,17 +1489,17 @@ index 19c8ac5600cb..501c4e5876f6 100644
  {
 -	char *expr = kzalloc(MAX_FILTER_STR_VAL, GFP_KERNEL);
 +	char *expr;
- 
--	if (!expr || level > 1)
++
 +	if (level > 1)
 +		return NULL;
-+
+ 
+-	if (!expr || level > 1)
 +	expr = kzalloc(MAX_FILTER_STR_VAL, GFP_KERNEL);
 +	if (!expr)
  		return NULL;
  
  	if (field->operator == FIELD_OP_UNARY_MINUS) {
-@@ -1833,6 +1963,14 @@ static char *expr_str(struct hist_field *field, unsigned int level)
+@@ -1833,6 +1963,14 @@ static char *expr_str(struct hist_field
  	if (field->operands[0]->flags & HIST_FIELD_FL_VAR_REF)
  		strcat(expr, "$");
  	strcat(expr, hist_field_name(field->operands[0], 0));
@@ -1531,7 +1514,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	switch (field->operator) {
  	case FIELD_OP_MINUS:
-@@ -1849,6 +1987,14 @@ static char *expr_str(struct hist_field *field, unsigned int level)
+@@ -1849,6 +1987,14 @@ static char *expr_str(struct hist_field
  	if (field->operands[1]->flags & HIST_FIELD_FL_VAR_REF)
  		strcat(expr, "$");
  	strcat(expr, hist_field_name(field->operands[1], 0));
@@ -1546,7 +1529,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	return expr;
  }
-@@ -1891,7 +2037,7 @@ static void destroy_hist_field(struct hist_field *hist_field,
+@@ -1891,7 +2037,7 @@ static void destroy_hist_field(struct hi
  		return;
  
  	for (i = 0; i < HIST_FIELD_OPERANDS_MAX; i++)
@@ -1555,7 +1538,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	kfree(hist_field->var.name);
  	kfree(hist_field->name);
-@@ -2027,6 +2173,27 @@ static void destroy_hist_fields(struct hist_trigger_data *hist_data)
+@@ -2027,6 +2173,27 @@ static void destroy_hist_fields(struct h
  	}
  }
  
@@ -1583,7 +1566,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  static struct hist_field *create_var_ref(struct hist_field *var_field)
  {
  	unsigned long flags = HIST_FIELD_FL_VAR_REF;
-@@ -2034,15 +2201,7 @@ static struct hist_field *create_var_ref(struct hist_field *var_field)
+@@ -2034,15 +2201,7 @@ static struct hist_field *create_var_ref
  
  	ref_field = create_hist_field(var_field->hist_data, NULL, flags, NULL);
  	if (ref_field) {
@@ -1600,7 +1583,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  			destroy_hist_field(ref_field, 0);
  			return NULL;
  		}
-@@ -2059,18 +2218,58 @@ static bool is_common_field(char *var_name)
+@@ -2059,18 +2218,58 @@ static bool is_common_field(char *var_na
  	return false;
  }
  
@@ -1663,7 +1646,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	if (var_field)
  		ref_field = create_var_ref(var_field);
  
-@@ -2086,27 +2285,33 @@ parse_field(struct hist_trigger_data *hist_data, struct trace_event_file *file,
+@@ -2086,27 +2285,33 @@ parse_field(struct hist_trigger_data *hi
  	    char *field_str, unsigned long *flags)
  {
  	struct ftrace_event_field *field = NULL;
@@ -1709,7 +1692,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	}
  
  	if (strcmp(field_name, "$common_timestamp") == 0) {
-@@ -2118,9 +2323,13 @@ parse_field(struct hist_trigger_data *hist_data, struct trace_event_file *file,
+@@ -2118,9 +2323,13 @@ parse_field(struct hist_trigger_data *hi
  		*flags |= HIST_FIELD_FL_CPU;
  	else {
  		field = trace_find_event_field(file->event_call, field_name);
@@ -1725,7 +1708,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	return field;
  }
-@@ -2139,13 +2348,8 @@ static struct hist_field *create_alias(struct hist_trigger_data *hist_data,
+@@ -2139,13 +2348,8 @@ static struct hist_field *create_alias(s
  
  	alias->fn = var_ref->fn;
  	alias->operands[0] = var_ref;
@@ -1741,7 +1724,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  		destroy_hist_field(alias, 0);
  		return NULL;
  	}
-@@ -2158,6 +2362,7 @@ struct hist_field *parse_atom(struct hist_trigger_data *hist_data,
+@@ -2158,6 +2362,7 @@ struct hist_field *parse_atom(struct his
  			      unsigned long *flags, char *var_name)
  {
  	char *s, *ref_system = NULL, *ref_event = NULL, *ref_var = str;
@@ -1749,7 +1732,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	struct ftrace_event_field *field = NULL;
  	struct hist_field *hist_field = NULL;
  	int ret = 0;
-@@ -2172,19 +2377,23 @@ struct hist_field *parse_atom(struct hist_trigger_data *hist_data,
+@@ -2172,19 +2377,23 @@ struct hist_field *parse_atom(struct his
  		}
  	}
  
@@ -1784,7 +1767,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	field = parse_field(hist_data, file, str, flags);
  	if (IS_ERR(field)) {
-@@ -2215,7 +2424,6 @@ static struct hist_field *parse_unary(struct hist_trigger_data *hist_data,
+@@ -2215,7 +2424,6 @@ static struct hist_field *parse_unary(st
  {
  	struct hist_field *operand1, *expr = NULL;
  	unsigned long operand_flags;
@@ -1792,7 +1775,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	int ret = 0;
  	char *s;
  
-@@ -2244,8 +2452,8 @@ static struct hist_field *parse_unary(struct hist_trigger_data *hist_data,
+@@ -2244,8 +2452,8 @@ static struct hist_field *parse_unary(st
  		goto free;
  	}
  
@@ -1803,7 +1786,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  		goto free;
  
  	flags |= HIST_FIELD_FL_EXPR;
-@@ -2262,16 +2470,6 @@ static struct hist_field *parse_unary(struct hist_trigger_data *hist_data,
+@@ -2262,16 +2470,6 @@ static struct hist_field *parse_unary(st
  		goto free;
  	}
  
@@ -1820,7 +1803,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	expr->fn = hist_field_unary_minus;
  	expr->operands[0] = operand1;
  	expr->operator = FIELD_OP_UNARY_MINUS;
-@@ -2287,6 +2485,41 @@ static struct hist_field *parse_unary(struct hist_trigger_data *hist_data,
+@@ -2287,6 +2485,41 @@ static struct hist_field *parse_unary(st
  	return ERR_PTR(ret);
  }
  
@@ -1862,7 +1845,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  static struct hist_field *parse_expr(struct hist_trigger_data *hist_data,
  				     struct trace_event_file *file,
  				     char *str, unsigned long flags,
-@@ -2298,11 +2531,12 @@ static struct hist_field *parse_expr(struct hist_trigger_data *hist_data,
+@@ -2298,11 +2531,12 @@ static struct hist_field *parse_expr(str
  	char *sep, *operand1_str;
  
  	if (level > 2)
@@ -1877,7 +1860,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	if (field_op == FIELD_OP_UNARY_MINUS)
  		return parse_unary(hist_data, file, str, flags, var_name, ++level);
-@@ -2339,16 +2573,10 @@ static struct hist_field *parse_expr(struct hist_trigger_data *hist_data,
+@@ -2339,16 +2573,10 @@ static struct hist_field *parse_expr(str
  		operand2 = NULL;
  		goto free;
  	}
@@ -1898,7 +1881,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	flags |= HIST_FIELD_FL_EXPR;
  	expr = create_hist_field(hist_data, NULL, flags, var_name);
-@@ -2390,51 +2618,6 @@ static struct hist_field *parse_expr(struct hist_trigger_data *hist_data,
+@@ -2390,51 +2618,6 @@ static struct hist_field *parse_expr(str
  	return ERR_PTR(ret);
  }
  
@@ -1950,7 +1933,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  static char *find_trigger_filter(struct hist_trigger_data *hist_data,
  				 struct trace_event_file *file)
  {
-@@ -2470,7 +2653,7 @@ static bool compatible_keys(struct hist_trigger_data *target_hist_data,
+@@ -2470,7 +2653,7 @@ static bool compatible_keys(struct hist_
  
  	for (n = 0; n < n_keys; n++) {
  		hist_field = hist_data->fields[i + n];
@@ -1959,7 +1942,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  		if (strcmp(hist_field->type, target_hist_field->type) != 0)
  			return false;
-@@ -2505,14 +2688,10 @@ find_compatible_hist(struct hist_trigger_data *target_hist_data,
+@@ -2505,14 +2688,10 @@ find_compatible_hist(struct hist_trigger
  	return NULL;
  }
  
@@ -1991,7 +1974,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	char *saved_filter;
  	char *cmd;
  	int ret;
-@@ -2542,11 +2721,8 @@ create_field_var_hist(struct hist_trigger_data *target_hist_data,
+@@ -2542,11 +2721,8 @@ create_field_var_hist(struct hist_trigge
  		return ERR_PTR(-EINVAL);
  	}
  
@@ -2004,7 +1987,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	if (IS_ERR(file)) {
  		hist_err_event("onmatch: Event file not found: ",
  			       system, event_name, field_name);
-@@ -2615,7 +2791,7 @@ create_field_var_hist(struct hist_trigger_data *target_hist_data,
+@@ -2615,7 +2791,7 @@ create_field_var_hist(struct hist_trigge
  	strcpy(cmd, "synthetic_");
  	strcat(cmd, field_name);
  
@@ -2013,7 +1996,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	if (!event_var) {
  		kfree(cmd);
  		kfree(var_hist->cmd);
-@@ -2680,9 +2856,9 @@ static inline void __update_field_vars(struct tracing_map_elt *elt,
+@@ -2680,9 +2856,9 @@ static inline void __update_field_vars(s
  
  		if (val->flags & HIST_FIELD_FL_STRING) {
  			char *str = elt_data->field_var_str[j++];
@@ -2025,7 +2008,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  			var_val = (u64)(uintptr_t)str;
  		}
  		tracing_map_set_var(elt, var_idx, var_val);
-@@ -2824,7 +3000,7 @@ static void onmax_print(struct seq_file *m,
+@@ -2824,7 +3000,7 @@ static void onmax_print(struct seq_file
  			struct tracing_map_elt *elt,
  			struct action_data *data)
  {
@@ -2034,7 +2017,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	seq_printf(m, "\n\tmax: %10llu", tracing_map_read_var(elt, max_idx));
  
-@@ -2838,7 +3014,7 @@ static void onmax_print(struct seq_file *m,
+@@ -2838,7 +3014,7 @@ static void onmax_print(struct seq_file
  		val = tracing_map_read_var(elt, save_var_idx);
  
  		if (save_val->flags & HIST_FIELD_FL_STRING) {
@@ -2043,7 +2026,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  				   (char *)(uintptr_t)(val));
  		} else
  			seq_printf(m, "  %s: %10llu", save_var->var.name, val);
-@@ -2850,8 +3026,8 @@ static void onmax_save(struct hist_trigger_data *hist_data,
+@@ -2850,8 +3026,8 @@ static void onmax_save(struct hist_trigg
  		       struct ring_buffer_event *rbe,
  		       struct action_data *data, u64 *var_ref_vals)
  {
@@ -2054,7 +2037,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	u64 var_val, max_val;
  
-@@ -2870,11 +3046,11 @@ static void onmax_destroy(struct action_data *data)
+@@ -2870,11 +3046,11 @@ static void onmax_destroy(struct action_
  {
  	unsigned int i;
  
@@ -2070,7 +2053,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	for (i = 0; i < data->n_params; i++)
  		kfree(data->params[i]);
-@@ -2896,7 +3072,7 @@ static int onmax_create(struct hist_trigger_data *hist_data,
+@@ -2896,7 +3072,7 @@ static int onmax_create(struct hist_trig
  	unsigned int i;
  	int ret = 0;
  
@@ -2079,7 +2062,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	if (onmax_var_str[0] != '$') {
  		hist_err("onmax: For onmax(x), x must be a variable: ", onmax_var_str);
  		return -EINVAL;
-@@ -2915,28 +3091,24 @@ static int onmax_create(struct hist_trigger_data *hist_data,
+@@ -2915,28 +3091,24 @@ static int onmax_create(struct hist_trig
  	if (!ref_field)
  		return -ENOMEM;
  
@@ -2112,7 +2095,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	for (i = 0; i < data->n_params; i++) {
  		param = kstrdup(data->params[i], GFP_KERNEL);
-@@ -3008,7 +3180,11 @@ static struct action_data *onmax_parse(char *str)
+@@ -3008,7 +3180,11 @@ static struct action_data *onmax_parse(c
  	onmax_var_str = strsep(&str, ")");
  	if (!onmax_var_str || !str)
  		return ERR_PTR(-EINVAL);
@@ -2125,7 +2108,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	strsep(&str, ".");
  	if (!str)
-@@ -3027,10 +3203,11 @@ static struct action_data *onmax_parse(char *str)
+@@ -3027,10 +3203,11 @@ static struct action_data *onmax_parse(c
  		ret = parse_action_params(params, data);
  		if (ret)
  			goto free;
@@ -2140,7 +2123,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  		ret = -ENOMEM;
  		goto free;
  	}
-@@ -3046,14 +3223,21 @@ static void onmatch_destroy(struct action_data *data)
+@@ -3046,14 +3223,21 @@ static void onmatch_destroy(struct actio
  {
  	unsigned int i;
  
@@ -2165,7 +2148,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  }
  
  static void destroy_field_var(struct field_var *field_var)
-@@ -3084,6 +3268,7 @@ static void save_field_var(struct hist_trigger_data *hist_data,
+@@ -3084,6 +3268,7 @@ static void save_field_var(struct hist_t
  		hist_data->n_field_var_str++;
  }
  
@@ -2181,7 +2164,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	struct hist_field *hist_field;
  
  	var++; /* skip '$' */
-@@ -3129,11 +3315,11 @@ onmatch_find_var(struct hist_trigger_data *hist_data, struct action_data *data,
+@@ -3129,11 +3315,11 @@ onmatch_find_var(struct hist_trigger_dat
  	hist_field = find_target_event_var(hist_data, system, event, var);
  	if (!hist_field) {
  		if (!system) {
@@ -2196,7 +2179,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	}
  
  	if (!hist_field)
-@@ -3159,8 +3345,8 @@ onmatch_create_field_var(struct hist_trigger_data *hist_data,
+@@ -3159,8 +3345,8 @@ onmatch_create_field_var(struct hist_tri
  		hist_field = field_var->var;
  	} else {
  		if (!system) {
@@ -2207,7 +2190,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  		}
  
  		hist_field = create_field_var_hist(hist_data, system, event, var);
-@@ -3188,9 +3374,9 @@ static int onmatch_create(struct hist_trigger_data *hist_data,
+@@ -3188,9 +3374,9 @@ static int onmatch_create(struct hist_tr
  
  	mutex_lock(&synth_event_mutex);
  
@@ -2219,7 +2202,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  		ret = -EINVAL;
  		goto out;
  	}
-@@ -3259,17 +3445,17 @@ static int onmatch_create(struct hist_trigger_data *hist_data,
+@@ -3259,17 +3445,17 @@ static int onmatch_create(struct hist_tr
  	}
  
  	data->fn = action_trace;
@@ -2241,7 +2224,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  {
  	char *match_event, *match_event_system;
  	char *synth_event_name, *params;
-@@ -3292,14 +3478,23 @@ static struct action_data *onmatch_parse(char *str)
+@@ -3292,14 +3478,23 @@ static struct action_data *onmatch_parse
  		goto free;
  	}
  
@@ -2268,7 +2251,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	strsep(&str, ".");
  	if (!str) {
-@@ -3312,7 +3507,12 @@ static struct action_data *onmatch_parse(char *str)
+@@ -3312,7 +3507,12 @@ static struct action_data *onmatch_parse
  		hist_err("onmatch: Missing opening paramlist paren: ", synth_event_name);
  		goto free;
  	}
@@ -2282,7 +2265,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	params = strsep(&str, ")");
  	if (!params || !str || (str && strlen(str))) {
-@@ -3323,12 +3523,6 @@ static struct action_data *onmatch_parse(char *str)
+@@ -3323,12 +3523,6 @@ static struct action_data *onmatch_parse
  	ret = parse_action_params(params, data);
  	if (ret)
  		goto free;
@@ -2295,7 +2278,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
   out:
  	return data;
   free:
-@@ -3353,63 +3547,21 @@ static int create_hitcount_val(struct hist_trigger_data *hist_data)
+@@ -3353,63 +3547,21 @@ static int create_hitcount_val(struct hi
  	return 0;
  }
  
@@ -2364,7 +2347,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	hist_data->fields[val_idx] = hist_field;
  
  	++hist_data->n_vals;
-@@ -3424,6 +3576,44 @@ static int create_val_field(struct hist_trigger_data *hist_data,
+@@ -3424,6 +3576,44 @@ static int create_val_field(struct hist_
  	return ret;
  }
  
@@ -2409,7 +2392,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  static int create_val_fields(struct hist_trigger_data *hist_data,
  			     struct trace_event_file *file)
  {
-@@ -3452,7 +3642,7 @@ static int create_val_fields(struct hist_trigger_data *hist_data,
+@@ -3452,7 +3642,7 @@ static int create_val_fields(struct hist
  		if (strcmp(field_str, "hitcount") == 0)
  			continue;
  
@@ -2418,7 +2401,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  		if (ret)
  			goto out;
  	}
-@@ -3473,7 +3663,6 @@ static int create_key_field(struct hist_trigger_data *hist_data,
+@@ -3473,7 +3663,6 @@ static int create_key_field(struct hist_
  
  	unsigned long flags = 0;
  	unsigned int key_size;
@@ -2426,7 +2409,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	int ret = 0;
  
  	if (WARN_ON(key_idx >= HIST_FIELDS_MAX))
-@@ -3481,38 +3670,18 @@ static int create_key_field(struct hist_trigger_data *hist_data,
+@@ -3481,38 +3670,18 @@ static int create_key_field(struct hist_
  
  	flags |= HIST_FIELD_FL_KEY;
  
@@ -2467,7 +2450,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  		if (hist_field->flags & HIST_FIELD_FL_VAR_REF) {
  			destroy_hist_field(hist_field, 0);
  			ret = -EINVAL;
-@@ -3583,23 +3752,80 @@ static int create_key_fields(struct hist_trigger_data *hist_data,
+@@ -3583,23 +3752,80 @@ static int create_key_fields(struct hist
  static int create_var_fields(struct hist_trigger_data *hist_data,
  			     struct trace_event_file *file)
  {
@@ -2555,7 +2538,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	return ret;
  }
  
-@@ -3608,6 +3834,10 @@ static int create_hist_fields(struct hist_trigger_data *hist_data,
+@@ -3608,6 +3834,10 @@ static int create_hist_fields(struct his
  {
  	int ret;
  
@@ -2566,7 +2549,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	ret = create_val_fields(hist_data, file);
  	if (ret)
  		goto out;
-@@ -3620,6 +3850,8 @@ static int create_hist_fields(struct hist_trigger_data *hist_data,
+@@ -3620,6 +3850,8 @@ static int create_hist_fields(struct his
  	if (ret)
  		goto out;
   out:
@@ -2575,7 +2558,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	return ret;
  }
  
-@@ -3680,7 +3912,7 @@ static int create_sort_keys(struct hist_trigger_data *hist_data)
+@@ -3680,7 +3912,7 @@ static int create_sort_keys(struct hist_
  			break;
  		}
  
@@ -2584,7 +2567,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  			descending = is_descending(field_str);
  			if (descending < 0) {
  				ret = descending;
-@@ -3691,7 +3923,7 @@ static int create_sort_keys(struct hist_trigger_data *hist_data)
+@@ -3691,7 +3923,7 @@ static int create_sort_keys(struct hist_
  		}
  
  		for (j = 1, k = 1; j < hist_data->n_fields; j++) {
@@ -2593,7 +2576,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  			hist_field = hist_data->fields[j];
  			if (hist_field->flags & HIST_FIELD_FL_VAR_ONLY)
-@@ -3701,8 +3933,6 @@ static int create_sort_keys(struct hist_trigger_data *hist_data)
+@@ -3701,8 +3933,6 @@ static int create_sort_keys(struct hist_
  
  			test_name = hist_field_name(hist_field, 0);
  
@@ -2602,7 +2585,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  			if (strcmp(field_name, test_name) == 0) {
  				sort_key->field_idx = idx;
  				descending = is_descending(field_str);
-@@ -3744,6 +3974,7 @@ static void destroy_actions(struct hist_trigger_data *hist_data)
+@@ -3744,6 +3974,7 @@ static void destroy_actions(struct hist_
  static int create_actions(struct hist_trigger_data *hist_data,
  			  struct trace_event_file *file)
  {
@@ -2610,7 +2593,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	struct action_data *data;
  	unsigned int i;
  	int ret = 0;
-@@ -3755,7 +3986,7 @@ static int create_actions(struct hist_trigger_data *hist_data,
+@@ -3755,7 +3986,7 @@ static int create_actions(struct hist_tr
  		if (strncmp(str, "onmatch(", strlen("onmatch(")) == 0) {
  			char *action_str = str + strlen("onmatch(");
  
@@ -2619,7 +2602,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  			if (IS_ERR(data))
  				return PTR_ERR(data);
  
-@@ -3803,8 +4034,8 @@ static void print_onmax_spec(struct seq_file *m,
+@@ -3803,8 +4034,8 @@ static void print_onmax_spec(struct seq_
  	unsigned int i;
  
  	seq_puts(m, ":onmax(");
@@ -2630,7 +2613,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	for (i = 0; i < hist_data->n_max_vars; i++) {
  		seq_printf(m, "%s", hist_data->max_vars[i]->var->var.name);
-@@ -3820,10 +4051,10 @@ static void print_onmatch_spec(struct seq_file *m,
+@@ -3820,10 +4051,10 @@ static void print_onmatch_spec(struct se
  {
  	unsigned int i;
  
@@ -2661,7 +2644,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
   out:
  	return hist_data;
   free:
-@@ -4223,8 +4453,7 @@ hist_trigger_entry_print(struct seq_file *m,
+@@ -4223,8 +4453,7 @@ hist_trigger_entry_print(struct seq_file
  }
  
  static int print_entries(struct seq_file *m,
@@ -2671,7 +2654,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  {
  	struct tracing_map_sort_entry **sort_entries = NULL;
  	struct tracing_map *map = hist_data->map;
-@@ -4232,7 +4461,7 @@ static int print_entries(struct seq_file *m,
+@@ -4232,7 +4461,7 @@ static int print_entries(struct seq_file
  
  	n_entries = tracing_map_sort_entries(map, hist_data->sort_keys,
  					     hist_data->n_sort_keys,
@@ -2680,7 +2663,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	if (n_entries < 0)
  		return n_entries;
  
-@@ -4251,7 +4480,6 @@ static void hist_trigger_show(struct seq_file *m,
+@@ -4251,7 +4480,6 @@ static void hist_trigger_show(struct seq
  {
  	struct hist_trigger_data *hist_data;
  	int n_entries, ret = 0;
@@ -2688,7 +2671,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	if (n > 0)
  		seq_puts(m, "\n\n");
-@@ -4261,15 +4489,15 @@ static void hist_trigger_show(struct seq_file *m,
+@@ -4261,15 +4489,15 @@ static void hist_trigger_show(struct seq
  	seq_puts(m, "#\n\n");
  
  	hist_data = data->private_data;
@@ -2708,7 +2691,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  }
  
  static int hist_show(struct seq_file *m, void *v)
-@@ -4314,28 +4542,6 @@ const struct file_operations event_hist_fops = {
+@@ -4314,28 +4542,6 @@ const struct file_operations event_hist_
  	.release = single_release,
  };
  
@@ -2737,7 +2720,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  static void hist_field_print(struct seq_file *m, struct hist_field *hist_field)
  {
  	const char *field_name = hist_field_name(hist_field, 0);
-@@ -4500,8 +4706,6 @@ static void event_hist_trigger_free(struct event_trigger_ops *ops,
+@@ -4500,8 +4706,6 @@ static void event_hist_trigger_free(stru
  
  		remove_hist_vars(hist_data);
  
@@ -2746,7 +2729,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  		destroy_hist_data(hist_data);
  	}
  }
-@@ -4828,8 +5032,6 @@ static bool hist_file_check_refs(struct trace_event_file *file)
+@@ -4828,8 +5032,6 @@ static bool hist_file_check_refs(struct
  	struct hist_trigger_data *hist_data;
  	struct event_trigger_data *test;
  
@@ -2755,7 +2738,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	list_for_each_entry_rcu(test, &file->triggers, list) {
  		if (test->cmd_ops->trigger_type == ETT_EVENT_HIST) {
  			hist_data = test->private_data;
-@@ -4847,7 +5049,7 @@ static void hist_unreg_all(struct trace_event_file *file)
+@@ -4847,7 +5049,7 @@ static void hist_unreg_all(struct trace_
  	struct event_trigger_data *test, *n;
  
  	if (hist_file_check_refs(file))
@@ -2764,7 +2747,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  
  	list_for_each_entry_safe(test, n, &file->triggers, list) {
  		if (test->cmd_ops->trigger_type == ETT_EVENT_HIST) {
-@@ -4870,6 +5072,8 @@ static int event_hist_trigger_func(struct event_command *cmd_ops,
+@@ -4870,6 +5072,8 @@ static int event_hist_trigger_func(struc
  	struct hist_trigger_attrs *attrs;
  	struct event_trigger_ops *trigger_ops;
  	struct hist_trigger_data *hist_data;
@@ -2773,7 +2756,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	bool remove = false;
  	char *trigger, *p;
  	int ret = 0;
-@@ -4943,6 +5147,14 @@ static int event_hist_trigger_func(struct event_command *cmd_ops,
+@@ -4943,6 +5147,14 @@ static int event_hist_trigger_func(struc
  		}
  
  		cmd_ops->unreg(glob+1, trigger_ops, trigger_data, file);
@@ -2788,7 +2771,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  		ret = 0;
  		goto out_free;
  	}
-@@ -4961,6 +5173,13 @@ static int event_hist_trigger_func(struct event_command *cmd_ops,
+@@ -4961,6 +5173,13 @@ static int event_hist_trigger_func(struc
  	} else if (ret < 0)
  		goto out_free;
  
@@ -2802,7 +2785,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	if (get_named_trigger_data(trigger_data))
  		goto enable;
  
-@@ -4994,8 +5213,6 @@ static int event_hist_trigger_func(struct event_command *cmd_ops,
+@@ -4994,8 +5213,6 @@ enable:
  
  	remove_hist_vars(hist_data);
  
@@ -2811,7 +2794,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	kfree(trigger_data);
  	destroy_hist_data(hist_data);
  
-@@ -5005,7 +5222,7 @@ static int event_hist_trigger_func(struct event_command *cmd_ops,
+@@ -5005,7 +5222,7 @@ enable:
  static struct event_command trigger_hist_cmd = {
  	.name			= "hist",
  	.trigger_type		= ETT_EVENT_HIST,
@@ -2820,7 +2803,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	.func			= event_hist_trigger_func,
  	.reg			= hist_register_trigger,
  	.unreg			= hist_unregister_trigger,
-@@ -5160,16 +5377,9 @@ __init int register_trigger_hist_enable_disable_cmds(void)
+@@ -5160,16 +5377,9 @@ __init int register_trigger_hist_enable_
  static __init int trace_events_hist_init(void)
  {
  	struct dentry *entry = NULL;
@@ -2837,7 +2820,7 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	d_tracer = tracing_init_dentry();
  	if (IS_ERR(d_tracer)) {
  		err = PTR_ERR(d_tracer);
-@@ -5177,7 +5387,7 @@ static __init int trace_events_hist_init(void)
+@@ -5177,7 +5387,7 @@ static __init int trace_events_hist_init
  	}
  
  	entry = tracefs_create_file("synthetic_events", 0644, d_tracer,
@@ -2846,11 +2829,9 @@ index 19c8ac5600cb..501c4e5876f6 100644
  	if (!entry) {
  		err = -ENODEV;
  		goto err;
-diff --git a/kernel/trace/trace_events_trigger.c b/kernel/trace/trace_events_trigger.c
-index 533a84541238..072ab6983f59 100644
 --- a/kernel/trace/trace_events_trigger.c
 +++ b/kernel/trace/trace_events_trigger.c
-@@ -512,30 +512,20 @@ clear_event_triggers(struct trace_array *tr)
+@@ -513,30 +513,20 @@ clear_event_triggers(struct trace_array
  void update_cond_flag(struct trace_event_file *file)
  {
  	struct event_trigger_data *data;
@@ -2884,8 +2865,6 @@ index 533a84541238..072ab6983f59 100644
  }
  
  /**
-diff --git a/kernel/trace/tracing_map.c b/kernel/trace/tracing_map.c
-index 9a38473f058f..5759a98c0b46 100644
 --- a/kernel/trace/tracing_map.c
 +++ b/kernel/trace/tracing_map.c
 @@ -522,6 +522,7 @@ static inline struct tracing_map_elt *
@@ -2896,7 +2875,7 @@ index 9a38473f058f..5759a98c0b46 100644
  	struct tracing_map_entry *entry;
  
  	key_hash = jhash(key, map->key_size, 0);
-@@ -534,10 +535,32 @@ __tracing_map_insert(struct tracing_map *map, void *key, bool lookup_only)
+@@ -534,10 +535,32 @@ __tracing_map_insert(struct tracing_map
  		entry = TRACING_MAP_ENTRY(map->map, idx);
  		test_key = entry->key;
  
@@ -2933,7 +2912,7 @@ index 9a38473f058f..5759a98c0b46 100644
  		}
  
  		if (!test_key) {
-@@ -559,6 +582,13 @@ __tracing_map_insert(struct tracing_map *map, void *key, bool lookup_only)
+@@ -559,6 +582,13 @@ __tracing_map_insert(struct tracing_map
  				atomic64_inc(&map->hits);
  
  				return entry->val;
@@ -2947,7 +2926,7 @@ index 9a38473f058f..5759a98c0b46 100644
  			}
  		}
  
-@@ -923,72 +953,15 @@ create_sort_entry(void *key, struct tracing_map_elt *elt)
+@@ -932,72 +962,15 @@ create_sort_entry(void *key, struct trac
  	return sort_entry;
  }
  
@@ -3023,7 +3002,7 @@ index 9a38473f058f..5759a98c0b46 100644
  
  	sort(sort_entries, n_entries, sizeof(struct tracing_map_sort_entry *),
  	     (int (*)(const void *, const void *))cmp_entries_dup, NULL);
-@@ -997,30 +970,14 @@ static int merge_dups(struct tracing_map_sort_entry **sort_entries,
+@@ -1006,30 +979,14 @@ static int merge_dups(struct tracing_map
  	for (i = 1; i < n_entries; i++) {
  		if (!memcmp(sort_entries[i]->key, key, key_size)) {
  			dups++; total_dups++;
@@ -3056,7 +3035,7 @@ index 9a38473f058f..5759a98c0b46 100644
  }
  
  static bool is_key(struct tracing_map *map, unsigned int field_idx)
-@@ -1087,7 +1044,6 @@ static void sort_secondary(struct tracing_map *map,
+@@ -1094,7 +1051,6 @@ static void sort_secondary(struct tracin
   * @map: The tracing_map
   * @sort_key: The sort key to use for sorting
   * @sort_entries: outval: pointer to allocated and sorted array of entries
@@ -3064,7 +3043,7 @@ index 9a38473f058f..5759a98c0b46 100644
   *
   * tracing_map_sort_entries() sorts the current set of entries in the
   * map and returns the list of tracing_map_sort_entries containing
-@@ -1104,16 +1060,13 @@ static void sort_secondary(struct tracing_map *map,
+@@ -1111,16 +1067,13 @@ static void sort_secondary(struct tracin
   * The client should not hold on to the returned array but should use
   * it and call tracing_map_destroy_sort_entries() when done.
   *
@@ -3082,9 +3061,9 @@ index 9a38473f058f..5759a98c0b46 100644
 -			     unsigned int *n_dups)
 +			     struct tracing_map_sort_entry ***sort_entries)
  {
- 	int (*cmp_entries_fn)(const struct tracing_map_sort_entry **,
- 			      const struct tracing_map_sort_entry **);
-@@ -1150,12 +1103,7 @@ int tracing_map_sort_entries(struct tracing_map *map,
+ 	int (*cmp_entries_fn)(const void *, const void *);
+ 	struct tracing_map_sort_entry *sort_entry, **entries;
+@@ -1156,12 +1109,7 @@ int tracing_map_sort_entries(struct trac
  		return 1;
  	}
  
@@ -3098,8 +3077,6 @@ index 9a38473f058f..5759a98c0b46 100644
  
  	if (is_key(map, sort_keys[0].field_idx))
  		cmp_entries_fn = cmp_entries_key;
-diff --git a/kernel/trace/tracing_map.h b/kernel/trace/tracing_map.h
-index a44cc0c298ee..2800a6b0742f 100644
 --- a/kernel/trace/tracing_map.h
 +++ b/kernel/trace/tracing_map.h
 @@ -218,11 +218,6 @@ struct tracing_map {
@@ -3133,11 +3110,9 @@ index a44cc0c298ee..2800a6b0742f 100644
  
  extern void
  tracing_map_destroy_sort_entries(struct tracing_map_sort_entry **entries,
-diff --git a/kernel/tracepoint.c b/kernel/tracepoint.c
-index 12cbc4a144ad..3ce1bf967e6a 100644
 --- a/kernel/tracepoint.c
 +++ b/kernel/tracepoint.c
-@@ -193,13 +193,13 @@
+@@ -193,13 +193,13 @@ static void *func_remove(struct tracepoi
   */
  static int tracepoint_add_func(struct tracepoint *tp,
  			       struct tracepoint_func *func, int prio,
@@ -3153,7 +3128,7 @@ index 12cbc4a144ad..3ce1bf967e6a 100644
  	     !static_key_enabled(&tp->key))) {
  		ret = tp->regfunc();
  		if (ret < 0)
-@@ -222,9 +221,9 @@ static int tracepoint_add_func(struct tracepoint *tp,
+@@ -222,9 +222,9 @@ static int tracepoint_add_func(struct tr
  	 * is used.
  	 */
  	rcu_assign_pointer(tp->funcs, tp_funcs);
@@ -3165,7 +3140,7 @@ index 12cbc4a144ad..3ce1bf967e6a 100644
  		static_key_slow_inc(&tp->key);
  	release_probes(old);
  	return 0;
-@@ -237,7 +236,7 @@ static int tracepoint_add_func(struct tracepoint *tp,
+@@ -237,7 +237,7 @@ static int tracepoint_add_func(struct tr
   * by preempt_disable around the call site.
   */
  static int tracepoint_remove_func(struct tracepoint *tp,
@@ -3174,7 +3149,7 @@ index 12cbc4a144ad..3ce1bf967e6a 100644
  {
  	struct tracepoint_func *old, *tp_funcs;
  
-@@ -252,13 +251,13 @@ static int tracepoint_remove_func(struct tracepoint *tp,
+@@ -252,13 +252,13 @@ static int tracepoint_remove_func(struct
  	if (!tp_funcs) {
  		/* Removed last function */
  		if (tp->unregfunc &&
@@ -3191,7 +3166,7 @@ index 12cbc4a144ad..3ce1bf967e6a 100644
  			static_key_slow_dec(&tp->key);
  	}
  	rcu_assign_pointer(tp->funcs, tp_funcs);
-@@ -280,7 +279,7 @@ static int tracepoint_remove_func(struct tracepoint *tp,
+@@ -306,7 +306,7 @@ EXPORT_SYMBOL_GPL(tracepoint_probe_regis
   * within module exit functions.
   */
  int tracepoint_probe_register_prio(struct tracepoint *tp, void *probe,
@@ -3200,7 +3175,7 @@ index 12cbc4a144ad..3ce1bf967e6a 100644
  {
  	struct tracepoint_func tp_func;
  	int ret;
-@@ -289,7 +288,7 @@ int tracepoint_probe_register_prio(struct tracepoint *tp, void *probe,
+@@ -315,7 +315,7 @@ int tracepoint_probe_register_prio(struc
  	tp_func.func = probe;
  	tp_func.data = data;
  	tp_func.prio = prio;
@@ -3209,7 +3184,7 @@ index 12cbc4a144ad..3ce1bf967e6a 100644
  	mutex_unlock(&tracepoints_mutex);
  	return ret;
  }
-@@ -310,18 +309,10 @@ EXPORT_SYMBOL_GPL(tracepoint_probe_register_prio);
+@@ -336,18 +336,10 @@ EXPORT_SYMBOL_GPL(tracepoint_probe_regis
   */
  int tracepoint_probe_register(struct tracepoint *tp, void *probe, void *data)
  {
@@ -3229,7 +3204,7 @@ index 12cbc4a144ad..3ce1bf967e6a 100644
  /**
   * tracepoint_probe_unregister -  Disconnect a probe from a tracepoint
   * @tp: tracepoint
-@@ -330,8 +321,7 @@ EXPORT_SYMBOL_GPL(dynamic_tracepoint_probe_register);
+@@ -356,8 +348,7 @@ EXPORT_SYMBOL_GPL(dynamic_tracepoint_pro
   *
   * Returns 0 if ok, error value on error.
   */
@@ -3239,7 +3214,7 @@ index 12cbc4a144ad..3ce1bf967e6a 100644
  {
  	struct tracepoint_func tp_func;
  	int ret;
-@@ -339,7 +329,7 @@ int tracepoint_probe_unregister(struct tracepoint *tp, void *probe, void *data,
+@@ -365,7 +356,7 @@ int tracepoint_probe_unregister(struct t
  	mutex_lock(&tracepoints_mutex);
  	tp_func.func = probe;
  	tp_func.data = data;
@@ -3248,6 +3223,3 @@ index 12cbc4a144ad..3ce1bf967e6a 100644
  	mutex_unlock(&tracepoints_mutex);
  	return ret;
  }
--- 
-2.26.2
-
