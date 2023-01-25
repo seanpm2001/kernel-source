@@ -26,20 +26,19 @@ Signed-off-by: Oliver Neukum <oneukum@suse.com>
 
 --- a/drivers/usb/dwc3/core.c
 +++ b/drivers/usb/dwc3/core.c
-@@ -507,9 +507,12 @@ static void dwc3_cache_hwparams(struct d
+@@ -523,8 +523,11 @@ static int dwc3_core_ulpi_init(struct dw
   */
  static int dwc3_phy_setup(struct dwc3 *dwc)
  {
 +	unsigned int hw_mode;
  	u32 reg;
- 	int ret;
  
 +	hw_mode = DWC3_GHWPARAMS0_MODE(dwc->hwparams.hwparams0);
 +
  	reg = dwc3_readl(dwc->regs, DWC3_GUSB3PIPECTL(0));
  
  	/*
-@@ -527,6 +530,14 @@ static int dwc3_phy_setup(struct dwc3 *d
+@@ -542,6 +545,14 @@ static int dwc3_phy_setup(struct dwc3 *d
  	if (dwc->revision > DWC3_REVISION_194A)
  		reg |= DWC3_GUSB3PIPECTL_SUSPHY;
  
@@ -54,7 +53,7 @@ Signed-off-by: Oliver Neukum <oneukum@suse.com>
  	if (dwc->u2ss_inp3_quirk)
  		reg |= DWC3_GUSB3PIPECTL_U2SSINP3OK;
  
-@@ -613,6 +624,14 @@ static int dwc3_phy_setup(struct dwc3 *d
+@@ -625,6 +636,14 @@ static int dwc3_phy_setup(struct dwc3 *d
  	if (dwc->revision > DWC3_REVISION_194A)
  		reg |= DWC3_GUSB2PHYCFG_SUSPHY;
  
@@ -69,7 +68,7 @@ Signed-off-by: Oliver Neukum <oneukum@suse.com>
  	if (dwc->dis_u2_susphy_quirk)
  		reg &= ~DWC3_GUSB2PHYCFG_SUSPHY;
  
-@@ -745,6 +764,7 @@ static void dwc3_core_setup_global_contr
+@@ -760,6 +779,7 @@ static int dwc3_core_ulpi_init(struct dw
   */
  static int dwc3_core_init(struct dwc3 *dwc)
  {
@@ -77,7 +76,7 @@ Signed-off-by: Oliver Neukum <oneukum@suse.com>
  	u32			reg;
  	int			ret;
  
-@@ -754,6 +774,8 @@ static int dwc3_core_init(struct dwc3 *d
+@@ -769,6 +789,8 @@ static int dwc3_core_init(struct dwc3 *d
  		goto err0;
  	}
  
@@ -86,9 +85,9 @@ Signed-off-by: Oliver Neukum <oneukum@suse.com>
  	/*
  	 * Write Linux Version Code to our GUID register so it's easy to figure
  	 * out which kernel version a bug was found.
-@@ -775,6 +797,21 @@ static int dwc3_core_init(struct dwc3 *d
+@@ -804,6 +826,21 @@ static int dwc3_core_init(struct dwc3 *d
  	if (ret)
- 		goto err0;
+ 		goto err0a;
  
 +	if (hw_mode == DWC3_GHWPARAMS0_MODE_DRD &&
 +	    dwc->revision > DWC3_REVISION_194A) {
