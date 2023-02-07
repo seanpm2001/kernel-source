@@ -1,0 +1,58 @@
+From 541768b08a400d9d292cfd9c898401b8178856ac Mon Sep 17 00:00:00 2001
+From: Vignesh R <vigneshr@ti.com>
+Date: Thu, 29 Jun 2017 10:55:14 +0530
+Subject: [PATCH] usb: dwc3: core: Call dwc3_core_get_phy() before initializing
+ phys
+Git-commit: 541768b08a400d9d292cfd9c898401b8178856ac
+References: git-fixes
+Patch-mainline: v4.13-rc2
+
+commit f54edb539c116 ("usb: dwc3: core: initialize ULPI before trying to
+get the PHY") moved call to dwc3_core_get_phy() from dwc3_probe() to
+dwc3_core_init() after dwc3_core_soft_reset(). But
+dwc3_core_soft_reset() calls phy_init(), therefore dwc3_core_get_phy()
+needs to be called before dwc3_core_soft_reset().
+
+Fix this by moving call to dwc3_core_get_phy() before
+dwc3_core_soft_reset().
+
+This fixes the following abort seen on DRA7xx platforms
+[   24.769118] usb usb2: SerialNumber: xhci-hcd.1.auto
+[   24.781144] hub 2-0:1.0: USB hub found
+[   24.787836] hub 2-0:1.0: 1 port detected
+[   24.809939] Unhandled fault: imprecise external abort (0x1406) at 0x00000000
+
+Reported-by: Carlos Hernandez <ceh@ti.com>
+Signed-off-by: Vignesh R <vigneshr@ti.com>
+Signed-off-by: Felipe Balbi <felipe.balbi@linux.intel.com>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/usb/dwc3/core.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/usb/dwc3/core.c b/drivers/usb/dwc3/core.c
+index 326b302fc440..03474d3575ab 100644
+--- a/drivers/usb/dwc3/core.c
++++ b/drivers/usb/dwc3/core.c
+@@ -766,15 +766,15 @@ static int dwc3_core_init(struct dwc3 *dwc)
+ 			dwc->maximum_speed = USB_SPEED_HIGH;
+ 	}
+ 
+-	ret = dwc3_core_soft_reset(dwc);
++	ret = dwc3_core_get_phy(dwc);
+ 	if (ret)
+ 		goto err0;
+ 
+-	ret = dwc3_phy_setup(dwc);
++	ret = dwc3_core_soft_reset(dwc);
+ 	if (ret)
+ 		goto err0;
+ 
+-	ret = dwc3_core_get_phy(dwc);
++	ret = dwc3_phy_setup(dwc);
+ 	if (ret)
+ 		goto err0;
+ 
+-- 
+2.39.0
+

@@ -1,0 +1,55 @@
+From f54edb539c1167e7a96073848d0afad100df4580 Mon Sep 17 00:00:00 2001
+From: Felipe Balbi <felipe.balbi@linux.intel.com>
+Date: Mon, 5 Jun 2017 17:03:18 +0300
+Subject: [PATCH] usb: dwc3: core: initialize ULPI before trying to get the PHY
+Git-commit: f54edb539c1167e7a96073848d0afad100df4580
+References: git-fixes
+Patch-mainline: v4.13-rc1
+
+If don't reorder initialization like this, we will never be able to
+get a reference to ULPI PHYs.
+
+Signed-off-by: Felipe Balbi <felipe.balbi@linux.intel.com>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/usb/dwc3/core.c | 10 ++++++----
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/usb/dwc3/core.c b/drivers/usb/dwc3/core.c
+index 9d5a67cc2645..25165a97db5e 100644
+--- a/drivers/usb/dwc3/core.c
++++ b/drivers/usb/dwc3/core.c
+@@ -721,6 +721,8 @@ static void dwc3_core_setup_global_control(struct dwc3 *dwc)
+ 	dwc3_writel(dwc->regs, DWC3_GCTL, reg);
+ }
+ 
++static int dwc3_core_get_phy(struct dwc3 *dwc);
++
+ /**
+  * dwc3_core_init - Low-level initialization of DWC3 Core
+  * @dwc: Pointer to our controller context structure
+@@ -759,6 +761,10 @@ static int dwc3_core_init(struct dwc3 *dwc)
+ 	if (ret)
+ 		goto err0;
+ 
++	ret = dwc3_core_get_phy(dwc);
++	if (ret)
++		goto err0;
++
+ 	dwc3_core_setup_global_control(dwc);
+ 	dwc3_core_num_eps(dwc);
+ 
+@@ -1156,10 +1162,6 @@ static int dwc3_probe(struct platform_device *pdev)
+ 	platform_set_drvdata(pdev, dwc);
+ 	dwc3_cache_hwparams(dwc);
+ 
+-	ret = dwc3_core_get_phy(dwc);
+-	if (ret)
+-		goto err0;
+-
+ 	spin_lock_init(&dwc->lock);
+ 
+ 	pm_runtime_set_active(dev);
+-- 
+2.39.0
+

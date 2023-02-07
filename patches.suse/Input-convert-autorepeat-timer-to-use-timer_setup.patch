@@ -1,0 +1,66 @@
+From 4e974c120039e35b90d2cb0459452bd9a6a71594 Mon Sep 17 00:00:00 2001
+From: Kees Cook <keescook@chromium.org>
+Date: Fri, 3 Nov 2017 12:21:48 -0700
+Subject: [PATCH] Input: convert autorepeat timer to use timer_setup()
+Git-commit: 4e974c120039e35b90d2cb0459452bd9a6a71594
+References: git-fixes
+Patch-mainline: v4.15-rc1
+
+In preparation for unconditionally passing the struct timer_list pointer to
+all timer callbacks, switch to using the new timer_setup() and from_timer()
+to pass the timer pointer explicitly.
+
+Signed-off-by: Kees Cook <keescook@chromium.org>
+Signed-off-by: Dmitry Torokhov <dmitry.torokhov@gmail.com>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/input/input.c | 11 +++++------
+ 1 file changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/input/input.c b/drivers/input/input.c
+index 762bfb9487dc..44916ef4a424 100644
+--- a/drivers/input/input.c
++++ b/drivers/input/input.c
+@@ -76,7 +76,7 @@ static void input_start_autorepeat(struct input_dev *dev, int code)
+ {
+ 	if (test_bit(EV_REP, dev->evbit) &&
+ 	    dev->rep[REP_PERIOD] && dev->rep[REP_DELAY] &&
+-	    dev->timer.data) {
++	    dev->timer.function) {
+ 		dev->repeat_key = code;
+ 		mod_timer(&dev->timer,
+ 			  jiffies + msecs_to_jiffies(dev->rep[REP_DELAY]));
+@@ -179,9 +179,9 @@ static void input_pass_event(struct input_dev *dev,
+  * dev->event_lock here to avoid racing with input_event
+  * which may cause keys get "stuck".
+  */
+-static void input_repeat_key(unsigned long data)
++static void input_repeat_key(struct timer_list *t)
+ {
+-	struct input_dev *dev = (void *) data;
++	struct input_dev *dev = from_timer(dev, t, timer);
+ 	unsigned long flags;
+ 
+ 	spin_lock_irqsave(&dev->event_lock, flags);
+@@ -1784,7 +1784,7 @@ struct input_dev *input_allocate_device(void)
+ 		device_initialize(&dev->dev);
+ 		mutex_init(&dev->mutex);
+ 		spin_lock_init(&dev->event_lock);
+-		init_timer(&dev->timer);
++		timer_setup(&dev->timer, NULL, 0);
+ 		INIT_LIST_HEAD(&dev->h_list);
+ 		INIT_LIST_HEAD(&dev->node);
+ 
+@@ -2047,8 +2047,7 @@ static void devm_input_device_unregister(struct device *dev, void *res)
+  */
+ void input_enable_softrepeat(struct input_dev *dev, int delay, int period)
+ {
+-	dev->timer.data = (unsigned long) dev;
+-	dev->timer.function = input_repeat_key;
++	dev->timer.function = (TIMER_FUNC_TYPE)input_repeat_key;
+ 	dev->rep[REP_DELAY] = delay;
+ 	dev->rep[REP_PERIOD] = period;
+ }
+-- 
+2.39.0
+

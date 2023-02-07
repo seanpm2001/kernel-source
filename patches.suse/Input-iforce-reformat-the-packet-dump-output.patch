@@ -1,0 +1,109 @@
+From 305180bc05019b60ff7aea0b1d68ddbac205ca1f Mon Sep 17 00:00:00 2001
+From: Tim Schumacher <timschumi@gmx.de>
+Date: Tue, 24 Jul 2018 10:46:47 -0700
+Subject: [PATCH] Input: iforce - reformat the packet dump output
+Git-commit: 305180bc05019b60ff7aea0b1d68ddbac205ca1f
+References: git-fixes
+Patch-mainline: v4.19-rc1
+
+Previously, packets that have been dumped are shown in the
+kernel log like this:
+
+drivers/input/joystick/iforce/iforce-packets.c: info cmd = ff04, data =
+56
+02
+04
+00
+
+Use dev_dbg to dump the packages only when requested and to list
+the parent device as well. Use printf logic to generate the hexdump
+instead of looping through every char that needs to be printed (which
+in turn fixes the unnecessary newlines and looks more clean in general).
+
+The resulting package dump output does now look like this:
+
+usb 2-8: iforce_dump_packet info cmd = ff04, data = 56 02 04 00
+
+Signed-off-by: Tim Schumacher <timschumi@gmx.de>
+Signed-off-by: Dmitry Torokhov <dmitry.torokhov@gmail.com>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/input/joystick/iforce/iforce-ff.c      |  4 ++--
+ drivers/input/joystick/iforce/iforce-main.c    |  2 +-
+ drivers/input/joystick/iforce/iforce-packets.c | 10 +++-------
+ drivers/input/joystick/iforce/iforce.h         |  2 +-
+ 4 files changed, 7 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/input/joystick/iforce/iforce-ff.c b/drivers/input/joystick/iforce/iforce-ff.c
+index 2ed923874bbc..3536d5f5ad18 100644
+--- a/drivers/input/joystick/iforce/iforce-ff.c
++++ b/drivers/input/joystick/iforce/iforce-ff.c
+@@ -52,7 +52,7 @@ static int make_magnitude_modifier(struct iforce* iforce,
+ 
+ 	iforce_send_packet(iforce, FF_CMD_MAGNITUDE, data);
+ 
+-	iforce_dump_packet("magnitude: ", FF_CMD_MAGNITUDE, data);
++	iforce_dump_packet(iforce, "magnitude", FF_CMD_MAGNITUDE, data);
+ 	return 0;
+ }
+ 
+@@ -174,7 +174,7 @@ static int make_condition_modifier(struct iforce* iforce,
+ 	data[9] = (100 * lsat) >> 16;
+ 
+ 	iforce_send_packet(iforce, FF_CMD_CONDITION, data);
+-	iforce_dump_packet("condition", FF_CMD_CONDITION, data);
++	iforce_dump_packet(iforce, "condition", FF_CMD_CONDITION, data);
+ 
+ 	return 0;
+ }
+diff --git a/drivers/input/joystick/iforce/iforce-main.c b/drivers/input/joystick/iforce/iforce-main.c
+index 95bbd61d3fbe..f43009703574 100644
+--- a/drivers/input/joystick/iforce/iforce-main.c
++++ b/drivers/input/joystick/iforce/iforce-main.c
+@@ -356,7 +356,7 @@ int iforce_init_device(struct iforce *iforce)
+ 
+ 	for (i = 0; c[i]; i++)
+ 		if (!iforce_get_id_packet(iforce, c + i))
+-			iforce_dump_packet("info", iforce->ecmd, iforce->edata);
++			iforce_dump_packet(iforce, "info", iforce->ecmd, iforce->edata);
+ 
+ /*
+  * Disable spring, enable force feedback.
+diff --git a/drivers/input/joystick/iforce/iforce-packets.c b/drivers/input/joystick/iforce/iforce-packets.c
+index 1cea950276dd..c10169f4554e 100644
+--- a/drivers/input/joystick/iforce/iforce-packets.c
++++ b/drivers/input/joystick/iforce/iforce-packets.c
+@@ -29,14 +29,10 @@ static struct {
+ } iforce_hat_to_axis[16] = {{ 0,-1}, { 1,-1}, { 1, 0}, { 1, 1}, { 0, 1}, {-1, 1}, {-1, 0}, {-1,-1}};
+ 
+ 
+-void iforce_dump_packet(char *msg, u16 cmd, unsigned char *data)
++void iforce_dump_packet(struct iforce *iforce, char *msg, u16 cmd, unsigned char *data)
+ {
+-	int i;
+-
+-	printk(KERN_DEBUG __FILE__ ": %s cmd = %04x, data = ", msg, cmd);
+-	for (i = 0; i < LO(cmd); i++)
+-		printk("%02x ", data[i]);
+-	printk("\n");
++	dev_dbg(iforce->dev->dev.parent, "%s %s cmd = %04x, data = %*ph\n",
++		__func__, msg, cmd, LO(cmd), data);
+ }
+ 
+ /*
+diff --git a/drivers/input/joystick/iforce/iforce.h b/drivers/input/joystick/iforce/iforce.h
+index aee43d14f699..0e9d01f8bcb6 100644
+--- a/drivers/input/joystick/iforce/iforce.h
++++ b/drivers/input/joystick/iforce/iforce.h
+@@ -154,7 +154,7 @@ int iforce_init_device(struct iforce *iforce);
+ int iforce_control_playback(struct iforce*, u16 id, unsigned int);
+ void iforce_process_packet(struct iforce *iforce, u16 cmd, unsigned char *data);
+ int iforce_send_packet(struct iforce *iforce, u16 cmd, unsigned char* data);
+-void iforce_dump_packet(char *msg, u16 cmd, unsigned char *data) ;
++void iforce_dump_packet(struct iforce *iforce, char *msg, u16 cmd, unsigned char *data);
+ int iforce_get_id_packet(struct iforce *iforce, char *packet);
+ 
+ /* iforce-ff.c */
+-- 
+2.39.0
+
