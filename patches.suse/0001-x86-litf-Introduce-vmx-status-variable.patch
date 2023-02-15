@@ -61,7 +61,7 @@ Signed-off-by: Jiri Kosina <jkosina@suse.cz>
  static void __init l1tf_select_mitigation(void)
  {
  	u64 half_pa;
-@@ -705,6 +711,32 @@ void x86_spec_ctrl_setup_ap(void)
+@@ -677,6 +683,32 @@ void x86_spec_ctrl_setup_ap(void)
  
  #ifdef CONFIG_SYSFS
  
@@ -94,10 +94,10 @@ Signed-off-by: Jiri Kosina <jkosina@suse.cz>
  static ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr,
  			       char *buf, unsigned int bug)
  {
-@@ -736,7 +768,7 @@ static ssize_t cpu_show_common(struct de
+@@ -708,7 +740,7 @@ static ssize_t cpu_show_common(struct de
  
  	case X86_BUG_L1TF:
- 		if (boot_cpu_has(X86_FEATURE_L1TF_FIX))
+ 		if (boot_cpu_has(X86_FEATURE_L1TF_PTEINV))
 -			return sprintf(buf, "Mitigation: Page Table Inversion\n");
 +			return l1tf_show_state(buf);
  		break;
@@ -105,7 +105,7 @@ Signed-off-by: Jiri Kosina <jkosina@suse.cz>
  	default:
 --- a/arch/x86/kvm/vmx.c
 +++ b/arch/x86/kvm/vmx.c
-@@ -199,19 +199,13 @@ extern const ulong vmx_return;
+@@ -190,19 +190,13 @@ extern const ulong vmx_return;
  
  static DEFINE_STATIC_KEY_FALSE(vmx_l1d_should_flush);
  
@@ -126,7 +126,7 @@ Signed-off-by: Jiri Kosina <jkosina@suse.cz>
  	{"never",	VMENTER_L1D_FLUSH_NEVER},
  	{"cond",	VMENTER_L1D_FLUSH_COND},
  	{"always",	VMENTER_L1D_FLUSH_ALWAYS},
-@@ -12578,8 +12572,12 @@ static int __init vmx_setup_l1d_flush(vo
+@@ -12637,8 +12631,12 @@ static int __init vmx_setup_l1d_flush(vo
  {
  	struct page *page;
  
@@ -140,7 +140,7 @@ Signed-off-by: Jiri Kosina <jkosina@suse.cz>
  	    vmx_l1d_use_msr_save_list())
  		return 0;
  
-@@ -12594,12 +12592,14 @@ static int __init vmx_setup_l1d_flush(vo
+@@ -12653,12 +12651,14 @@ static int __init vmx_setup_l1d_flush(vo
  	return 0;
  }
  
@@ -156,7 +156,7 @@ Signed-off-by: Jiri Kosina <jkosina@suse.cz>
  }
  
  static int __init vmx_init(void)
-@@ -12613,7 +12613,7 @@ static int __init vmx_init(void)
+@@ -12672,7 +12672,7 @@ static int __init vmx_init(void)
  	r = kvm_init(&vmx_x86_ops, sizeof(struct vcpu_vmx),
  		     __alignof__(struct vcpu_vmx), THIS_MODULE);
  	if (r) {
@@ -165,7 +165,7 @@ Signed-off-by: Jiri Kosina <jkosina@suse.cz>
  		return r;
  	}
  
-@@ -12634,7 +12634,7 @@ static void __exit vmx_exit(void)
+@@ -12693,7 +12693,7 @@ static void __exit vmx_exit(void)
  
  	kvm_exit();
  

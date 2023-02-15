@@ -88,6 +88,110 @@ Link: https://lkml.kernel.org/r/20180713142323.202758176@linutronix.de
  arch/x86/kvm/vmx.c                                 |   56 +++++++++++++----
  5 files changed, 166 insertions(+), 19 deletions(-)
 
+--- a/Documentation/ABI/testing/sysfs-devices-system-cpu
++++ b/Documentation/ABI/testing/sysfs-devices-system-cpu
+@@ -379,6 +379,7 @@ What:		/sys/devices/system/cpu/vulnerabi
+ 		/sys/devices/system/cpu/vulnerabilities/spectre_v1
+ 		/sys/devices/system/cpu/vulnerabilities/spectre_v2
+ 		/sys/devices/system/cpu/vulnerabilities/spec_store_bypass
++		/sys/devices/system/cpu/vulnerabilities/l1tf
+ Date:		January 2018
+ Contact:	Linux kernel mailing list <linux-kernel@vger.kernel.org>
+ Description:	Information about CPU vulnerabilities
+@@ -391,6 +392,9 @@ Description:	Information about CPU vulne
+ 		"Vulnerable"	  CPU is affected and no mitigation in effect
+ 		"Mitigation: $M"  CPU is affected and mitigation $M is in effect
+ 
++		Details about the l1tf file can be found in
++		Documentation/admin-guide/l1tf.rst
++
+ What:		/sys/devices/system/cpu/smt
+ 		/sys/devices/system/cpu/smt/active
+ 		/sys/devices/system/cpu/smt/control
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -1870,12 +1870,6 @@
+ 			[KVM,ARM] Allow use of GICv4 for direct injection of
+ 			LPIs.
+ 
+-	kvm-intel.nosmt=[KVM,Intel] If the L1TF CPU bug is present (CVE-2018-3620)
+-			and the system has SMT (aka Hyper-Threading) enabled then
+-			don't allow guests to be created.
+-
+-			Default is 0 (allow guests to be created).
+-
+ 	kvm-intel.ept=	[KVM,Intel] Disable extended page tables
+ 			(virtualized MMU) support on capable Intel chips.
+ 			Default is 1 (enabled)
+@@ -1913,6 +1907,68 @@
+ 			feature (tagged TLBs) on capable Intel chips.
+ 			Default is 1 (enabled)
+ 
++	l1tf=           [X86] Control mitigation of the L1TF vulnerability on
++			      affected CPUs
++
++			The kernel PTE inversion protection is unconditionally
++			enabled and cannot be disabled.
++
++			full
++				Provides all available mitigations for the
++				L1TF vulnerability. Disables SMT and
++				enables all mitigations in the
++				hypervisors, i.e. unconditional L1D flush.
++
++				SMT control and L1D flush control via the
++				sysfs interface is still possible after
++				boot.  Hypervisors will issue a warning
++				when the first VM is started in a
++				potentially insecure configuration,
++				i.e. SMT enabled or L1D flush disabled.
++
++			full,force
++				Same as 'full', but disables SMT and L1D
++				flush runtime control. Implies the
++				'nosmt=force' command line option.
++				(i.e. sysfs control of SMT is disabled.)
++
++			flush
++				Leaves SMT enabled and enables the default
++				hypervisor mitigation, i.e. conditional
++				L1D flush.
++
++				SMT control and L1D flush control via the
++				sysfs interface is still possible after
++				boot.  Hypervisors will issue a warning
++				when the first VM is started in a
++				potentially insecure configuration,
++				i.e. SMT enabled or L1D flush disabled.
++
++			flush,nosmt
++
++				Disables SMT and enables the default
++				hypervisor mitigation.
++
++				SMT control and L1D flush control via the
++				sysfs interface is still possible after
++				boot.  Hypervisors will issue a warning
++				when the first VM is started in a
++				potentially insecure configuration,
++				i.e. SMT enabled or L1D flush disabled.
++
++			flush,nowarn
++				Same as 'flush', but hypervisors will not
++				warn when a VM is started in a potentially
++				insecure configuration.
++
++			off
++				Disables hypervisor mitigations and doesn't
++				emit any warnings.
++
++			Default is 'flush'.
++
++			For details see: Documentation/admin-guide/l1tf.rst
++
+ 	l2cr=		[PPC]
+ 
+ 	l3cr=		[PPC]
 --- a/arch/x86/include/asm/processor.h
 +++ b/arch/x86/include/asm/processor.h
 @@ -965,4 +965,16 @@ bool xen_set_default_idle(void);
@@ -109,7 +213,7 @@ Link: https://lkml.kernel.org/r/20180713142323.202758176@linutronix.de
  #endif /* _ASM_X86_PROCESSOR_H */
 --- a/arch/x86/kernel/cpu/bugs.c
 +++ b/arch/x86/kernel/cpu/bugs.c
-@@ -216,7 +216,11 @@ static void x86_amd_ssb_disable(void)
+@@ -218,7 +218,11 @@ static void x86_amd_ssb_disable(void)
  		wrmsrl(MSR_AMD64_LS_CFG, msrval);
  }
  
@@ -121,7 +225,7 @@ Link: https://lkml.kernel.org/r/20180713142323.202758176@linutronix.de
  enum vmx_l1d_flush_state l1tf_vmx_mitigation = VMENTER_L1D_FLUSH_AUTO;
  EXPORT_SYMBOL_GPL(l1tf_vmx_mitigation);
  #endif
-@@ -228,6 +232,20 @@ static void __init l1tf_select_mitigatio
+@@ -230,6 +234,20 @@ static void __init l1tf_select_mitigatio
  	if (!boot_cpu_has_bug(X86_BUG_L1TF))
  		return;
  
@@ -142,8 +246,8 @@ Link: https://lkml.kernel.org/r/20180713142323.202758176@linutronix.de
  #if CONFIG_PGTABLE_LEVELS == 2
  	pr_warn("Kernel not compiled for PAE. No mitigation for L1TF\n");
  	return;
-@@ -247,6 +265,33 @@ static void __init l1tf_select_mitigatio
- 	setup_force_cpu_cap(X86_FEATURE_L1TF_FIX);
+@@ -249,6 +267,33 @@ static void __init l1tf_select_mitigatio
+ 	setup_force_cpu_cap(X86_FEATURE_L1TF_PTEINV);
  }
  
 +
@@ -224,7 +328,7 @@ Link: https://lkml.kernel.org/r/20180713142323.202758176@linutronix.de
  	if (l1tf != VMENTER_L1D_FLUSH_NEVER && !vmx_l1d_flush_pages &&
  	    !boot_cpu_has(X86_FEATURE_FLUSH_L1D)) {
  		page = alloc_pages(GFP_KERNEL, L1D_CACHE_ORDER);
-@@ -10009,16 +10022,33 @@ free_vcpu:
+@@ -10047,16 +10060,33 @@ free_vcpu:
  	return ERR_PTR(err);
  }
  
@@ -264,107 +368,3 @@ Link: https://lkml.kernel.org/r/20180713142323.202758176@linutronix.de
  	}
  	return 0;
  }
---- a/Documentation/ABI/testing/sysfs-devices-system-cpu
-+++ b/Documentation/ABI/testing/sysfs-devices-system-cpu
-@@ -379,6 +379,7 @@ What:		/sys/devices/system/cpu/vulnerabi
- 		/sys/devices/system/cpu/vulnerabilities/spectre_v1
- 		/sys/devices/system/cpu/vulnerabilities/spectre_v2
- 		/sys/devices/system/cpu/vulnerabilities/spec_store_bypass
-+		/sys/devices/system/cpu/vulnerabilities/l1tf
- Date:		January 2018
- Contact:	Linux kernel mailing list <linux-kernel@vger.kernel.org>
- Description:	Information about CPU vulnerabilities
-@@ -391,6 +392,9 @@ Description:	Information about CPU vulne
- 		"Vulnerable"	  CPU is affected and no mitigation in effect
- 		"Mitigation: $M"  CPU is affected and mitigation $M is in effect
- 
-+		Details about the l1tf file can be found in
-+		Documentation/admin-guide/l1tf.rst
-+
- What:		/sys/devices/system/cpu/smt
- 		/sys/devices/system/cpu/smt/active
- 		/sys/devices/system/cpu/smt/control
---- a/Documentation/admin-guide/kernel-parameters.txt
-+++ b/Documentation/admin-guide/kernel-parameters.txt
-@@ -1862,12 +1862,6 @@
- 			[KVM,ARM] Allow use of GICv4 for direct injection of
- 			LPIs.
- 
--	kvm-intel.nosmt=[KVM,Intel] If the L1TF CPU bug is present (CVE-2018-3620)
--			and the system has SMT (aka Hyper-Threading) enabled then
--			don't allow guests to be created.
--
--			Default is 0 (allow guests to be created).
--
- 	kvm-intel.ept=	[KVM,Intel] Disable extended page tables
- 			(virtualized MMU) support on capable Intel chips.
- 			Default is 1 (enabled)
-@@ -1905,6 +1899,68 @@
- 			feature (tagged TLBs) on capable Intel chips.
- 			Default is 1 (enabled)
- 
-+	l1tf=           [X86] Control mitigation of the L1TF vulnerability on
-+			      affected CPUs
-+
-+			The kernel PTE inversion protection is unconditionally
-+			enabled and cannot be disabled.
-+
-+			full
-+				Provides all available mitigations for the
-+				L1TF vulnerability. Disables SMT and
-+				enables all mitigations in the
-+				hypervisors, i.e. unconditional L1D flush.
-+
-+				SMT control and L1D flush control via the
-+				sysfs interface is still possible after
-+				boot.  Hypervisors will issue a warning
-+				when the first VM is started in a
-+				potentially insecure configuration,
-+				i.e. SMT enabled or L1D flush disabled.
-+
-+			full,force
-+				Same as 'full', but disables SMT and L1D
-+				flush runtime control. Implies the
-+				'nosmt=force' command line option.
-+				(i.e. sysfs control of SMT is disabled.)
-+
-+			flush
-+				Leaves SMT enabled and enables the default
-+				hypervisor mitigation, i.e. conditional
-+				L1D flush.
-+
-+				SMT control and L1D flush control via the
-+				sysfs interface is still possible after
-+				boot.  Hypervisors will issue a warning
-+				when the first VM is started in a
-+				potentially insecure configuration,
-+				i.e. SMT enabled or L1D flush disabled.
-+
-+			flush,nosmt
-+
-+				Disables SMT and enables the default
-+				hypervisor mitigation.
-+
-+				SMT control and L1D flush control via the
-+				sysfs interface is still possible after
-+				boot.  Hypervisors will issue a warning
-+				when the first VM is started in a
-+				potentially insecure configuration,
-+				i.e. SMT enabled or L1D flush disabled.
-+
-+			flush,nowarn
-+				Same as 'flush', but hypervisors will not
-+				warn when a VM is started in a potentially
-+				insecure configuration.
-+
-+			off
-+				Disables hypervisor mitigations and doesn't
-+				emit any warnings.
-+
-+			Default is 'flush'.
-+
-+			For details see: Documentation/admin-guide/l1tf.rst
-+
- 	l2cr=		[PPC]
- 
- 	l3cr=		[PPC]
