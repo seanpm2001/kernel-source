@@ -84,9 +84,9 @@ Link: https://lkml.kernel.org/r/20180713142323.202758176@linutronix.de
  Documentation/ABI/testing/sysfs-devices-system-cpu |    4 +
  Documentation/admin-guide/kernel-parameters.txt    |   68 +++++++++++++++++++--
  arch/x86/include/asm/processor.h                   |   12 +++
- arch/x86/kernel/cpu/bugs.c                         |   45 +++++++++++++
+ arch/x86/kernel/cpu/bugs.c                         |   44 +++++++++++++
  arch/x86/kvm/vmx.c                                 |   56 +++++++++++++----
- 5 files changed, 166 insertions(+), 19 deletions(-)
+ 5 files changed, 165 insertions(+), 19 deletions(-)
 
 --- a/Documentation/ABI/testing/sysfs-devices-system-cpu
 +++ b/Documentation/ABI/testing/sysfs-devices-system-cpu
@@ -213,9 +213,9 @@ Link: https://lkml.kernel.org/r/20180713142323.202758176@linutronix.de
  #endif /* _ASM_X86_PROCESSOR_H */
 --- a/arch/x86/kernel/cpu/bugs.c
 +++ b/arch/x86/kernel/cpu/bugs.c
-@@ -218,7 +218,11 @@ static void x86_amd_ssb_disable(void)
- 		wrmsrl(MSR_AMD64_LS_CFG, msrval);
- }
+@@ -659,7 +659,11 @@ void x86_spec_ctrl_setup_ap(void)
+ #undef pr_fmt
+ #define pr_fmt(fmt)	"L1TF: " fmt
  
 +/* Default mitigation for L1TF-affected CPUs */
 +enum l1tf_mitigations l1tf_mitigation __ro_after_init = L1TF_MITIGATION_FLUSH;
@@ -225,7 +225,7 @@ Link: https://lkml.kernel.org/r/20180713142323.202758176@linutronix.de
  enum vmx_l1d_flush_state l1tf_vmx_mitigation = VMENTER_L1D_FLUSH_AUTO;
  EXPORT_SYMBOL_GPL(l1tf_vmx_mitigation);
  #endif
-@@ -230,6 +234,20 @@ static void __init l1tf_select_mitigatio
+@@ -671,6 +675,20 @@ static void __init l1tf_select_mitigatio
  	if (!boot_cpu_has_bug(X86_BUG_L1TF))
  		return;
  
@@ -246,10 +246,10 @@ Link: https://lkml.kernel.org/r/20180713142323.202758176@linutronix.de
  #if CONFIG_PGTABLE_LEVELS == 2
  	pr_warn("Kernel not compiled for PAE. No mitigation for L1TF\n");
  	return;
-@@ -249,6 +267,33 @@ static void __init l1tf_select_mitigatio
+@@ -689,6 +707,32 @@ static void __init l1tf_select_mitigatio
+ 
  	setup_force_cpu_cap(X86_FEATURE_L1TF_PTEINV);
  }
- 
 +
 +static int __init l1tf_cmdline(char *str)
 +{
@@ -276,10 +276,9 @@ Link: https://lkml.kernel.org/r/20180713142323.202758176@linutronix.de
 +}
 +early_param("l1tf", l1tf_cmdline);
 +
-+
- #ifdef RETPOLINE
- static bool spectre_v2_bad_module;
+ #undef pr_fmt
  
+ #ifdef CONFIG_SYSFS
 --- a/arch/x86/kvm/vmx.c
 +++ b/arch/x86/kvm/vmx.c
 @@ -70,9 +70,6 @@ static const struct x86_cpu_id vmx_cpu_i
