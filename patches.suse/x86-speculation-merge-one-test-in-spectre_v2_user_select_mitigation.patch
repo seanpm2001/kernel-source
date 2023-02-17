@@ -21,7 +21,7 @@ Link: https://lkml.kernel.org/r/20200615065806.GB14668@zn.tnic
 
 --- a/arch/x86/kernel/cpu/bugs.c
 +++ b/arch/x86/kernel/cpu/bugs.c
-@@ -785,19 +785,14 @@ spectre_v2_user_select_mitigation(enum s
+@@ -755,10 +755,12 @@ spectre_v2_user_select_mitigation(enum s
  	}
  
  	/*
@@ -35,9 +35,13 @@ Link: https://lkml.kernel.org/r/20200615065806.GB14668@zn.tnic
 +	    spectre_v2_enabled == SPECTRE_V2_IBRS_ENHANCED)
  		return;
  
+ 	/*
+@@ -770,12 +772,6 @@ spectre_v2_user_select_mitigation(enum s
+ 	    boot_cpu_has(X86_FEATURE_AMD_STIBP_ALWAYS_ON))
+ 		mode = SPECTRE_V2_USER_STRICT_PREFERRED;
+ 
 -	/*
--	 * If SMT is not possible or STIBP is not available clear the STIPB
--	 * mode.
+-	 * If STIBP is not available, clear the STIBP mode.
 -	 */
 -	if (!boot_cpu_has(X86_FEATURE_STIBP))
 -		mode = SPECTRE_V2_USER_NONE;
@@ -45,3 +49,11 @@ Link: https://lkml.kernel.org/r/20200615065806.GB14668@zn.tnic
  	spectre_v2_user_stibp = mode;
  
  set_mode:
+@@ -1255,7 +1251,6 @@ static int ib_prctl_set(struct task_stru
+ 		 * Indirect branch speculation is always disabled in strict
+ 		 * mode. It can neither be enabled if it was force-disabled
+ 		 * by a  previous prctl call.
+-
+ 		 */
+ 		if (spectre_v2_user_ibpb == SPECTRE_V2_USER_STRICT ||
+ 		    spectre_v2_user_stibp == SPECTRE_V2_USER_STRICT ||
