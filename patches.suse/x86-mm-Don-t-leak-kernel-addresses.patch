@@ -1,0 +1,44 @@
+From: Matteo Croce <mcroce@redhat.com>
+Date: Mon, 18 Mar 2019 22:24:03 +0100
+Subject: x86/mm: Don't leak kernel addresses
+Git-commit: a3151724437f54076cc10bc02b1c4f0003ae36cd
+Patch-mainline: 5.1-rc2
+References: git-fixes
+
+Since commit:
+
+  ad67b74d2469d9b8 ("printk: hash addresses printed with %p")
+
+at boot "____ptrval____" is printed instead of actual addresses:
+
+    found SMP MP-table at [mem 0x000f5cc0-0x000f5ccf] mapped at [(____ptrval____)]
+
+Instead of changing the print to "%px", and leaking a kernel addresses,
+just remove the print completely, like in:
+
+  071929dbdd865f77 ("arm64: Stop printing the virtual memory layout").
+
+Signed-off-by: Matteo Croce <mcroce@redhat.com>
+Cc: Borislav Petkov <bp@alien8.de>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ arch/x86/kernel/mpparse.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/arch/x86/kernel/mpparse.c
++++ b/arch/x86/kernel/mpparse.c
+@@ -593,8 +593,8 @@ static int __init smp_scan_config(unsign
+ #endif
+ 			mpf_base = base;
+ 
+-			pr_info("found SMP MP-table at [mem %#010lx-%#010lx] mapped at [%p]\n",
+-				base, base + sizeof(*mpf) - 1, mpf);
++			pr_info("found SMP MP-table at [mem %#010lx-%#010lx]\n",
++				base, base + sizeof(*mpf) - 1);
+ 
+ 			memblock_reserve(base, sizeof(*mpf));
+ 			if (mpf->physptr)
