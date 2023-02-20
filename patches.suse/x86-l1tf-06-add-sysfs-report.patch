@@ -1,43 +1,37 @@
-From 8865a468fa92e1e507b820f74e8d051c50ef49dc Mon Sep 17 00:00:00 2001
 From: Andi Kleen <ak@linux.intel.com>
-Date: Fri, 27 Apr 2018 14:44:53 -0700
-Subject: [PATCH 5/8] x86, l1tf: Add sysfs report for l1tf
+Date: Wed, 13 Jun 2018 15:48:26 -0700
+Subject: x86/speculation/l1tf: Add sysfs reporting for l1tf
 Patch-mainline: v4.19-rc1
 Git-commit: 17dbca119312b4e8173d4e25ff64262119fcef38
 References: bnc#1087081, CVE-2018-3620
 
-L1TF core kernel workarounds are cheap and normally always enabled,
-However we still want to report in sysfs if the system is vulnerable
-or mitigated. Add the necessary checks.
+L1TF core kernel workarounds are cheap and normally always enabled, However
+they still should be reported in sysfs if the system is vulnerable or
+mitigated. Add the necessary CPU feature/bug bits.
 
-- We extend the existing checks for Meltdowns to determine if the system is
-vulnerable. This excludes some Atom CPUs which don't have this
-problem.
-- We check for 32bit non PAE and warn
-- If the system has more than MAX_PA/2 physical memory the
-invert page workarounds don't protect the system against
-the L1TF attack anymore, because an inverted physical address
-will point to valid memory. Print a warning in this case
-and report that the system is vulnerable.
+- Extend the existing checks for Meltdowns to determine if the system is
+  vulnerable. All CPUs which are not vulnerable to Meltdown are also not
+  vulnerable to L1TF
+
+- Check for 32bit non PAE and emit a warning as there is no practical way
+  for mitigation due to the limited physical address bits
+
+- If the system has more than MAX_PA/2 physical memory the invert page
+  workarounds don't protect the system against the L1TF attack anymore,
+  because an inverted physical address will also point to valid
+  memory. Print a warning in this case and report that the system is
+  vulnerable.
+
+Add a function which returns the PFN limit for the L1TF mitigation, which
+will be used in follow up patches for sanity and range checks.
+
+[ tglx: Renamed the CPU feature bit to L1TF_PTEINV ]
 
 Signed-off-by: Andi Kleen <ak@linux.intel.com>
-Acked-By: Dave Hansen <dave.hansen@intel.com>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
 Reviewed-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Acked-by: Dave Hansen <dave.hansen@intel.com>
 Acked-by: Michal Hocko <mhocko@suse.com>
-
----
-v2: Use positive instead of negative flag for WA. Fix override
-reporting.
-v3: Fix L1TF_WA flag settting
-v4: Rebase to SSB tree
-v5: Minor cleanups. No functional changes.
-Don't mark atoms and knights as vulnerable
-v6: Change _WA to _FIX
-v7: Use common sysfs function
-v8: Improve commit message
-Move mitigation check into check_bugs.
-Integrate memory size checking into this patch
-White space changes. Move l1tf_pfn_limit here.
 ---
  arch/x86/include/asm/cpufeatures.h |    2 +
  arch/x86/include/asm/processor.h   |    5 ++++
@@ -53,11 +47,11 @@ White space changes. Move l1tf_pfn_limit here.
  #define X86_FEATURE_STIBP		( 7*32+28) /* Single Thread Indirect Branch Predictors */
  #define X86_FEATURE_ZEN			( 7*32+29) /* "" CPU is AMD family 0x17 (Zen) */
  #define X86_FEATURE_IBRS_ENHANCED	( 7*32+30) /* Enhanced IBRS */
-+#define X86_FEATURE_L1TF_FIX		( 7*32+31) /* "" L1TF workaround used */
++#define X86_FEATURE_L1TF_PTEINV	( 7*32+31) /* "" L1TF workaround PTE inversion */
  
  /* Virtualization flags: Linux defined, word 8 */
  #define X86_FEATURE_TPR_SHADOW  ( 8*32+ 0) /* Intel TPR Shadow */
-@@ -372,4 +373,5 @@
+@@ -375,4 +376,5 @@
  #define X86_BUG_SPECTRE_V1		X86_BUG(15) /* CPU is affected by Spectre variant 1 attack with conditional branches */
  #define X86_BUG_SPECTRE_V2		X86_BUG(16) /* CPU is affected by Spectre variant 2 attack with indirect branches */
  #define X86_BUG_SPEC_STORE_BYPASS	X86_BUG(17) /* CPU is affected by speculative store bypass attack */
@@ -100,7 +94,7 @@ White space changes. Move l1tf_pfn_limit here.
  #ifdef CONFIG_X86_32
  	/*
  	 * Check whether we are able to run this kernel safely on SMP.
-@@ -206,6 +210,32 @@ static void x86_amd_ssb_disable(void)
+@@ -207,6 +211,32 @@ static void x86_amd_ssb_disable(void)
  		wrmsrl(MSR_AMD64_LS_CFG, msrval);
  }
  
@@ -127,25 +121,25 @@ White space changes. Move l1tf_pfn_limit here.
 +		return;
 +	}
 +
-+	setup_force_cpu_cap(X86_FEATURE_L1TF_FIX);
++	setup_force_cpu_cap(X86_FEATURE_L1TF_PTEINV);
 +}
 +
  #ifdef RETPOLINE
  static bool spectre_v2_bad_module;
  
-@@ -694,6 +724,11 @@ static ssize_t cpu_show_common(struct de
+@@ -676,6 +706,11 @@ static ssize_t cpu_show_common(struct de
  	case X86_BUG_SPEC_STORE_BYPASS:
  		return sprintf(buf, "%s\n", ssb_strings[ssb_mode]);
  
 +	case X86_BUG_L1TF:
-+		if (boot_cpu_has(X86_FEATURE_L1TF_FIX))
++		if (boot_cpu_has(X86_FEATURE_L1TF_PTEINV))
 +			return sprintf(buf, "Mitigation: Page Table Inversion\n");
 +		break;
 +
  	default:
  		break;
  	}
-@@ -720,4 +755,9 @@ ssize_t cpu_show_spec_store_bypass(struc
+@@ -702,4 +737,9 @@ ssize_t cpu_show_spec_store_bypass(struc
  {
  	return cpu_show_common(dev, attr, buf, X86_BUG_SPEC_STORE_BYPASS);
  }
@@ -157,7 +151,7 @@ White space changes. Move l1tf_pfn_limit here.
  #endif
 --- a/arch/x86/kernel/cpu/common.c
 +++ b/arch/x86/kernel/cpu/common.c
-@@ -940,6 +940,21 @@ static const __initconst struct x86_cpu_
+@@ -962,6 +962,21 @@ static const __initconst struct x86_cpu_
  	{}
  };
  
@@ -179,7 +173,7 @@ White space changes. Move l1tf_pfn_limit here.
  static void __init cpu_set_bug_bits(struct cpuinfo_x86 *c)
  {
  	u64 ia32_cap = 0;
-@@ -968,6 +983,11 @@ static void __init cpu_set_bug_bits(stru
+@@ -991,6 +1006,11 @@ static void __init cpu_set_bug_bits(stru
  		return;
  
  	setup_force_cpu_bug(X86_BUG_CPU_MELTDOWN);
