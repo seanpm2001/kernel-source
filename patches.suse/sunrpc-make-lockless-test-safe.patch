@@ -1,0 +1,34 @@
+From: NeilBrown <neilb@suse.com>
+Subject: SUNRPC: make lockless test safe.
+Patch-mainline: never, code has changed substantually
+References: bsc#1207201
+
+When queuing a newly ready socket, we perform a lockless test of
+RQ_BUSY.  That can sometimes use old data and a thread can appear to
+still be busy even though it has already cleared the BUSY flag and and
+checked that the queue is empty one last time.  This can result in all
+threads waiting even though a socket as been queued: the ghost RQ_BUSY
+prevented a wakeup.
+
+So add a memory barrier after queuing the socket to ensure that the
+subsequent test of RQ_BUSY is proplery ordered.
+
+Signed-off-by: NeilBrown <neilb@suse.com>
+
+---
+ net/sunrpc/svc_xprt.c |    4 ++++
+ 1 file changed, 4 insertions(+)
+
+--- a/net/sunrpc/svc_xprt.c
++++ b/net/sunrpc/svc_xprt.c
+@@ -460,6 +460,10 @@ redo_search:
+ 		list_add_tail(&xprt->xpt_ready, &pool->sp_sockets);
+ 		pool->sp_stats.sockets_queued++;
+ 		spin_unlock_bh(&pool->sp_lock);
++		/* Ensure the "lockless check" of RQ_BUSY sees rq_flags
++		 * *after* we have added to the sp_sockets queue.
++		 */
++		smp_mb();
+ 		goto redo_search;
+ 	}
+ 	rqstp = NULL;
