@@ -1,0 +1,38 @@
+From 125eac243806e021f33a1fdea3687eccbb9f7636 Mon Sep 17 00:00:00 2001
+From: "Darrick J. Wong" <darrick.wong@oracle.com>
+Date: Wed, 26 Aug 2020 14:12:18 -0700
+Subject: [PATCH] xfs: initialize the shortform attr header padding entry
+Git-commit: 125eac243806e021f33a1fdea3687eccbb9f7636
+Patch-mainline: v5.9-rc4
+References: git-fixes
+
+Don't leak kernel memory contents into the shortform attr fork.
+
+Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+Reviewed-by: Eric Sandeen <sandeen@redhat.com>
+Reviewed-by: Dave Chinner <dchinner@redhat.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Acked-by: Anthony Iliopoulos <ailiop@suse.com>
+
+---
+ fs/xfs/libxfs/xfs_attr_leaf.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/xfs/libxfs/xfs_attr_leaf.c b/fs/xfs/libxfs/xfs_attr_leaf.c
+index 383b08f2ac61..305d4bc07337 100644
+--- a/fs/xfs/libxfs/xfs_attr_leaf.c
++++ b/fs/xfs/libxfs/xfs_attr_leaf.c
+@@ -653,8 +653,8 @@ xfs_attr_shortform_create(
+ 		ASSERT(ifp->if_flags & XFS_IFINLINE);
+ 	}
+ 	xfs_idata_realloc(dp, sizeof(*hdr), XFS_ATTR_FORK);
+-	hdr = (xfs_attr_sf_hdr_t *)ifp->if_u1.if_data;
+-	hdr->count = 0;
++	hdr = (struct xfs_attr_sf_hdr *)ifp->if_u1.if_data;
++	memset(hdr, 0, sizeof(*hdr));
+ 	hdr->totsize = cpu_to_be16(sizeof(*hdr));
+ 	xfs_trans_log_inode(args->trans, dp, XFS_ILOG_CORE | XFS_ILOG_ADATA);
+ }
+-- 
+2.35.3
+
