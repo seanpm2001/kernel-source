@@ -52,23 +52,6 @@ diff --git a/net/core/sock.c b/net/core/sock.c
 index 2ca13103c749..9dbca0c72593 100644
 --- a/net/core/sock.c
 +++ b/net/core/sock.c
-@@ -1064,6 +1064,16 @@ int sock_setsockopt(struct socket *sock, int level, int optname,
- }
- EXPORT_SYMBOL(sock_setsockopt);
- 
-+static const struct cred *sk_get_peer_cred(struct sock *sk)
-+{
-+	const struct cred *cred;
-+
-+	spin_lock(&sk->sk_peer_lock);
-+	cred = get_cred(sk->sk_peer_cred);
-+	spin_unlock(&sk->sk_peer_lock);
-+
-+	return cred;
-+}
- 
- static void cred_to_ucred(struct pid *pid, const struct cred *cred,
- 			  struct ucred *ucred)
 @@ -1225,7 +1235,11 @@ int sock_getsockopt(struct socket *sock, int level, int optname,
  		struct ucred peercred;
  		if (len > sizeof(peercred))
