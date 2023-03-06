@@ -21,7 +21,7 @@ Acked-by: NeilBrown <neilb@suse.com>
 
 --- a/fs/nfs/direct.c
 +++ b/fs/nfs/direct.c
-@@ -397,15 +397,21 @@ static void nfs_direct_read_completion(s
+@@ -400,15 +400,21 @@ static void nfs_direct_read_completion(s
  	unsigned long bytes = 0;
  	struct nfs_direct_req *dreq = hdr->dreq;
  
@@ -48,7 +48,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  	spin_unlock(&dreq->lock);
  
  	while (!list_empty(&hdr->pages)) {
-@@ -768,16 +774,19 @@ static void nfs_direct_write_completion(
+@@ -775,16 +781,19 @@ static void nfs_direct_write_completion(
  	bool request_commit = false;
  	struct nfs_page *req = nfs_list_entry(hdr->pages.next);
  
@@ -74,10 +74,10 @@ Acked-by: NeilBrown <neilb@suse.com>
  			if (dreq->flags == NFS_ODIRECT_RESCHED_WRITES)
 --- a/fs/nfs/pagelist.c
 +++ b/fs/nfs/pagelist.c
-@@ -1278,6 +1278,7 @@ int nfs_pageio_resend(struct nfs_pageio_
+@@ -1269,6 +1269,7 @@ int nfs_pageio_resend(struct nfs_pageio_
  	if (!list_empty(&pages)) {
  		int err = desc->pg_error < 0 ? desc->pg_error : -EIO;
- 		hdr->completion_ops->error_cleanup(&pages);
+ 		hdr->completion_ops->error_cleanup(&pages, err);
 +		nfs_set_pgio_error(hdr, err, hdr->io_start);
  		return err;
  	}
