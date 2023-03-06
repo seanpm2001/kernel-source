@@ -29,20 +29,18 @@ Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
 Acked-by: NeilBrown <neilb@suse.com>
 
 ---
- net/sunrpc/sched.c |    4 +++-
- 1 file changed, 3 insertions(+), 1 deletion(-)
+ net/sunrpc/sched.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
 
 --- a/net/sunrpc/sched.c
 +++ b/net/sunrpc/sched.c
-@@ -493,8 +493,10 @@ static struct rpc_task *__rpc_find_next_
- 	if (!list_empty(q)) {
- 		task = list_entry(q->next, struct rpc_task, u.tk_wait.list);
- 		if (queue->owner == task->tk_owner) {
--			if (--queue->nr)
-+			if (queue->nr) {
-+				queue->nr--;
- 				goto out;
-+			}
- 			list_move_tail(&task->u.tk_wait.list, q);
- 		}
- 		/*
+@@ -490,7 +490,8 @@ static struct rpc_task *__rpc_find_next_
+ 	 * Service a batch of tasks from a single owner.
+ 	 */
+ 	q = &queue->tasks[queue->priority];
+-	if (!list_empty(q) && --queue->nr) {
++	if (!list_empty(q) && queue->nr) {
++		queue->nr--;
+ 		task = list_first_entry(q, struct rpc_task, u.tk_wait.list);
+ 		goto out;
+ 	}
