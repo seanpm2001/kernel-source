@@ -119,18 +119,20 @@ Reported-by: syzbot <syzkaller@googlegroups.com>
 Acked-by: Guillaume Nault <gnault@redhat.com>
 Signed-off-by: David S. Miller <davem@davemloft.net>
 Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+Signed-off-by: Denis Kirjanov <dkirjanov@suse.de>
 ---
  net/l2tp/l2tp_core.c |    2 ++
  1 file changed, 2 insertions(+)
 
 --- a/net/l2tp/l2tp_core.c
 +++ b/net/l2tp/l2tp_core.c
-@@ -1480,6 +1480,8 @@ int l2tp_tunnel_create(struct net *net,
- 			 tunnel_id, fd);
- 		goto err;
- 	}
+@@ -1485,6 +1485,9 @@ static int l2tp_validate_socket(const st
+ 	if (sk->sk_type != SOCK_DGRAM)
+ 		return -EPROTONOSUPPORT;
+ 
 +	if (sk->sk_family != PF_INET && sk->sk_family != PF_INET6)
-+		goto err;
- 	switch (encap) {
- 	case L2TP_ENCAPTYPE_UDP:
- 		if (sk->sk_protocol != IPPROTO_UDP) {
++		return -EINVAL;
++
+ 	if ((encap == L2TP_ENCAPTYPE_UDP && sk->sk_protocol != IPPROTO_UDP) ||
+ 	    (encap == L2TP_ENCAPTYPE_IP && sk->sk_protocol != IPPROTO_L2TP))
+ 		return -EPROTONOSUPPORT;
