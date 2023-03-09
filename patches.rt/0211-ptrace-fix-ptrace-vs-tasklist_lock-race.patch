@@ -48,7 +48,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  #define task_contributes_to_load(task)	((task->state & TASK_UNINTERRUPTIBLE) != 0 && \
  					 (task->flags & PF_FROZEN) == 0 && \
  					 (task->state & TASK_NOLOAD) == 0)
-@@ -1535,6 +1531,51 @@ static inline int test_tsk_need_resched(
+@@ -1551,6 +1547,51 @@ static inline int test_tsk_need_resched(
  	return unlikely(test_tsk_thread_flag(tsk,TIF_NEED_RESCHED));
  }
  
@@ -102,10 +102,10 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
   * explicit rescheduling in places that are safe. The return
 --- a/kernel/ptrace.c
 +++ b/kernel/ptrace.c
-@@ -175,7 +175,14 @@ static bool ptrace_freeze_traced(struct
- 
+@@ -190,7 +190,14 @@ static bool ptrace_freeze_traced(struct
  	spin_lock_irq(&task->sighand->siglock);
- 	if (task_is_traced(task) && !__fatal_signal_pending(task)) {
+ 	if (task_is_traced(task) && !looks_like_a_spurious_pid(task) &&
+ 	    !__fatal_signal_pending(task)) {
 -		task->state = __TASK_TRACED;
 +		unsigned long flags;
 +
@@ -120,7 +120,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	spin_unlock_irq(&task->sighand->siglock);
 --- a/kernel/sched/core.c
 +++ b/kernel/sched/core.c
-@@ -1388,6 +1388,18 @@ int migrate_swap(struct task_struct *cur
+@@ -1429,6 +1429,18 @@ out:
  }
  #endif /* CONFIG_NUMA_BALANCING */
  
@@ -139,7 +139,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  /*
   * wait_task_inactive - wait for a thread to unschedule.
   *
-@@ -1432,7 +1444,7 @@ unsigned long wait_task_inactive(struct
+@@ -1473,7 +1485,7 @@ unsigned long wait_task_inactive(struct
  		 * is actually now running somewhere else!
  		 */
  		while (task_running(rq, p)) {
@@ -148,7 +148,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  				return 0;
  			cpu_relax();
  		}
-@@ -1447,7 +1459,8 @@ unsigned long wait_task_inactive(struct
+@@ -1488,7 +1500,8 @@ unsigned long wait_task_inactive(struct
  		running = task_running(rq, p);
  		queued = task_on_rq_queued(p);
  		ncsw = 0;
