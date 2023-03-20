@@ -52,16 +52,15 @@ index 9b42f8dcae9f..ef7dd70a40a1 100644
  	atomic_t rx_gso_checksum_fixup;
  };
  
-@@ -335,6 +340,9 @@ static int xennet_open(struct net_device *dev)
+@@ -335,7 +340,7 @@ static int xennet_open(struct net_device *dev)
  	unsigned int i = 0;
  	struct netfront_queue *queue = NULL;
  
-+	if (np->broken)
-+		return -ENODEV;
-+
+-	if (!np->queues)
++	if (!np->queues || np->broken)
+ 		return -ENODEV;
+ 
  	for (i = 0; i < num_queues; ++i) {
- 		queue = &np->queues[i];
- 		napi_enable(&queue->napi);
 @@ -367,11 +372,17 @@ static void xennet_tx_buf_gc(struct netfront_queue *queue)
  	unsigned short id;
  	struct sk_buff *skb;
