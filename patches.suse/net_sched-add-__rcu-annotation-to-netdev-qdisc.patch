@@ -79,14 +79,14 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
 ---
  include/linux/netdevice.h |  2 +-
  net/core/rtnetlink.c      |  6 ++++--
- net/sched/cls_api.c       |  4 ++--
+ net/sched/cls_api.c       |  6 +++---
  net/sched/sch_api.c       | 22 ++++++++++++----------
  net/sched/sch_generic.c   | 20 +++++++++++---------
- 5 files changed, 30 insertions(+), 24 deletions(-)
+ 5 files changed, 31 insertions(+), 25 deletions(-)
 
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -1816,7 +1816,7 @@ struct net_device {
+@@ -1946,7 +1946,7 @@ struct net_device {
  	struct netdev_queue	*_tx ____cacheline_aligned_in_smp;
  	unsigned int		num_tx_queues;
  	unsigned int		real_num_tx_queues;
@@ -97,7 +97,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  #endif
 --- a/net/core/rtnetlink.c
 +++ b/net/core/rtnetlink.c
-@@ -1347,6 +1347,7 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb, struct net_device *dev,
+@@ -1399,6 +1399,7 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb, struct net_device *dev,
  	struct rtnl_af_ops *af_ops;
  	struct net_device *upper_dev = netdev_master_upper_dev_get(dev);
  	bool put_iflink = false;
@@ -105,7 +105,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  
  	ASSERT_RTNL();
  	nlh = nlmsg_put(skb, pid, seq, type, sizeof(*ifm), flags);
-@@ -1361,6 +1362,7 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb, struct net_device *dev,
+@@ -1413,6 +1414,7 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb, struct net_device *dev,
  	ifm->ifi_flags = dev_get_flags(dev);
  	ifm->ifi_change = change;
  
@@ -113,7 +113,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  	if (nla_put_string(skb, IFLA_IFNAME, dev->name) ||
  	    nla_put_u32(skb, IFLA_TXQLEN, dev->tx_queue_len) ||
  	    nla_put_u8(skb, IFLA_OPERSTATE,
-@@ -1378,8 +1380,8 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb, struct net_device *dev,
+@@ -1430,8 +1432,8 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb, struct net_device *dev,
  	    (upper_dev &&
  	     nla_put_u32(skb, IFLA_MASTER, upper_dev->ifindex)) ||
  	    nla_put_u8(skb, IFLA_CARRIER, netif_carrier_ok(dev)) ||
@@ -126,16 +126,25 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  	    nla_put_u32(skb, IFLA_CARRIER_CHANGES,
 --- a/net/sched/cls_api.c
 +++ b/net/sched/cls_api.c
-@@ -645,7 +645,7 @@ static struct tcf_block *tcf_block_find(
+@@ -645,7 +645,7 @@ static struct tcf_block *tcf_block_find(struct net *net, struct Qdisc **q,
  
  		/* Find qdisc */
  		if (!*parent) {
 -			*q = dev->qdisc;
-+			*q = rtnl_dereference(dev->qdisc);
++			*q = rcu_dereference(dev->qdisc);
  			*parent = (*q)->handle;
  		} else {
  			*q = qdisc_lookup_rcu(dev, TC_H_MAJ(*parent));
-@@ -1757,7 +1757,7 @@ static int tc_dump_tfilter(struct sk_buf
+@@ -1757,7 +1757,7 @@ static int tc_dump_tfilter(struct sk_buff *skb, struct netlink_callback *cb)
+ 
+ 		parent = tcm->tcm_parent;
+ 		if (!parent) {
+-			q = dev->qdisc;
++			q = rtnl_dereference(dev->qdisc);
+ 			parent = q->handle;
+ 		} else {
+ 			q = qdisc_lookup(dev, TC_H_MAJ(tcm->tcm_parent));
+@@ -2085,7 +2085,7 @@ static int tc_dump_chain(struct sk_buff *skb, struct netlink_callback *cb)
  
  		parent = tcm->tcm_parent;
  		if (!parent) {
@@ -146,7 +155,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  			q = qdisc_lookup(dev, TC_H_MAJ(tcm->tcm_parent));
 --- a/net/sched/sch_api.c
 +++ b/net/sched/sch_api.c
-@@ -309,7 +309,7 @@ struct Qdisc *qdisc_lookup(struct net_device *dev, u32 handle)
+@@ -302,7 +302,7 @@ struct Qdisc *qdisc_lookup(struct net_device *dev, u32 handle)
  
  	if (!handle)
  		return NULL;
@@ -155,7 +164,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  	if (q)
  		goto out;
  
-@@ -328,7 +328,7 @@ struct Qdisc *qdisc_lookup_rcu(struct net_device *dev, u32 handle)
+@@ -321,7 +321,7 @@ struct Qdisc *qdisc_lookup_rcu(struct net_device *dev, u32 handle)
  
  	if (!handle)
  		return NULL;
@@ -164,7 +173,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  	if (q)
  		goto out;
  
-@@ -1010,10 +1010,10 @@ static int qdisc_graft(struct net_device
+@@ -1010,10 +1010,10 @@ static int qdisc_graft(struct net_device *dev, struct Qdisc *parent,
  skip:
  		if (!ingress) {
  			notify_and_destroy(net, skb, n, classid,
@@ -177,7 +186,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  
  			if (new && new->ops->attach)
  				new->ops->attach(new);
-@@ -1396,7 +1396,7 @@ static int tc_get_qdisc(struct sk_buff *
+@@ -1401,7 +1401,7 @@ static int tc_get_qdisc(struct sk_buff *skb, struct nlmsghdr *n,
  				q = dev_ingress_queue(dev)->qdisc_sleeping;
  			}
  		} else {
@@ -186,7 +195,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  		}
  		if (!q) {
  			NL_SET_ERR_MSG(extack, "Cannot find specified qdisc on specified device");
-@@ -1485,7 +1485,7 @@ replay:
+@@ -1490,7 +1490,7 @@ static int tc_modify_qdisc(struct sk_buff *skb, struct nlmsghdr *n,
  				q = dev_ingress_queue(dev)->qdisc_sleeping;
  			}
  		} else {
@@ -195,7 +204,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  		}
  
  		/* It may be default qdisc, ignore it */
-@@ -1559,7 +1559,8 @@ static int tc_dump_qdisc(struct sk_buff *skb, struct netlink_callback *cb)
+@@ -1712,7 +1712,8 @@ static int tc_dump_qdisc(struct sk_buff *skb, struct netlink_callback *cb)
  			s_q_idx = 0;
  		q_idx = 0;
  
@@ -205,7 +214,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  				       true, tca[TCA_DUMP_INVISIBLE]) < 0)
  			goto done;
  
-@@ -1646,7 +1647,7 @@ static int tc_ctl_tclass(struct sk_buff *skb, struct nlmsghdr *n,
+@@ -1956,7 +1957,7 @@ static int tc_ctl_tclass(struct sk_buff *skb, struct nlmsghdr *n,
  		} else if (qid1) {
  			qid = qid1;
  		} else if (qid == 0)
@@ -214,7 +223,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  
  		/* Now qid is genuine qdisc handle consistent
  		 * both with parent and child.
-@@ -1657,7 +1658,7 @@ static int tc_ctl_tclass(struct sk_buff *skb, struct nlmsghdr *n,
+@@ -1967,7 +1968,7 @@ static int tc_ctl_tclass(struct sk_buff *skb, struct nlmsghdr *n,
  			portid = TC_H_MAKE(qid, portid);
  	} else {
  		if (qid == 0)
@@ -223,7 +232,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  	}
  
  	/* OK. Locate qdisc */
-@@ -1883,7 +1884,8 @@ static int tc_dump_tclass(struct sk_buff *skb, struct netlink_callback *cb)
+@@ -2128,7 +2129,8 @@ static int tc_dump_tclass(struct sk_buff *skb, struct netlink_callback *cb)
  	s_t = cb->args[0];
  	t = 0;
  
@@ -235,14 +244,15 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  	dev_queue = dev_ingress_queue(dev);
 --- a/net/sched/sch_generic.c
 +++ b/net/sched/sch_generic.c
-@@ -1110,18 +1110,20 @@ static void attach_default_qdiscs(struct
+@@ -1110,18 +1110,20 @@ static void attach_default_qdiscs(struct net_device *dev)
  	if (!netif_is_multiqueue(dev) ||
  	    dev->priv_flags & IFF_NO_QUEUE) {
  		netdev_for_each_tx_queue(dev, attach_one_default_qdisc, NULL);
 -		dev->qdisc = txq->qdisc_sleeping;
+-		qdisc_refcount_inc(dev->qdisc);
 +		qdisc = txq->qdisc_sleeping;
 +		rcu_assign_pointer(dev->qdisc, qdisc);
- 		qdisc_refcount_inc(dev->qdisc);
++		qdisc_refcount_inc(qdisc);
  	} else {
  		qdisc = qdisc_create_dflt(txq, &mq_qdisc_ops, TC_H_ROOT, NULL);
  		if (qdisc) {
@@ -260,7 +270,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  #endif
  }
  
-@@ -854,7 +856,7 @@ void dev_activate(struct net_device *dev)
+@@ -1151,7 +1153,7 @@ void dev_activate(struct net_device *dev)
  	 * and noqueue_qdisc for virtual interfaces
  	 */
  
@@ -269,7 +279,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  		attach_default_qdiscs(dev);
  
  	if (!netif_carrier_ok(dev))
-@@ -979,7 +981,7 @@ static void dev_init_scheduler_queue(struct net_device *dev,
+@@ -1347,7 +1349,7 @@ static void dev_init_scheduler_queue(struct net_device *dev,
  
  void dev_init_scheduler(struct net_device *dev)
  {
@@ -278,7 +288,7 @@ Acked-by: Michal Kubecek <mkubecek@suse.cz>
  	netdev_for_each_tx_queue(dev, dev_init_scheduler_queue, &noop_qdisc);
  	if (dev_ingress_queue(dev))
  		dev_init_scheduler_queue(dev, dev_ingress_queue(dev), &noop_qdisc);
-@@ -1007,8 +1009,8 @@ void dev_shutdown(struct net_device *dev)
+@@ -1375,8 +1377,8 @@ void dev_shutdown(struct net_device *dev)
  	netdev_for_each_tx_queue(dev, shutdown_scheduler_queue, &noop_qdisc);
  	if (dev_ingress_queue(dev))
  		shutdown_scheduler_queue(dev, dev_ingress_queue(dev), &noop_qdisc);
