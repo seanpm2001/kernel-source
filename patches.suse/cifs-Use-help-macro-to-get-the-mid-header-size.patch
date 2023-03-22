@@ -1,0 +1,61 @@
+From: Zhang Xiaoxu <zhangxiaoxu5@huawei.com>
+Date: Tue, 23 Aug 2022 20:52:01 +0800
+Subject: [PATCH] cifs: Use help macro to get the mid header size
+Git-commit: b6b3624d016b980f917b46e6b964f943ac5ac56e
+References: bsc#1190317
+Patch-mainline: v6.0-rc3
+
+It's better to use MID_HEADER_SIZE because the unfolded expression
+too long. No actual functional changes, minor readability improvement.
+
+Signed-off-by: Zhang Xiaoxu <zhangxiaoxu5@huawei.com>
+Reviewed-by: Paulo Alcantara (SUSE) <pc@cjr.nz>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/cifsglob.h |    1 +
+ fs/cifs/connect.c  |    9 +++------
+ 2 files changed, 4 insertions(+), 6 deletions(-)
+
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -541,6 +541,7 @@ struct smb_version_values {
+ #define HEADER_SIZE(server) (server->vals->header_size)
+ #define MAX_HEADER_SIZE(server) (server->vals->max_header_size)
+ #define HEADER_PREAMBLE_SIZE(server) (server->vals->header_preamble_size)
++#define MID_HEADER_SIZE(server) (HEADER_SIZE(server) - 1 - HEADER_PREAMBLE_SIZE(server))
+ 
+ struct smb_vol {
+ 	char *username;
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -1143,8 +1143,7 @@ standard_receive3(struct TCP_Server_Info
+ 
+ 	/* now read the rest */
+ 	length = cifs_read_from_socket(server, buf + HEADER_SIZE(server) - 1,
+-				       pdu_length - HEADER_SIZE(server) + 1 +
+-				       HEADER_PREAMBLE_SIZE(server));
++				       pdu_length - MID_HEADER_SIZE(server));
+ 
+ 	if (length < 0)
+ 		return length;
+@@ -1274,8 +1273,7 @@ next_pdu:
+ 		server->pdu_size = pdu_length;
+ 
+ 		/* make sure we have enough to get to the MID */
+-		if (server->pdu_size < HEADER_SIZE(server) - 1 -
+-		    HEADER_PREAMBLE_SIZE(server)) {
++		if (server->pdu_size < MID_HEADER_SIZE(server)) {
+ 			cifs_server_dbg(VFS, "SMB response too short (%u bytes)\n",
+ 				 server->pdu_size);
+ 			cifs_reconnect(server);
+@@ -1285,8 +1283,7 @@ next_pdu:
+ 		/* read down to the MID */
+ 		length = cifs_read_from_socket(server,
+ 			     buf + HEADER_PREAMBLE_SIZE(server),
+-			     HEADER_SIZE(server) - 1 -
+-			     HEADER_PREAMBLE_SIZE(server));
++			     MID_HEADER_SIZE(server));
+ 		if (length < 0)
+ 			continue;
+ 		server->total_read += length;
