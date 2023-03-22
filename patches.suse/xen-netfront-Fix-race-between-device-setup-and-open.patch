@@ -1,0 +1,178 @@
+Patch-mainline: v4.16-rc1
+Git-commit: f599c64fdf7d9c108e8717fb04bc41c680120da4
+References: git-fixes
+From: Ross Lagerwall <ross.lagerwall@citrix.com>
+Date: Thu, 11 Jan 2018 09:36:38 +0000
+Subject: [PATCH] xen-netfront: Fix race between device setup and open
+
+When a netfront device is set up it registers a netdev fairly early on,
+before it has set up the queues and is actually usable. A userspace tool
+like NetworkManager will immediately try to open it and access its state
+as soon as it appears. The bug can be reproduced by hotplugging VIFs
+until the VM runs out of grant refs. It registers the netdev but fails
+to set up any queues (since there are no more grant refs). In the
+meantime, NetworkManager opens the device and the kernel crashes trying
+to access the queues (of which there are none).
+
+Fix this in two ways:
+* For initial setup, register the netdev much later, after the queues
+are setup. This avoids the race entirely.
+* During a suspend/resume cycle, the frontend reconnects to the backend
+and the queues are recreated. It is possible (though highly unlikely) to
+race with something opening the device and accessing the queues after
+they have been destroyed but before they have been recreated. Extend the
+region covered by the rtnl semaphore to protect against this race. There
+is a possibility that we fail to recreate the queues so check for this
+in the open function.
+
+Signed-off-by: Ross Lagerwall <ross.lagerwall@citrix.com>
+Reviewed-by: Boris Ostrovsky <boris.ostrovsky@oracle.com>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+---
+ drivers/net/xen-netfront.c | 46 ++++++++++++++++++++------------------
+ 1 file changed, 24 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/net/xen-netfront.c b/drivers/net/xen-netfront.c
+index 9bd7ddeeb6a5..8328d395e332 100644
+--- a/drivers/net/xen-netfront.c
++++ b/drivers/net/xen-netfront.c
+@@ -351,6 +351,9 @@ static int xennet_open(struct net_device *dev)
+ 	unsigned int i = 0;
+ 	struct netfront_queue *queue = NULL;
+ 
++	if (!np->queues)
++		return -ENODEV;
++
+ 	for (i = 0; i < num_queues; ++i) {
+ 		queue = &np->queues[i];
+ 		napi_enable(&queue->napi);
+@@ -1358,18 +1361,8 @@ static int netfront_probe(struct xenbus_device *dev,
+ #ifdef CONFIG_SYSFS
+ 	info->netdev->sysfs_groups[0] = &xennet_dev_group;
+ #endif
+-	err = register_netdev(info->netdev);
+-	if (err) {
+-		pr_warn("%s: register_netdev err=%d\n", __func__, err);
+-		goto fail;
+-	}
+ 
+ 	return 0;
+-
+- fail:
+-	xennet_free_netdev(netdev);
+-	dev_set_drvdata(&dev->dev, NULL);
+-	return err;
+ }
+ 
+ static void xennet_end_access(int ref, void *page)
+@@ -1737,8 +1730,6 @@ static void xennet_destroy_queues(struct netfront_info *info)
+ {
+ 	unsigned int i;
+ 
+-	rtnl_lock();
+-
+ 	for (i = 0; i < info->netdev->real_num_tx_queues; i++) {
+ 		struct netfront_queue *queue = &info->queues[i];
+ 
+@@ -1747,8 +1738,6 @@ static void xennet_destroy_queues(struct netfront_info *info)
+ 		netif_napi_del(&queue->napi);
+ 	}
+ 
+-	rtnl_unlock();
+-
+ 	kfree(info->queues);
+ 	info->queues = NULL;
+ }
+@@ -1764,8 +1753,6 @@ static int xennet_create_queues(struct netfront_info *info,
+ 	if (!info->queues)
+ 		return -ENOMEM;
+ 
+-	rtnl_lock();
+-
+ 	for (i = 0; i < *num_queues; i++) {
+ 		struct netfront_queue *queue = &info->queues[i];
+ 
+@@ -1774,7 +1761,7 @@ static int xennet_create_queues(struct netfront_info *info,
+ 
+ 		ret = xennet_init_queue(queue);
+ 		if (ret < 0) {
+-			dev_warn(&info->netdev->dev,
++			dev_warn(&info->xbdev->dev,
+ 				 "only created %d queues\n", i);
+ 			*num_queues = i;
+ 			break;
+@@ -1788,10 +1775,8 @@ static int xennet_create_queues(struct netfront_info *info,
+ 
+ 	netif_set_real_num_tx_queues(info->netdev, *num_queues);
+ 
+-	rtnl_unlock();
+-
+ 	if (*num_queues == 0) {
+-		dev_err(&info->netdev->dev, "no queues\n");
++		dev_err(&info->xbdev->dev, "no queues\n");
+ 		return -EINVAL;
+ 	}
+ 	return 0;
+@@ -1828,6 +1813,7 @@ static int talk_to_netback(struct xenbus_device *dev,
+ 		goto out;
+ 	}
+ 
++	rtnl_lock();
+ 	if (info->queues)
+ 		xennet_destroy_queues(info);
+ 
+@@ -1838,6 +1824,7 @@ static int talk_to_netback(struct xenbus_device *dev,
+ 		info->queues = NULL;
+ 		goto out;
+ 	}
++	rtnl_unlock();
+ 
+ 	/* Create shared ring, alloc event channel -- for each queue */
+ 	for (i = 0; i < num_queues; ++i) {
+@@ -1934,8 +1921,10 @@ static int talk_to_netback(struct xenbus_device *dev,
+ 	xenbus_transaction_end(xbt, 1);
+  destroy_ring:
+ 	xennet_disconnect_backend(info);
++	rtnl_lock();
+ 	xennet_destroy_queues(info);
+  out:
++	rtnl_unlock();
+ 	device_unregister(&dev->dev);
+ 	return err;
+ }
+@@ -1965,6 +1954,15 @@ static int xennet_connect(struct net_device *dev)
+ 	netdev_update_features(dev);
+ 	rtnl_unlock();
+ 
++	if (dev->reg_state == NETREG_UNINITIALIZED) {
++		err = register_netdev(dev);
++		if (err) {
++			pr_warn("%s: register_netdev err=%d\n", __func__, err);
++			device_unregister(&np->xbdev->dev);
++			return err;
++		}
++	}
++
+ 	/*
+ 	 * All public and private state should now be sane.  Get
+ 	 * ready to start sending and receiving packets and give the driver
+@@ -2150,10 +2148,14 @@ static int xennet_remove(struct xenbus_device *dev)
+ 
+ 	xennet_disconnect_backend(info);
+ 
+-	unregister_netdev(info->netdev);
++	if (info->netdev->reg_state == NETREG_REGISTERED)
++		unregister_netdev(info->netdev);
+ 
+-	if (info->queues)
++	if (info->queues) {
++		rtnl_lock();
+ 		xennet_destroy_queues(info);
++		rtnl_unlock();
++	}
+ 	xennet_free_netdev(info->netdev);
+ 
+ 	return 0;
+-- 
+2.35.3
+
