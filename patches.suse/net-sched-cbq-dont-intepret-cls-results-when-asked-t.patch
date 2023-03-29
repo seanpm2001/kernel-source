@@ -4,7 +4,7 @@ Date: Sun, 1 Jan 2023 16:57:44 -0500
 Subject: [PATCH 2/2] net: sched: cbq: dont intepret cls results when asked to
  drop
 Git-commit: caa4b35b4317d5147b3ab0fbdc9c075c7d2e9c12
-References: bsc#1207036 CVE-2023-23454
+References: bsc#1207036 CVE-2023-23454 bsc#1207125 CVE-2023-23455
 Patch-mainline: v6.2-rc3
 
 If asked to drop a packet via TC_ACT_SHOT it is unsafe to assume that
@@ -117,14 +117,12 @@ Signed-off-by: Jamal Hadi Salim <jhs@mojatatu.com>
 Signed-off-by: David S. Miller <davem@davemloft.net>
 Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
 ---
- net/sched/sch_cbq.c | 4 ++--
+ net/sched/sch_cbq.c |    4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)
 
-diff --git a/net/sched/sch_cbq.c b/net/sched/sch_cbq.c
-index b3f30dac687c..fe146f223b26 100644
 --- a/net/sched/sch_cbq.c
 +++ b/net/sched/sch_cbq.c
-@@ -237,6 +237,8 @@ cbq_classify(struct sk_buff *skb, struct Qdisc *sch, int *qerr)
+@@ -236,6 +236,8 @@ cbq_classify(struct sk_buff *skb, struct
  		result = tcf_classify(skb, fl, &res, true);
  		if (!fl || result < 0)
  			goto fallback;
@@ -133,15 +131,12 @@ index b3f30dac687c..fe146f223b26 100644
  
  		cl = (void *)res.class;
  		if (!cl) {
-@@ -256,8 +256,6 @@ cbq_classify(struct sk_buff *skb, struct
+@@ -255,8 +257,6 @@ cbq_classify(struct sk_buff *skb, struct
+ 		case TC_ACT_STOLEN:
  		case TC_ACT_TRAP:
  			*qerr = NET_XMIT_SUCCESS | __NET_XMIT_STOLEN;
- 			/* fall through */
+-			/* fall through */
 -		case TC_ACT_SHOT:
--			return NULL;
+ 			return NULL;
  		case TC_ACT_RECLASSIFY:
  			return cbq_reclassify(skb, cl);
- 		}
--- 
-2.16.4
-
