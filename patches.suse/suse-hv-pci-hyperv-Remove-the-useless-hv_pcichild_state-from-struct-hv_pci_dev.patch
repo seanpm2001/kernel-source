@@ -1,0 +1,50 @@
+From: Dexuan Cui <decui@microsoft.com>
+Date: Mon, 27 Mar 2023 21:51:19 -0700
+Patch-mainline: not yet, https://lwn.net/ml/linux-kernel/20230328045122.25850-1-decui%40microsoft.com/
+Subject: PCI: hv: Remove the useless hv_pcichild_state from struct hv_pci_dev
+References: bsc#1207001
+
+The hpdev->state is never really useful. The only use in
+hv_pci_eject_device() and hv_eject_device_work() is not really necessary.
+
+Signed-off-by: Dexuan Cui <decui@microsoft.com>
+Acked-by: Olaf Hering <ohering@suse.de>
+--- a/drivers/pci/host/pci-hyperv.c
++++ b/drivers/pci/host/pci-hyperv.c
+@@ -522,19 +522,10 @@ struct hv_dr_state {
+ 	struct hv_pcidev_description func[0];
+ };
+ 
+-enum hv_pcichild_state {
+-	hv_pcichild_init = 0,
+-	hv_pcichild_requirements,
+-	hv_pcichild_resourced,
+-	hv_pcichild_ejecting,
+-	hv_pcichild_maximum
+-};
+-
+ struct hv_pci_dev {
+ 	/* List protected by pci_rescan_remove_lock */
+ 	struct list_head list_entry;
+ 	refcount_t refs;
+-	enum hv_pcichild_state state;
+ 	struct pci_slot *pci_slot;
+ 	struct hv_pcidev_description desc;
+ 	bool reported_missing;
+@@ -2203,8 +2194,6 @@ static void hv_eject_device_work(struct
+ 	hpdev = container_of(work, struct hv_pci_dev, wrk);
+ 	hbus = hpdev->hbus;
+ 
+-	WARN_ON(hpdev->state != hv_pcichild_ejecting);
+-
+ 	/*
+ 	 * Ejection can come before or after the PCI bus has been set up, so
+ 	 * attempt to find it and tear down the bus state, if it exists.  This
+@@ -2253,7 +2242,6 @@ static void hv_eject_device_work(struct
+  */
+ static void hv_pci_eject_device(struct hv_pci_dev *hpdev)
+ {
+-	hpdev->state = hv_pcichild_ejecting;
+ 	get_pcichild(hpdev);
+ 	INIT_WORK(&hpdev->wrk, hv_eject_device_work);
+ 	queue_work(hpdev->hbus->wq, &hpdev->wrk);
