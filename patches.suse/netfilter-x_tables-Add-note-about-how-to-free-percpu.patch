@@ -1,0 +1,39 @@
+From 7bd705045508a319acf9d9e01b5e5fc52f39201c Mon Sep 17 00:00:00 2001
+From: Ben Hutchings <ben.hutchings@codethink.co.uk>
+Date: Thu, 29 Mar 2018 15:12:41 +0100
+Subject: [PATCH 3/3] netfilter: x_tables: Add note about how to free percpu
+ counters
+Git-commit: 9ba5c404bf1d6284f0269411b33394362b7ff405
+Patch-mainline: v4.17-rc1
+References: git-fixes
+
+Due to the way percpu counters are allocated and freed in blocks,
+it is not safe to free counters individually.  Currently all callers
+do the right thing, but let's note this restriction.
+
+Fixes: ae0ac0ed6fcf ("netfilter: x_tables: pack percpu counter allocations")
+Signed-off-by: Ben Hutchings <ben.hutchings@codethink.co.uk>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/netfilter/x_tables.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/net/netfilter/x_tables.c b/net/netfilter/x_tables.c
+index 1c02e2d22824..4ec2f40d9521 100644
+--- a/net/netfilter/x_tables.c
++++ b/net/netfilter/x_tables.c
+@@ -1696,7 +1696,9 @@ EXPORT_SYMBOL_GPL(xt_proto_fini);
+  * to fetch the real percpu counter.
+  *
+  * To speed up allocation and improve data locality, a 4kb block is
+- * allocated.
++ * allocated.  Freeing any counter may free an entire block, so all
++ * counters allocated using the same state must be freed at the same
++ * time.
+  *
+  * xt_percpu_counter_alloc_state contains the base address of the
+  * allocated page and the current sub-offset.
+-- 
+2.16.4
+

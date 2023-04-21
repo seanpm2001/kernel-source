@@ -1,0 +1,49 @@
+From 6c76eb9d6fd52ba9d56144697fcc5b418dd453f2 Mon Sep 17 00:00:00 2001
+From: Guillaume Nault <g.nault@alphalink.fr>
+Date: Wed, 13 Jun 2018 15:09:18 +0200
+Subject: [PATCH 2/4] l2tp: fix pseudo-wire type for sessions created by
+ pppol2tp_connect()
+Git-commit: 90904ff5f958a215cc3d26f957a46e80fa178470
+Patch-mainline: v4.18-rc1
+References: git-fixes
+
+Define cfg.pw_type so that the new session is created with its .pwtype
+field properly set (L2TP_PWTYPE_PPP).
+
+Not setting the pseudo-wire type had several annoying effects:
+
+  * Invalid value returned in the L2TP_ATTR_PW_TYPE attribute when
+    dumping sessions with the netlink API.
+
+  * Impossibility to delete the session using the netlink API (because
+    l2tp_nl_cmd_session_delete() gets the deletion callback function
+    from an array indexed by the session's pseudo-wire type).
+
+Also, there are several cases where we should check a session's
+pseudo-wire type. For example, pppol2tp_connect() should refuse to
+connect a session that is not PPPoL2TP, but that requires the session's
+.pwtype field to be properly set.
+
+Fixes: f7faffa3ff8e ("l2tp: Add L2TPv3 protocol support")
+Signed-off-by: Guillaume Nault <g.nault@alphalink.fr>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/l2tp/l2tp_ppp.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/net/l2tp/l2tp_ppp.c b/net/l2tp/l2tp_ppp.c
+index a05dea0a5a8e..3f72982dc8da 100644
+--- a/net/l2tp/l2tp_ppp.c
++++ b/net/l2tp/l2tp_ppp.c
+@@ -793,6 +793,7 @@ static int pppol2tp_connect(struct socket *sock, struct sockaddr *uservaddr,
+ 		/* Default MTU must allow space for UDP/L2TP/PPP headers */
+ 		cfg.mtu = 1500 - PPPOL2TP_HEADER_OVERHEAD;
+ 		cfg.mru = cfg.mtu;
++		cfg.pw_type = L2TP_PWTYPE_PPP;
+ 
+ 		session = l2tp_session_create(sizeof(struct pppol2tp_session),
+ 					      tunnel, session_id,
+-- 
+2.16.4
+
