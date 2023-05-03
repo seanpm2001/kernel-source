@@ -1,0 +1,46 @@
+From: Eric Biggers <ebiggers@google.com>
+Date: Mon, 19 Dec 2022 21:40:40 -0800
+Subject: crypto: x86/ghash - fix unaligned access in ghash_setkey()
+Git-commit: 116db2704c193fff6d73ea6c2219625f0c9bdfc8
+Patch-mainline: v6.3-rc1
+References: git-fixes
+
+The key can be unaligned, so use the unaligned memory access helpers.
+
+Fixes: 8ceee72808d1 ("crypto: ghash-clmulni-intel - use C implementation for setkey()")
+Signed-off-by: Eric Biggers <ebiggers@google.com>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Acked-by: Nikolay Borisov <nik.borisov@suse.com>
+---
+ arch/x86/crypto/ghash-clmulni-intel_glue.c |    6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+--- a/arch/x86/crypto/ghash-clmulni-intel_glue.c
++++ b/arch/x86/crypto/ghash-clmulni-intel_glue.c
+@@ -21,6 +21,7 @@
+ #include <crypto/internal/hash.h>
+ #include <asm/fpu/api.h>
+ #include <asm/cpu_device_id.h>
++#include <asm/unaligned.h>
+ 
+ #define GHASH_BLOCK_SIZE	16
+ #define GHASH_DIGEST_SIZE	16
+@@ -56,7 +57,6 @@ static int ghash_setkey(struct crypto_sh
+ 			const u8 *key, unsigned int keylen)
+ {
+ 	struct ghash_ctx *ctx = crypto_shash_ctx(tfm);
+-	be128 *x = (be128 *)key;
+ 	u64 a, b;
+ 
+ 	if (keylen != GHASH_BLOCK_SIZE) {
+@@ -65,8 +65,8 @@ static int ghash_setkey(struct crypto_sh
+ 	}
+ 
+ 	/* perform multiplication by 'x' in GF(2^128) */
+-	a = be64_to_cpu(x->a);
+-	b = be64_to_cpu(x->b);
++	a = get_unaligned_be64(key);
++	b = get_unaligned_be64(key+8);
+ 
+ 	ctx->shash.a = (b << 1) | (a >> 63);
+ 	ctx->shash.b = (a << 1) | (b >> 63);
