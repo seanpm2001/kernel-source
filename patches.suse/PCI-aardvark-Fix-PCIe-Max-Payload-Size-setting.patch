@@ -1,0 +1,48 @@
+From: =?UTF-8?q?Pali=20Roh=C3=A1r?= <pali@kernel.org>
+Date: Tue, 5 Oct 2021 20:09:41 +0200
+Subject: PCI: aardvark: Fix PCIe Max Payload Size setting
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Git-commit: a4e17d65dafdd3513042d8f00404c9b6068a825c
+Patch-mainline: 5.16-rc1
+References: git-fixes
+
+Change PCIe Max Payload Size setting in PCIe Device Control register to 512
+bytes to align with PCIe Link Initialization sequence as defined in Marvell
+Armada 3700 Functional Specification. According to the specification,
+maximal Max Payload Size supported by this device is 512 bytes.
+
+Without this kernel prints suspicious line:
+
+    pci 0000:01:00.0: Upstream bridge's Max Payload Size set to 256 (was 16384, max 512)
+
+With this change it changes to:
+
+    pci 0000:01:00.0: Upstream bridge's Max Payload Size set to 256 (was 512, max 512)
+
+[js] 4.12 uses old macros, so use 2 instead of 7 (0xe0 -> 0x40)
+
+Link: https://lore.kernel.org/r/20211005180952.6812-3-kabel@kernel.org
+Fixes: 8c39d710363c ("PCI: aardvark: Add Aardvark PCI host controller driver")
+Signed-off-by: Pali Rohár <pali@kernel.org>
+Signed-off-by: Marek Behún <kabel@kernel.org>
+Signed-off-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
+Reviewed-by: Marek Behún <kabel@kernel.org>
+Cc: stable@vger.kernel.org
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ drivers/pci/host/pci-aardvark.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/pci/host/pci-aardvark.c
++++ b/drivers/pci/host/pci-aardvark.c
+@@ -411,7 +411,7 @@ static void advk_pcie_setup_hw(struct ad
+ 
+ 	/* Set PCIe Device Control and Status 1 PF0 register */
+ 	reg = PCIE_CORE_DEV_CTRL_STATS_RELAX_ORDER_DISABLE |
+-		(7 << PCIE_CORE_DEV_CTRL_STATS_MAX_PAYLOAD_SZ_SHIFT) |
++		(2 << PCIE_CORE_DEV_CTRL_STATS_MAX_PAYLOAD_SZ_SHIFT) |
+ 		PCIE_CORE_DEV_CTRL_STATS_SNOOP_DISABLE |
+ 		(PCIE_CORE_DEV_CTRL_STATS_MAX_RD_REQ_SZ <<
+ 		 PCIE_CORE_DEV_CTRL_STATS_MAX_RD_REQ_SIZE_SHIFT);
