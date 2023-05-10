@@ -1,9 +1,12 @@
+From 0a4ec6aa035a52c422eceb2ed51ed88392a3d6c2 Mon Sep 17 00:00:00 2001
 From: "Gautham R. Shenoy" <ego@linux.vnet.ibm.com>
 Date: Thu, 31 May 2018 17:45:09 +0530
-Subject: cpuidle: powernv: Fix promotion from snooze if next state disabled
+Subject: [PATCH] cpuidle: powernv: Fix promotion from snooze if next state
+ disabled
+
+References: bsc#1100884
 Patch-mainline: v4.18-rc1
 Git-commit: 0a4ec6aa035a52c422eceb2ed51ed88392a3d6c2
-References: bsc#1100884
 
 The commit 78eaa10f027c ("cpuidle: powernv/pseries: Auto-promotion of
 snooze to deeper idle state") introduced a timeout for the snooze idle
@@ -80,18 +83,20 @@ Reviewed-by: Balbir Singh <bsingharora@gmail.com>
 Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
 Acked-by: Giovanni Gherdovich <ggherdovich@suse.cz>
 ---
- drivers/cpuidle/cpuidle-powernv.c |   32 ++++++++++++++++++++++++++------
+ drivers/cpuidle/cpuidle-powernv.c | 32 +++++++++++++++++++++++++------
  1 file changed, 26 insertions(+), 6 deletions(-)
 
+diff --git a/drivers/cpuidle/cpuidle-powernv.c b/drivers/cpuidle/cpuidle-powernv.c
+index 1a8234e706bc..d29e4f041efe 100644
 --- a/drivers/cpuidle/cpuidle-powernv.c
 +++ b/drivers/cpuidle/cpuidle-powernv.c
-@@ -42,9 +42,31 @@ struct stop_psscr_table {
+@@ -43,9 +43,31 @@ struct stop_psscr_table {
  
- static struct stop_psscr_table stop_psscr_table[CPUIDLE_STATE_MAX];
+ static struct stop_psscr_table stop_psscr_table[CPUIDLE_STATE_MAX] __read_mostly;
  
--static u64 snooze_timeout;
-+static u64 default_snooze_timeout;
- static bool snooze_timeout_en;
+-static u64 snooze_timeout __read_mostly;
++static u64 default_snooze_timeout __read_mostly;
+ static bool snooze_timeout_en __read_mostly;
  
 +static u64 get_snooze_timeout(struct cpuidle_device *dev,
 +			      struct cpuidle_driver *drv,
@@ -118,16 +123,16 @@ Acked-by: Giovanni Gherdovich <ggherdovich@suse.cz>
  static int snooze_loop(struct cpuidle_device *dev,
  			struct cpuidle_driver *drv,
  			int index)
-@@ -54,7 +76,7 @@ static int snooze_loop(struct cpuidle_de
+@@ -56,7 +78,7 @@ static int snooze_loop(struct cpuidle_device *dev,
+ 
  	local_irq_enable();
- 	set_thread_flag(TIF_POLLING_NRFLAG);
  
 -	snooze_exit_time = get_tb() + snooze_timeout;
 +	snooze_exit_time = get_tb() + get_snooze_timeout(dev, drv, index);
  	ppc64_runlatch_off();
  	HMT_very_low();
  	while (!need_resched()) {
-@@ -453,11 +475,9 @@ static int powernv_idle_probe(void)
+@@ -465,11 +487,9 @@ static int powernv_idle_probe(void)
  		cpuidle_state_table = powernv_states;
  		/* Device tree can indicate more idle states */
  		max_idle_state = powernv_add_idle_states();
@@ -141,3 +146,6 @@ Acked-by: Giovanni Gherdovich <ggherdovich@suse.cz>
   	} else
   		return -ENODEV;
  
+-- 
+2.40.0
+
