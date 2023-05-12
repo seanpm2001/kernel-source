@@ -1,0 +1,32 @@
+From: Vasily Gorbik <gor@linux.ibm.com>
+Date: Sun, 24 Jun 2018 09:21:59 +0200
+Subject: s390/dasd: correct numa_node in dasd_alloc_queue
+Git-commit: b17e3abb0af404cb62ad4ef1a5962f58b06e2b78
+Patch-mainline: v4.19-rc1
+References: git-fixes bsc#1211362
+
+The numa_node field of the tag_set struct has to be explicitly
+initialized, otherwise it stays as 0, which is a valid numa node id and
+cause memory allocation failure if node 0 is offline.
+
+Acked-by: Stefan Haberland <sth@linux.ibm.com>
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Acked-by: Miroslav Franc <mfranc@suse.cz>
+---
+ drivers/s390/block/dasd.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/s390/block/dasd.c b/drivers/s390/block/dasd.c
+index d3a38c421503..7c3dddeb781c 100644
+--- a/drivers/s390/block/dasd.c
++++ b/drivers/s390/block/dasd.c
+@@ -3120,6 +3120,7 @@ static int dasd_alloc_queue(struct dasd_block *block)
+ 	block->tag_set.nr_hw_queues = nr_hw_queues;
+ 	block->tag_set.queue_depth = queue_depth;
+ 	block->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
++	block->tag_set.numa_node = NUMA_NO_NODE;
+ 
+ 	rc = blk_mq_alloc_tag_set(&block->tag_set);
+ 	if (rc)
+
