@@ -17,11 +17,11 @@ Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
  fs/cifs/dir.c       |   19 ++---
  fs/cifs/file.c      |   35 +++++-----
  fs/cifs/inode.c     |   53 ++++++++-------
- fs/cifs/link.c      |   65 ++++++++++---------
+ fs/cifs/link.c      |   67 ++++++++++---------
  fs/cifs/smb1ops.c   |   72 +++++++++++----------
  fs/cifs/smb2inode.c |   17 ++--
  fs/cifs/smb2ops.c   |  177 +++++++++++++++++++++++++++-------------------------
- 9 files changed, 260 insertions(+), 229 deletions(-)
+ 9 files changed, 261 insertions(+), 230 deletions(-)
 
 --- a/fs/cifs/cifsacl.c
 +++ b/fs/cifs/cifsacl.c
@@ -75,7 +75,7 @@ Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
  	if (rc) {
 --- a/fs/cifs/cifssmb.c
 +++ b/fs/cifs/cifssmb.c
-@@ -5536,14 +5536,15 @@ CIFSSMBSetPathInfoFB(const unsigned int
+@@ -5539,14 +5539,15 @@ CIFSSMBSetPathInfoFB(const unsigned int
  	struct cifs_fid fid;
  	int rc;
  
@@ -326,7 +326,7 @@ Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
  
  	utf16_path = cifs_convert_path_to_utf16(path, cifs_sb);
  	if (utf16_path == NULL)
-@@ -464,13 +467,15 @@ smb3_create_mf_symlink(unsigned int xid,
+@@ -464,14 +467,16 @@ smb3_create_mf_symlink(unsigned int xid,
  	if (!utf16_path)
  		return -ENOMEM;
  
@@ -337,14 +337,16 @@ Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
 -	oparms.disposition = FILE_CREATE;
 -	oparms.fid = &fid;
 -	oparms.reconnect = false;
+-	oparms.mode = 0644;
 +	oparms = (struct cifs_open_parms) {
 +		.tcon = tcon,
-+			.cifs_sb = cifs_sb,
-+			.desired_access = GENERIC_WRITE,
-+			.create_options = cifs_create_options(cifs_sb, CREATE_NOT_DIR),
-+			.disposition = FILE_CREATE,
-+			.fid = &fid,
-+			.mode = 0644,
++		.cifs_sb = cifs_sb,
++		.desired_access = GENERIC_WRITE,
++		.create_options = cifs_create_options(cifs_sb, CREATE_NOT_DIR),
++		.disposition = FILE_CREATE,
++		.fid = &fid,
++		.reconnect = false,
++		.mode = 0644,
 +	};
  
  	rc = SMB2_open(xid, &oparms, utf16_path, &oplock, NULL, NULL,
