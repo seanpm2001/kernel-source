@@ -1,0 +1,96 @@
+From b1eef66295a6c4f4f42b235592b339a8fa0d067c Mon Sep 17 00:00:00 2001
+From: Marcelo Ricardo Leitner <marcelo.leitner@gmail.com>
+Date: Mon, 8 Jan 2018 19:02:29 -0200
+Subject: [PATCH 5/7] sctp: make use of pre-calculated len
+Git-commit: c76f97c99ae6d26d14c7f0e50e074382bfbc9f98
+Patch-mainline: 4.15-rc8
+References: git-fixes
+
+Some sockopt handling functions were calculating the length of the
+buffer to be written to userspace and then calculating it again when
+actually writing the buffer, which could lead to some write not using
+an up-to-date length.
+
+This patch updates such places to just make use of the len variable.
+
+Also, replace some sizeof(type) to sizeof(var).
+
+Signed-off-by: Marcelo Ricardo Leitner <marcelo.leitner@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/sctp/socket.c | 16 ++++++++++------
+ 1 file changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/net/sctp/socket.c b/net/sctp/socket.c
+index 4713dd8f5ecf..7e2914216f0f 100644
+--- a/net/sctp/socket.c
++++ b/net/sctp/socket.c
+@@ -4983,7 +4983,7 @@ static int sctp_getsockopt_autoclose(struct sock *sk, int len, char __user *optv
+ 	len = sizeof(int);
+ 	if (put_user(len, optlen))
+ 		return -EFAULT;
+-	if (copy_to_user(optval, &sctp_sk(sk)->autoclose, sizeof(int)))
++	if (copy_to_user(optval, &sctp_sk(sk)->autoclose, len))
+ 		return -EFAULT;
+ 	return 0;
+ }
+@@ -5560,6 +5560,9 @@ static int sctp_getsockopt_local_addrs(struct sock *sk, int len,
+ 		err = -EFAULT;
+ 		goto out;
+ 	}
++	/* XXX: We should have accounted for sizeof(struct sctp_getaddrs) too,
++	 * but we can't change it anymore.
++	 */
+ 	if (put_user(bytes_copied, optlen))
+ 		err = -EFAULT;
+ out:
+@@ -5996,7 +5999,7 @@ static int sctp_getsockopt_maxseg(struct sock *sk, int len,
+ 		params.assoc_id = 0;
+ 	} else if (len >= sizeof(struct sctp_assoc_value)) {
+ 		len = sizeof(struct sctp_assoc_value);
+-		if (copy_from_user(&params, optval, sizeof(params)))
++		if (copy_from_user(&params, optval, len))
+ 			return -EFAULT;
+ 	} else
+ 		return -EINVAL;
+@@ -6165,7 +6168,9 @@ static int sctp_getsockopt_active_key(struct sock *sk, int len,
+ 
+ 	if (len < sizeof(struct sctp_authkeyid))
+ 		return -EINVAL;
+-	if (copy_from_user(&val, optval, sizeof(struct sctp_authkeyid)))
++
++	len = sizeof(struct sctp_authkeyid);
++	if (copy_from_user(&val, optval, len))
+ 		return -EFAULT;
+ 
+ 	asoc = sctp_id2assoc(sk, val.scact_assoc_id);
+@@ -6177,7 +6182,6 @@ static int sctp_getsockopt_active_key(struct sock *sk, int len,
+ 	else
+ 		val.scact_keynumber = ep->active_key_id;
+ 
+-	len = sizeof(struct sctp_authkeyid);
+ 	if (put_user(len, optlen))
+ 		return -EFAULT;
+ 	if (copy_to_user(optval, &val, len))
+@@ -6203,7 +6207,7 @@ static int sctp_getsockopt_peer_auth_chunks(struct sock *sk, int len,
+ 	if (len < sizeof(struct sctp_authchunks))
+ 		return -EINVAL;
+ 
+-	if (copy_from_user(&val, optval, sizeof(struct sctp_authchunks)))
++	if (copy_from_user(&val, optval, sizeof(val)))
+ 		return -EFAULT;
+ 
+ 	to = p->gauth_chunks;
+@@ -6248,7 +6252,7 @@ static int sctp_getsockopt_local_auth_chunks(struct sock *sk, int len,
+ 	if (len < sizeof(struct sctp_authchunks))
+ 		return -EINVAL;
+ 
+-	if (copy_from_user(&val, optval, sizeof(struct sctp_authchunks)))
++	if (copy_from_user(&val, optval, sizeof(val)))
+ 		return -EFAULT;
+ 
+ 	to = p->gauth_chunks;
+-- 
+2.16.4
+

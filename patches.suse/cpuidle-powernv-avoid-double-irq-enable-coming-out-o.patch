@@ -1,0 +1,63 @@
+From ced54c08d8e4060d59c10629ea5a4ccdaed6898e Mon Sep 17 00:00:00 2001
+From: Nicholas Piggin <npiggin@gmail.com>
+Date: Fri, 17 Nov 2017 02:00:52 +1000
+Subject: [PATCH] cpuidle/powernv: avoid double irq enable coming out of idle
+
+References: PED-3947 bsc#1210544 ltc#202303
+Patch-mainline: v4.16-rc1
+Git-commit: ced54c08d8e4060d59c10629ea5a4ccdaed6898e
+
+Since e1689795a7 ("cpuidle: Add common time keeping and irq enabling"),
+cpuidle drivers are expected to return from ->enter with irqs disabled.
+
+Update the cpuidle-powernv snooze and cede loops to disable irqs before
+returning.
+
+Signed-off-by: Nicholas Piggin <npiggin@gmail.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ drivers/cpuidle/cpuidle-pseries.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/cpuidle/cpuidle-pseries.c b/drivers/cpuidle/cpuidle-pseries.c
+index a187a39fb866..0f2b697cbb27 100644
+--- a/drivers/cpuidle/cpuidle-pseries.c
++++ b/drivers/cpuidle/cpuidle-pseries.c
+@@ -51,8 +51,6 @@ static inline void idle_loop_epilog(unsigned long in_purr)
+ 	get_lppaca()->wait_state_cycles = cpu_to_be64(wait_cycles);
+ 	get_lppaca()->idle = 0;
+ 
+-	if (irqs_disabled())
+-		local_irq_enable();
+ 	ppc64_runlatch_on();
+ }
+ 
+@@ -87,6 +85,8 @@ static int snooze_loop(struct cpuidle_device *dev,
+ 	HMT_medium();
+ 	clear_thread_flag(TIF_POLLING_NRFLAG);
+ 
++	local_irq_disable();
++
+ 	idle_loop_epilog(in_purr);
+ 
+ 	return index;
+@@ -121,6 +121,7 @@ static int dedicated_cede_loop(struct cpuidle_device *dev,
+ 	HMT_medium();
+ 	check_and_cede_processor();
+ 
++	local_irq_disable();
+ 	get_lppaca()->donate_dedicated_cpu = 0;
+ 
+ 	idle_loop_epilog(in_purr);
+@@ -145,6 +146,7 @@ static int shared_cede_loop(struct cpuidle_device *dev,
+ 	 */
+ 	check_and_cede_processor();
+ 
++	local_irq_disable();
+ 	idle_loop_epilog(in_purr);
+ 
+ 	return index;
+-- 
+2.40.0
+

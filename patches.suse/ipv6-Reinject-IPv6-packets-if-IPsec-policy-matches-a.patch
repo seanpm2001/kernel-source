@@ -1,0 +1,44 @@
+From 7c90b6940754463f9245305e7864a129a0a500d6 Mon Sep 17 00:00:00 2001
+From: Tobias Brunner <tobias@strongswan.org>
+Date: Thu, 21 Dec 2017 17:32:24 +0100
+Subject: [PATCH 6/7] ipv6: Reinject IPv6 packets if IPsec policy matches after
+ SNAT
+Git-commit: 09ee9dba9611cd382fd360a99ad1c2fa23bfdca8
+Patch-mainline: 4.16-rc1
+References: git-fixes
+
+If SNAT modifies the source address the resulting packet might match
+an IPsec policy, reinject the packet if that's the case.
+
+The exact same thing is already done for IPv4.
+
+Signed-off-by: Tobias Brunner <tobias@strongswan.org>
+Acked-by: Steffen Klassert <steffen.klassert@secunet.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/ipv6/ip6_output.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/net/ipv6/ip6_output.c b/net/ipv6/ip6_output.c
+index 50fed3140aa1..4657b1f76b2b 100644
+--- a/net/ipv6/ip6_output.c
++++ b/net/ipv6/ip6_output.c
+@@ -141,6 +141,14 @@ static int ip6_finish_output(struct net *net, struct sock *sk, struct sk_buff *s
+ 		return ret;
+ 	}
+ 
++#if defined(CONFIG_NETFILTER) && defined(CONFIG_XFRM)
++	/* Policy lookup after SNAT yielded a new policy */
++	if (skb_dst(skb)->xfrm) {
++		IPCB(skb)->flags |= IPSKB_REROUTED;
++		return dst_output(net, sk, skb);
++	}
++#endif
++
+ 	if ((skb->len > ip6_skb_dst_mtu(skb) && !skb_is_gso(skb)) ||
+ 	    dst_allfrag(skb_dst(skb)) ||
+ 	    (IP6CB(skb)->frag_max_size && skb->len > IP6CB(skb)->frag_max_size))
+-- 
+2.16.4
+

@@ -1,0 +1,54 @@
+From 6ea131acea98026f144f64fb2d8ea7dbb95d3049 Mon Sep 17 00:00:00 2001
+From: Loic Poulain <loic.poulain@linaro.org>
+Date: Sat, 29 Aug 2020 04:38:41 +0100
+Subject: [PATCH] wcn36xx: Fix warning due to bad rate_idx
+Git-commit: 6ea131acea98026f144f64fb2d8ea7dbb95d3049
+References: git-fixes
+Patch-mainline: v5.10-rc1
+
+The rate_idx is the index of the bitrate in the supported rate table.
+However the 5Ghz band has a smaller legacy bitrate table than 2.4Ghz
+since it does not have the DSSS bitrates (1, 2, 5.5, 11).
+
+So in 5Ghz band the index should adjusted accrodingly (-4).
+
+Signed-off-by: Loic Poulain <loic.poulain@linaro.org>
+[bod: Made sure fix is only applied if the rate_idx > n_bitrates]
+Signed-off-by: Bryan O'Donoghue <bryan.odonoghue@linaro.org>
+Signed-off-by: Kalle Valo <kvalo@codeaurora.org>
+Link: https://lore.kernel.org/r/20200829033846.2167619-6-bryan.odonoghue@linaro.org
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/net/wireless/ath/wcn36xx/txrx.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/drivers/net/wireless/ath/wcn36xx/txrx.c b/drivers/net/wireless/ath/wcn36xx/txrx.c
+index 90924f6106ee..19f5e306848b 100644
+--- a/drivers/net/wireless/ath/wcn36xx/txrx.c
++++ b/drivers/net/wireless/ath/wcn36xx/txrx.c
+@@ -230,6 +230,7 @@ int wcn36xx_rx_skb(struct wcn36xx *wcn, struct sk_buff *skb)
+ 	const struct wcn36xx_rate *rate;
+ 	struct ieee80211_hdr *hdr;
+ 	struct wcn36xx_rx_bd *bd;
++	struct ieee80211_supported_band *sband;
+ 	u16 fc, sn;
+ 
+ 	/*
+@@ -270,6 +271,14 @@ int wcn36xx_rx_skb(struct wcn36xx *wcn, struct sk_buff *skb)
+ 		status.enc_flags = rate->encoding_flags;
+ 		status.bw = rate->bw;
+ 		status.rate_idx = rate->mcs_or_legacy_index;
++		sband = wcn->hw->wiphy->bands[status.band];
++
++		if (status.band == NL80211_BAND_5GHZ &&
++		    status.encoding == RX_ENC_LEGACY &&
++		    status.rate_idx >= sband->n_bitrates) {
++			/* no dsss rates in 5Ghz rates table */
++			status.rate_idx -= 4;
++		}
+ 	} else {
+ 		status.encoding = 0;
+ 		status.bw = 0;
+-- 
+2.40.1
+

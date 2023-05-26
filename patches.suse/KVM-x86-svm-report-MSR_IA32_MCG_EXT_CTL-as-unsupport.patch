@@ -1,0 +1,45 @@
+Patch-mainline: v5.0-rc1
+Git-commit: e87555e550cef4941579cd879759a7c0dee24e68
+References: git-fixes
+From: Vitaly Kuznetsov <vkuznets@redhat.com>
+Date: Wed, 19 Dec 2018 12:06:13 +0100
+Subject: [PATCH] KVM: x86: svm: report MSR_IA32_MCG_EXT_CTL as unsupported
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+AMD doesn't seem to implement MSR_IA32_MCG_EXT_CTL and svm code in kvm
+knows nothing about it, however, this MSR is among emulated_msrs and
+thus returned with KVM_GET_MSR_INDEX_LIST. The consequent KVM_GET_MSRS,
+of course, fails.
+
+Report the MSR as unsupported to not confuse userspace.
+
+Signed-off-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Signed-off-by: Radim Krčmář <rkrcmar@redhat.com>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+---
+ arch/x86/kvm/svm.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/arch/x86/kvm/svm.c b/arch/x86/kvm/svm.c
+index e4f18a305ef6..c4377f02a33b 100644
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -5840,6 +5840,13 @@ static bool svm_cpu_has_accelerated_tpr(void)
+ 
+ static bool svm_has_emulated_msr(int index)
+ {
++	switch (index) {
++	case MSR_IA32_MCG_EXT_CTL:
++		return false;
++	default:
++		break;
++	}
++
+ 	return true;
+ }
+ 
+-- 
+2.35.3
+

@@ -1,0 +1,46 @@
+From 55f8e57a05126a75c87b1386e1cf85c496ff2996 Mon Sep 17 00:00:00 2001
+From: Brendan McGrath <redmcg@redmandi.dyndns.org>
+Date: Wed, 13 Dec 2017 22:14:57 +1100
+Subject: [PATCH 3/7] ipv6: icmp6: Allow icmp messages to be looped back
+Git-commit: 588753f1eb18978512b1c9b85fddb457d46f9033
+Patch-mainline: 4.15-rc5
+References: git-fixes
+
+One example of when an ICMPv6 packet is required to be looped back is
+when a host acts as both a Multicast Listener and a Multicast Router.
+
+A Multicast Router will listen on address ff02::16 for MLDv2 messages.
+
+Currently, MLDv2 messages originating from a Multicast Listener running
+on the same host as the Multicast Router are not being delivered to the
+Multicast Router. This is due to dst.input being assigned the default
+value of dst_discard.
+
+This results in the packet being looped back but discarded before being
+delivered to the Multicast Router.
+
+This patch sets dst.input to ip6_input to ensure a looped back packet
+is delivered to the Multicast Router.
+
+Signed-off-by: Brendan McGrath <redmcg@redmandi.dyndns.org>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/ipv6/route.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/net/ipv6/route.c b/net/ipv6/route.c
+index ff1c0fbc4a5e..2990fcf19878 100644
+--- a/net/ipv6/route.c
++++ b/net/ipv6/route.c
+@@ -1682,6 +1682,7 @@ struct dst_entry *icmp6_dst_alloc(struct net_device *dev,
+ 	}
+ 
+ 	rt->dst.flags |= DST_HOST;
++	rt->dst.input = ip6_input;
+ 	rt->dst.output  = ip6_output;
+ 	rt->rt6i_gateway  = fl6->daddr;
+ 	rt->rt6i_dst.addr = fl6->daddr;
+-- 
+2.16.4
+
