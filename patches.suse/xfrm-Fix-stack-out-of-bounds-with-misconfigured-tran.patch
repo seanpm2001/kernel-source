@@ -1,0 +1,67 @@
+From cad0ced660e144aee61064a1fe86af21d84d9559 Mon Sep 17 00:00:00 2001
+From: Steffen Klassert <steffen.klassert@secunet.com>
+Date: Fri, 8 Dec 2017 08:07:25 +0100
+Subject: [PATCH 2/4] xfrm: Fix stack-out-of-bounds with misconfigured
+ transport mode policies.
+Git-commit: 732706afe1cc46ef48493b3d2b69c98f36314ae4
+Patch-mainline: v4.15-rc6
+References: git-fixes
+
+On policies with a transport mode template, we pass the addresses
+from the flowi to xfrm_state_find(), assuming that the IP addresses
+(and address family) don't change during transformation.
+
+Unfortunately our policy template validation is not strict enough.
+It is possible to configure policies with transport mode template
+where the address family of the template does not match the selectors
+address family. This lead to stack-out-of-bound reads because
+we compare arddesses of the wrong family. Fix this by refusing
+such a configuration, address family can not change on transport
+mode.
+
+We use the assumption that, on transport mode, the first templates
+address family must match the address family of the policy selector.
+Subsequent transport mode templates must mach the address family of
+the previous template.
+
+Signed-off-by: Steffen Klassert <steffen.klassert@secunet.com>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/xfrm/xfrm_user.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/net/xfrm/xfrm_user.c b/net/xfrm/xfrm_user.c
+index 88d9a5de0561..916a5ddb9198 100644
+--- a/net/xfrm/xfrm_user.c
++++ b/net/xfrm/xfrm_user.c
+@@ -1435,11 +1435,14 @@ static void copy_templates(struct xfrm_policy *xp, struct xfrm_user_tmpl *ut,
+ 
+ static int validate_tmpl(int nr, struct xfrm_user_tmpl *ut, u16 family)
+ {
++	u16 prev_family;
+ 	int i;
+ 
+ 	if (nr > XFRM_MAX_DEPTH)
+ 		return -EINVAL;
+ 
++	prev_family = family;
++
+ 	for (i = 0; i < nr; i++) {
+ 		/* We never validated the ut->family value, so many
+ 		 * applications simply leave it at zero.  The check was
+@@ -1451,6 +1454,12 @@ static int validate_tmpl(int nr, struct xfrm_user_tmpl *ut, u16 family)
+ 		if (!ut[i].family)
+ 			ut[i].family = family;
+ 
++		if ((ut[i].mode == XFRM_MODE_TRANSPORT) &&
++		    (ut[i].family != prev_family))
++			return -EINVAL;
++
++		prev_family = ut[i].family;
++
+ 		switch (ut[i].family) {
+ 		case AF_INET:
+ 			break;
+-- 
+2.16.4
+
