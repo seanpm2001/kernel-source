@@ -1,0 +1,61 @@
+From 2c8982a85b6f696f1ecdb1f3582bcc72dc98db5e Mon Sep 17 00:00:00 2001
+From: Xin Long <lucien.xin@gmail.com>
+Date: Tue, 27 Feb 2018 19:19:40 +0800
+Subject: [PATCH 3/8] ip6_tunnel: fix IFLA_MTU ignored on NEWLINK
+Git-commit: a6aa80446234ec0ad38eecdb8efc59e91daae565
+Patch-mainline: v4.16-rc5
+References: git-fixes
+
+Commit 128bb975dc3c ("ip6_gre: init dev->mtu and dev->hard_header_len
+correctly") fixed IFLA_MTU ignored on NEWLINK for ip6_gre. The same
+mtu fix is also needed for ip6_tunnel.
+
+Note that dev->hard_header_len setting for ip6_tunnel works fine,
+no need to fix it.
+
+Reported-by: Jianlin Shi <jishi@redhat.com>
+Signed-off-by: Xin Long <lucien.xin@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/ipv6/ip6_tunnel.c | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/net/ipv6/ip6_tunnel.c b/net/ipv6/ip6_tunnel.c
+index 6c025c986eab..3a09fbf40761 100644
+--- a/net/ipv6/ip6_tunnel.c
++++ b/net/ipv6/ip6_tunnel.c
+@@ -2004,14 +2004,14 @@ static int ip6_tnl_newlink(struct net *src_net, struct net_device *dev,
+ {
+ 	struct net *net = dev_net(dev);
+ 	struct ip6_tnl_net *ip6n = net_generic(net, ip6_tnl_net_id);
+-	struct ip6_tnl *nt, *t;
+ 	struct ip_tunnel_encap ipencap;
++	struct ip6_tnl *nt, *t;
++	int err;
+ 
+ 	nt = netdev_priv(dev);
+ 
+ 	if (ip6_tnl_netlink_encap_parms(data, &ipencap)) {
+-		int err = ip6_tnl_encap_setup(nt, &ipencap);
+-
++		err = ip6_tnl_encap_setup(nt, &ipencap);
+ 		if (err < 0)
+ 			return err;
+ 	}
+@@ -2027,7 +2027,11 @@ static int ip6_tnl_newlink(struct net *src_net, struct net_device *dev,
+ 			return -EEXIST;
+ 	}
+ 
+-	return ip6_tnl_create2(dev);
++	err = ip6_tnl_create2(dev);
++	if (!err && tb[IFLA_MTU])
++		ip6_tnl_change_mtu(dev, nla_get_u32(tb[IFLA_MTU]));
++
++	return err;
+ }
+ 
+ static int ip6_tnl_changelink(struct net_device *dev, struct nlattr *tb[],
+-- 
+2.16.4
+
