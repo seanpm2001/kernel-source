@@ -24,6 +24,8 @@
 %define compress_vmlinux @COMPRESS_VMLINUX@
 %define livepatch @LIVEPATCH@%{nil}
 %define livepatch_rt @LIVEPATCH_RT@%{nil}
+%define sb_efi_only @SB_EFI_ONLY@
+%define split_base @SPLIT_BASE@
 
 %include %_sourcedir/kernel-spec-macros
 
@@ -704,6 +706,15 @@ BRP_PESIGN_FILES="%modules_dir/%image"
 BRP_PESIGN_FILES="/boot/%image-%kernelrelease-%build_flavor"
 %endif
 %endif
+%if ! %sb_efi_only
+%ifarch s390x ppc64 ppc64le
+%if 0%{?usrmerged}
+BRP_PESIGN_FILES="%modules_dir/%image"
+%else
+BRP_PESIGN_FILES="/boot/%image-%kernelrelease-%build_flavor"
+%endif
+%endif
+%endif
 %if "%CONFIG_MODULE_SIG" == "y"
 BRP_PESIGN_FILES="$BRP_PESIGN_FILES *.ko"
 %endif
@@ -1153,7 +1164,7 @@ fi
 %endif
 %files -f kernel-main.files
 
-%if %CONFIG_MODULES == "y"
+%if %CONFIG_MODULES == "y" && %split_base
 %package base
 Summary:        @SUMMARY@ - base modules
 Group:          System/Kernel
