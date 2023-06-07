@@ -12,3 +12,5 @@ BUGZILLA_SERVER="apibugzilla.suse.com"
 BUGZILLA_PRODUCT="SUSE Linux Enterprise Server 12 SP5"
 # Check the sorted patches section of series.conf
 SORT_SERIES=yes
+SPLIT_BASE=Yes
+SB_EFI_ONLY=Yes
