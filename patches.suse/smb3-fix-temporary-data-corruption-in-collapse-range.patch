@@ -1,0 +1,66 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Tue, 23 Aug 2022 14:07:41 +0100
+Subject: [PATCH] smb3: fix temporary data corruption in collapse range
+Git-commit: fa30a81f255a56cccd89552cd6ce7ea6e8d8acc4
+References: bsc#1190317
+Patch-mainline: v6.0-rc4
+
+collapse range doesn't discard the affected cached region
+so can risk temporarily corrupting the file data. This
+fixes xfstest generic/031
+
+I also decided to merge a minor cleanup to this into the same patch
+(avoiding rereading inode size repeatedly unnecessarily) to make it
+clearer.
+
+Cc: stable@vger.kernel.org
+Fixes: 5476b5dd82c8b ("cifs: add support for FALLOC_FL_COLLAPSE_RANGE")
+Reported-by: David Howells <dhowells@redhat.com>
+Tested-by: David Howells <dhowells@redhat.com>
+Reviewed-by: David Howells <dhowells@redhat.com>
+cc: Ronnie Sahlberg <lsahlber@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/smb2ops.c |   12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+--- a/fs/cifs/smb2ops.c
++++ b/fs/cifs/smb2ops.c
+@@ -3718,21 +3718,24 @@ static long smb3_collapse_range(struct f
+ 	unsigned int xid;
+ 	struct cifsFileInfo *cfile = file->private_data;
+ 	__le64 eof;
++	loff_t old_eof;
+ 
+ 	xid = get_xid();
++	inode_lock(file->f_inode);
+ 
+-	if (off >= i_size_read(file->f_inode) ||
+-	    off + len >= i_size_read(file->f_inode)) {
++	old_eof = i_size_read(file->f_inode);
++	if (off >= old_eof ||
++	    off + len >= old_eof) {
+ 		rc = -EINVAL;
+ 		goto out;
+ 	}
+ 
+ 	rc = smb2_copychunk_range(xid, cfile, cfile, off + len,
+-				  i_size_read(file->f_inode) - off - len, off);
++				  old_eof - off - len, off);
+ 	if (rc < 0)
+ 		goto out;
+ 
+-	eof = cpu_to_le64(i_size_read(file->f_inode) - len);
++	eof = cpu_to_le64(old_eof - len);
+ 	rc = SMB2_set_eof(xid, tcon, cfile->fid.persistent_fid,
+ 			  cfile->fid.volatile_fid, cfile->pid, &eof);
+ 	if (rc < 0)
+@@ -3740,6 +3743,7 @@ static long smb3_collapse_range(struct f
+ 
+ 	rc = 0;
+  out:
++	inode_unlock(file->f_inode);
+ 	free_xid(xid);
+ 	return rc;
+ }
