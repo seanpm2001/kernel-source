@@ -18,3 +18,7 @@ SPLIT_BASE=Yes
 SB_EFI_ONLY=Yes
 # Modules not listed in supported.conf will abort the kernel build
 SUPPORTED_MODULES_CHECK=Yes
+# build documentation in HTML format
+BUILD_HTML=Yes
+# build documentation in PDF format
+BUILD_PDF=No

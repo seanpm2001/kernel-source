@@ -1,0 +1,45 @@
+From: Paulo Alcantara <pc@cjr.nz>
+Date: Fri, 14 Oct 2022 17:14:54 -0300
+Subject: [PATCH] cifs: fix double-fault crash during ntlmssp
+Git-commit: b854b4ee66437e6e1622fda90529c814978cb4ca
+References: bsc#1190317
+Patch-mainline: v6.1-rc1
+
+The crash occurred because we were calling memzero_explicit() on an
+already freed sess_data::iov[1] (ntlmsspblob) in sess_free_buffer().
+
+Fix this by not calling memzero_explicit() on sess_data::iov[1] as
+it's already by handled by callers.
+
+Fixes: a4e430c8c8ba ("cifs: replace kfree() with kfree_sensitive() for sensitive data")
+Reviewed-by: Enzo Matsumiya <ematsumiya@suse.de>
+Signed-off-by: Paulo Alcantara (SUSE) <pc@cjr.nz>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/sess.c |   12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+--- a/fs/cifs/sess.c
++++ b/fs/cifs/sess.c
+@@ -633,10 +633,18 @@ out_free_smb_buf:
+ static void
+ sess_free_buffer(struct sess_data *sess_data)
+ {
++	struct kvec *iov = sess_data->iov;
+ 
+-	free_rsp_buf(sess_data->buf0_type, sess_data->iov[0].iov_base);
++	/*
++	 * Zero the session data before freeing, as it might contain sensitive info (keys, etc).
++	 * Note that iov[1] is already freed by caller.
++	 */
++	if (sess_data->buf0_type != CIFS_NO_BUFFER && iov[0].iov_base)
++		memzero_explicit(iov[0].iov_base, iov[0].iov_len);
++
++	free_rsp_buf(sess_data->buf0_type, iov[0].iov_base);
+ 	sess_data->buf0_type = CIFS_NO_BUFFER;
+-	kfree(sess_data->iov[2].iov_base);
++	kfree(iov[2].iov_base);
+ }
+ 
+ static int

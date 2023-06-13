@@ -1,0 +1,49 @@
+From: Enzo Matsumiya <ematsumiya@suse.de>
+Date: Fri, 16 Sep 2022 20:57:05 -0300
+Subject: [PATCH] cifs: return correct error in ->calc_signature()
+Git-commit: 09a1f9a168ae1f69f701689429871793174417d2
+References: bsc#1190317
+Patch-mainline: v6.0
+
+If an error happens while getting the key or session in the
+->calc_signature implementations, 0 (success) is returned. Fix it by
+returning a proper error code.
+
+Since it seems to be highly unlikely to happen wrap the rc check in
+unlikely() too.
+
+Reviewed-by: Ronnie Sahlberg <lsahlber@redhat.com>
+Fixes: 32811d242ff6 ("cifs: Start using per session key for smb2/3 for signature generation")
+Signed-off-by: Enzo Matsumiya <ematsumiya@suse.de>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/smb2transport.c |    8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+--- a/fs/cifs/smb2transport.c
++++ b/fs/cifs/smb2transport.c
+@@ -171,9 +171,9 @@ smb2_calc_signature(struct smb_rqst *rqs
+ 	struct smb_rqst drqst;
+ 
+ 	ses = smb2_find_smb_ses(server, shdr->SessionId);
+-	if (!ses) {
++	if (unlikely(!ses)) {
+ 		cifs_server_dbg(VFS, "%s: Could not find session\n", __func__);
+-		return 0;
++		return -ENOENT;
+ 	}
+ 
+ 	memset(smb2_signature, 0x0, SMB2_HMACSHA256_SIZE);
+@@ -447,9 +447,9 @@ smb3_calc_signature(struct smb_rqst *rqs
+ 	struct smb_rqst drqst;
+ 
+ 	ses = smb2_find_smb_ses(server, shdr->SessionId);
+-	if (!ses) {
++	if (unlikely(!ses)) {
+ 		cifs_server_dbg(VFS, "%s: Could not find session\n", __func__);
+-		return 0;
++		return -ENOENT;
+ 	}
+ 
+ 	if (allocate_crypto) {

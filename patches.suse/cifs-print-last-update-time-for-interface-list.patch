@@ -1,0 +1,41 @@
+From: Shyam Prasad N <sprasad@microsoft.com>
+Date: Fri, 23 Dec 2022 10:41:25 +0000
+Subject: [PATCH] cifs: print last update time for interface list
+Git-commit: 05844bd661d9fd478df1175b6639bf2d9398becb
+References: bsc#1190317
+Patch-mainline: v6.3-rc1
+
+We store the last updated time for interface list while
+parsing the interfaces. This change is to just print that
+info in DebugData.
+
+Signed-off-by: Shyam Prasad N <sprasad@microsoft.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/cifs_debug.c |    7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+--- a/fs/cifs/cifs_debug.c
++++ b/fs/cifs/cifs_debug.c
+@@ -22,7 +22,6 @@
+ #include <linux/fs.h>
+ #include <linux/string.h>
+ #include <linux/ctype.h>
+-#include <linux/kstrtox.h>
+ #include <linux/module.h>
+ #include <linux/proc_fs.h>
+ #include <linux/uaccess.h>
+@@ -426,8 +425,10 @@ skip_rdma:
+ 
+ 			spin_lock(&ses->iface_lock);
+ 			if (ses->iface_count)
+-				seq_printf(m, "\n\tServer interfaces: %zu\n",
+-					   ses->iface_count);
++				seq_printf(m, "\n\n\tServer interfaces: %zu"
++					   "\tLast updated: %lu seconds ago",
++					   ses->iface_count,
++					   (jiffies - ses->iface_last_update) / HZ);
+ 			for (j = 0; j < ses->iface_count; j++) {
+ 				seq_printf(m, "\t%d)", j);
+ 				cifs_dump_iface(m, &ses->iface_list[j]);

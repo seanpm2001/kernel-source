@@ -1,0 +1,67 @@
+From 88694e7d37e8798656f3e6449d55944a0268105b Mon Sep 17 00:00:00 2001
+From: Rickard x Andersson <rickaran@axis.com>
+Date: Tue, 2 Oct 2018 14:49:32 +0200
+Subject: [PATCH 4/4] net: fec: fix rare tx timeout
+Git-commit: 657ade07df72847f591ccdb36bd9b91ed0edbac3
+Patch-mainline: v4.19-rc7
+References: git-fixes
+
+During certain heavy network loads TX could time out
+with TX ring dump.
+TX is sometimes never restarted after reaching
+"tx_stop_threshold" because function "fec_enet_tx_queue"
+only tests the first queue.
+
+In addition the TX timeout callback function failed to
+recover because it also operated only on the first queue.
+
+Signed-off-by: Rickard x Andersson <rickaran@axis.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/freescale/fec_main.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/ethernet/freescale/fec_main.c b/drivers/net/ethernet/freescale/fec_main.c
+index fa0a9df96ba0..07caaeeb2b76 100644
+--- a/drivers/net/ethernet/freescale/fec_main.c
++++ b/drivers/net/ethernet/freescale/fec_main.c
+@@ -1155,7 +1155,7 @@ static void fec_enet_timeout_work(struct work_struct *work)
+ 		napi_disable(&fep->napi);
+ 		netif_tx_lock_bh(ndev);
+ 		fec_restart(ndev);
+-		netif_wake_queue(ndev);
++		netif_tx_wake_all_queues(ndev);
+ 		netif_tx_unlock_bh(ndev);
+ 		napi_enable(&fep->napi);
+ 	}
+@@ -1270,7 +1270,7 @@ fec_enet_tx_queue(struct net_device *ndev, u16 queue_id)
+ 
+ 		/* Since we have freed up a buffer, the ring is no longer full
+ 		 */
+-		if (netif_queue_stopped(ndev)) {
++		if (netif_tx_queue_stopped(nq)) {
+ 			entries_free = fec_enet_get_free_txdesc_num(txq);
+ 			if (entries_free >= txq->tx_wake_threshold)
+ 				netif_tx_wake_queue(nq);
+@@ -1747,7 +1747,7 @@ static void fec_enet_adjust_link(struct net_device *ndev)
+ 			napi_disable(&fep->napi);
+ 			netif_tx_lock_bh(ndev);
+ 			fec_restart(ndev);
+-			netif_wake_queue(ndev);
++			netif_tx_wake_all_queues(ndev);
+ 			netif_tx_unlock_bh(ndev);
+ 			napi_enable(&fep->napi);
+ 		}
+@@ -2286,7 +2286,7 @@ static int fec_enet_set_pauseparam(struct net_device *ndev,
+ 		napi_disable(&fep->napi);
+ 		netif_tx_lock_bh(ndev);
+ 		fec_restart(ndev);
+-		netif_wake_queue(ndev);
++		netif_tx_wake_all_queues(ndev);
+ 		netif_tx_unlock_bh(ndev);
+ 		napi_enable(&fep->napi);
+ 	}
+-- 
+2.16.4
+

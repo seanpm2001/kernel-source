@@ -1,0 +1,43 @@
+From fa6e9d40794fb5a21932594ccd49120bc1a268a9 Mon Sep 17 00:00:00 2001
+From: Arnd Bergmann <arnd@arndb.de>
+Date: Fri, 2 Nov 2018 16:36:55 +0100
+Subject: [PATCH 2/4] openvswitch: fix linking without
+ CONFIG_NF_CONNTRACK_LABELS
+Git-commit: a277d516de5f498c91d91189717ef7e01102ad27
+Patch-mainline: v4.20-rc2
+References: git-fixes
+
+When CONFIG_CC_OPTIMIZE_FOR_DEBUGGING is enabled, the compiler
+fails to optimize out a dead code path, which leads to a link failure:
+
+net/openvswitch/conntrack.o: In function `ovs_ct_set_labels':
+conntrack.c:(.text+0x2e60): undefined reference to `nf_connlabels_replace'
+
+In this configuration, we can take a shortcut, and completely
+remove the contrack label code. This may also help the regular
+optimization.
+
+Signed-off-by: Arnd Bergmann <arnd@arndb.de>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/openvswitch/conntrack.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/net/openvswitch/conntrack.c b/net/openvswitch/conntrack.c
+index 6098346a1574..60015d150fa3 100644
+--- a/net/openvswitch/conntrack.c
++++ b/net/openvswitch/conntrack.c
+@@ -1081,7 +1081,8 @@ static int ovs_ct_commit(struct net *net, struct sw_flow_key *key,
+ 					 &info->labels.mask);
+ 		if (err)
+ 			return err;
+-	} else if (labels_nonzero(&info->labels.mask)) {
++	} else if (IS_ENABLED(CONFIG_NF_CONNTRACK_LABELS) &&
++		   labels_nonzero(&info->labels.mask)) {
+ 		err = ovs_ct_set_labels(ct, key, &info->labels.value,
+ 					&info->labels.mask);
+ 		if (err)
+-- 
+2.16.4
+
