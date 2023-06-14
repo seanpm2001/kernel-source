@@ -1,0 +1,31 @@
+From: Tomas Henzl <thenzl@redhat.com>
+Date: Tue, 7 Feb 2023 16:21:59 +0100
+Subject: scsi: mpt3sas: Fix a memory leak
+Git-commit: 54dd96015e8d7a2a07359e2dfebf05b529d1780c
+Patch-mainline: v6.3-rc1
+References: git-fixes
+
+Add a forgotten kfree().
+
+[lduncan: hand applied]
+
+Fixes: dbec4c9040ed ("scsi: mpt3sas: lockless command submission")
+Link: https://lore.kernel.org/r/20230207152159.18627-1-thenzl@redhat.com
+Signed-off-by: Tomas Henzl <thenzl@redhat.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/mpt3sas/mpt3sas_base.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/drivers/scsi/mpt3sas/mpt3sas_base.c
++++ b/drivers/scsi/mpt3sas/mpt3sas_base.c
+@@ -4733,6 +4733,8 @@ _base_release_memory_pools(struct MPT3SA
+ 		if (ioc->pcie_sgl_dma_pool)
+ 			dma_pool_destroy(ioc->pcie_sgl_dma_pool);
+ 	}
++	kfree(ioc->pcie_sg_lookup);
++	ioc->pcie_sg_lookup = NULL;
+ 
+ 	if (ioc->config_page) {
+ 		dexitprintk(ioc,
