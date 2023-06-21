@@ -1,0 +1,75 @@
+From: Jan Höppner <hoeppner@linux.ibm.com>
+Subject: s390/dasd: Use correct lock while counting channel queue length
+Patch-mainline: v6.4-rc6
+Git-commit: ccc45cb4e7271c74dbb27776ae8f73d84557f5c6
+References: LTC#202775 bsc#1212443
+
+Description:   s390/dasd: Use correct lock while counting channel queue length
+Symptom:       Endless list iterations and eventual system hang.
+Problem:       Instead of dasd_device lock, the dasd_block lock is used. Due to
+               this, accessing the device request queue is unprotected and a
+               simple iteration to count the length can be endless. This in
+               turn will lead to a hang since the block lock is never released.
+Solution:      Correctly use the device lock via get_ccwdev_lock(base->cdev).
+Reproduction:  During I/O on a DASD disk, issue the dasdinfo command that
+               utilizes the BIODASDINFO ioctl. Depending on the timing and the
+               amount of I/O the issue will occur sooner or later.
+               Exmaple:
+               In one shell issue:
+                    while true; do
+                        dd if=/dev/dasdc of=/dev/null bs=1M;
+                        blockdev --flushbufs /dev/dasdc;
+                    done
+               In a second shell issue:
+                    while true; do
+                        dasdinfo -a -d /dev/dasdc &> /dev/null;
+                    done
+               Running 'dasdinfo' as described above in several shells might
+               trigger the issue earlier.
+
+Upstream-Description:
+
+              s390/dasd: Use correct lock while counting channel queue length
+
+              The lock around counting the channel queue length in the BIODASDINFO
+              ioctl was incorrectly changed to the dasd_block->queue_lock with commit
+              583d6535cb9d ("dasd: remove dead code"). This can lead to endless list
+              iterations and a subsequent crash.
+
+              The queue_lock is supposed to be used only for queue lists belonging to
+              dasd_block. For dasd_device related queue lists the ccwdev lock must be
+              used.
+
+              Fix the mentioned issues by correctly using the ccwdev lock instead of
+              the queue lock.
+
+              Fixes: 583d6535cb9d ("dasd: remove dead code")
+              Cc: stable@vger.kernel.org # v5.0+
+              Signed-off-by: Jan Höppner <hoeppner@linux.ibm.com>
+              Reviewed-by: Stefan Haberland <sth@linux.ibm.com>
+              Signed-off-by: Stefan Haberland <sth@linux.ibm.com>
+              Link: https://lore.kernel.org/r/20230609153750.1258763-2-sth@linux.ibm.com
+              Signed-off-by: Jens Axboe <axboe@kernel.dk>
+
+
+Signed-off-by: Jan Höppner <hoeppner@linux.ibm.com>
+Acked-by: Miroslav Franc <mfranc@suse.cz>
+---
+ drivers/s390/block/dasd_ioctl.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/drivers/s390/block/dasd_ioctl.c
++++ b/drivers/s390/block/dasd_ioctl.c
+@@ -463,10 +463,10 @@ static int dasd_ioctl_information(struct
+ 
+ 	memcpy(dasd_info->type, base->discipline->name, 4);
+ 
+-	spin_lock_irqsave(&block->queue_lock, flags);
++	spin_lock_irqsave(get_ccwdev_lock(base->cdev), flags);
+ 	list_for_each(l, &base->ccw_queue)
+ 		dasd_info->chanq_len++;
+-	spin_unlock_irqrestore(&block->queue_lock, flags);
++	spin_unlock_irqrestore(get_ccwdev_lock(base->cdev), flags);
+ 
+ 	rc = 0;
+ 	if (copy_to_user(argp, dasd_info,
