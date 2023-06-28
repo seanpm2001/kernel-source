@@ -1,0 +1,165 @@
+From: Paulo Alcantara <pc@cjr.nz>
+Date: Tue, 17 Jan 2023 19:00:39 -0300
+Subject: [PATCH] cifs: don't take exclusive lock for updating target hints
+Git-commit: 11c8b3f8493cb5253da42fcd178d9b4630063f96
+References: bsc#1190317
+Patch-mainline: v6.2-rc5
+
+Avoid contention while updating dfs target hints.  This should be
+perfectly fine to update them under shared locks.
+
+Signed-off-by: Paulo Alcantara (SUSE) <pc@cjr.nz>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/dfs_cache.c |   46 ++++++++++++++++++++--------------------------
+ 1 file changed, 20 insertions(+), 26 deletions(-)
+
+--- a/fs/cifs/dfs_cache.c
++++ b/fs/cifs/dfs_cache.c
+@@ -289,7 +289,7 @@ static int dfscache_proc_show(struct seq
+ 			list_for_each_entry(t, &ce->tlist, list) {
+ 				seq_printf(m, "  %s%s\n",
+ 					   t->name,
+-					   ce->tgthint == t ? " (target hint)" : "");
++					   READ_ONCE(ce->tgthint) == t ? " (target hint)" : "");
+ 			}
+ 		}
+ 	}
+@@ -341,7 +341,7 @@ static inline void dump_tgts(const struc
+ 	cifs_dbg(FYI, "target list:\n");
+ 	list_for_each_entry(t, &ce->tlist, list) {
+ 		cifs_dbg(FYI, "  %s%s\n", t->name,
+-			 ce->tgthint == t ? " (target hint)" : "");
++			 READ_ONCE(ce->tgthint) == t ? " (target hint)" : "");
+ 	}
+ }
+ 
+@@ -447,7 +447,7 @@ static int cache_entry_hash(const void *
+ /* Return target hint of a DFS cache entry */
+ static inline char *get_tgt_name(const struct cache_entry *ce)
+ {
+-	struct cache_dfs_tgt *t = ce->tgthint;
++	struct cache_dfs_tgt *t = READ_ONCE(ce->tgthint);
+ 
+ 	return t ? t->name : ERR_PTR(-ENOENT);
+ }
+@@ -488,6 +488,7 @@ static struct cache_dfs_tgt *alloc_targe
+ static int copy_ref_data(const struct dfs_info3_param *refs, int numrefs,
+ 			 struct cache_entry *ce, const char *tgthint)
+ {
++	struct cache_dfs_tgt *target;
+ 	int i;
+ 
+ 	ce->ttl = max_t(int, refs[0].ttl, CACHE_MIN_TTL);
+@@ -514,8 +515,9 @@ static int copy_ref_data(const struct df
+ 		ce->numtgts++;
+ 	}
+ 
+-	ce->tgthint = list_first_entry_or_null(&ce->tlist,
+-					       struct cache_dfs_tgt, list);
++	target = list_first_entry_or_null(&ce->tlist, struct cache_dfs_tgt,
++					  list);
++	WRITE_ONCE(ce->tgthint, target);
+ 
+ 	return 0;
+ }
+@@ -730,14 +732,15 @@ void dfs_cache_destroy(void)
+ static int update_cache_entry_locked(struct cache_entry *ce, const struct dfs_info3_param *refs,
+ 				     int numrefs)
+ {
++	struct cache_dfs_tgt *target;
++	char *th = NULL;
+ 	int rc;
+-	char *s, *th = NULL;
+ 
+ 	WARN_ON(!rwsem_is_locked(&htable_rw_lock));
+ 
+-	if (ce->tgthint) {
+-		s = ce->tgthint->name;
+-		th = kstrdup(s, GFP_ATOMIC);
++	target = READ_ONCE(ce->tgthint);
++	if (target) {
++		th = kstrdup(target->name, GFP_ATOMIC);
+ 		if (!th)
+ 			return -ENOMEM;
+ 	}
+@@ -915,7 +918,7 @@ static int get_targets(struct cache_entr
+ 		}
+ 		it->it_path_consumed = t->path_consumed;
+ 
+-		if (ce->tgthint == t)
++		if (READ_ONCE(ce->tgthint) == t)
+ 			list_add(&it->it_list, head);
+ 		else
+ 			list_add_tail(&it->it_list, head);
+@@ -1071,23 +1074,14 @@ int dfs_cache_update_tgthint(const unsig
+ 		goto out_free_path;
+ 	}
+ 
+-	up_read(&htable_rw_lock);
+-	down_write(&htable_rw_lock);
+-
+-	ce = lookup_cache_entry(npath);
+-	if (IS_ERR(ce)) {
+-		rc = PTR_ERR(ce);
+-		goto out_unlock;
+-	}
+-
+-	t = ce->tgthint;
++	t = READ_ONCE(ce->tgthint);
+ 
+ 	if (likely(!strcasecmp(it->it_name, t->name)))
+ 		goto out_unlock;
+ 
+ 	list_for_each_entry(t, &ce->tlist, list) {
+ 		if (!strcasecmp(t->name, it->it_name)) {
+-			ce->tgthint = t;
++			WRITE_ONCE(ce->tgthint, t);
+ 			cifs_dbg(FYI, "%s: new target hint: %s\n", __func__,
+ 				 it->it_name);
+ 			break;
+@@ -1095,7 +1089,7 @@ int dfs_cache_update_tgthint(const unsig
+ 	}
+ 
+ out_unlock:
+-	up_write(&htable_rw_lock);
++	up_read(&htable_rw_lock);
+ out_free_path:
+ 	kfree(npath);
+ 	return rc;
+@@ -1126,7 +1120,7 @@ int dfs_cache_noreq_update_tgthint(const
+ 
+ 	cifs_dbg(FYI, "%s: path: %s\n", __func__, path);
+ 
+-	down_write(&htable_rw_lock);
++	down_read(&htable_rw_lock);
+ 
+ 	ce = lookup_cache_entry(path);
+ 	if (IS_ERR(ce)) {
+@@ -1135,14 +1129,14 @@ int dfs_cache_noreq_update_tgthint(const
+ 	}
+ 
+ 	rc = 0;
+-	t = ce->tgthint;
++	t = READ_ONCE(ce->tgthint);
+ 
+ 	if (unlikely(!strcasecmp(it->it_name, t->name)))
+ 		goto out_unlock;
+ 
+ 	list_for_each_entry(t, &ce->tlist, list) {
+ 		if (!strcasecmp(t->name, it->it_name)) {
+-			ce->tgthint = t;
++			WRITE_ONCE(ce->tgthint, t);
+ 			cifs_dbg(FYI, "%s: new target hint: %s\n", __func__,
+ 				 it->it_name);
+ 			break;
+@@ -1150,7 +1144,7 @@ int dfs_cache_noreq_update_tgthint(const
+ 	}
+ 
+ out_unlock:
+-	up_write(&htable_rw_lock);
++	up_read(&htable_rw_lock);
+ 	return rc;
+ }
+ 

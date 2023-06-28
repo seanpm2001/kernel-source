@@ -19,12 +19,12 @@ Signed-off-by: Steve French <stfrench@microsoft.com>
 [ddiss: rebase against 4.12 without 53d31a3ffd6017 and d7173623bf0b15]
 
 ---
- fs/cifs/smb2pdu.c |   36 ++++++++++++++++++++++++++----------
- 1 file changed, 26 insertions(+), 10 deletions(-)
+ fs/cifs/smb2pdu.c |   34 +++++++++++++++++++++++++---------
+ 1 file changed, 25 insertions(+), 9 deletions(-)
 
 --- a/fs/cifs/smb2pdu.c
 +++ b/fs/cifs/smb2pdu.c
-@@ -536,11 +536,15 @@ assemble_neg_contexts(struct smb2_negoti
+@@ -551,11 +551,15 @@ assemble_neg_contexts(struct smb2_negoti
  	*total_len += sizeof(struct smb2_posix_neg_context);
  }
  
@@ -41,7 +41,7 @@ Signed-off-by: Steve French <stfrench@microsoft.com>
  	if (len < MIN_PREAUTH_CTXT_DATA_LEN) {
  		printk_once(KERN_WARNING "server sent bad preauth context\n");
  		return;
-@@ -559,7 +563,11 @@ static void decode_compress_ctx(struct T
+@@ -574,7 +578,11 @@ static void decode_compress_ctx(struct T
  {
  	unsigned int len = le16_to_cpu(ctxt->DataLength);
  
@@ -54,7 +54,7 @@ Signed-off-by: Steve French <stfrench@microsoft.com>
  	if (len < 10) {
  		printk_once(KERN_WARNING "server sent bad compression cntxt\n");
  		return;
-@@ -581,6 +589,11 @@ static int decode_encrypt_ctx(struct TCP
+@@ -596,6 +604,11 @@ static int decode_encrypt_ctx(struct TCP
  	unsigned int len = le16_to_cpu(ctxt->DataLength);
  
  	cifs_dbg(FYI, "decode SMB3.11 encryption neg context of len %d\n", len);
@@ -66,7 +66,7 @@ Signed-off-by: Steve French <stfrench@microsoft.com>
  	if (len < MIN_ENCRYPT_CTXT_DATA_LEN) {
  		printk_once(KERN_WARNING "server sent bad crypto ctxt len\n");
  		return -EINVAL;
-@@ -622,14 +635,19 @@ static int smb311_decode_neg_context(str
+@@ -637,14 +650,19 @@ static int smb311_decode_neg_context(str
  	for (i = 0; i < ctxt_cnt; i++) {
  		int clen;
  		/* check that offset is not beyond end of SMB */
@@ -90,17 +90,13 @@ Signed-off-by: Steve French <stfrench@microsoft.com>
  		if (clen > len_of_ctxts)
  			break;
  
-@@ -647,12 +665,10 @@ static int smb311_decode_neg_context(str
- 		else
- 			cifs_server_dbg(VFS, "unknown negcontext of type %d ignored\n",
- 				le16_to_cpu(pctx->ContextType));
--
+@@ -665,9 +683,7 @@ static int smb311_decode_neg_context(str
+ 
  		if (rc)
  			break;
 -		/* offsets must be 8 byte aligned */
--		clen = (clen + 7) & ~0x7;
+-		clen = ALIGN(clen, 8);
 -		offset += clen + sizeof(struct smb2_neg_context);
-+
 +		offset += clen;
  		len_of_ctxts -= clen;
  	}

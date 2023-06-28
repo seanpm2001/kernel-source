@@ -1,0 +1,189 @@
+From: Paulo Alcantara <pc@cjr.nz>
+Date: Tue, 17 Jan 2023 19:00:40 -0300
+Subject: [PATCH] cifs: remove duplicate code in __refresh_tcon()
+Git-commit: 8064f711c6a4614a848009b5a773e8d7f055a4c5
+References: bsc#1190317
+Patch-mainline: v6.2-rc5
+
+The logic for creating or updating a cache entry in __refresh_tcon()
+could be simply done with cache_refresh_path(), so use it instead.
+
+Signed-off-by: Paulo Alcantara (SUSE) <pc@cjr.nz>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/dfs_cache.c |   84 ++++++++++++++++++++++++----------------------------
+ 1 file changed, 39 insertions(+), 45 deletions(-)
+
+--- a/fs/cifs/dfs_cache.c
++++ b/fs/cifs/dfs_cache.c
+@@ -795,7 +795,8 @@ static int get_dfs_referral(const unsign
+  */
+ static struct cache_entry *cache_refresh_path(const unsigned int xid,
+ 					      struct cifs_ses *ses,
+-					      const char *path)
++					      const char *path,
++					      bool force_refresh)
+ {
+ 	struct dfs_info3_param *refs = NULL;
+ 	struct cache_entry *ce;
+@@ -807,7 +808,7 @@ static struct cache_entry *cache_refresh
+ 	down_read(&htable_rw_lock);
+ 
+ 	ce = lookup_cache_entry(path);
+-	if (!IS_ERR(ce) && !cache_entry_expired(ce))
++	if (!IS_ERR(ce) && !force_refresh && !cache_entry_expired(ce))
+ 		return ce;
+ 
+ 	/*
+@@ -819,7 +820,8 @@ static struct cache_entry *cache_refresh
+ 	up_read(&htable_rw_lock);
+ 
+ 	/*
+-	 * Either the entry was not found, or it is expired.
++	 * Either the entry was not found, or it is expired, or it is a forced
++	 * refresh.
+ 	 * Request a new DFS referral in order to create or update a cache entry.
+ 	 */
+ 	rc = get_dfs_referral(xid, ses, path, &refs, &numrefs);
+@@ -834,7 +836,7 @@ static struct cache_entry *cache_refresh
+ 	/* Re-check as another task might have it added or refreshed already */
+ 	ce = lookup_cache_entry(path);
+ 	if (!IS_ERR(ce)) {
+-		if (cache_entry_expired(ce)) {
++		if (force_refresh || cache_entry_expired(ce)) {
+ 			rc = update_cache_entry_locked(ce, refs, numrefs);
+ 			if (rc)
+ 				ce = ERR_PTR(rc);
+@@ -971,7 +973,7 @@ int dfs_cache_find(const unsigned int xi
+ 	if (IS_ERR(npath))
+ 		return PTR_ERR(npath);
+ 
+-	ce = cache_refresh_path(xid, ses, npath);
++	ce = cache_refresh_path(xid, ses, npath, false);
+ 	if (IS_ERR(ce)) {
+ 		rc = PTR_ERR(ce);
+ 		goto out_free_path;
+@@ -1057,7 +1059,7 @@ int dfs_cache_update_tgthint(const unsig
+ 			     const struct nls_table *cp, int remap, const char *path,
+ 			     const struct dfs_cache_tgt_iterator *it)
+ {
+-	int rc;
++	int rc = 0;
+ 	const char *npath;
+ 	struct cache_entry *ce;
+ 	struct cache_dfs_tgt *t;
+@@ -1068,7 +1070,7 @@ int dfs_cache_update_tgthint(const unsig
+ 
+ 	cifs_dbg(FYI, "%s: update target hint - path: %s\n", __func__, npath);
+ 
+-	ce = cache_refresh_path(xid, ses, npath);
++	ce = cache_refresh_path(xid, ses, npath, false);
+ 	if (IS_ERR(ce)) {
+ 		rc = PTR_ERR(ce);
+ 		goto out_free_path;
+@@ -1351,25 +1353,28 @@ static bool target_share_equal(struct TC
+  * Mark dfs tcon for reconnecting when the currently connected tcon does not match any of the new
+  * target shares in @refs.
+  */
+-static void mark_for_reconnect_if_needed(struct cifs_tcon *tcon, struct dfs_cache_tgt_list *tl,
+-					 const struct dfs_info3_param *refs, int numrefs)
+-{
+-	struct dfs_cache_tgt_iterator *it;
+-	int i;
+-
+-	for (it = dfs_cache_get_tgt_iterator(tl); it; it = dfs_cache_get_next_tgt(tl, it)) {
+-		for (i = 0; i < numrefs; i++) {
+-			if (target_share_equal(tcon->ses->server, dfs_cache_get_tgt_name(it),
+-					       refs[i].node_name))
++static void mark_for_reconnect_if_needed(struct TCP_Server_Info *server,
++					 struct dfs_cache_tgt_list *old_tl,
++					 struct dfs_cache_tgt_list *new_tl)
++{
++	struct dfs_cache_tgt_iterator *oit, *nit;
++
++	for (oit = dfs_cache_get_tgt_iterator(old_tl); oit;
++	     oit = dfs_cache_get_next_tgt(old_tl, oit)) {
++		for (nit = dfs_cache_get_tgt_iterator(new_tl); nit;
++		     nit = dfs_cache_get_next_tgt(new_tl, nit)) {
++			if (target_share_equal(server,
++					       dfs_cache_get_tgt_name(oit),
++					       dfs_cache_get_tgt_name(nit)))
+ 				return;
+ 		}
+ 	}
+ 
+ 	cifs_dbg(FYI, "%s: no cached or matched targets. mark dfs share for reconnect.\n", __func__);
+-	spin_lock(&tcon->ses->server->srv_lock);
+-	if (tcon->ses->server->tcpStatus != CifsExiting)
+-		tcon->ses->server->tcpStatus = CifsNeedReconnect;
+-	spin_unlock(&tcon->ses->server->srv_lock);
++	spin_lock(&server->srv_lock);
++	if (server->tcpStatus != CifsExiting)
++		server->tcpStatus = CifsNeedReconnect;
++	spin_unlock(&server->srv_lock);
+ }
+ 
+ /* Refresh dfs referral of tcon and mark it for reconnect if needed */
+@@ -1378,10 +1383,9 @@ static int __refresh_tcon(const char *pa
+ {
+ 	struct cifs_ses *ses;
+ 	struct cache_entry *ce;
+-	struct dfs_info3_param *refs = NULL;
+-	int numrefs = 0;
+ 	bool needs_refresh = false;
+-	struct dfs_cache_tgt_list tl = DFS_CACHE_TGT_LIST_INIT(tl);
++	struct dfs_cache_tgt_list old_tl = DFS_CACHE_TGT_LIST_INIT(old_tl);
++	struct dfs_cache_tgt_list new_tl = DFS_CACHE_TGT_LIST_INIT(new_tl);
+ 	int rc = 0;
+ 	unsigned int xid;
+ 
+@@ -1395,9 +1399,8 @@ static int __refresh_tcon(const char *pa
+ 	ce = lookup_cache_entry(path);
+ 	needs_refresh = force_refresh || IS_ERR(ce) || cache_entry_expired(ce);
+ 	if (!IS_ERR(ce)) {
+-		rc = get_targets(ce, &tl);
+-		if (rc)
+-			cifs_dbg(FYI, "%s: could not get dfs targets: %d\n", __func__, rc);
++		rc = get_targets(ce, &old_tl);
++		cifs_dbg(FYI, "%s: get_targets: %d\n", __func__, rc);
+ 	}
+ 	up_read(&htable_rw_lock);
+ 
+@@ -1407,27 +1410,18 @@ static int __refresh_tcon(const char *pa
+ 	}
+ 
+ 	xid = get_xid();
+-	rc = get_dfs_referral(xid, ses, path, &refs, &numrefs);
+-	free_xid(xid);
+-
+-	/* Create or update a cache entry with the new referral */
+-	if (!rc) {
+-		dump_refs(refs, numrefs);
+-
+-		down_write(&htable_rw_lock);
+-		ce = lookup_cache_entry(path);
+-		if (IS_ERR(ce))
+-			add_cache_entry_locked(refs, numrefs);
+-		else if (force_refresh || cache_entry_expired(ce))
+-			update_cache_entry_locked(ce, refs, numrefs);
+-		up_write(&htable_rw_lock);
+-
+-		mark_for_reconnect_if_needed(tcon, &tl, refs, numrefs);
++	ce = cache_refresh_path(xid, ses, path, true);
++	if (!IS_ERR(ce)) {
++		rc = get_targets(ce, &new_tl);
++		up_read(&htable_rw_lock);
++		cifs_dbg(FYI, "%s: get_targets: %d\n", __func__, rc);
++		mark_for_reconnect_if_needed(tcon->ses->server, &old_tl, &new_tl);
+ 	}
+ 
++	free_xid(xid);
+ out:
+-	dfs_cache_free_tgts(&tl);
+-	free_dfs_info_array(refs, numrefs);
++	dfs_cache_free_tgts(&old_tl);
++	dfs_cache_free_tgts(&new_tl);
+ 	return rc;
+ }
+ 

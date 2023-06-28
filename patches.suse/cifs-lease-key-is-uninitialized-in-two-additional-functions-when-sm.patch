@@ -1,0 +1,42 @@
+From: Steve French <stfrench@microsoft.com>
+Date: Fri, 14 Oct 2022 20:00:32 -0500
+Subject: [PATCH] cifs: lease key is uninitialized in two additional functions
+ when smb1
+Git-commit: 2bff0659338e58a3a24698a35e7dcb2b62199ba4
+References: bsc#1190317
+Patch-mainline: v6.1-rc1
+
+cifs_open and _cifsFileInfo_put also end up with lease_key uninitialized
+in smb1 mounts.  It is cleaner to set lease key to zero in these
+places where leases are not supported (smb1 can not return lease keys
+so the field was uninitialized).
+
+Addresses-Coverity: 1514207 ("Uninitialized scalar variable")
+Addresses-Coverity: 1514331 ("Uninitialized scalar variable")
+Reviewed-by: Paulo Alcantara (SUSE) <pc@cjr.nz>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/file.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/fs/cifs/file.c
++++ b/fs/cifs/file.c
+@@ -449,7 +449,7 @@ void _cifsFileInfo_put(struct cifsFileIn
+ 	struct cifsInodeInfo *cifsi = CIFS_I(inode);
+ 	struct super_block *sb = inode->i_sb;
+ 	struct cifs_sb_info *cifs_sb = CIFS_SB(sb);
+-	struct cifs_fid fid;
++	struct cifs_fid fid = {};
+ 	struct cifs_pending_open open;
+ 	bool oplock_break_cancelled;
+ 
+@@ -530,7 +530,7 @@ int cifs_open(struct inode *inode, struc
+ 	struct cifsFileInfo *cfile = NULL;
+ 	const char *full_path = NULL;
+ 	bool posix_open_ok = false;
+-	struct cifs_fid fid;
++	struct cifs_fid fid = {};
+ 	struct cifs_pending_open open;
+ 
+ 	xid = get_xid();

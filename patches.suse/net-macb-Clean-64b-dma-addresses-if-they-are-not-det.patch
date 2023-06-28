@@ -1,0 +1,39 @@
+From 15f019648a57f8fdc98d4887e7945a9e6328e2da Mon Sep 17 00:00:00 2001
+From: Michal Simek <michal.simek@xilinx.com>
+Date: Tue, 25 Sep 2018 08:32:50 +0200
+Subject: [PATCH 3/4] net: macb: Clean 64b dma addresses if they are not
+ detected
+Git-commit: e1e5d8a9fe737d94ccc0ccbaf0c97f69a8f3e000
+Patch-mainline: v4.19-rc7
+References: git-fixes
+
+Clear ADDR64 dma bit in DMACFG register in case that HW_DMA_CAP_64B is
+not detected on 64bit system.
+The issue was observed when bootloader(u-boot) does not check macb
+feature at DCFG6 register (DAW64_OFFSET) and enabling 64bit dma support
+by default. Then macb driver is reading DMACFG register back and only
+adding 64bit dma configuration but not cleaning it out.
+
+Signed-off-by: Michal Simek <michal.simek@xilinx.com>
+Acked-by: Nicolas Ferre <nicolas.ferre@microchip.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/cadence/macb.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/net/ethernet/cadence/macb.c b/drivers/net/ethernet/cadence/macb.c
+index acd152c70d17..c7e1818c7f5d 100644
+--- a/drivers/net/ethernet/cadence/macb.c
++++ b/drivers/net/ethernet/cadence/macb.c
+@@ -1963,6 +1963,7 @@ static void macb_configure_dma(struct macb *bp)
+ 		else
+ 			dmacfg &= ~GEM_BIT(TXCOEN);
+ 
++		dmacfg &= ~GEM_BIT(ADDR64);
+ #ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
+ 		if (bp->hw_dma_cap == HW_DMA_CAP_64B)
+ 			dmacfg |= GEM_BIT(ADDR64);
+-- 
+2.16.4
+

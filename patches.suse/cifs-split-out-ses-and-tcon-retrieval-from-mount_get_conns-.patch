@@ -1,0 +1,363 @@
+From: Paulo Alcantara <pc@cjr.nz>
+Date: Tue, 11 Oct 2022 18:16:07 -0300
+Subject: [PATCH] cifs: split out ses and tcon retrieval from mount_get_conns()
+Git-commit: a73a26d97eca082fe13c964e5541543c1e78dc55
+References: bsc#1190317
+Patch-mainline: v6.2-rc1
+
+Introduce and export two helpers for getting session and tcon during
+mount(2).  Those will be used by dfs when retrieving sessions and
+tcons separately while chasing referrals.  Besides, export
+cifs_mount_ctx structure as it will be used by dfs code as well.
+
+No functional changes.
+
+Signed-off-by: Paulo Alcantara (SUSE) <pc@cjr.nz>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/cifsglob.h  |   14 +++++
+ fs/cifs/cifsproto.h |    2 
+ fs/cifs/connect.c   |  129 ++++++++++++++++++++++++++++++----------------------
+ 3 files changed, 92 insertions(+), 53 deletions(-)
+
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -1693,6 +1693,20 @@ struct dfs_info3_param {
+ 	int ttl;
+ };
+ 
++struct cifs_mount_ctx {
++	struct cifs_sb_info *cifs_sb;
++	struct smb_vol *fs_ctx;
++	unsigned int xid;
++	struct TCP_Server_Info *server;
++	struct cifs_ses *ses;
++	struct cifs_tcon *tcon;
++#ifdef CONFIG_CIFS_DFS_UPCALL
++	struct cifs_ses *root_ses;
++	uuid_t mount_id;
++	char *origin_fullpath, *leaf_fullpath;
++#endif
++};
++
+ static inline void free_dfs_info_param(struct dfs_info3_param *param)
+ {
+ 	if (param) {
+--- a/fs/cifs/cifsproto.h
++++ b/fs/cifs/cifsproto.h
+@@ -226,6 +226,8 @@ extern int cifs_read_page_from_socket(st
+ 					unsigned int to_read);
+ extern int cifs_setup_cifs_sb(struct smb_vol *pvolume_info,
+ 			       struct cifs_sb_info *cifs_sb);
++int cifs_mount_get_session(struct cifs_mount_ctx *mnt_ctx);
++int cifs_mount_get_tcon(struct cifs_mount_ctx *mnt_ctx);
+ extern int cifs_match_super(struct super_block *, void *);
+ extern void cifs_cleanup_volume_info(struct smb_vol *pvolume_info);
+ extern struct smb_vol *cifs_get_volume_info(char *mount_data,
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -335,20 +335,6 @@ static const match_table_t cifs_smb_vers
+ 	{ Smb_version_err, NULL }
+ };
+ 
+-struct mount_ctx {
+-	struct cifs_sb_info *cifs_sb;
+-	struct smb_vol *fs_ctx;
+-	unsigned int xid;
+-	struct TCP_Server_Info *server;
+-	struct cifs_ses *ses;
+-	struct cifs_tcon *tcon;
+-#ifdef CONFIG_CIFS_DFS_UPCALL
+-	struct cifs_ses *root_ses;
+-	uuid_t mount_id;
+-	char *origin_fullpath, *leaf_fullpath;
+-#endif
+-};
+-
+ static int ip_connect(struct TCP_Server_Info *server);
+ static int generic_ip_connect(struct TCP_Server_Info *server);
+ static void tlink_rb_insert(struct rb_root *root, struct tcon_link *new_tlink);
+@@ -4458,7 +4444,7 @@ cifs_cleanup_volume_info(struct smb_vol
+ }
+ 
+ /* Release all succeed connections */
+-static inline void mount_put_conns(struct mount_ctx *mnt_ctx)
++static inline void mount_put_conns(struct cifs_mount_ctx *mnt_ctx)
+ {
+ 	int rc = 0;
+ 
+@@ -4472,49 +4458,77 @@ static inline void mount_put_conns(struc
+ 	free_xid(mnt_ctx->xid);
+ }
+ 
+-/* Get connections for tcp, ses and tcon */
+-static int mount_get_conns(struct mount_ctx *mnt_ctx)
++int cifs_mount_get_session(struct cifs_mount_ctx *mnt_ctx)
+ {
+-	int rc = 0;
+ 	struct TCP_Server_Info *server = NULL;
+ 	struct cifs_ses *ses = NULL;
+-	struct cifs_tcon *tcon = NULL;
+-	struct smb_vol *vol = mnt_ctx->fs_ctx;
+-	struct cifs_sb_info *cifs_sb = mnt_ctx->cifs_sb;
++	struct smb_vol *ctx = mnt_ctx->fs_ctx;
+ 	unsigned int xid;
++	int rc = 0;
+ 
+ 	xid = get_xid();
+ 
++	if (WARN_ON_ONCE(!mnt_ctx || !mnt_ctx->fs_ctx)) {
++		rc = -EINVAL;
++		goto out;
++	}
++	ctx = mnt_ctx->fs_ctx;
++
+ 	/* get a reference to a tcp session */
+-	server = cifs_get_tcp_session(vol);
++	server = cifs_get_tcp_session(ctx);
+ 	if (IS_ERR(server)) {
+ 		rc = PTR_ERR(server);
+ 		server = NULL;
+ 		goto out;
+ 	}
+ 
+-	if ((vol->max_credits < 20) || (vol->max_credits > 60000))
++	if ((ctx->max_credits < 20) || (ctx->max_credits > 60000))
+ 		server->max_credits = SMB2_MAX_CREDITS_AVAILABLE;
+ 	else
+-		server->max_credits = vol->max_credits;
++		server->max_credits = ctx->max_credits;
+ 
+ 	/* get a reference to a SMB session */
+-	ses = cifs_get_smb_ses(server, vol);
++	ses = cifs_get_smb_ses(server, ctx);
+ 	if (IS_ERR(ses)) {
+ 		rc = PTR_ERR(ses);
+ 		ses = NULL;
+ 		return rc;
+ 	}
+ 
+-	if ((vol->persistent == true) && (!(ses->server->capabilities &
++	if ((ctx->persistent == true) && (!(ses->server->capabilities &
+ 					    SMB2_GLOBAL_CAP_PERSISTENT_HANDLES))) {
+ 		cifs_server_dbg(VFS, "persistent handles not supported by server\n");
+ 		rc = -EOPNOTSUPP;
++	}
++
++out:
++	mnt_ctx->xid = xid;
++	mnt_ctx->server = server;
++	mnt_ctx->ses = ses;
++	mnt_ctx->tcon = NULL;
++
++	return rc;
++}
++
++int cifs_mount_get_tcon(struct cifs_mount_ctx *mnt_ctx)
++{
++	struct TCP_Server_Info *server;
++	struct cifs_sb_info *cifs_sb;
++	struct smb_vol *ctx;
++	struct cifs_tcon *tcon = NULL;
++	int rc = 0;
++
++	if (WARN_ON_ONCE(!mnt_ctx || !mnt_ctx->server || !mnt_ctx->ses || !mnt_ctx->fs_ctx ||
++				!mnt_ctx->cifs_sb)) {
++		rc = -EINVAL;
+ 		goto out;
+ 	}
++	server = mnt_ctx->server;
++	ctx = mnt_ctx->fs_ctx;
++	cifs_sb = mnt_ctx->cifs_sb;
+ 
+ 	/* search for existing tcon to this server share */
+-	tcon = cifs_get_tcon(ses, vol);
++	tcon = cifs_get_tcon(mnt_ctx->ses, ctx);
+ 	if (IS_ERR(tcon)) {
+ 		rc = PTR_ERR(tcon);
+ 		tcon = NULL;
+@@ -4531,7 +4545,7 @@ static int mount_get_conns(struct mount_
+ 		 * reset of caps checks mount to see if unix extensions disabled
+ 		 * for just this mount.
+ 		 */
+-		reset_cifs_unix_caps(xid, tcon, cifs_sb, vol);
++		reset_cifs_unix_caps(mnt_ctx->xid, tcon, cifs_sb, ctx);
+ 		spin_lock(&tcon->ses->server->srv_lock);
+ 		if ((tcon->ses->server->tcpStatus == CifsNeedReconnect) &&
+ 		    (le64_to_cpu(tcon->fsUnixInfo.Capability) &
+@@ -4546,7 +4560,7 @@ static int mount_get_conns(struct mount_
+ 
+ 	/* do not care if a following call succeed - informational */
+ 	if (!tcon->pipe && server->ops->qfs_tcon) {
+-		server->ops->qfs_tcon(xid, tcon, cifs_sb);
++		server->ops->qfs_tcon(mnt_ctx->xid, tcon, cifs_sb);
+ 		if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_RO_CACHE) {
+ 			if (tcon->fsDevInfo.DeviceCharacteristics &
+ 			    cpu_to_le32(FILE_READ_ONLY_DEVICE))
+@@ -4565,21 +4579,29 @@ static int mount_get_conns(struct mount_
+ 	 * the user on mount
+  	 */
+ 	if ((cifs_sb->wsize == 0) ||
+-	    (cifs_sb->wsize > server->ops->negotiate_wsize(tcon, vol)))
+-		cifs_sb->wsize = server->ops->negotiate_wsize(tcon, vol);
++	    (cifs_sb->wsize > server->ops->negotiate_wsize(tcon, ctx)))
++		cifs_sb->wsize = server->ops->negotiate_wsize(tcon, ctx);
+ 	if ((cifs_sb->rsize == 0) ||
+-	    (cifs_sb->rsize > server->ops->negotiate_rsize(tcon, vol)))
+-		cifs_sb->rsize = server->ops->negotiate_rsize(tcon, vol);
++	    (cifs_sb->rsize > server->ops->negotiate_rsize(tcon, ctx)))
++		cifs_sb->rsize = server->ops->negotiate_rsize(tcon, ctx);
+ 
+ out:
+-	mnt_ctx->server = server;
+-	mnt_ctx->ses = ses;
+ 	mnt_ctx->tcon = tcon;
+-	mnt_ctx->xid = xid;
+-
+ 	return rc;
+ }
+ 
++/* Get connections for tcp, ses and tcon */
++static int mount_get_conns(struct cifs_mount_ctx *mnt_ctx)
++{
++	int rc;
++
++	rc = cifs_mount_get_session(mnt_ctx);
++	if (rc)
++		return rc;
++
++	return cifs_mount_get_tcon(mnt_ctx);
++}
++
+ static int mount_setup_tlink(struct cifs_sb_info *cifs_sb, struct cifs_ses *ses,
+ 			     struct cifs_tcon *tcon)
+ {
+@@ -4608,7 +4630,7 @@ static int mount_setup_tlink(struct cifs
+ 
+ #ifdef CONFIG_CIFS_DFS_UPCALL
+ /* Get unique dfs connections */
+-static int mount_get_dfs_conns(struct mount_ctx *mnt_ctx)
++static int mount_get_dfs_conns(struct cifs_mount_ctx *mnt_ctx)
+ {
+ 	int rc;
+ 
+@@ -4664,7 +4686,7 @@ build_unc_path_to_root(const struct smb_
+  * cifs_sb->ctx->mount_options will be (re-)allocated to a string containing updated options for the
+  * submount.  Otherwise it will be left untouched.
+  */
+-static int expand_dfs_referral(struct mount_ctx *mnt_ctx, const char *full_path,
++static int expand_dfs_referral(struct cifs_mount_ctx *mnt_ctx, const char *full_path,
+ 			       struct dfs_info3_param *referral)
+ {
+ 	int rc;
+@@ -4804,7 +4826,7 @@ cifs_are_all_path_components_accessible(
+  *
+  * Return -EREMOTE if it is, otherwise 0 or -errno.
+  */
+-static int is_path_remote(struct mount_ctx *mnt_ctx)
++static int is_path_remote(struct cifs_mount_ctx *mnt_ctx)
+ {
+ 	int rc;
+ 	struct cifs_sb_info *cifs_sb = mnt_ctx->cifs_sb;
+@@ -4850,7 +4872,7 @@ static int is_path_remote(struct mount_c
+ }
+ 
+ #ifdef CONFIG_CIFS_DFS_UPCALL
+-static void set_root_ses(struct mount_ctx *mnt_ctx)
++static void set_root_ses(struct cifs_mount_ctx *mnt_ctx)
+ {
+ 	if (mnt_ctx->ses) {
+ 		spin_lock(&cifs_tcp_ses_lock);
+@@ -4861,7 +4883,8 @@ static void set_root_ses(struct mount_ct
+ 	mnt_ctx->root_ses = mnt_ctx->ses;
+ }
+ 
+-static int is_dfs_mount(struct mount_ctx *mnt_ctx, bool *isdfs, struct dfs_cache_tgt_list *root_tl)
++static int is_dfs_mount(struct cifs_mount_ctx *mnt_ctx, bool *isdfs,
++			struct dfs_cache_tgt_list *root_tl)
+ {
+ 	int rc;
+ 	struct cifs_sb_info *cifs_sb = mnt_ctx->cifs_sb;
+@@ -4892,7 +4915,7 @@ static int is_dfs_mount(struct mount_ctx
+ 	return 0;
+ }
+ 
+-static int connect_dfs_target(struct mount_ctx *mnt_ctx, const char *full_path,
++static int connect_dfs_target(struct cifs_mount_ctx *mnt_ctx, const char *full_path,
+ 			      const char *ref_path, struct dfs_cache_tgt_iterator *tit)
+ {
+ 	int rc;
+@@ -4928,7 +4951,7 @@ out:
+ 	return rc;
+ }
+ 
+-static int connect_dfs_root(struct mount_ctx *mnt_ctx, struct dfs_cache_tgt_list *root_tl)
++static int connect_dfs_root(struct cifs_mount_ctx *mnt_ctx, struct dfs_cache_tgt_list *root_tl)
+ {
+ 	int rc;
+ 	char *full_path;
+@@ -4973,7 +4996,7 @@ out:
+ 	return rc;
+ }
+ 
+-static int __follow_dfs_link(struct mount_ctx *mnt_ctx)
++static int __follow_dfs_link(struct cifs_mount_ctx *mnt_ctx)
+ {
+ 	int rc;
+ 	struct cifs_sb_info *cifs_sb = mnt_ctx->cifs_sb;
+@@ -5022,7 +5045,7 @@ out:
+ 	return rc;
+ }
+ 
+-static int follow_dfs_link(struct mount_ctx *mnt_ctx)
++static int follow_dfs_link(struct cifs_mount_ctx *mnt_ctx)
+ {
+ 	int rc;
+ 	struct cifs_sb_info *cifs_sb = mnt_ctx->cifs_sb;
+@@ -5055,7 +5078,7 @@ static int follow_dfs_link(struct mount_
+ }
+ 
+ /* Set up DFS referral paths for failover */
+-static void setup_server_referral_paths(struct mount_ctx *mnt_ctx)
++static void setup_server_referral_paths(struct cifs_mount_ctx *mnt_ctx)
+ {
+ 	struct TCP_Server_Info *server = mnt_ctx->server;
+ 
+@@ -5067,10 +5090,10 @@ static void setup_server_referral_paths(
+ 	mnt_ctx->origin_fullpath = mnt_ctx->leaf_fullpath = NULL;
+ }
+ 
+-int cifs_mount(struct cifs_sb_info *cifs_sb, struct smb_vol *vol)
++int cifs_mount(struct cifs_sb_info *cifs_sb, struct smb_vol *ctx)
+ {
+ 	int rc;
+-	struct mount_ctx mnt_ctx = { .cifs_sb = cifs_sb, .fs_ctx = vol, };
++	struct cifs_mount_ctx mnt_ctx = { .cifs_sb = cifs_sb, .fs_ctx = ctx, };
+ 	struct dfs_cache_tgt_list tl = DFS_CACHE_TGT_LIST_INIT(tl);
+ 	bool isdfs;
+ 
+@@ -5106,8 +5129,8 @@ int cifs_mount(struct cifs_sb_info *cifs
+ 	 */
+ 	cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_USE_PREFIX_PATH;
+ 	kfree(cifs_sb->prepath);
+-	cifs_sb->prepath = vol->prepath;
+-	vol->prepath = NULL;
++	cifs_sb->prepath = ctx->prepath;
++	ctx->prepath = NULL;
+ 	uuid_copy(&cifs_sb->dfs_mount_id, &mnt_ctx.mount_id);
+ 
+ out:
+@@ -5126,10 +5149,10 @@ error:
+ 	return rc;
+ }
+ #else
+-int cifs_mount(struct cifs_sb_info *cifs_sb, struct smb_vol *vol)
++int cifs_mount(struct cifs_sb_info *cifs_sb, struct smb_vol *ctx)
+ {
+ 	int rc = 0;
+-	struct mount_ctx mnt_ctx = { .cifs_sb = cifs_sb, .fs_ctx = vol, };
++	struct cifs_mount_ctx mnt_ctx = { .cifs_sb = cifs_sb, .fs_ctx = ctx, };
+ 
+ 	rc = mount_get_conns(&mnt_ctx);
+ 	if (rc)
