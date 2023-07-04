@@ -1,0 +1,62 @@
+From c044f3d8360d2ecf831ba2cc9f08cf9fb2c699fb Mon Sep 17 00:00:00 2001
+From: "zhangyi (F)" <yi.zhang@huawei.com>
+Date: Sat, 20 Jun 2020 10:54:26 +0800
+Subject: [PATCH] jbd2: abort journal if free a async write error metadata
+ buffer
+Git-commit: c044f3d8360d2ecf831ba2cc9f08cf9fb2c699fb
+Patch-mainline: v5.9-rc2
+References: bsc#1212989
+
+If we free a metadata buffer which has been failed to async write out
+in the background, the jbd2 checkpoint procedure will not detect this
+failure in jbd2_log_do_checkpoint(), so it may lead to filesystem
+inconsistency after cleanup journal tail. This patch abort the journal
+if free a buffer has write_io_error flag to prevent potential further
+inconsistency.
+
+Signed-off-by: zhangyi (F) <yi.zhang@huawei.com>
+Link: https://lore.kernel.org/r/20200620025427.1756360-5-yi.zhang@huawei.com
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Acked-by: Jan Kara <jack@suse.cz>
+
+---
+ fs/jbd2/transaction.c |   16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+--- a/fs/jbd2/transaction.c
++++ b/fs/jbd2/transaction.c
+@@ -2020,6 +2020,7 @@ int jbd2_journal_try_to_free_buffers(jou
+ {
+ 	struct buffer_head *head;
+ 	struct buffer_head *bh;
++	bool has_write_io_error = false;
+ 	int ret = 0;
+ 
+ 	J_ASSERT(PageLocked(page));
+@@ -2044,11 +2045,26 @@ int jbd2_journal_try_to_free_buffers(jou
+ 		jbd_unlock_bh_state(bh);
+ 		if (buffer_jbd(bh))
+ 			goto busy;
++
++		/*
++		 * If we free a metadata buffer which has been failed to
++		 * write out, the jbd2 checkpoint procedure will not detect
++		 * this failure and may lead to filesystem inconsistency
++		 * after cleanup journal tail.
++		 */
++		if (buffer_write_io_error(bh)) {
++			pr_err("JBD2: Error while async write back metadata bh %llu.",
++			       (unsigned long long)bh->b_blocknr);
++			has_write_io_error = true;
++		}
+ 	} while ((bh = bh->b_this_page) != head);
+ 
+ 	ret = try_to_free_buffers(page);
+ 
+ busy:
++	if (has_write_io_error)
++		jbd2_journal_abort(journal, -EIO);
++
+ 	return ret;
+ }
+ 
