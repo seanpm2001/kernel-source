@@ -1,0 +1,238 @@
+From: Akihiko Odaki <akihiko.odaki@daynix.com>
+Date: Tue, 22 Nov 2022 18:28:03 +0900
+Subject: igb: Enable SR-IOV after reinit
+Patch-mainline: v6.3-rc4
+Git-commit: 50f303496d92e25b79bdfb73e3707ad0684ad67f
+References: git-fixes
+
+Enabling SR-IOV causes the virtual functions to make requests to the
+PF via the mailbox. Notably, E1000_VF_RESET request will happen during
+the initialization of the VF. However, unless the reinit is done, the
+VMMB interrupt, which delivers mailbox interrupt from VF to PF will be
+kept masked and such requests will be silently ignored.
+
+Enable SR-IOV at the very end of the procedure to configure the device
+for SR-IOV so that the PF is configured properly for SR-IOV when a VF is
+activated.
+
+Fixes: fa44f2f185f7 ("igb: Enable SR-IOV configuration via PCI sysfs interface")
+Signed-off-by: Akihiko Odaki <akihiko.odaki@daynix.com>
+Tested-by: Marek Szlosek <marek.szlosek@intel.com>
+Signed-off-by: Tony Nguyen <anthony.l.nguyen@intel.com>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/intel/igb/igb_main.c |  135 ++++++++++++------------------
+ 1 file changed, 58 insertions(+), 77 deletions(-)
+
+--- a/drivers/net/ethernet/intel/igb/igb_main.c
++++ b/drivers/net/ethernet/intel/igb/igb_main.c
+@@ -134,6 +134,7 @@ static void igb_free_all_rx_resources(st
+ static void igb_setup_mrqc(struct igb_adapter *);
+ static int igb_probe(struct pci_dev *, const struct pci_device_id *);
+ static void igb_remove(struct pci_dev *pdev);
++static void igb_init_queue_configuration(struct igb_adapter *adapter);
+ static int igb_sw_init(struct igb_adapter *);
+ int igb_open(struct net_device *);
+ int igb_close(struct net_device *);
+@@ -200,9 +201,7 @@ static void igb_nfc_filter_restore(struc
+ 
+ #ifdef CONFIG_PCI_IOV
+ static int igb_vf_configure(struct igb_adapter *adapter, int vf);
+-static int igb_pci_enable_sriov(struct pci_dev *dev, int num_vfs);
+-static int igb_disable_sriov(struct pci_dev *dev);
+-static int igb_pci_disable_sriov(struct pci_dev *dev);
++static int igb_disable_sriov(struct pci_dev *dev, bool reinit);
+ #endif
+ 
+ static int igb_suspend(struct device *);
+@@ -3427,7 +3426,7 @@ err_sw_init:
+ 	kfree(adapter->shadow_vfta);
+ 	igb_clear_interrupt_scheme(adapter);
+ #ifdef CONFIG_PCI_IOV
+-	igb_disable_sriov(pdev);
++	igb_disable_sriov(pdev, false);
+ #endif
+ 	pci_iounmap(pdev, adapter->io_addr);
+ err_ioremap:
+@@ -3442,7 +3441,38 @@ err_dma:
+ }
+ 
+ #ifdef CONFIG_PCI_IOV
+-static int igb_disable_sriov(struct pci_dev *pdev)
++static int igb_sriov_reinit(struct pci_dev *dev)
++{
++	struct net_device *netdev = pci_get_drvdata(dev);
++	struct igb_adapter *adapter = netdev_priv(netdev);
++	struct pci_dev *pdev = adapter->pdev;
++
++	rtnl_lock();
++
++	if (netif_running(netdev))
++		igb_close(netdev);
++	else
++		igb_reset(adapter);
++
++	igb_clear_interrupt_scheme(adapter);
++
++	igb_init_queue_configuration(adapter);
++
++	if (igb_init_interrupt_scheme(adapter, true)) {
++		rtnl_unlock();
++		dev_err(&pdev->dev, "Unable to allocate memory for queues\n");
++		return -ENOMEM;
++	}
++
++	if (netif_running(netdev))
++		igb_open(netdev);
++
++	rtnl_unlock();
++
++	return 0;
++}
++
++static int igb_disable_sriov(struct pci_dev *pdev, bool reinit)
+ {
+ 	struct net_device *netdev = pci_get_drvdata(pdev);
+ 	struct igb_adapter *adapter = netdev_priv(netdev);
+@@ -3476,10 +3506,10 @@ static int igb_disable_sriov(struct pci_
+ 		adapter->flags |= IGB_FLAG_DMAC;
+ 	}
+ 
+-	return 0;
++	return reinit ? igb_sriov_reinit(pdev) : 0;
+ }
+ 
+-static int igb_enable_sriov(struct pci_dev *pdev, int num_vfs)
++static int igb_enable_sriov(struct pci_dev *pdev, int num_vfs, bool reinit)
+ {
+ 	struct net_device *netdev = pci_get_drvdata(pdev);
+ 	struct igb_adapter *adapter = netdev_priv(netdev);
+@@ -3544,12 +3574,6 @@ static int igb_enable_sriov(struct pci_d
+ 			"Unable to allocate memory for VF MAC filter list\n");
+ 	}
+ 
+-	/* only call pci_enable_sriov() if no VFs are allocated already */
+-	if (!old_vfs) {
+-		err = pci_enable_sriov(pdev, adapter->vfs_allocated_count);
+-		if (err)
+-			goto err_out;
+-	}
+ 	dev_info(&pdev->dev, "%d VFs allocated\n",
+ 		 adapter->vfs_allocated_count);
+ 	for (i = 0; i < adapter->vfs_allocated_count; i++)
+@@ -3557,6 +3581,17 @@ static int igb_enable_sriov(struct pci_d
+ 
+ 	/* DMA Coalescing is not supported in IOV mode. */
+ 	adapter->flags &= ~IGB_FLAG_DMAC;
++
++	if (reinit) {
++		err = igb_sriov_reinit(pdev);
++		if (err)
++			goto err_out;
++	}
++
++	/* only call pci_enable_sriov() if no VFs are allocated already */
++	if (!old_vfs)
++		err = pci_enable_sriov(pdev, adapter->vfs_allocated_count);
++
+ 	goto out;
+ 
+ err_out:
+@@ -3627,7 +3662,7 @@ static void igb_remove(struct pci_dev *p
+ 
+ #ifdef CONFIG_PCI_IOV
+ 	rtnl_lock();
+-	igb_disable_sriov(pdev);
++	igb_disable_sriov(pdev, false);
+ 	rtnl_unlock();
+ #endif
+ 
+@@ -3676,7 +3711,7 @@ static void igb_probe_vfs(struct igb_ada
+ 	igb_reset_interrupt_capability(adapter);
+ 
+ 	pci_sriov_set_totalvfs(pdev, 7);
+-	igb_enable_sriov(pdev, max_vfs);
++	igb_enable_sriov(pdev, max_vfs, false);
+ 
+ #endif /* CONFIG_PCI_IOV */
+ }
+@@ -8883,71 +8918,17 @@ static void igb_shutdown(struct pci_dev
+ 	}
+ }
+ 
+-#ifdef CONFIG_PCI_IOV
+-static int igb_sriov_reinit(struct pci_dev *dev)
+-{
+-	struct net_device *netdev = pci_get_drvdata(dev);
+-	struct igb_adapter *adapter = netdev_priv(netdev);
+-	struct pci_dev *pdev = adapter->pdev;
+-
+-	rtnl_lock();
+-
+-	if (netif_running(netdev))
+-		igb_close(netdev);
+-	else
+-		igb_reset(adapter);
+-
+-	igb_clear_interrupt_scheme(adapter);
+-
+-	igb_init_queue_configuration(adapter);
+-
+-	if (igb_init_interrupt_scheme(adapter, true)) {
+-		rtnl_unlock();
+-		dev_err(&pdev->dev, "Unable to allocate memory for queues\n");
+-		return -ENOMEM;
+-	}
+-
+-	if (netif_running(netdev))
+-		igb_open(netdev);
+-
+-	rtnl_unlock();
+-
+-	return 0;
+-}
+-
+-static int igb_pci_disable_sriov(struct pci_dev *dev)
+-{
+-	int err = igb_disable_sriov(dev);
+-
+-	if (!err)
+-		err = igb_sriov_reinit(dev);
+-
+-	return err;
+-}
+-
+-static int igb_pci_enable_sriov(struct pci_dev *dev, int num_vfs)
+-{
+-	int err = igb_enable_sriov(dev, num_vfs);
+-
+-	if (err)
+-		goto out;
+-
+-	err = igb_sriov_reinit(dev);
+-	if (!err)
+-		return num_vfs;
+-
+-out:
+-	return err;
+-}
+-
+-#endif
+ static int igb_pci_sriov_configure(struct pci_dev *dev, int num_vfs)
+ {
+ #ifdef CONFIG_PCI_IOV
+-	if (num_vfs == 0)
+-		return igb_pci_disable_sriov(dev);
+-	else
+-		return igb_pci_enable_sriov(dev, num_vfs);
++	int err;
++
++	if (num_vfs == 0) {
++		return igb_disable_sriov(dev, true);
++	} else {
++		err = igb_enable_sriov(dev, num_vfs, true);
++		return err ? err : num_vfs;
++	}
+ #endif
+ 	return 0;
+ }
