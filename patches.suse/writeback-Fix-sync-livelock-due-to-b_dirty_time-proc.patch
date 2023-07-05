@@ -37,7 +37,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  	enum writeback_sync_modes sync_mode;
  	unsigned int tagged_writepages:1;
  	unsigned int for_kupdate:1;
-@@ -1115,16 +1114,13 @@ static bool inode_dirtied_after(struct i
+@@ -1121,16 +1120,13 @@ static bool inode_dirtied_after(struct i
  #define EXPIRE_DIRTY_ATIME 0x0001
  
  /*
@@ -56,7 +56,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  	LIST_HEAD(tmp);
  	struct list_head *pos, *node;
  	struct super_block *sb = NULL;
-@@ -1132,16 +1128,9 @@ static int move_expired_inodes(struct li
+@@ -1138,16 +1134,9 @@ static int move_expired_inodes(struct li
  	int do_sb_sort = 0;
  	int moved = 0;
  
@@ -74,7 +74,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  			break;
  		list_move(&inode->i_io_list, &tmp);
  		moved++;
-@@ -1187,18 +1176,22 @@ out:
+@@ -1193,18 +1182,22 @@ out:
   *                                           |
   *                                           +--> dequeue for IO
   */
@@ -101,7 +101,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  }
  
  static int write_inode(struct inode *inode, struct writeback_control *wbc)
-@@ -1710,7 +1703,7 @@ static long writeback_inodes_wb(struct b
+@@ -1716,7 +1709,7 @@ static long writeback_inodes_wb(struct b
  	blk_start_plug(&plug);
  	spin_lock(&wb->list_lock);
  	if (list_empty(&wb->b_io))
@@ -110,7 +110,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  	__writeback_inodes_wb(wb, &work);
  	spin_unlock(&wb->list_lock);
  	blk_finish_plug(&plug);
-@@ -1730,7 +1723,7 @@ static long writeback_inodes_wb(struct b
+@@ -1736,7 +1729,7 @@ static long writeback_inodes_wb(struct b
   * takes longer than a dirty_writeback_interval interval, then leave a
   * one-second gap.
   *
@@ -119,7 +119,7 @@ Acked-by: Jan Kara <jack@suse.cz>
   * all dirty pages if they are all attached to "old" mappings.
   */
  static long wb_writeback(struct bdi_writeback *wb,
-@@ -1738,14 +1731,11 @@ static long wb_writeback(struct bdi_writ
+@@ -1744,14 +1737,11 @@ static long wb_writeback(struct bdi_writ
  {
  	unsigned long wb_start = jiffies;
  	long nr_pages = work->nr_pages;
@@ -135,7 +135,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  	blk_start_plug(&plug);
  	spin_lock(&wb->list_lock);
  	for (;;) {
-@@ -1779,14 +1769,14 @@ static long wb_writeback(struct bdi_writ
+@@ -1785,14 +1775,14 @@ static long wb_writeback(struct bdi_writ
  		 * safe.
  		 */
  		if (work->for_kupdate) {
@@ -155,7 +155,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  		else
 --- a/include/trace/events/writeback.h
 +++ b/include/trace/events/writeback.h
-@@ -359,8 +359,9 @@ DEFINE_WBC_EVENT(wbc_writepage);
+@@ -361,8 +361,9 @@ DEFINE_WBC_EVENT(wbc_writepage);
  TRACE_EVENT(writeback_queue_io,
  	TP_PROTO(struct bdi_writeback *wb,
  		 struct wb_writeback_work *work,
@@ -166,12 +166,12 @@ Acked-by: Jan Kara <jack@suse.cz>
  	TP_STRUCT__entry(
  		__array(char,		name, 32)
  		__field(unsigned long,	older)
-@@ -370,19 +371,17 @@ TRACE_EVENT(writeback_queue_io,
+@@ -372,19 +373,17 @@ TRACE_EVENT(writeback_queue_io,
  		__field(unsigned int,	cgroup_ino)
  	),
  	TP_fast_assign(
 -		unsigned long *older_than_this = work->older_than_this;
- 		strncpy(__entry->name, dev_name(wb->bdi->dev), 32);
+ 		strscpy_pad(__entry->name, dev_name(wb->bdi->dev), 32);
 -		__entry->older	= older_than_this ?  *older_than_this : 0;
 -		__entry->age	= older_than_this ?
 -				  (jiffies - *older_than_this) * 1000 / HZ : -1;
