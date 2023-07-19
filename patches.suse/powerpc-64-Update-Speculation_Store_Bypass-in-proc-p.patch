@@ -1,0 +1,90 @@
+From d93e5e2d03d4f41dfedb92200a2c0413ab8ee4e7 Mon Sep 17 00:00:00 2001
+From: Michael Ellerman <mpe@ellerman.id.au>
+Date: Thu, 2 Apr 2020 23:49:29 +1100
+Subject: [PATCH] powerpc/64: Update Speculation_Store_Bypass in
+ /proc/<pid>/status
+
+References: bsc#1188885 ltc#193722 git-fixes
+Patch-mainline: v5.8-rc1
+Git-commit: d93e5e2d03d4f41dfedb92200a2c0413ab8ee4e7
+
+Currently we don't report anything useful in /proc/<pid>/status:
+
+  $ grep Speculation_Store_Bypass /proc/self/status
+  Speculation_Store_Bypass:       unknown
+
+Our mitigation is currently always a barrier instruction, which
+doesn't map that well onto the existing possibilities for the PR_SPEC
+values.
+
+However even if we added a "barrier" type PR_SPEC value, userspace
+would still need to consult some other source to work out which type
+of barrier to use. So reporting "vulnerable" seems sufficient, as
+userspace can see that and then consult its source to determine what
+barrier to use.
+
+Signed-off-by: Gustavo Walbon <gwalbon@linux.ibm.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Link: https://lore.kernel.org/r/20200402124929.3574166-1-mpe@ellerman.id.au
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kernel/security.c | 36 ++++++++++++++++++++++++++++++++++
+ 1 file changed, 36 insertions(+)
+
+diff --git a/arch/powerpc/kernel/security.c b/arch/powerpc/kernel/security.c
+index bd70f5be1c27..479325baf6a9 100644
+--- a/arch/powerpc/kernel/security.c
++++ b/arch/powerpc/kernel/security.c
+@@ -7,6 +7,8 @@
+ #include <linux/cpu.h>
+ #include <linux/kernel.h>
+ #include <linux/device.h>
++#include <linux/nospec.h>
++#include <linux/prctl.h>
+ #include <linux/seq_buf.h>
+ 
+ #include <asm/asm-prototypes.h>
+@@ -353,6 +355,40 @@ ssize_t cpu_show_spec_store_bypass(struct device *dev, struct device_attribute *
+ 	return sprintf(buf, "Vulnerable\n");
+ }
+ 
++static int ssb_prctl_get(struct task_struct *task)
++{
++	if (stf_enabled_flush_types == STF_BARRIER_NONE)
++		/*
++		 * We don't have an explicit signal from firmware that we're
++		 * vulnerable or not, we only have certain CPU revisions that
++		 * are known to be vulnerable.
++		 *
++		 * We assume that if we're on another CPU, where the barrier is
++		 * NONE, then we are not vulnerable.
++		 */
++		return PR_SPEC_NOT_AFFECTED;
++	else
++		/*
++		 * If we do have a barrier type then we are vulnerable. The
++		 * barrier is not a global or per-process mitigation, so the
++		 * only value we can report here is PR_SPEC_ENABLE, which
++		 * appears as "vulnerable" in /proc.
++		 */
++		return PR_SPEC_ENABLE;
++
++	return -EINVAL;
++}
++
++int arch_prctl_spec_ctrl_get(struct task_struct *task, unsigned long which)
++{
++	switch (which) {
++	case PR_SPEC_STORE_BYPASS:
++		return ssb_prctl_get(task);
++	default:
++		return -ENODEV;
++	}
++}
++
+ #ifdef CONFIG_DEBUG_FS
+ static int stf_barrier_set(void *data, u64 val)
+ {
+-- 
+2.41.0
+
