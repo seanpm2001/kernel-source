@@ -1,0 +1,107 @@
+From: NeilBrown <neilb@suse.com>
+Subject: kabi fix for: nfsd: fix double fget() bug in __write_ports_addfd()
+Patch-mainline: never, kabi
+References: git-fixes
+
+Instead of changing the exported function, create a new function
+with the required functionality.
+
+Signed-off-by: NeilBrown <neilb@suse.com>
+---
+ fs/nfsd/nfsctl.c               |    2 +-
+ include/linux/sunrpc/svcsock.h |    5 ++++-
+ net/sunrpc/svcsock.c           |   35 +++++++++++++++++++++++++++++------
+ 3 files changed, 34 insertions(+), 8 deletions(-)
+
+--- a/fs/nfsd/nfsctl.c
++++ b/fs/nfsd/nfsctl.c
+@@ -731,7 +731,7 @@ static ssize_t __write_ports_addfd(char
+ 	if (err != 0)
+ 		return err;
+ 
+-	err = svc_addsock(nn->nfsd_serv, net, fd, buf, SIMPLE_TRANSACTION_LIMIT);
++	err = svc_addsock5(nn->nfsd_serv, net, fd, buf, SIMPLE_TRANSACTION_LIMIT);
+ 	if (err < 0) {
+ 		nfsd_destroy(net);
+ 		return err;
+--- a/include/linux/sunrpc/svcsock.h
++++ b/include/linux/sunrpc/svcsock.h
+@@ -56,7 +56,10 @@ int		svc_recv(struct svc_rqst *, long);
+ int		svc_send(struct svc_rqst *);
+ void		svc_drop(struct svc_rqst *);
+ void		svc_sock_update_bufs(struct svc_serv *serv);
+-int		svc_addsock(struct svc_serv *serv, struct net *net,
++bool		svc_alien_sock(struct net *net, int fd);
++int		svc_addsock(struct svc_serv *serv, const int fd,
++					char *name_return, const size_t len);
++int		svc_addsock5(struct svc_serv *serv, struct net *net,
+ 			    const int fd, char *name_return, const size_t len);
+ void		svc_init_xprt_sock(void);
+ void		svc_cleanup_xprt_sock(void);
+--- a/net/sunrpc/svcsock.c
++++ b/net/sunrpc/svcsock.c
+@@ -1422,8 +1422,24 @@ static struct svc_sock *svc_setup_socket
+ 	return svsk;
+ }
+ 
++bool svc_alien_sock(struct net *net, int fd)
++{
++	int err;
++	struct socket *sock = sockfd_lookup(fd, &err);
++	bool ret = false;
++
++	if (!sock)
++		goto out;
++	if (sock_net(sock->sk) != net)
++		ret = true;
++	sockfd_put(sock);
++out:
++	return ret;
++}
++EXPORT_SYMBOL_GPL(svc_alien_sock);
++
+ /**
+- * svc_addsock - add a listener socket to an RPC service
++ * svc_addsock5 - add a listener socket to an RPC service
+  * @serv: pointer to RPC service to which to add a new listener
+  * @net: caller's network namespace
+  * @fd: file descriptor of the new listener
+@@ -1434,7 +1450,7 @@ static struct svc_sock *svc_setup_socket
+  * Name is terminated with '\n'.  On error, returns a negative errno
+  * value.
+  */
+-int svc_addsock(struct svc_serv *serv, struct net *net, const int fd,
++int svc_addsock5(struct svc_serv *serv, struct net *net, const int fd,
+ 		char *name_return, const size_t len)
+ {
+ 	int err = 0;
+@@ -1446,9 +1462,11 @@ int svc_addsock(struct svc_serv *serv, s
+ 
+ 	if (!so)
+ 		return err;
+-	err = -EINVAL;
+-	if (sock_net(so->sk) != net)
+-		goto out;
++	if (net) {
++		err = -EINVAL;
++		if (sock_net(so->sk) != net)
++			goto out;
++	}
+ 	err = -EAFNOSUPPORT;
+ 	if ((so->sk->sk_family != PF_INET) && (so->sk->sk_family != PF_INET6))
+ 		goto out;
+@@ -1476,8 +1494,13 @@ out:
+ 	sockfd_put(so);
+ 	return err;
+ }
++EXPORT_SYMBOL_GPL(svc_addsock5);
++int svc_addsock(struct svc_serv *serv, const int fd,
++		char *name_return, const size_t len)
++{
++	return svc_addsock5(serv, NULL, fd, name_return, len);
++}
+ EXPORT_SYMBOL_GPL(svc_addsock);
+-
+ /*
+  * Create socket for RPC service.
+  */
