@@ -1,0 +1,54 @@
+From: Punit Agrawal <punit.agrawal@arm.com>
+Date: Tue, 22 Aug 2017 11:42:48 +0100
+Subject: arm64: Re-enable support for contiguous hugepages
+Git-commit: 5cd028b9d90403bf24c8bf7915ed61c7a9bfce6c
+Patch-mainline: v4.14-rc1
+References: git-fixes
+
+also known as -
+
+Revert "Revert "Revert "commit 66b3923a1a0f ("arm64: hugetlb: add
+support for PTE contiguous bit")"""
+
+Now that our hugetlb implementation is compliant with the
+break-before-make requirements of the architecture and we have addressed
+some of the issues in core code required for properly dealing with
+hardware poisoning of contiguous hugepages let's re-enable support for
+contiguous hugepages.
+
+This reverts commit 6ae979ab39a368c18ceb0424bf824d172d6ab56f.
+
+Signed-off-by: Punit Agrawal <punit.agrawal@arm.com>
+Signed-off-by: Catalin Marinas <catalin.marinas@arm.com>
+Acked-by: Ivan T. Ivanov <iivanov@suse.de>
+---
+ arch/arm64/mm/hugetlbpage.c |   14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+--- a/arch/arm64/mm/hugetlbpage.c
++++ b/arch/arm64/mm/hugetlbpage.c
+@@ -285,6 +285,10 @@ static __init int setup_hugepagesz(char
+ 		hugetlb_add_hstate(PMD_SHIFT - PAGE_SHIFT);
+ 	} else if (ps == PUD_SIZE) {
+ 		hugetlb_add_hstate(PUD_SHIFT - PAGE_SHIFT);
++	} else if (ps == (PAGE_SIZE * CONT_PTES)) {
++		hugetlb_add_hstate(CONT_PTE_SHIFT);
++	} else if (ps == (PMD_SIZE * CONT_PMDS)) {
++		hugetlb_add_hstate((PMD_SHIFT + CONT_PMD_SHIFT) - PAGE_SHIFT);
+ 	} else {
+ 		hugetlb_bad_size();
+ 		pr_err("hugepagesz: Unsupported page size %lu K\n", ps >> 10);
+@@ -293,3 +297,13 @@ static __init int setup_hugepagesz(char
+ 	return 1;
+ }
+ __setup("hugepagesz=", setup_hugepagesz);
++
++#ifdef CONFIG_ARM64_64K_PAGES
++static __init int add_default_hugepagesz(void)
++{
++	if (size_to_hstate(CONT_PTES * PAGE_SIZE) == NULL)
++		hugetlb_add_hstate(CONT_PTE_SHIFT);
++	return 0;
++}
++arch_initcall(add_default_hugepagesz);
++#endif
