@@ -17,7 +17,8 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  arch/x86/kernel/cpu/amd.c            |   12 ++++++------
  arch/x86/kernel/cpu/bugs.c           |   24 ++++++++++++++++++++----
  arch/x86/kernel/cpu/common.c         |    6 ++++--
- 6 files changed, 36 insertions(+), 15 deletions(-)
+ arch/x86/kvm/svm.c                   |    4 ++--
+ 7 files changed, 38 insertions(+), 17 deletions(-)
 
 --- a/arch/x86/include/asm/cpufeatures.h
 +++ b/arch/x86/include/asm/cpufeatures.h
@@ -160,3 +161,21 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  
  	if (cpu_matches(cpu_vuln_whitelist, NO_MELTDOWN))
  		return;
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -4310,13 +4310,13 @@ static int svm_set_msr(struct kvm_vcpu *
+ 		    !guest_has_pred_cmd_msr(vcpu))
+ 			return 1;
+ 
+-		if (data & ~PRED_CMD_IBPB)
++		if (data & ~(PRED_CMD_IBPB | (boot_cpu_has(X86_FEATURE_SBPB) ? PRED_CMD_SBPB : 0)))
+ 			return 1;
+ 
+ 		if (!data)
+ 			break;
+ 
+-		wrmsrl(MSR_IA32_PRED_CMD, PRED_CMD_IBPB);
++		wrmsrl(MSR_IA32_PRED_CMD, data);
+ 		if (is_guest_mode(vcpu))
+ 			break;
+ 		set_msr_interception(svm->msrpm, MSR_IA32_PRED_CMD, 0, 1);
