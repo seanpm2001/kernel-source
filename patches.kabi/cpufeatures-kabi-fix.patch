@@ -1,0 +1,201 @@
+From: Nikolay Borisov <nik.borisov@suse.com
+Date: Fri, 20 Oct 2017 09:30:43 -0500
+Subject: x86: Fix kabi when adding new cpuid features
+Patch-mainline: Never, kABI workaround
+References: bsc#1213287, CVE-2023-20569
+
+Since cpuinfo_x86 cannot be grown because of kABI consideration implement a scheme
+which allows to add new caps bit. The idea is to simply add a new x86_ext_capability
+array at the end of cpuinfo_x86 thus retaining kABI. All new cpuid bits will Subsequently
+be recorded in the new member.
+
+Additionally cpu_caps_set is also grown by the number of additional cpuid words
+and the getter/setter macros are modified to reflect this. All forced bits which
+belong to extended cpuid words will be written in cpu_caps_set after NCAPINTS+NBUGINTS.
+---
+ arch/x86/include/asm/cpufeature.h        |   40 +++++++++++++++++++++----------
+ arch/x86/include/asm/cpufeatures.h       |    3 +-
+ arch/x86/include/asm/disabled-features.h |    4 ---
+ arch/x86/include/asm/processor.h         |    5 +++
+ arch/x86/include/asm/required-features.h |    4 ---
+ arch/x86/kernel/cpu/common.c             |   12 +++++++--
+ 6 files changed, 46 insertions(+), 22 deletions(-)
+
+--- a/arch/x86/include/asm/cpufeature.h
++++ b/arch/x86/include/asm/cpufeature.h
+@@ -29,9 +29,18 @@ enum cpuid_leafs
+ 	CPUID_7_ECX,
+ 	CPUID_8000_0007_EBX,
+ 	CPUID_7_EDX,
++	CPUID_MAX = CPUID_7_EDX,
++	/*
++	 * Everything below should go into the extended caps array to preserve
++	 * kABI
++	 */
+ 	CPUID_8000_0021_EAX,
+ };
+ 
++#define CPUID_IDX(x) \
++	__builtin_choose_expr((x) > CPUID_MAX, (x) - CPUID_MAX - 1, (x))
++#define IS_EXT_CPUID_BIT(bit) ((bit>>5) > NCAPINTS)
++
+ #ifdef CONFIG_X86_FEATURE_NAMES
+ extern const char * const x86_cap_flags[NCAPINTS*32];
+ extern const char * const x86_power_flags[32];
+@@ -48,9 +57,10 @@ extern const char * const x86_power_flag
+  */
+ extern const char * const x86_bug_flags[NBUGINTS*32];
+ 
+-#define test_cpu_cap(c, bit)						\
+-	 test_bit(bit, (unsigned long *)((c)->x86_capability))
+-
++#define test_cpu_cap(c, bit) \
++	(IS_EXT_CPUID_BIT((bit)) ? test_bit((bit) - (NCAPINTS*32), \
++				(unsigned long *)((c)->x86_ext_capability)) : \
++				test_bit(bit, (unsigned long *)((c)->x86_capability)))
+ /*
+  * There are 32 bits/features in each mask word.  The high bits
+  * (selected with (bit>>5) give us the word number and the low 5
+@@ -81,10 +91,8 @@ extern const char * const x86_bug_flags[
+ 	   CHECK_BIT_IN_MASK_WORD(REQUIRED_MASK, 16, feature_bit) ||	\
+ 	   CHECK_BIT_IN_MASK_WORD(REQUIRED_MASK, 17, feature_bit) ||	\
+ 	   CHECK_BIT_IN_MASK_WORD(REQUIRED_MASK, 18, feature_bit) ||	\
+-	   CHECK_BIT_IN_MASK_WORD(REQUIRED_MASK, 19, feature_bit) ||	\
+-	   CHECK_BIT_IN_MASK_WORD(REQUIRED_MASK, 20, feature_bit) ||	\
+ 	   REQUIRED_MASK_CHECK					  ||	\
+-	   BUILD_BUG_ON_ZERO(NCAPINTS != 21))
++	   BUILD_BUG_ON_ZERO(NCAPINTS != 19))
+ 
+ #define DISABLED_MASK_BIT_SET(feature_bit)				\
+ 	 ( CHECK_BIT_IN_MASK_WORD(DISABLED_MASK,  0, feature_bit) ||	\
+@@ -106,10 +114,8 @@ extern const char * const x86_bug_flags[
+ 	   CHECK_BIT_IN_MASK_WORD(DISABLED_MASK, 16, feature_bit) ||	\
+ 	   CHECK_BIT_IN_MASK_WORD(DISABLED_MASK, 17, feature_bit) ||	\
+ 	   CHECK_BIT_IN_MASK_WORD(DISABLED_MASK, 18, feature_bit) ||	\
+-	   CHECK_BIT_IN_MASK_WORD(DISABLED_MASK, 19, feature_bit) ||	\
+-	   CHECK_BIT_IN_MASK_WORD(DISABLED_MASK, 20, feature_bit) ||	\
+ 	   DISABLED_MASK_CHECK					  ||	\
+-	   BUILD_BUG_ON_ZERO(NCAPINTS != 21))
++	   BUILD_BUG_ON_ZERO(NCAPINTS != 19))
+ 
+ #define cpu_has(c, bit)							\
+ 	(__builtin_constant_p(bit) && REQUIRED_MASK_BIT_SET(bit) ? 1 :	\
+@@ -138,11 +144,21 @@ extern void setup_clear_cpu_cap(unsigned
+ extern void clear_cpu_cap(struct cpuinfo_x86 *c, unsigned int bit);
+ 
+ #define setup_force_cpu_cap(bit) do { \
+-	set_cpu_cap(&boot_cpu_data, bit);	\
+-	set_bit(bit, (unsigned long *)cpu_caps_set);	\
++	if (IS_EXT_CPUID_BIT(bit)) {					      \
++		set_bit(bit - (NCAPINTS*32),						      \
++			(unsigned long *)&cpu_caps_set[NCAPINTS + NBUGINTS]); \
++		set_bit(bit - (NCAPINTS*32),                                 \
++			(unsigned long *)(&boot_cpu_data)->x86_ext_capability); \
++	} else {							      \
++		set_cpu_cap(&boot_cpu_data, bit);			      \
++		set_bit(bit, (unsigned long *)cpu_caps_set);		      \
++	}								      \
+ } while (0)
+ 
+-#define setup_force_cpu_bug(bit) setup_force_cpu_cap(bit)
++#define setup_force_cpu_bug(bit) do {				\
++		set_cpu_cap(&boot_cpu_data, bit);		\
++		set_bit(bit, (unsigned long *)cpu_caps_set);	\
++} while (0)
+ 
+ #if defined(CC_HAVE_ASM_GOTO) && defined(CONFIG_X86_FAST_FEATURE_TESTS)
+ /*
+--- a/arch/x86/include/asm/cpufeatures.h
++++ b/arch/x86/include/asm/cpufeatures.h
+@@ -12,8 +12,9 @@
+ /*
+  * Defines x86 CPU feature bits
+  */
+-#define NCAPINTS	21      /* N 32-bit words worth of info */
++#define NCAPINTS	19      /* N 32-bit words worth of info */
+ #define NBUGINTS	1	/* N 32-bit bug flags */
++#define NEXTCAPINTS     2       /* N 32-bit words which come after NCAPINTS */
+ 
+ /*
+  * Note: If the comment begins with a quoted string, that string is used
+--- a/arch/x86/include/asm/disabled-features.h
++++ b/arch/x86/include/asm/disabled-features.h
+@@ -76,8 +76,6 @@
+ #define DISABLED_MASK16	(DISABLE_PKU|DISABLE_OSPKE|DISABLE_LA57|DISABLE_UMIP)
+ #define DISABLED_MASK17	0
+ #define DISABLED_MASK18	0
+-#define DISABLED_MASK19	0
+-#define DISABLED_MASK20	0
+-#define DISABLED_MASK_CHECK BUILD_BUG_ON_ZERO(NCAPINTS != 21)
++#define DISABLED_MASK_CHECK BUILD_BUG_ON_ZERO(NCAPINTS != 19)
+ 
+ #endif /* _ASM_X86_DISABLED_FEATURES_H */
+--- a/arch/x86/include/asm/processor.h
++++ b/arch/x86/include/asm/processor.h
+@@ -139,6 +139,9 @@ struct cpuinfo_x86 {
+ 	 */
+ 	u8			x86_cache_bits;
+ 	unsigned		initialized : 1;
++#ifndef __GENKSYMS__
++	__u32 x86_ext_capability[NEXTCAPINTS];
++#endif
+ };
+ 
+ struct cpuid_regs {
+@@ -172,7 +175,7 @@ extern struct cpuinfo_x86	new_cpu_data;
+ 
+ extern struct x86_hw_tss	doublefault_tss;
+ extern __u32			cpu_caps_cleared[NCAPINTS + NBUGINTS];
+-extern __u32			cpu_caps_set[NCAPINTS + NBUGINTS];
++extern __u32			cpu_caps_set[NCAPINTS + NBUGINTS + NEXTCAPINTS];
+ 
+ #ifdef CONFIG_SMP
+ DECLARE_PER_CPU_READ_MOSTLY(struct cpuinfo_x86, cpu_info);
+--- a/arch/x86/include/asm/required-features.h
++++ b/arch/x86/include/asm/required-features.h
+@@ -107,8 +107,6 @@
+ #define REQUIRED_MASK16	(NEED_LA57)
+ #define REQUIRED_MASK17	0
+ #define REQUIRED_MASK18	0
+-#define REQUIRED_MASK19	0
+-#define REQUIRED_MASK20 0
+-#define REQUIRED_MASK_CHECK BUILD_BUG_ON_ZERO(NCAPINTS != 21)
++#define REQUIRED_MASK_CHECK BUILD_BUG_ON_ZERO(NCAPINTS != 19)
+ 
+ #endif /* _ASM_X86_REQUIRED_FEATURES_H */
+--- a/arch/x86/kernel/cpu/common.c
++++ b/arch/x86/kernel/cpu/common.c
+@@ -486,7 +486,7 @@ static const char *table_lookup_model(st
+ }
+ 
+ __u32 cpu_caps_cleared[NCAPINTS + NBUGINTS];
+-__u32 cpu_caps_set[NCAPINTS + NBUGINTS];
++__u32 cpu_caps_set[NCAPINTS + NBUGINTS + NEXTCAPINTS];
+ 
+ void load_percpu_segment(int cpu)
+ {
+@@ -749,6 +749,10 @@ static void apply_forced_caps(struct cpu
+ 		c->x86_capability[i] &= ~cpu_caps_cleared[i];
+ 		c->x86_capability[i] |= cpu_caps_set[i];
+ 	}
++
++	for (i = 0; i < NEXTCAPINTS; i++) {
++		c->x86_ext_capability[i] |= cpu_caps_set[NCAPINTS + NBUGINTS + i];
++	}
+ }
+ 
+ static void init_speculation_control(struct cpuinfo_x86 *c)
+@@ -888,8 +892,12 @@ void get_cpu_cap(struct cpuinfo_x86 *c)
+ 	if (c->extended_cpuid_level >= 0x8000000a)
+ 		c->x86_capability[CPUID_8000_000A_EDX] = cpuid_edx(0x8000000a);
+ 
++	/*
++	 * Every new leaf should go into the extended caps array, consult
++	 * cpuid_leafs enum for more info
++	 */
+ 	if (c->extended_cpuid_level >= 0x80000021)
+-		c->x86_capability[CPUID_8000_0021_EAX] = cpuid_eax(0x80000021);
++		c->x86_ext_capability[CPUID_IDX(CPUID_8000_0021_EAX)] = cpuid_eax(0x80000021);
+ 
+ 	init_scattered_cpuid_features(c);
+ 	init_speculation_control(c);
