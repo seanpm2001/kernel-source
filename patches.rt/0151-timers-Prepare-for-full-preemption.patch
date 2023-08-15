@@ -14,22 +14,10 @@ Signed-off-by: Ingo Molnar <mingo@elte.hu>
 Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
 Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 ---
- include/linux/timer.h |    2 +-
- kernel/sched/core.c   |    9 +++++++--
- kernel/time/timer.c   |   45 +++++++++++++++++++++++++++++++++++++++++----
- 3 files changed, 49 insertions(+), 7 deletions(-)
+ kernel/sched/core.c |    9 +++++++--
+ kernel/time/timer.c |   41 +++++++++++++++++++++++++++++++++++++++--
+ 2 files changed, 46 insertions(+), 4 deletions(-)
 
---- a/include/linux/timer.h
-+++ b/include/linux/timer.h
-@@ -227,7 +227,7 @@ extern void add_timer(struct timer_list
- 
- extern int try_to_del_timer_sync(struct timer_list *timer);
- 
--#ifdef CONFIG_SMP
-+#if defined(CONFIG_SMP) || defined(CONFIG_PREEMPT_RT_FULL)
-   extern int del_timer_sync(struct timer_list *timer);
- #else
- # define del_timer_sync(t)		del_timer(t)
 --- a/kernel/sched/core.c
 +++ b/kernel/sched/core.c
 @@ -563,11 +563,14 @@ void resched_cpu(int cpu)
@@ -68,7 +56,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  #include <linux/uaccess.h>
  #include <asm/unistd.h>
-@@ -198,6 +199,9 @@ EXPORT_SYMBOL(jiffies_64);
+@@ -198,6 +199,9 @@
  struct timer_base {
  	raw_spinlock_t		lock;
  	struct timer_list	*running_timer;
@@ -78,7 +66,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	unsigned long		clk;
  	unsigned long		next_expiry;
  	unsigned int		cpu;
-@@ -1162,6 +1166,33 @@ void add_timer_on(struct timer_list *tim
+@@ -1222,6 +1226,33 @@
  }
  EXPORT_SYMBOL_GPL(add_timer_on);
  
@@ -110,29 +98,38 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 +#endif
 +
  /**
-  * del_timer - deactivate a timer.
-  * @timer: the timer to be deactivated
-@@ -1217,7 +1248,7 @@ int try_to_del_timer_sync(struct timer_l
- }
- EXPORT_SYMBOL(try_to_del_timer_sync);
+  * __timer_delete - Internal function: Deactivate a timer
+  * @timer:	The timer to be deactivated
+@@ -1309,7 +1309,7 @@
+ 		ret = detach_if_pending(timer, base, true);
+ 		if (shutdown)
+ 			timer->function = NULL;
+-		spin_unlock_irqrestore(&base->lock, flags);
++		raw_spin_unlock_irqrestore(&base->lock, flags);
+ 	}
  
--#ifdef CONFIG_SMP
-+#if defined(CONFIG_SMP) || defined(CONFIG_PREEMPT_RT_FULL)
- /**
-  * del_timer_sync - deactivate a timer and wait for the handler to finish.
-  * @timer: the timer to be deactivated
-@@ -1277,7 +1308,7 @@ int del_timer_sync(struct timer_list *ti
- 		int ret = try_to_del_timer_sync(timer);
+ 	return ret;
+@@ -1405,7 +1405,7 @@
+ 	if (shutdown)
+ 		timer->function = NULL;
+ 
+-	spin_unlock_irqrestore(&base->lock, flags);
++	raw_spin_unlock_irqrestore(&base->lock, flags);
+ 
+ 	return ret;
+ }
+@@ -1477,7 +1477,7 @@
+ 		int ret = __try_to_del_timer_sync(timer, shutdown);
  		if (ret >= 0)
  			return ret;
 -		cpu_relax();
 +		wait_for_running_timer(timer);
  	}
  }
- EXPORT_SYMBOL(del_timer_sync);
-@@ -1341,13 +1372,16 @@ static void expire_timers(struct timer_b
- 		fn = timer->function;
- 		data = timer->data;
+ 
+@@ -1601,13 +1632,16 @@
+ 			continue;
+ 		}
  
 -		if (timer->flags & TIMER_IRQSAFE) {
 +		if (!IS_ENABLED(CONFIG_PREEMPT_RT_FULL) &&
@@ -148,7 +145,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			raw_spin_lock_irq(&base->lock);
  		}
  	}
-@@ -1656,8 +1690,8 @@ static inline void __run_timers(struct t
+@@ -1932,8 +1966,8 @@
  		while (levels--)
  			expire_timers(base, heads + levels);
  	}
@@ -158,7 +155,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  /*
-@@ -1903,6 +1937,9 @@ static void __init init_timer_cpu(int cp
+@@ -2165,6 +2199,9 @@
  		base->cpu = cpu;
  		raw_spin_lock_init(&base->lock);
  		base->clk = jiffies;

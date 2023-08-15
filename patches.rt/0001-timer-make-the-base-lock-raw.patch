@@ -13,12 +13,12 @@ That means the lock can be made raw and held in IRQ context.
 Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
 Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
 ---
- kernel/time/timer.c |   48 ++++++++++++++++++++++++------------------------
- 1 file changed, 24 insertions(+), 24 deletions(-)
+ time/timer.c |   44 ++++++++++++++++++++++----------------------
+ 1 file changed, 22 insertions(+), 22 deletions(-)
 
 --- a/kernel/time/timer.c
 +++ b/kernel/time/timer.c
-@@ -196,7 +196,7 @@ EXPORT_SYMBOL(jiffies_64);
+@@ -196,7 +196,7 @@
  #endif
  
  struct timer_base {
@@ -27,7 +27,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	struct timer_list	*running_timer;
  	unsigned long		clk;
  	unsigned long		next_expiry;
-@@ -930,10 +930,10 @@ static struct timer_base *lock_timer_bas
+@@ -930,10 +930,10 @@
  
  		if (!(tf & TIMER_MIGRATING)) {
  			base = get_timer_base(tf);
@@ -40,7 +40,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		}
  		cpu_relax();
  	}
-@@ -1024,9 +1024,9 @@ __mod_timer(struct timer_list *timer, un
+@@ -1040,9 +1040,9 @@
  			/* See the comment in lock_timer_base() */
  			timer->flags |= TIMER_MIGRATING;
  
@@ -52,7 +52,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  			WRITE_ONCE(timer->flags,
  				   (timer->flags & ~TIMER_BASEMASK) | base->cpu);
  			forward_timer_base(base);
-@@ -1051,7 +1051,7 @@ __mod_timer(struct timer_list *timer, un
+@@ -1067,7 +1067,7 @@
  	}
  
  out_unlock:
@@ -61,7 +61,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	return ret;
  }
-@@ -1159,9 +1159,9 @@ void add_timer_on(struct timer_list *tim
+@@ -1207,9 +1207,9 @@
  	if (base != new_base) {
  		timer->flags |= TIMER_MIGRATING;
  
@@ -73,35 +73,17 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		WRITE_ONCE(timer->flags,
  			   (timer->flags & ~TIMER_BASEMASK) | cpu);
  	}
-@@ -1169,7 +1169,7 @@ void add_timer_on(struct timer_list *tim
- 
+@@ -1218,7 +1218,7 @@
  	debug_activate(timer, timer->expires);
  	internal_add_timer(base, timer);
+ out_unlock:
 -	spin_unlock_irqrestore(&base->lock, flags);
 +	raw_spin_unlock_irqrestore(&base->lock, flags);
  }
  EXPORT_SYMBOL_GPL(add_timer_on);
  
-@@ -1195,7 +1195,7 @@ int del_timer(struct timer_list *timer)
- 	if (timer_pending(timer)) {
- 		base = lock_timer_base(timer, &flags);
- 		ret = detach_if_pending(timer, base, true);
--		spin_unlock_irqrestore(&base->lock, flags);
-+		raw_spin_unlock_irqrestore(&base->lock, flags);
- 	}
- 
- 	return ret;
-@@ -1222,7 +1222,7 @@ int try_to_del_timer_sync(struct timer_l
- 	if (base->running_timer != timer)
- 		ret = detach_if_pending(timer, base, true);
- 
--	spin_unlock_irqrestore(&base->lock, flags);
-+	raw_spin_unlock_irqrestore(&base->lock, flags);
- 
- 	return ret;
- }
-@@ -1353,13 +1353,13 @@ static void expire_timers(struct timer_b
- 		data = timer->data;
+@@ -1602,13 +1602,13 @@
+ 		}
  
  		if (timer->flags & TIMER_IRQSAFE) {
 -			spin_unlock(&base->lock);
@@ -118,7 +100,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		}
  	}
  }
-@@ -1528,7 +1528,7 @@ u64 get_next_timer_interrupt(unsigned lo
+@@ -1777,7 +1777,7 @@
  	if (cpu_is_offline(smp_processor_id()))
  		return expires;
  
@@ -127,7 +109,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  	nextevt = __next_timer_interrupt(base);
  	is_max_delta = (nextevt == base->clk + NEXT_TIMER_MAX_DELTA);
  	base->next_expiry = nextevt;
-@@ -1562,7 +1562,7 @@ u64 get_next_timer_interrupt(unsigned lo
+@@ -1811,7 +1811,7 @@
  			base->is_idle = true;
  		}
  	}
@@ -136,7 +118,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	return cmp_next_hrtimer_event(basem, expires);
  }
-@@ -1657,7 +1657,7 @@ static inline void __run_timers(struct t
+@@ -1906,7 +1906,7 @@
  	if (!time_after_eq(jiffies, base->clk))
  		return;
  
@@ -145,7 +127,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  	/*
  	 * timer_base::must_forward_clk must be cleared before running
-@@ -1684,7 +1684,7 @@ static inline void __run_timers(struct t
+@@ -1933,7 +1933,7 @@
  			expire_timers(base, heads + levels);
  	}
  	base->running_timer = NULL;
@@ -154,7 +136,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  }
  
  /*
-@@ -1884,8 +1884,8 @@ int timers_dead_cpu(unsigned int cpu)
+@@ -2131,8 +2131,8 @@
  		 * The caller is globally serialized and nobody else
  		 * takes two locks at once, deadlock is not possible.
  		 */
@@ -165,7 +147,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  
  		/*
  		 * The current CPUs base clock might be stale. Update it
-@@ -1898,8 +1898,8 @@ int timers_dead_cpu(unsigned int cpu)
+@@ -2146,8 +2146,8 @@
  		for (i = 0; i < WHEEL_SIZE; i++)
  			migrate_timer_list(new_base, old_base->vectors + i);
  
@@ -176,7 +158,7 @@ Signed-off-by: Mike Galbraith <mgalbraith@suse.de>
  		put_cpu_ptr(&timer_bases);
  	}
  	return 0;
-@@ -1915,7 +1915,7 @@ static void __init init_timer_cpu(int cp
+@@ -2163,7 +2163,7 @@
  	for (i = 0; i < NR_BASES; i++) {
  		base = per_cpu_ptr(&timer_bases[i], cpu);
  		base->cpu = cpu;
