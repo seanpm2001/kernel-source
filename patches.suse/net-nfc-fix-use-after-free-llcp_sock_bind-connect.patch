@@ -27,6 +27,11 @@ nfc_llcp_local_put.
 
 This addresses CVE-2021-23134.
 
+Joey Lee:
+Modified this patch to the original error path because
+"d7737d4257 nfc: Fix to check for kmemdup failure" patch be
+backported. (bsc#1213601)(CVE-2023-3863)
+
 Reported-by: Or Cohen <orcohen@paloaltonetworks.com>
 Reported-by: Nadav Markus <nmarkus@paloaltonetworks.com>
 Fixes: c33b1cc62 ("nfc: fix refcount leak in llcp_sock_bind()")
@@ -63,9 +68,9 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  		ret = -ENOMEM;
  		goto put_dev;
  	}
-@@ -765,6 +768,7 @@ sock_unlink:
- 	llcp_sock->service_name = NULL;
- 
+@@ -769,6 +772,7 @@ sock_unlink:
+ sock_llcp_release:
+ 	nfc_llcp_put_ssap(local, llcp_sock->ssap);
  	nfc_llcp_local_put(llcp_sock->local);
 +	llcp_sock->local = NULL;
  
