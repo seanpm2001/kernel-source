@@ -18,6 +18,11 @@ To fix it, add calling nfc_llcp_local_put().
 
 fix CVE-2020-25671
 
+Joey Lee:
+Modified this patch to the original error path because
+"d7737d4257 nfc: Fix to check for kmemdup failure" patch be
+backported. (bsc#1213601)(CVE-2023-3863)
+
 Fixes: c7aa12252f51 ("NFC: Take a reference on the LLCP local pointer when creating a socket")
 Reported-by: "kiyin(尹亮)" <kiyin@tencent.com>
 Link: https://www.openwall.com/lists/oss-security/2020/11/01/1
@@ -40,10 +45,10 @@ Acked-by: Takashi Iwai <tiwai@suse.de>
  		ret = -ENOMEM;
  		goto put_dev;
  	}
-@@ -756,6 +757,7 @@ sock_unlink:
- 	nfc_llcp_put_ssap(local, llcp_sock->ssap);
+@@ -761,6 +762,7 @@ sock_unlink:
  
- 	nfc_llcp_sock_unlink(&local->connecting_sockets, sk);
+ sock_llcp_release:
+ 	nfc_llcp_put_ssap(local, llcp_sock->ssap);
 +	nfc_llcp_local_put(llcp_sock->local);
  
  put_dev:
