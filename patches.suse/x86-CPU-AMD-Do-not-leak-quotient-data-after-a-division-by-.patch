@@ -1,0 +1,102 @@
+From: "Borislav Petkov (AMD)" <bp@alien8.de>
+Date: Sat, 5 Aug 2023 00:06:43 +0200
+Subject: x86/CPU/AMD: Do not leak quotient data after a division by 0
+Git-commit: 77245f1c3c6495521f6a3af082696ee2f8ce3921
+Patch-mainline: v6.5-rc6
+References: bsc#1213927, CVE-2023-20588
+
+Under certain circumstances, an integer division by 0 which faults, can
+leave stale quotient data from a previous division operation on Zen1
+microarchitectures.
+
+Do a dummy division 0/1 before returning from the #DE exception handler
+in order to avoid any leaks of potentially sensitive data.
+
+Signed-off-by: Borislav Petkov (AMD) <bp@alien8.de>
+Cc: <stable@kernel.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Acked-by: nborisov <nik.borisov@suse.com>
+---
+ arch/x86/include/asm/cpufeatures.h |    1 +
+ arch/x86/include/asm/processor.h   |    2 ++
+ arch/x86/kernel/cpu/amd.c          |   19 +++++++++++++++++++
+ arch/x86/kernel/traps.c            |    7 ++++++-
+ 4 files changed, 28 insertions(+), 1 deletion(-)
+
+--- a/arch/x86/include/asm/cpufeatures.h
++++ b/arch/x86/include/asm/cpufeatures.h
+@@ -421,5 +421,6 @@
+ #define X86_BUG_EIBRS_PBRSB		X86_BUG(27) /* EIBRS is vulnerable to Post Barrier RSB Predictions */
+ #define X86_BUG_SRSO			X86_BUG(28) /* AMD SRSO bug */
+ #define X86_BUG_GDS			X86_BUG(29) /* CPU is affected by Gather Data Sampling */
++#define X86_BUG_DIV0                    X86_BUG(30) /* AMD DIV0 speculation bug */
+ 
+ #endif /* _ASM_X86_CPUFEATURES_H */
+--- a/arch/x86/include/asm/processor.h
++++ b/arch/x86/include/asm/processor.h
+@@ -947,8 +947,10 @@ extern u32 amd_get_nodes_per_socket(void
+ 
+ #ifdef CONFIG_CPU_SUP_AMD
+ extern bool cpu_has_ibpb_brtype_microcode(void);
++extern void amd_clear_divider(void);
+ #else
+ bool cpu_has_ibpb_brtype_microcode(void) { return false;}
++static inline void amd_clear_divider(void)		{ }
+ #endif
+ 
+ 
+--- a/arch/x86/kernel/cpu/amd.c
++++ b/arch/x86/kernel/cpu/amd.c
+@@ -71,6 +71,10 @@ static const int amd_zenbleed[] =
+ 			   AMD_MODEL_RANGE(0x17, 0x60, 0x0, 0x7f, 0xf),
+ 			   AMD_MODEL_RANGE(0x17, 0xa0, 0x0, 0xaf, 0xf));
+ 
++static const int amd_div0[] =
++	AMD_LEGACY_ERRATUM(AMD_MODEL_RANGE(0x17, 0x00, 0x0, 0x2f, 0xf),
++			   AMD_MODEL_RANGE(0x17, 0x50, 0x0, 0x5f, 0xf));
++
+ static bool cpu_has_amd_erratum(struct cpuinfo_x86 *cpu, const int *erratum)
+ {
+ 	int osvw_id = *erratum++;
+@@ -1128,6 +1132,11 @@ static void init_amd(struct cpuinfo_x86
+ 		msr_set_bit(MSR_K7_HWCR, MSR_K7_HWCR_IRPERF_EN_BIT);
+ 
+ 	zenbleed_check(c);
++
++	if (cpu_has_amd_erratum(c, amd_div0)) {
++		pr_notice_once("AMD Zen1 DIV0 bug detected. Disable SMT for full protection.\n");
++		setup_force_cpu_bug(X86_BUG_DIV0);
++	}
+ }
+ 
+ #ifdef CONFIG_X86_32
+@@ -1273,3 +1282,13 @@ void amd_check_microcode(void)
+ {
+ 	on_each_cpu(zenbleed_check_cpu, NULL, 1);
+ }
++
++/*
++ * Issue a DIV 0/1 insn to clear any division data from previous DIV
++ * operations.
++ */
++void amd_clear_divider(void)
++{
++	asm volatile(ALTERNATIVE("", "div %2\n\t", X86_BUG_DIV0)
++		     :: "a" (0), "d" (0), "r" (1));
++}
+--- a/arch/x86/kernel/traps.c
++++ b/arch/x86/kernel/traps.c
+@@ -318,7 +318,12 @@ dotraplinkage void do_##name(struct pt_r
+ 	do_error_trap(regs, error_code, str, trapnr, signr);		\
+ }
+ 
+-DO_ERROR(X86_TRAP_DE,     SIGFPE,  "divide error",		divide_error)
++dotraplinkage void do_divide_error(struct pt_regs *regs, long error_code)
++{
++	do_erro_trap(regs, error_code, "divide error", X86_TRAP_DE, SIGFPE);
++	amd_clear_divider();
++}
++
+ DO_ERROR(X86_TRAP_OF,     SIGSEGV, "overflow",			overflow)
+ DO_ERROR(X86_TRAP_UD,     SIGILL,  "invalid opcode",		invalid_op)
+ DO_ERROR(X86_TRAP_OLD_MF, SIGFPE,  "coprocessor segment overrun",coprocessor_segment_overrun)
