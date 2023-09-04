@@ -1,0 +1,47 @@
+From: NeilBrown <neilb@suse.de>
+Date: Wed, 30 Aug 2023 13:46:57 +1000
+Subject: [PATCH] SUNRPC: always clear XPRT_SOCK_CONNECTING before
+ xprt_clear_connecting on TCP xprt
+Patch-mainline: Submitted, linux-nfs@vger.kernel.org - Wed, 30 Aug 2023 14:14:21 +1000
+References: bsc#1214453
+
+sunrpc/xprtsock.c has an XPRT_SOCK_CONNECTING flag which is used only on
+TCP xprts while connecting.
+The purpose appears to be to protect against delayed TCP_CLOSE
+transitions from calling xprt_clear_connecting() asynchronously.
+
+Normally it is set after calling xprt_set_connecting() and before
+calling kernel_connect(), and cleared before calling
+xprt_clear_connecting().  It is only tested on a state change to
+TCP_CLOSE.
+
+Unfortunately there is one time that it is *not* explicitly cleared
+before calling xprt_clear_connecting().  I don't know what all to
+consequences of this are.  It may well relate to the underlying problem
+that resulted in
+Commit 3be232f11a3c ("SUNRPC: Prevent immediate close+reconnect")
+That close/reconnect pattern can happen if a TCP_CLOSE is seen
+while XPRT_SOCK_CONNECTING is set but shouldn't be.
+
+local and udp connections don't use XPRT_SOCK_CONNECTING.
+
+Signed-off-by: NeilBrown <neilb@suse.de>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ net/sunrpc/xprtsock.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/net/sunrpc/xprtsock.c
++++ b/net/sunrpc/xprtsock.c
+@@ -2472,8 +2472,10 @@ static void xs_tcp_setup_socket(struct w
+ 		 */
+ 		xprt_wake_pending_tasks(xprt, status);
+ 		xs_tcp_force_close(xprt);
++		clear_bit(XPRT_SOCK_CONNECTING, &transport->sock_state);
+ 		goto out;
+ 	}
++	clear_bit(XPRT_SOCK_CONNECTING, &transport->sock_state);
+ 	status = -EAGAIN;
+ out:
+ 	xprt_clear_connecting(xprt);
