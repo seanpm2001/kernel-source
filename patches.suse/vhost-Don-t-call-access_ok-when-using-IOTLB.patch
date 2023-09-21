@@ -33,17 +33,17 @@ index b45519ca66a7..c3b49975dc28 100644
 --- a/drivers/vhost/vhost.c
 +++ b/drivers/vhost/vhost.c
 @@ -1290,6 +1290,11 @@ static bool vq_access_ok(struct vhost_virtqueue *vq, unsigned int num,
- {
- 	size_t s = vhost_has_feature(vq, VIRTIO_RING_F_EVENT_IDX) ? 2 : 0;
+ 			struct vring_used __user *used)
  
+ {
 +	/* If an IOTLB device is present, the vring addresses are
 +	 * GIOVAs. Access validation occurs at prefetch time. */
 +	if (vq->iotlb)
 +		return true;
 +
- 	return access_ok(VERIFY_READ, desc, num * sizeof *desc) &&
- 	       access_ok(VERIFY_READ, avail,
- 			 sizeof *avail + num * sizeof *avail->ring + s) &&
+ 	return access_ok(VERIFY_READ, desc, vhost_get_desc_size(vq, num)) &&
+ 	       access_ok(VERIFY_READ, avail, vhost_get_avail_size(vq, num)) &&
+ 	       access_ok(VERIFY_WRITE, used, vhost_get_used_size(vq, num));
 @@ -1383,10 +1388,6 @@ bool vhost_vq_access_ok(struct vhost_virtqueue *vq)
  	if (!vq_log_access_ok(vq, vq->log_base))
  		return 0;
