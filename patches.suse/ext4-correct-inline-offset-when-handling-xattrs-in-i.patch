@@ -1,0 +1,104 @@
+From 6909cf5c4101214f4305a62d582a5b93c7e1eb9a Mon Sep 17 00:00:00 2001
+From: Eric Whitney <enwlinux@gmail.com>
+Date: Mon, 22 May 2023 14:15:20 -0400
+Subject: [PATCH] ext4: correct inline offset when handling xattrs in inode
+ body
+Git-commit: 6909cf5c4101214f4305a62d582a5b93c7e1eb9a
+Patch-mainline: v6.5-rc3
+References: bsc#1214950
+
+When run on a file system where the inline_data feature has been
+enabled, xfstests generic/269, generic/270, and generic/476 cause ext4
+to emit error messages indicating that inline directory entries are
+corrupted.  This occurs because the inline offset used to locate
+inline directory entries in the inode body is not updated when an
+xattr in that shared region is deleted and the region is shifted in
+memory to recover the space it occupied.  If the deleted xattr precedes
+the system.data attribute, which points to the inline directory entries,
+that attribute will be moved further up in the region.  The inline
+offset continues to point to whatever is located in system.data's former
+location, with unfortunate effects when used to access directory entries
+or (presumably) inline data in the inode body.
+
+Cc: stable@kernel.org
+Signed-off-by: Eric Whitney <enwlinux@gmail.com>
+Link: https://lore.kernel.org/r/20230522181520.1570360-1-enwlinux@gmail.com
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Acked-by: Jan Kara <jack@suse.cz>
+
+---
+ fs/ext4/xattr.c |   28 +++++++++++++++++++++++-----
+ 1 file changed, 23 insertions(+), 5 deletions(-)
+
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -656,7 +656,8 @@ static size_t ext4_xattr_free_space(stru
+ }
+ 
+ static int
+-ext4_xattr_set_entry(struct ext4_xattr_info *i, struct ext4_xattr_search *s)
++ext4_xattr_set_entry(struct ext4_xattr_info *i, struct ext4_xattr_search *s,
++		     struct inode *inode, bool is_block)
+ {
+ 	struct ext4_xattr_entry *last, *next;
+ 	size_t free, min_offs = s->end - s->base, name_len = strlen(i->name);
+@@ -744,6 +745,23 @@ ext4_xattr_set_entry(struct ext4_xattr_i
+ 			memmove(s->here, (void *)s->here + size,
+ 				(void *)last - (void *)s->here + sizeof(__u32));
+ 			memset(last, 0, size);
++
++			/*
++			 * Update i_inline_off - moved ibody region might
++			 * contain system.data attribute.  Handling a failure
++			 * here won't cause other complications for setting an
++			 * xattr.
++			 */
++			if (!is_block && ext4_has_inline_data(inode)) {
++				int ret;
++
++				ret = ext4_find_inline_data_nolock(inode);
++				if (ret) {
++					ext4_warning_inode(inode,
++						"unable to update i_inline_off");
++					return ret;
++				}
++			}
+ 		}
+ 	}
+ 
+@@ -858,7 +876,7 @@ ext4_xattr_block_set(handle_t *handle, s
+ 				goto clone_block;
+ 			}
+ 			ea_bdebug(bs->bh, "modifying in-place");
+-			error = ext4_xattr_set_entry(i, s);
++			error = ext4_xattr_set_entry(i, s, inode, true);
+ 			if (!error) {
+ 				if (!IS_LAST_ENTRY(s->first))
+ 					ext4_xattr_rehash(header(s->base),
+@@ -905,7 +923,7 @@ clone_block:
+ 		s->end = s->base + sb->s_blocksize;
+ 	}
+ 
+-	error = ext4_xattr_set_entry(i, s);
++	error = ext4_xattr_set_entry(i, s, inode, true);
+ 	if (error == -EFSCORRUPTED)
+ 		goto bad_block;
+ 	if (error)
+@@ -1092,7 +1110,7 @@ int ext4_xattr_ibody_inline_set(handle_t
+ 
+ 	if (EXT4_I(inode)->i_extra_isize == 0)
+ 		return -ENOSPC;
+-	error = ext4_xattr_set_entry(i, s);
++	error = ext4_xattr_set_entry(i, s, inode, false);
+ 	if (error)
+ 		return error;
+ 	header = IHDR(inode, ext4_raw_inode(&is->iloc));
+@@ -1117,7 +1135,7 @@ static int ext4_xattr_ibody_set(struct i
+ 	if (!EXT4_INODE_HAS_XATTR_SPACE(inode))
+ 		return -ENOSPC;
+ 
+-	error = ext4_xattr_set_entry(i, s);
++	error = ext4_xattr_set_entry(i, s, inode, false);
+ 	if (error)
+ 		return error;
+ 	header = IHDR(inode, ext4_raw_inode(&is->iloc));
