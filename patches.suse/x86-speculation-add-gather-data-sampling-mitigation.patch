@@ -203,16 +203,16 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  					       nobp=0 [S390]
 --- a/arch/x86/include/asm/cpufeatures.h
 +++ b/arch/x86/include/asm/cpufeatures.h
-@@ -420,5 +420,6 @@
- #define X86_BUG_RETBLEED		X86_BUG(26) /* CPU is affected by RETBleed */
- #define X86_BUG_EIBRS_PBRSB		X86_BUG(27) /* EIBRS is vulnerable to Post Barrier RSB Predictions */
- #define X86_BUG_SRSO			X86_BUG(28) /* AMD SRSO bug */
-+#define X86_BUG_GDS			X86_BUG(29) /* CPU is affected by Gather Data Sampling */
+@@ -423,5 +423,6 @@
+ #define X86_BUG_RETBLEED		X86_BUG(27) /* CPU is affected by RETBleed */
+ #define X86_BUG_EIBRS_PBRSB		X86_BUG(28) /* EIBRS is vulnerable to Post Barrier RSB Predictions */
+ #define X86_BUG_SRSO			X86_BUG(29) /* AMD SRSO bug */
++#define X86_BUG_GDS			X86_BUG(30) /* CPU is affected by Gather Data Sampling */
  
  #endif /* _ASM_X86_CPUFEATURES_H */
 --- a/arch/x86/include/asm/msr-index.h
 +++ b/arch/x86/include/asm/msr-index.h
-@@ -149,6 +149,15 @@
+@@ -153,6 +153,15 @@
  						 * Writeback and invalidate the
  						 * L1 data cache.
  						 */
@@ -228,7 +228,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  
  #define MSR_IA32_BBL_CR_CTL		0x00000119
  #define MSR_IA32_BBL_CR_CTL3		0x0000011e
-@@ -161,6 +170,8 @@
+@@ -165,6 +174,8 @@
  #define MSR_IA32_MCU_OPT_CTRL		0x00000123
  #define RNGDS_MITG_DIS			BIT(0)
  #define FB_CLEAR_DIS			BIT(3)	/* CPU Fill buffer clear disable */
@@ -247,7 +247,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  
  /* The base value of the SPEC_CTRL MSR without task-specific bits set */
  u64 x86_spec_ctrl_base;
-@@ -161,6 +162,7 @@ void __init check_bugs(void)
+@@ -169,6 +170,7 @@ void __init check_bugs(void)
  	md_clear_select_mitigation();
  	srbds_select_mitigation();
  	srso_select_mitigation();
@@ -255,7 +255,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  
  	arch_smt_update();
  
-@@ -638,6 +640,120 @@ static int __init srbds_parse_cmdline(ch
+@@ -649,6 +651,120 @@ static int __init srbds_parse_cmdline(ch
  early_param("srbds", srbds_parse_cmdline);
  
  #undef pr_fmt
@@ -376,7 +376,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  #define pr_fmt(fmt)     "Spectre V1 : " fmt
  
  enum spectre_v1_mitigation {
-@@ -2467,6 +2583,11 @@ static ssize_t srso_show_state(char *buf
+@@ -2476,6 +2592,11 @@ static ssize_t srso_show_state(char *buf
  			  (cpu_has_ibpb_brtype_microcode() ? "" : ", no microcode"));
  }
  
@@ -388,7 +388,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  static ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr,
  			       char *buf, unsigned int bug)
  {
-@@ -2520,6 +2641,9 @@ static ssize_t cpu_show_common(struct de
+@@ -2530,6 +2651,9 @@ static ssize_t cpu_show_common(struct de
  	case X86_BUG_SRSO:
  		return srso_show_state(buf);
  
@@ -398,7 +398,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  	default:
  		break;
  	}
-@@ -2586,4 +2710,9 @@ ssize_t cpu_show_spec_rstack_overflow(st
+@@ -2599,4 +2723,9 @@ ssize_t cpu_show_spec_rstack_overflow(st
  {
  	return cpu_show_common(dev, attr, buf, X86_BUG_SRSO);
  }
@@ -410,7 +410,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  #endif
 --- a/arch/x86/kernel/cpu/common.c
 +++ b/arch/x86/kernel/cpu/common.c
-@@ -1023,6 +1023,8 @@ static const __initconst struct x86_cpu_
+@@ -1029,6 +1029,8 @@ static const __initconst struct x86_cpu_
  /* CPU is affected by RETbleed, speculating where you would not expect it */
  #define RETBLEED	BIT(3)
  #define SRSO		BIT(4)
@@ -419,7 +419,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  
  static const struct x86_cpu_id cpu_vuln_blacklist[] __initconst = {
  	VULNBL_INTEL_STEPPINGS(IVYBRIDGE,	X86_STEPPING_ANY,		SRBDS),
-@@ -1035,14 +1037,14 @@ static const struct x86_cpu_id cpu_vuln_
+@@ -1041,14 +1043,14 @@ static const struct x86_cpu_id cpu_vuln_
  	VULNBL_INTEL_STEPPINGS(BROADWELL_X,	X86_STEPPING_ANY,		MMIO),
  	VULNBL_INTEL_STEPPINGS(BROADWELL,	X86_STEPPING_ANY,		SRBDS),
  	VULNBL_INTEL_STEPPINGS(SKYLAKE_L,	X86_STEPPING_ANY,		SRBDS | MMIO | RETBLEED),
@@ -440,7 +440,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  	VULNBL_INTEL_STEPPINGS(ATOM_TREMONT_D,	X86_STEPPING_ANY,		MMIO),
  
  	VULNBL_AMD(0x15, RETBLEED),
-@@ -1164,6 +1166,16 @@ static void __init cpu_set_bug_bits(stru
+@@ -1176,6 +1178,16 @@ static void __init cpu_set_bug_bits(stru
  			setup_force_cpu_bug(X86_BUG_SRSO);
  	}
  
@@ -457,7 +457,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  	if (cpu_matches(cpu_vuln_whitelist, NO_MELTDOWN))
  		return;
  
-@@ -1582,6 +1594,8 @@ void identify_secondary_cpu(struct cpuin
+@@ -1594,6 +1606,8 @@ void identify_secondary_cpu(struct cpuin
  	validate_apic_and_package_id(c);
  	x86_spec_ctrl_setup_ap();
  	update_srbds_msr();
