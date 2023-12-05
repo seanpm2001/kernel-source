@@ -1,23 +1,25 @@
 From: NeilBrown <neilb@suse.de>
 Subject: Fix error in kabi fix for: NFSv4: Fix OPEN / CLOSE race
-References: bsc#1176950
+References: bsc#1176950, bsc#1217525
 Patch-mainline: Never, kabi
 
 As we now use a shared waitqueue, we could get extra wakeups.  In the
-worst case we could get spurious wakeups at shorted intervals than 5*HZ,
+worst case we could get spurious wakeups at shorter intervals than 5*HZ,
 so we never seem to timeout, and so loop indefinitely.
 
 So calculate the expected deadline time, and once we pass that time,
 assume a timeout.
 
+Do this in other places that we wait on the waitqueue.
+
 Signed-off-by: NeilBrown <neilb@suse.com>
 ---
- fs/nfs/nfs4proc.c |    4 +++-
- 1 file changed, 3 insertions(+), 1 deletion(-)
+ fs/nfs/nfs4proc.c |   10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
 
 --- a/fs/nfs/nfs4proc.c
 +++ b/fs/nfs/nfs4proc.c
-@@ -1502,6 +1502,7 @@ static void nfs_clear_open_stateid(struc
+@@ -1517,6 +1517,7 @@ static void nfs_clear_open_stateid(struc
  static void nfs_set_open_stateid_locked(struct nfs4_state *state,
  		const nfs4_stateid *stateid, nfs4_stateid *freeme)
  {
@@ -25,7 +27,7 @@ Signed-off-by: NeilBrown <neilb@suse.com>
  	DEFINE_WAIT(wait);
  	struct wait_queue_head *wq_head = bit_waitqueue(&state->flags,
  							NFS_STATE_CHANGE_WAIT);
-@@ -1529,7 +1530,8 @@ static void nfs_set_open_stateid_locked(
+@@ -1544,7 +1545,8 @@ static void nfs_set_open_stateid_locked(
  		rcu_read_unlock();
  
  		if (!fatal_signal_pending(current)) {
@@ -35,3 +37,26 @@ Signed-off-by: NeilBrown <neilb@suse.com>
  				status = -EAGAIN;
  			else
  				status = 0;
+@@ -3191,6 +3193,8 @@ static bool nfs4_refresh_open_old_statei
+ 	u32 dst_seqid;
+ 	bool ret;
+ 	int seq, status = -EAGAIN;
++	unsigned long deadline = jiffies + 5 * HZ;
++
+ 	DEFINE_WAIT(wait);
+ 
+ 	for (;;) {
+@@ -3223,10 +3227,12 @@ static bool nfs4_refresh_open_old_statei
+ 		write_sequnlock(&state->seqlock);
+ 		trace_nfs4_close_stateid_update_wait(state->inode, dst, 0);
+ 
++		status = -EAGAIN;
+ 		if (fatal_signal_pending(current))
+ 			status = -EINTR;
+ 		else
+-			if (schedule_timeout(5*HZ) != 0)
++			if (schedule_timeout(5*HZ) != 0 &&
++			    !time_after(jiffies, deadline))
+ 				status = 0;
+ 
+ 		finish_wait(&state->waitq, &wait);
