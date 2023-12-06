@@ -1,0 +1,88 @@
+From 85c8c3c1f8d9e31f626c93435dd91c2f85603e07 Mon Sep 17 00:00:00 2001
+From: Christoph Hellwig <hch@lst.de>
+Date: Mon, 12 Apr 2021 10:05:28 +0200
+Subject: [PATCH] md: factor out a mddev_alloc_unit helper from mddev_find
+Git-commit: 85c8c3c1f8d9e31f626c93435dd91c2f85603e07
+Patch-mainline: v5.13-rc1
+References: git-fixes
+
+Split out a self contained helper to find a free minor for the md
+"unit" number.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Song Liu <song@kernel.org>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/md.c | 47 +++++++++++++++++++++++++++--------------------
+ 1 file changed, 27 insertions(+), 20 deletions(-)
+
+diff --git a/drivers/md/md.c b/drivers/md/md.c
+index 3ce5f4e0f431..8ef06330fc66 100644
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -745,6 +745,27 @@ static struct mddev *mddev_find_locked(dev_t unit)
+ 	return NULL;
+ }
+ 
++/* find an unused unit number */
++static dev_t mddev_alloc_unit(void)
++{
++	static int next_minor = 512;
++	int start = next_minor;
++	bool is_free = 0;
++	dev_t dev = 0;
++
++	while (!is_free) {
++		dev = MKDEV(MD_MAJOR, next_minor);
++		next_minor++;
++		if (next_minor > MINORMASK)
++			next_minor = 0;
++		if (next_minor == start)
++			return 0;		/* Oh dear, all in use. */
++		is_free = !mddev_find_locked(dev);
++	}
++
++	return dev;
++}
++
+ static struct mddev *mddev_find(dev_t unit)
+ {
+ 	struct mddev *mddev;
+@@ -787,27 +808,13 @@ static struct mddev *mddev_find_or_alloc(dev_t unit)
+ 			return new;
+ 		}
+ 	} else if (new) {
+-		/* find an unused unit number */
+-		static int next_minor = 512;
+-		int start = next_minor;
+-		int is_free = 0;
+-		int dev = 0;
+-		while (!is_free) {
+-			dev = MKDEV(MD_MAJOR, next_minor);
+-			next_minor++;
+-			if (next_minor > MINORMASK)
+-				next_minor = 0;
+-			if (next_minor == start) {
+-				/* Oh dear, all in use. */
+-				spin_unlock(&all_mddevs_lock);
+-				kfree(new);
+-				return NULL;
+-			}
+-
+-			is_free = !mddev_find_locked(dev);
++		new->unit = mddev_alloc_unit();
++		if (!new->unit) {
++			spin_unlock(&all_mddevs_lock);
++			kfree(new);
++			return NULL;
+ 		}
+-		new->unit = dev;
+-		new->md_minor = MINOR(dev);
++		new->md_minor = MINOR(new->unit);
+ 		new->hold_active = UNTIL_STOP;
+ 		list_add(&new->all_mddevs, &all_mddevs);
+ 		spin_unlock(&all_mddevs_lock);
+-- 
+2.35.3
+
