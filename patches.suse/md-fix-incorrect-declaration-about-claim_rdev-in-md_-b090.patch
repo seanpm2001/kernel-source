@@ -1,0 +1,74 @@
+From b0907cadabcae6f1248f37a32a6e777f9ff6d4aa Mon Sep 17 00:00:00 2001
+From: Adrian Huang <ahuang12@lenovo.com>
+Date: Tue, 10 Jan 2023 09:45:12 +0800
+Subject: [PATCH] md: fix incorrect declaration about claim_rdev in
+ md_import_device
+Git-commit: b0907cadabcae6f1248f37a32a6e777f9ff6d4aa
+Patch-mainline: v6.2-rc5
+References: git-fixes
+
+Commit fb541ca4c365 ("md: remove lock_bdev / unlock_bdev") removes
+wrappers for blkdev_get/blkdev_put. However, the uninitialized local
+static variable of pointer type 'claim_rdev' in md_import_device()
+is NULL, which leads to the following warning call trace:
+
+  WARNING: CPU: 22 PID: 1037 at block/bdev.c:577 bd_prepare_to_claim+0x131/0x150
+  CPU: 22 PID: 1037 Comm: mdadm Not tainted 6.2.0-rc3+ #69
+  ..
+  RIP: 0010:bd_prepare_to_claim+0x131/0x150
+  ..
+  Call Trace:
+   <TASK>
+   ? _raw_spin_unlock+0x15/0x30
+   ? iput+0x6a/0x220
+   blkdev_get_by_dev.part.0+0x4b/0x300
+   md_import_device+0x126/0x1d0
+   new_dev_store+0x184/0x240
+   md_attr_store+0x80/0xf0
+   kernfs_fop_write_iter+0x128/0x1c0
+   vfs_write+0x2be/0x3c0
+   ksys_write+0x5f/0xe0
+   do_syscall_64+0x38/0x90
+   entry_SYSCALL_64_after_hwframe+0x72/0xdc
+
+It turns out the md device cannot be used:
+
+  md: could not open device unknown-block(259,0).
+  md: md127 stopped.
+
+Fix the issue by declaring the local static variable of struct type
+and passing the pointer of the variable to blkdev_get_by_dev().
+
+(Coly Li: rebased for Linux 4.12 based SUSE kernel)
+
+Fixes: fb541ca4c365 ("md: remove lock_bdev / unlock_bdev")
+Cc: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Adrian Huang <ahuang12@lenovo.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Song Liu <song@kernel.org>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/md.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -3608,7 +3608,7 @@ EXPORT_SYMBOL_GPL(md_rdev_init);
+ static struct md_rdev *md_import_device(dev_t newdev, int super_format, int super_minor)
+ {
+ 	char b[BDEVNAME_SIZE];
+-	static struct md_rdev *claim_rdev; /* just for claiming the bdev */
++	static struct md_rdev claim_rdev; /* just for claiming the bdev */
+ 	struct md_rdev *rdev;
+ 	sector_t size;
+ 	int err;
+@@ -3626,7 +3626,7 @@ static struct md_rdev *md_import_device(
+ 
+ 	rdev->bdev = blkdev_get_by_dev(newdev,
+ 			FMODE_READ | FMODE_WRITE | FMODE_EXCL,
+-			super_format == -2 ? claim_rdev : rdev);
++			super_format == -2 ? &claim_rdev : rdev);
+ 	if (IS_ERR(rdev->bdev)) {
+ 		pr_warn("md: could not open device unknown-block(%u,%u).\n",
+ 			MAJOR(newdev), MINOR(newdev));

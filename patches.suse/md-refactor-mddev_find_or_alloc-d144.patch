@@ -1,0 +1,108 @@
+From d144fe6ff176d79efd411e520103a99e11874c36 Mon Sep 17 00:00:00 2001
+From: Christoph Hellwig <hch@lst.de>
+Date: Mon, 12 Apr 2021 10:05:29 +0200
+Subject: [PATCH] md: refactor mddev_find_or_alloc
+Git-commit: d144fe6ff176d79efd411e520103a99e11874c36
+Patch-mainline: v5.13-rc1
+References: git-fixes
+
+Allocate the new mddev first speculatively, which greatly simplifies
+the code flow.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Song Liu <song@kernel.org>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/md.c | 60 ++++++++++++++++++++-----------------------------
+ 1 file changed, 24 insertions(+), 36 deletions(-)
+
+diff --git a/drivers/md/md.c b/drivers/md/md.c
+index 8ef06330fc66..de6f8e511c14 100644
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -784,57 +784,45 @@ static struct mddev *mddev_find(dev_t unit)
+ 
+ static struct mddev *mddev_find_or_alloc(dev_t unit)
+ {
+-	struct mddev *mddev, *new = NULL;
++	struct mddev *mddev = NULL, *new;
+ 
+ 	if (unit && MAJOR(unit) != MD_MAJOR)
+-		unit &= ~((1<<MdpMinorShift)-1);
++		unit &= ~((1 << MdpMinorShift) - 1);
+ 
+- retry:
+-	spin_lock(&all_mddevs_lock);
++	new = kzalloc(sizeof(*new), GFP_KERNEL);
++	if (!new)
++		return NULL;
++	mddev_init(new);
+ 
++	spin_lock(&all_mddevs_lock);
+ 	if (unit) {
+ 		mddev = mddev_find_locked(unit);
+ 		if (mddev) {
+ 			mddev_get(mddev);
+-			spin_unlock(&all_mddevs_lock);
+-			kfree(new);
+-			return mddev;
++			goto out_free_new;
+ 		}
+ 
+-		if (new) {
+-			list_add(&new->all_mddevs, &all_mddevs);
+-			spin_unlock(&all_mddevs_lock);
+-			new->hold_active = UNTIL_IOCTL;
+-			return new;
+-		}
+-	} else if (new) {
++		new->unit = unit;
++		if (MAJOR(unit) == MD_MAJOR)
++			new->md_minor = MINOR(unit);
++		else
++			new->md_minor = MINOR(unit) >> MdpMinorShift;
++		new->hold_active = UNTIL_IOCTL;
++	} else {
+ 		new->unit = mddev_alloc_unit();
+-		if (!new->unit) {
+-			spin_unlock(&all_mddevs_lock);
+-			kfree(new);
+-			return NULL;
+-		}
++		if (!new->unit)
++			goto out_free_new;
+ 		new->md_minor = MINOR(new->unit);
+ 		new->hold_active = UNTIL_STOP;
+-		list_add(&new->all_mddevs, &all_mddevs);
+-		spin_unlock(&all_mddevs_lock);
+-		return new;
+ 	}
+-	spin_unlock(&all_mddevs_lock);
+-
+-	new = kzalloc(sizeof(*new), GFP_KERNEL);
+-	if (!new)
+-		return NULL;
+ 
+-	new->unit = unit;
+-	if (MAJOR(unit) == MD_MAJOR)
+-		new->md_minor = MINOR(unit);
+-	else
+-		new->md_minor = MINOR(unit) >> MdpMinorShift;
+-
+-	mddev_init(new);
+-
+-	goto retry;
++	list_add(&new->all_mddevs, &all_mddevs);
++	spin_unlock(&all_mddevs_lock);
++	return new;
++out_free_new:
++	spin_unlock(&all_mddevs_lock);
++	kfree(new);
++	return mddev;
+ }
+ 
+ static struct attribute_group md_redundancy_group;
+-- 
+2.35.3
+
