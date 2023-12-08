@@ -10,8 +10,8 @@ Signed-off-by: Neil Brown <neilb@suse.com>
 Acked-by: Coly Li <colyli@suse.de>
 ---
  drivers/md/md-cluster.h |    7 +++++--
- drivers/md/md.h         |   40 ++++++++++++++++++++++++++--------------
- 2 files changed, 31 insertions(+), 16 deletions(-)
+ drivers/md/md.h         |   42 +++++++++++++++++++++++++-----------------
+ 2 files changed, 30 insertions(+), 19 deletions(-)
 
 --- a/drivers/md/md-cluster.h
 +++ b/drivers/md/md-cluster.h
@@ -41,7 +41,7 @@ Acked-by: Coly Li <colyli@suse.de>
  #endif /* _MD_CLUSTER_H */
 --- a/drivers/md/md.h
 +++ b/drivers/md/md.h
-@@ -118,13 +118,6 @@ struct md_rdev {
+@@ -118,21 +118,10 @@ struct md_rdev {
  					   * in superblock.
  					   */
  
@@ -55,7 +55,15 @@ Acked-by: Coly Li <colyli@suse.de>
  	struct work_struct del_work;	/* used for delayed sysfs removal */
  
  	struct kernfs_node *sysfs_state; /* handle for 'state'
-@@ -138,6 +131,15 @@ struct md_rdev {
+ 					   * sysfs entry */
+-	/* handle for 'unacknowledged_bad_blocks' sysfs dentry */
+-	struct kernfs_node *sysfs_unack_badblocks;
+-	/* handle for 'bad_blocks' sysfs dentry */
+-	struct kernfs_node *sysfs_badblocks;
+ 	struct badblocks badblocks;
+ 
+ 	struct {
+@@ -141,6 +130,20 @@ struct md_rdev {
  		unsigned int size;	/* Size in sectors of the PPL space */
  		sector_t sector;	/* First sector of the PPL space */
  	} ppl;
@@ -67,11 +75,26 @@ Acked-by: Coly Li <colyli@suse.de>
 +	struct list_head serial_list;
 +	spinlock_t serial_list_lock;
 +	wait_queue_head_t serial_io_wait;
++
++	/* handle for 'unacknowledged_bad_blocks' sysfs dentry */
++	struct kernfs_node *sysfs_unack_badblocks;
++	/* handle for 'bad_blocks' sysfs dentry */
++	struct kernfs_node *sysfs_badblocks;
 +#endif
  };
  enum flag_bits {
  	Faulty,			/* device is known to have a fault */
-@@ -498,14 +498,16 @@ struct mddev {
+@@ -428,9 +431,6 @@ struct mddev {
+ 							 * file in sysfs.
+ 							 */
+ 	struct kernfs_node		*sysfs_action;  /* handle for 'sync_action' */
+-	struct kernfs_node		*sysfs_completed;	/*handle for 'sync_completed' */
+-	struct kernfs_node		*sysfs_degraded;	/*handle for 'degraded' */
+-	struct kernfs_node		*sysfs_level;		/*handle for 'level' */
+ 
+ 	struct work_struct del_work;	/* used for delayed sysfs removal */
+ 
+@@ -504,14 +504,19 @@ struct mddev {
  					  */
  	struct work_struct flush_work;
  	struct work_struct event_work;	/* used by dm to report failure event */
@@ -83,6 +106,9 @@ Acked-by: Coly Li <colyli@suse.de>
  
  	bool	has_superblocks:1;
 +#ifndef __GENKSYMS__
++	struct kernfs_node		*sysfs_completed;	/*handle for 'sync_completed' */
++	struct kernfs_node		*sysfs_degraded;	/*handle for 'degraded' */
++	struct kernfs_node		*sysfs_level;		/*handle for 'level' */
 +	mempool_t *serial_info_pool;
 +	unsigned int                    noio_flag; /* for memalloc scope API */
  	bool	fail_last_dev:1;
@@ -90,7 +116,7 @@ Acked-by: Coly Li <colyli@suse.de>
  };
  
  enum recovery_flags {
-@@ -584,7 +593,6 @@ struct md_personality
+@@ -591,7 +596,6 @@ struct md_personality
  	int (*check_reshape) (struct mddev *mddev);
  	int (*start_reshape) (struct mddev *mddev);
  	void (*finish_reshape) (struct mddev *mddev);
@@ -98,7 +124,7 @@ Acked-by: Coly Li <colyli@suse.de>
  	/* quiesce suspends or resumes internal processing.
  	 * 1 - stop new actions and wait for action io to complete
  	 * 0 - return to normal behaviour
-@@ -605,6 +613,10 @@ struct md_personality
+@@ -612,6 +616,10 @@ struct md_personality
  	int (*congested)(struct mddev *mddev, int bits);
  	/* Changes the consistency policy of an active array. */
  	int (*change_consistency_policy)(struct mddev *mddev, const char *buf);
