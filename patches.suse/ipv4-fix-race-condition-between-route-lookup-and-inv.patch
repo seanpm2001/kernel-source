@@ -48,11 +48,15 @@ Cc: David Ahern <dsahern@gmail.com>
 Reviewed-by: Ido Schimmel <idosch@mellanox.com>
 Signed-off-by: David S. Miller <davem@davemloft.net>
 Acked-by: Michal Kubecek <mkubecek@suse.cz>
+Signed-off-by: Jiri Wiesner <jwiesner@suse.de>
 
 SLE12-SP5: without mainline commit 510c321b5571 ("xfrm: reuse uncached_list
 to track xdsts"), rt6_uncached_list_add() is still static in SLE12-SP5 and
 the new call added by this backport is above its definition. To minimize
 the change, simply add a declaration near the top of the file.
+
+Commit 510c321b5571 ("xfrm: reuse uncached_list to track xdsts") has been
+backported. Deleting the hunk with the declaration.
 
 ---
  net/ipv4/route.c | 4 +++-
@@ -60,15 +64,6 @@ the change, simply add a declaration near the top of the file.
 
 --- a/net/ipv4/route.c
 +++ b/net/ipv4/route.c
-@@ -157,6 +157,8 @@ static struct neighbour *ipv4_neigh_lookup(const struct dst_entry *dst,
- 					   const void *daddr);
- static void ipv4_confirm_neigh(const struct dst_entry *dst, const void *daddr);
- 
-+static void rt_add_uncached_list(struct rtable *rt);
-+
- static struct dst_ops ipv4_dst_ops = {
- 	.family =		AF_INET,
- 	.check =		ipv4_dst_check,
 @@ -1449,7 +1451,7 @@ static bool rt_cache_route(struct fib_nh *nh, struct rtable *rt)
  	prev = cmpxchg(p, orig, rt);
  	if (prev == orig) {
