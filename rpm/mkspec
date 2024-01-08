@@ -165,7 +165,6 @@ for my $kmp (@kmps) {
 }
 $kmp_definitions = join("\n", @kmp_definitions);
 
-my %source_archs = ();
 for my $flavor (sort keys(%flavor_archs)) {
 	my ($summary, $description);
 	if (!exists($binary_descriptions{"kernel-$flavor"})) {
@@ -184,15 +183,11 @@ for my $flavor (sort keys(%flavor_archs)) {
 			provides_obsoletes($flavor, $subpac, @{$flavor_archs{$flavor}});
 	}
 
-	my @archs = arch2rpm(@{$flavor_archs{$flavor}});
-	foreach my $sarch (@archs) {
-		$source_archs{$sarch}++;
-	}
 	do_spec('binary', "kernel-$flavor.spec", %macros,
 		FLAVOR => $flavor,
 		SUMMARY => $summary,
 		DESCRIPTION => $description,
-		ARCHS => join(" ", @archs),
+		ARCHS => join(" ", arch2rpm(@{$flavor_archs{$flavor}})),
 		COMMON_DEPS => $templates{common_deps},
 		KMPS => join(" ", @kmps),
 		KMP_DEFINITIONS => $kmp_definitions,
@@ -200,9 +195,7 @@ for my $flavor (sort keys(%flavor_archs)) {
 	);
 }
 # kernel-source.spec
-do_spec('source', "kernel-source$variant.spec", %macros,
-	ARCHS => join(" ", sort(keys %source_archs))
-	);
+do_spec('source', "kernel-source$variant.spec", %macros);
 
 if ($variant eq "") {
 	# kernel-docs.spec
