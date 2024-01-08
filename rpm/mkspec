@@ -52,6 +52,7 @@ my $arg = $_[0];
 	return $arg =~ /^(0+|no|none)$/i ? "" : $arg;
 }
 my $build_dtbs = detect_false $vars{'BUILD_DTBS'};
+my $multibuild = detect_false $vars{'MULTIBUILD'};
 my $livepatch = detect_false $vars{'LIVEPATCH'};
 my $livepatch_rt = detect_false $vars{'LIVEPATCH_RT'};
 sub to_bool {
@@ -195,11 +196,13 @@ for my $flavor (sort keys(%flavor_archs)) {
 	);
 }
 # kernel-source.spec
-do_spec('source', "kernel-source$variant.spec", %macros);
+do_spec('source', "kernel-source$variant.spec", %macros,
+		ARCHS => $all_archs);
 
 if ($variant eq "") {
 	# kernel-docs.spec
-	do_spec('docs', "kernel-docs$variant.spec", %macros);
+	do_spec('docs', "kernel-docs$variant.spec", %macros,
+		ARCHS => $all_archs);
 }
 
 # kernel-syms.spec
@@ -470,6 +473,8 @@ sub _arch2rpm {
 	my $arch = shift;
 	return "\%ix86" if $arch eq "i386";
 	return "aarch64" if $arch eq "arm64";
+	# ppc64le src rpms are built as powerpc64le
+	return "ppc64le powerpc64le" if $arch eq "ppc64le";
 	return $arch;
 }
 
@@ -559,14 +564,19 @@ sub do_spec {
 sub copy_changes {
 
 	opendir(my $dh, $dir) or die "$dir: $!\n";
+	xopen(my $fh, '>', "$dir/_multibuild") if $multibuild;
+	print $fh "<multibuild>\n" if $fh;
 
 	while (my $name = readdir $dh) {
 		next unless $name =~ /\.spec$/;
 		next if $name eq "kernel-source$variant.spec";
 
-		$name =~ s/\.spec$/.changes/;
-		copy("$dir/kernel-source$variant.changes", "$dir/$name");
+		$name =~ s/\.spec$//;
+		copy("$dir/kernel-source$variant.changes", "$dir/$name.changes");
+		print $fh "\t<package>$name</package>\n" if $fh;
 	}
+	print $fh "</multibuild>\n" if $fh;
+	close($fh) if $fh;
 	closedir($dh);
 }
 
