@@ -1,0 +1,102 @@
+From cf7614d92633f4ab5c218d6585ebac325cdf51b8 Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Sat, 2 Jun 2018 23:38:48 +0200
+Subject: [PATCH 1/2] netfilter: nf_tables: pass ctx to
+ nf_tables_expr_destroy()
+Git-commit: 3453c92731884bad7c4c3a0667228b964747f3d5
+Patch-mainline: v4.18-rc1
+References: bsc#1202095 CVE-2022-2586
+
+nft_set_elem_destroy() can be called from call_rcu context. Annotate
+netns and table in set object so we can populate the context object.
+Moreover, pass context object to nf_tables_set_elem_destroy() from the
+commit phase, since it is already available from there.
+
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ include/net/netfilter/nf_tables.h |  4 ++++
+ net/netfilter/nf_tables_api.c     | 15 +++++++++++----
+ 2 files changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/include/net/netfilter/nf_tables.h b/include/net/netfilter/nf_tables.h
+index 8a8bab8d7b15..ed965c62240e 100644
+--- a/include/net/netfilter/nf_tables.h
++++ b/include/net/netfilter/nf_tables.h
+@@ -359,6 +359,8 @@ void nft_unregister_set(struct nft_set_ops *ops);
+  *
+  *	@list: table set list node
+  *	@bindings: list of set bindings
++ *	@table: table this set belongs to
++ *	@net: netnamespace this set belongs to
+  * 	@name: name of the set
+  * 	@ktype: key type (numeric type defined by userspace, not used in the kernel)
+  * 	@dtype: data type (verdict or numeric type defined by userspace)
+@@ -382,6 +384,8 @@ struct nft_set {
+ 	struct list_head		list;
+ 	struct list_head		bindings;
+ 	char				name[NFT_SET_MAXNAMELEN];
++	struct nft_table		*table;
++	possible_net_t			net;
+ 	u32				ktype;
+ 	u32				dtype;
+ 	u32				objtype;
+diff --git a/net/netfilter/nf_tables_api.c b/net/netfilter/nf_tables_api.c
+index c9a75325b55b..c4e94e4cc5b8 100644
+--- a/net/netfilter/nf_tables_api.c
++++ b/net/netfilter/nf_tables_api.c
+@@ -3066,6 +3066,8 @@ static int nf_tables_newset(struct net *net, struct sock *nlsk,
+ 	}
+ 
+ 	INIT_LIST_HEAD(&set->bindings);
++	set->table = table;
++	write_pnet(&set->net, net);
+ 	set->ops   = ops;
+ 	set->ktype = ktype;
+ 	set->klen  = desc.klen;
+@@ -3636,12 +3638,15 @@ void nft_set_elem_destroy(const struct nft_set *set, void *elem,
+ 			  bool destroy_expr)
+ {
+ 	struct nft_set_ext *ext = nft_set_elem_ext(set, elem);
++	struct nft_ctx ctx = {
++		.net	= read_pnet(&set->net),
++	};
+ 
+ 	nft_data_release(nft_set_ext_key(ext), NFT_DATA_VALUE);
+ 	if (nft_set_ext_exists(ext, NFT_SET_EXT_DATA))
+ 		nft_data_release(nft_set_ext_data(ext), set->dtype);
+ 	if (destroy_expr && nft_set_ext_exists(ext, NFT_SET_EXT_EXPR))
+-		nf_tables_expr_destroy(NULL, nft_set_ext_expr(ext));
++		nf_tables_expr_destroy(&ctx, nft_set_ext_expr(ext));
+ 	if (nft_set_ext_exists(ext, NFT_SET_EXT_OBJREF))
+ 		(*nft_set_ext_obj(ext))->use--;
+ 	kfree(elem);
+@@ -3651,12 +3656,13 @@ EXPORT_SYMBOL_GPL(nft_set_elem_destroy);
+ /* Only called from commit path, nft_set_elem_deactivate() already deals with
+  * the refcounting from the preparation phase.
+  */
+-static void nf_tables_set_elem_destroy(const struct nft_set *set, void *elem)
++static void nf_tables_set_elem_destroy(const struct nft_ctx *ctx,
++				       const struct nft_set *set, void *elem)
+ {
+ 	struct nft_set_ext *ext = nft_set_elem_ext(set, elem);
+ 
+ 	if (nft_set_ext_exists(ext, NFT_SET_EXT_EXPR))
+-		nf_tables_expr_destroy(NULL, nft_set_ext_expr(ext));
++		nf_tables_expr_destroy(ctx, nft_set_ext_expr(ext));
+ 	kfree(elem);
+ }
+ 
+@@ -4853,7 +4859,8 @@ static void nf_tables_commit_release(struct nft_trans *trans)
+ 		nft_set_destroy(nft_trans_set(trans));
+ 		break;
+ 	case NFT_MSG_DELSETELEM:
+-		nf_tables_set_elem_destroy(nft_trans_elem_set(trans),
++		nf_tables_set_elem_destroy(&trans->ctx,
++					   nft_trans_elem_set(trans),
+ 					   nft_trans_elem(trans).priv);
+ 		break;
+ 	case NFT_MSG_DELOBJ:
+-- 
+2.16.4
+
