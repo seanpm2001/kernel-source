@@ -1,0 +1,68 @@
+From 0171b6b78131110a6870d4b7296bc9dfc392116a Mon Sep 17 00:00:00 2001
+From: Dan Williams <dan.j.williams@intel.com>
+Date: Sun, 3 Feb 2019 11:17:27 -0800
+Subject: [PATCH] acpi/nfit: Require opt-in for read-only label configurations
+Git-commit: 0171b6b78131110a6870d4b7296bc9dfc392116a
+Patch-mainline: v5.1-rc1
+References: git-fixes
+
+Recent fixes to command handling enabled Linux to read label
+configurations that it could not before. Unfortunately that means that
+configurations that were operating in label-less mode will be broken as
+the kernel ignores the existing namespace configuration and tries to
+honor the new found labels.
+
+Fortunately this seems limited to a case where Linux can quirk the
+behavior and maintain the existing label-less semantics by default.
+When the platform does not emit an _LSW method, disable all label access
+methods. Provide a 'force_labels' module parameter to allow read-only
+label operation.
+
+Fixes: 11189c1089da ("acpi/nfit: Fix command-supported detection")
+Reported-by: Dexuan Cui <decui@microsoft.com>
+Reviewed-by: Dexuan Cui <decui@microsoft.com>
+Signed-off-by: Dan Williams <dan.j.williams@intel.com>
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/acpi/nfit/core.c | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/drivers/acpi/nfit/core.c b/drivers/acpi/nfit/core.c
+index 811c399a3a76..5b5e802de7b8 100644
+--- a/drivers/acpi/nfit/core.c
++++ b/drivers/acpi/nfit/core.c
+@@ -56,6 +56,10 @@ static bool no_init_ars;
+ module_param(no_init_ars, bool, 0644);
+ MODULE_PARM_DESC(no_init_ars, "Skip ARS run at nfit init time");
+ 
++static bool force_labels;
++module_param(force_labels, bool, 0444);
++MODULE_PARM_DESC(force_labels, "Opt-in to labels despite missing methods");
++
+ LIST_HEAD(acpi_descs);
+ DEFINE_MUTEX(acpi_desc_lock);
+ 
+@@ -1916,6 +1920,19 @@ static int acpi_nfit_add_dimm(struct acpi_nfit_desc *acpi_desc,
+ 			dev_dbg(dev, "%s: has _LSW\n", dev_name(&adev_dimm->dev));
+ 			set_bit(NFIT_MEM_LSW, &nfit_mem->flags);
+ 		}
++
++		/*
++		 * Quirk read-only label configurations to preserve
++		 * access to label-less namespaces by default.
++		 */
++		if (!test_bit(NFIT_MEM_LSW, &nfit_mem->flags)
++				&& !force_labels) {
++			dev_dbg(dev, "%s: No _LSW, disable labels\n",
++					dev_name(&adev_dimm->dev));
++			clear_bit(NFIT_MEM_LSR, &nfit_mem->flags);
++		} else
++			dev_dbg(dev, "%s: Force enable labels\n",
++					dev_name(&adev_dimm->dev));
+ 	}
+ 
+ 	populate_shutdown_status(nfit_mem);
+-- 
+2.35.3
+

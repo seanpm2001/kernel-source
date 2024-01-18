@@ -1,0 +1,36 @@
+From 1fae8264afb6b384b2dd53a000a8784cad630636 Mon Sep 17 00:00:00 2001
+From: Kangjie Lu <kjlu@umn.edu>
+Date: Tue, 25 Dec 2018 20:55:37 -0600
+Subject: [PATCH 1/2] net: (cpts) fix a missing check of clk_prepare
+Git-commit: 2d822f2dbab7f4c820f72eb8570aacf3f35855bd
+Patch-mainline: v5.0-rc1
+References: git-fixes
+
+clk_prepare() could fail, so let's check its status, and if it fails,
+return its error code upstream.
+
+Signed-off-by: Kangjie Lu <kjlu@umn.edu>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/ti/cpts.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/ti/cpts.c b/drivers/net/ethernet/ti/cpts.c
+index f2d565cb4e6f..26ef3c28af38 100644
+--- a/drivers/net/ethernet/ti/cpts.c
++++ b/drivers/net/ethernet/ti/cpts.c
+@@ -489,7 +489,9 @@ struct cpts *cpts_create(struct device *dev, void __iomem *regs,
+ 		return ERR_PTR(PTR_ERR(cpts->refclk));
+ 	}
+ 
+-	clk_prepare(cpts->refclk);
++	ret = clk_prepare(cpts->refclk);
++	if (ret)
++		return ERR_PTR(ret);
+ 
+ 	cpts->cc.read = cpts_systim_read;
+ 	cpts->cc.mask = CLOCKSOURCE_MASK(32);
+-- 
+2.16.4
+
