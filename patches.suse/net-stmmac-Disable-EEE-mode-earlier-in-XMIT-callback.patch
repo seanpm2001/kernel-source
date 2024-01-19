@@ -1,0 +1,52 @@
+From 867811faf8f58e1d91ee8359ee5d88569a18093d Mon Sep 17 00:00:00 2001
+From: Jose Abreu <jose.abreu@synopsys.com>
+Date: Wed, 30 Jan 2019 15:54:21 +0100
+Subject: [PATCH] net: stmmac: Disable EEE mode earlier in XMIT callback
+Git-commit: e2cd682deb231ba6f80524bb84e57e7138261149
+Patch-mainline: v5.0-rc6
+References: git-fixes
+
+In stmmac xmit callback we use a different flow for TSO packets but TSO
+xmit callback is not disabling the EEE mode.
+
+Fix this by disabling earlier the EEE mode, i.e. before calling the TSO
+xmit callback.
+
+Signed-off-by: Jose Abreu <joabreu@synopsys.com>
+Cc: Joao Pinto <jpinto@synopsys.com>
+Cc: David S. Miller <davem@davemloft.net>
+Cc: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Cc: Alexandre Torgue <alexandre.torgue@st.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/stmmac_main.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+index da540fae1ebd..271ad8ee8960 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+@@ -3029,6 +3029,9 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
+ 
+ 	tx_q = &priv->tx_queue[queue];
+ 
++	if (priv->tx_path_in_lpi_mode)
++		stmmac_disable_eee_mode(priv);
++
+ 	/* Manage oversized TCP frames for GMAC4 device */
+ 	if (skb_is_gso(skb) && priv->tso) {
+ 		if (ip_hdr(skb)->protocol == IPPROTO_TCP)
+@@ -3056,9 +3059,6 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
+ 		return NETDEV_TX_BUSY;
+ 	}
+ 
+-	if (priv->tx_path_in_lpi_mode)
+-		stmmac_disable_eee_mode(priv);
+-
+ 	entry = tx_q->cur_tx;
+ 	first_entry = entry;
+ 	WARN_ON(tx_q->tx_skbuff[first_entry]);
+-- 
+2.16.4
+
