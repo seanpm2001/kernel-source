@@ -1,0 +1,175 @@
+From: Hannes Reinecke <hare@suse.com>
+Date: Tue, 26 Mar 2019 00:38:49 -0700
+Subject: scsi: qedf: fc_rport_priv reference counting fixes
+Patch-mainline: v5.2-rc1
+Git-commit: 56efc304b18cbfa4a2b355c0ae817f61acea38c4
+References: bsc#1212152
+
+The fc_rport_priv structure is reference counted, so we need to ensure that
+the reference is increased before accessing the structure.
+
+Signed-off-by: Hannes Reinecke <hare@suse.com>
+Signed-off-by: Saurav Kashyap <skashyap@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qedf/qedf_els.c  |    9 ++++++++-
+ drivers/scsi/qedf/qedf_io.c   |   25 +++++++++++++++++--------
+ drivers/scsi/qedf/qedf_main.c |    5 +++++
+ 3 files changed, 30 insertions(+), 9 deletions(-)
+
+--- a/drivers/scsi/qedf/qedf_els.c
++++ b/drivers/scsi/qedf/qedf_els.c
+@@ -378,12 +378,18 @@ void qedf_restart_rport(struct qedf_rpor
+ 	spin_unlock_irqrestore(&fcport->rport_lock, flags);
+ 
+ 	rdata = fcport->rdata;
+-	if (rdata) {
++	if (rdata && !kref_get_unless_zero(&rdata->kref)) {
++		fcport->rdata = NULL;
++		rdata = NULL;
++	}
++
++	if (rdata && rdata->rp_state == RPORT_ST_READY) {
+ 		lport = fcport->qedf->lport;
+ 		port_id = rdata->ids.port_id;
+ 		QEDF_ERR(&(fcport->qedf->dbg_ctx),
+ 		    "LOGO port_id=%x.\n", port_id);
+ 		fc_rport_logoff(rdata);
++		kref_put(&rdata->kref, fc_rport_destroy);
+ 		mutex_lock(&lport->disc.disc_mutex);
+ 		/* Recreate the rport and log back in */
+ 		rdata = fc_rport_create(lport, port_id);
+@@ -393,6 +399,7 @@ void qedf_restart_rport(struct qedf_rpor
+ 			fcport->rdata = rdata;
+ 		} else {
+ 			mutex_unlock(&lport->disc.disc_mutex);
++			fcport->rdata = NULL;
+ 		}
+ 	}
+ 	clear_bit(QEDF_RPORT_IN_RESET, &fcport->flags);
+--- a/drivers/scsi/qedf/qedf_io.c
++++ b/drivers/scsi/qedf/qedf_io.c
+@@ -1847,6 +1847,7 @@ int qedf_initiate_abts(struct qedf_ioreq
+ 		goto out;
+ 	}
+ 
++	qedf = fcport->qedf;
+ 	rdata = fcport->rdata;
+ 
+ 	if (!rdata || !kref_get_unless_zero(&rdata->kref)) {
+@@ -1856,32 +1857,31 @@ int qedf_initiate_abts(struct qedf_ioreq
+ 	}
+ 
+ 	r_a_tov = rdata->r_a_tov;
+-	qedf = fcport->qedf;
+ 	lport = qedf->lport;
+ 
+ 	if (lport->state != LPORT_ST_READY || !(lport->link_up)) {
+ 		QEDF_ERR(&(qedf->dbg_ctx), "link is not ready\n");
+ 		rc = 1;
+-		goto out;
++		goto drop_rdata_kref;
+ 	}
+ 
+ 	if (atomic_read(&qedf->link_down_tmo_valid) > 0) {
+ 		QEDF_ERR(&(qedf->dbg_ctx), "link_down_tmo active.\n");
+ 		rc = 1;
+-		goto out;
++		goto drop_rdata_kref;
+ 	}
+ 
+ 	/* Ensure room on SQ */
+ 	if (!atomic_read(&fcport->free_sqes)) {
+ 		QEDF_ERR(&(qedf->dbg_ctx), "No SQ entries available\n");
+ 		rc = 1;
+-		goto out;
++		goto drop_rdata_kref;
+ 	}
+ 
+ 	if (test_bit(QEDF_RPORT_UPLOADING_CONNECTION, &fcport->flags)) {
+ 		QEDF_ERR(&qedf->dbg_ctx, "fcport is uploading.\n");
+ 		rc = 1;
+-		goto out;
++		goto drop_rdata_kref;
+ 	}
+ 
+ 	if (!test_bit(QEDF_CMD_OUTSTANDING, &io_req->flags) ||
+@@ -1891,7 +1891,7 @@ int qedf_initiate_abts(struct qedf_ioreq
+ 			  "cleanup or abort processing or already "
+ 			  "completed.\n", io_req->xid);
+ 		rc = 1;
+-		goto out;
++		goto drop_rdata_kref;
+ 	}
+ 
+ 	kref_get(&io_req->refcount);
+@@ -1924,6 +1924,8 @@ int qedf_initiate_abts(struct qedf_ioreq
+ 
+ 	spin_unlock_irqrestore(&fcport->rport_lock, flags);
+ 
++drop_rdata_kref:
++	kref_put(&rdata->kref, fc_rport_destroy);
+ out:
+ 	return rc;
+ }
+@@ -2262,6 +2264,7 @@ static int qedf_execute_tmf(struct qedf_
+ 	unsigned long flags;
+ 	struct fcoe_wqe *sqe;
+ 	u16 sqe_idx;
++	struct fc_rport_priv *rdata = fcport->rdata;
+ 
+ 	if (!sc_cmd) {
+ 		QEDF_ERR(&(qedf->dbg_ctx), "invalid arg\n");
+@@ -2275,8 +2278,13 @@ static int qedf_execute_tmf(struct qedf_
+ 		return FAILED;
+ 	}
+ 
+-	QEDF_INFO(&(qedf->dbg_ctx), QEDF_LOG_SCSI_TM, "portid = 0x%x "
+-		   "tm_flags = %d\n", fcport->rdata->ids.port_id, tm_flags);
++	if (!rdata || !kref_get_unless_zero(&rdata->kref)) {
++		QEDF_INFO(&qedf->dbg_ctx, QEDF_LOG_SCSI_TM, "stale rport\n");
++		return FAILED;
++	}
++	QEDF_INFO(&qedf->dbg_ctx, QEDF_LOG_SCSI_TM,
++		  "portid = 0x%x tm_flags = %d\n",
++		  rdata->ids.port_id, tm_flags);
+ 
+ 	io_req = qedf_alloc_cmd(fcport, QEDF_TASK_MGMT_CMD);
+ 	if (!io_req) {
+@@ -2372,6 +2380,7 @@ static int qedf_execute_tmf(struct qedf_
+ 		rc = SUCCESS;
+ 	}
+ reset_tmf_err:
++	kref_put(&rdata->kref, fc_rport_destroy);
+ 	return rc;
+ }
+ 
+--- a/drivers/scsi/qedf/qedf_main.c
++++ b/drivers/scsi/qedf/qedf_main.c
+@@ -1334,6 +1334,8 @@ static void qedf_upload_connection(struc
+ static void qedf_cleanup_fcport(struct qedf_ctx *qedf,
+ 	struct qedf_rport *fcport)
+ {
++	struct fc_rport_priv *rdata = fcport->rdata;
++
+ 	QEDF_INFO(&(qedf->dbg_ctx), QEDF_LOG_CONN, "Cleaning up portid=%06x.\n",
+ 	    fcport->rdata->ids.port_id);
+ 
+@@ -1345,6 +1347,7 @@ static void qedf_cleanup_fcport(struct q
+ 	qedf_free_sq(qedf, fcport);
+ 	fcport->rdata = NULL;
+ 	fcport->qedf = NULL;
++	kref_put(&rdata->kref, fc_rport_destroy);
+ }
+ 
+ /**
+@@ -1420,6 +1423,8 @@ static void qedf_rport_event_handler(str
+ 			break;
+ 		}
+ 
++		/* Initial reference held on entry, so this can't fail */
++		kref_get(&rdata->kref);
+ 		fcport->rdata = rdata;
+ 		fcport->rport = rport;
+ 

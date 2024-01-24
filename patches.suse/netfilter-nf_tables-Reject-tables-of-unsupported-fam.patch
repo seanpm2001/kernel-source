@@ -1,0 +1,69 @@
+From dfb20a75eb6c45969bbaa7d0db39e6f5515ae29b Mon Sep 17 00:00:00 2001
+From: Phil Sutter <phil@nwl.cc>
+Date: Wed, 16 Feb 2022 15:55:38 +0100
+Subject: [PATCH] netfilter: nf_tables: Reject tables of unsupported family
+Git-commit: f1082dd31fe461d482d69da2a8eccfeb7bf07ac2
+Patch-mainline: v5.18-rc1
+References: CVE-2023-6040 bsc#1218752
+
+An nftables family is merely a hollow container, its family just a
+number and such not reliant on compile-time options other than nftables
+support itself. Add an artificial check so attempts at using a family
+the kernel can't support fail as early as possible. This helps user
+space detect kernels which lack e.g. NFPROTO_INET.
+
+Signed-off-by: Phil Sutter <phil@nwl.cc>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/netfilter/nf_tables_api.c | 27 +++++++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/net/netfilter/nf_tables_api.c b/net/netfilter/nf_tables_api.c
+index 6d068e4ae76d..97d04decd2e4 100644
+--- a/net/netfilter/nf_tables_api.c
++++ b/net/netfilter/nf_tables_api.c
+@@ -676,6 +676,30 @@ static int nf_tables_updtable(struct nft_ctx *ctx)
+ 	return ret;
+ }
+ 
++static bool nft_supported_family(u8 family)
++{
++       return false
++#ifdef CONFIG_NF_TABLES_INET
++               || family == NFPROTO_INET
++#endif
++#ifdef CONFIG_NF_TABLES_IPV4
++               || family == NFPROTO_IPV4
++#endif
++#ifdef CONFIG_NF_TABLES_ARP
++               || family == NFPROTO_ARP
++#endif
++#ifdef CONFIG_NF_TABLES_NETDEV
++               || family == NFPROTO_NETDEV
++#endif
++#if IS_ENABLED(CONFIG_NF_TABLES_BRIDGE)
++               || family == NFPROTO_BRIDGE
++#endif
++#ifdef CONFIG_NF_TABLES_IPV6
++               || family == NFPROTO_IPV6
++#endif
++               ;
++}
++
+ static int nf_tables_newtable(struct net *net, struct sock *nlsk,
+ 			      struct sk_buff *skb, const struct nlmsghdr *nlh,
+ 			      const struct nlattr * const nla[])
+@@ -690,6 +714,9 @@ static int nf_tables_newtable(struct net *net, struct sock *nlsk,
+ 	struct nft_ctx ctx;
+ 	int err;
+ 
++	if (!nft_supported_family(family))
++		return -EOPNOTSUPP;
++
+ 	afi = nf_tables_afinfo_lookup(net, family, true);
+ 	if (IS_ERR(afi))
+ 		return PTR_ERR(afi);
+-- 
+2.16.4
+

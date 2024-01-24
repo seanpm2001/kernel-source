@@ -17,20 +17,22 @@ Cc: <stable@kernel.org>
 Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
 Acked-by: nborisov <nik.borisov@suse.com>
 ---
- arch/x86/include/asm/cpufeatures.h |    1 +
+ arch/x86/include/asm/cpufeatures.h |    4 ++++
  arch/x86/include/asm/processor.h   |    2 ++
  arch/x86/kernel/cpu/amd.c          |   19 +++++++++++++++++++
  arch/x86/kernel/traps.c            |    7 ++++++-
- 4 files changed, 28 insertions(+), 1 deletion(-)
+ 4 files changed, 31 insertions(+), 1 deletion(-)
 
 --- a/arch/x86/include/asm/cpufeatures.h
 +++ b/arch/x86/include/asm/cpufeatures.h
-@@ -421,5 +421,6 @@
- #define X86_BUG_EIBRS_PBRSB		X86_BUG(27) /* EIBRS is vulnerable to Post Barrier RSB Predictions */
- #define X86_BUG_SRSO			X86_BUG(28) /* AMD SRSO bug */
- #define X86_BUG_GDS			X86_BUG(29) /* CPU is affected by Gather Data Sampling */
-+#define X86_BUG_DIV0                    X86_BUG(30) /* AMD DIV0 speculation bug */
+@@ -425,4 +425,8 @@
+ #define X86_BUG_SRSO			X86_BUG(29) /* AMD SRSO bug */
+ #define X86_BUG_GDS			X86_BUG(30) /* CPU is affected by Gather Data Sampling */
  
++/* First extended bug word */
++#define X86_BUG_DIV0                    X86_BUG(1*32 + 0) /* AMD DIV0 speculation bug */
++
++
  #endif /* _ASM_X86_CPUFEATURES_H */
 --- a/arch/x86/include/asm/processor.h
 +++ b/arch/x86/include/asm/processor.h
@@ -58,7 +60,7 @@ Acked-by: nborisov <nik.borisov@suse.com>
  static bool cpu_has_amd_erratum(struct cpuinfo_x86 *cpu, const int *erratum)
  {
  	int osvw_id = *erratum++;
-@@ -1128,6 +1132,11 @@ static void init_amd(struct cpuinfo_x86
+@@ -1137,6 +1141,11 @@ static void init_amd(struct cpuinfo_x86
  		msr_set_bit(MSR_K7_HWCR, MSR_K7_HWCR_IRPERF_EN_BIT);
  
  	zenbleed_check(c);
@@ -70,7 +72,7 @@ Acked-by: nborisov <nik.borisov@suse.com>
  }
  
  #ifdef CONFIG_X86_32
-@@ -1273,3 +1282,13 @@ void amd_check_microcode(void)
+@@ -1282,3 +1291,13 @@ void amd_check_microcode(void)
  {
  	on_each_cpu(zenbleed_check_cpu, NULL, 1);
  }
