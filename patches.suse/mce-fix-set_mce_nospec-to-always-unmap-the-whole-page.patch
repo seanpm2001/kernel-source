@@ -33,15 +33,29 @@ Link: https://lore.kernel.org/r/165272615484.103830.2563950688772226611.stgit@dw
 Signed-off-by: Dan Williams <dan.j.williams@intel.com>
 Acked-by: Nikolay Borisov <nik.borisov@suse.com>
 ---
- arch/x86/kernel/cpu/mcheck/mce.c |    4 ++--
+ arch/x86/kernel/cpu/mcheck/mce.c |   11 ++---------
  arch/x86/mm/pageattr.c           |   22 ++++++++++------------
  drivers/nvdimm/pmem.c            |   26 +++++++-------------------
  include/linux/set_memory.h       |    4 ++--
- 4 files changed, 21 insertions(+), 35 deletions(-)
+ 4 files changed, 21 insertions(+), 42 deletions(-)
 
 --- a/arch/x86/kernel/cpu/mcheck/mce.c
 +++ b/arch/x86/kernel/cpu/mcheck/mce.c
-@@ -609,7 +609,7 @@ static int srao_decode_notifier(struct n
+@@ -534,13 +534,6 @@ bool mce_is_memory_error(struct mce *m)
+ }
+ EXPORT_SYMBOL_GPL(mce_is_memory_error);
+ 
+-static bool whole_page(struct mce *m)
+-{
+-	if (!mca_cfg.ser || !(m->status & MCI_STATUS_MISCV))
+-		return true;
+-	return MCI_MISC_ADDR_LSB(m->misc) >= PAGE_SHIFT;
+-}
+-
+ bool mce_is_correctable(struct mce *m)
+ {
+ 	if (m->cpuvendor == X86_VENDOR_AMD && m->status & MCI_STATUS_DEFERRED)
+@@ -609,7 +602,7 @@ static int srao_decode_notifier(struct n
  	if (mce_usable_address(mce) && (mce->severity == MCE_AO_SEVERITY)) {
  		pfn = mce->addr >> PAGE_SHIFT;
  		if (!memory_failure(pfn, MCE_VECTOR, 0))
@@ -50,7 +64,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  	}
  
  	return NOTIFY_OK;
-@@ -1115,7 +1115,7 @@ static int do_memory_failure(struct mce
+@@ -1115,7 +1108,7 @@ static int do_memory_failure(struct mce
  	if (ret)
  		pr_err("Memory error not recovered");
  	else
