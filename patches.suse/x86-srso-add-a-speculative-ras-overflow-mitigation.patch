@@ -231,7 +231,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  
 --- a/arch/x86/include/asm/cpufeatures.h
 +++ b/arch/x86/include/asm/cpufeatures.h
-@@ -290,6 +290,9 @@
+@@ -292,6 +292,9 @@
  #define X86_FEATURE_UNRET		(11*32+15) /* "" AMD BTB untrain return */
  #define X86_FEATURE_RSB_VMEXIT_LITE	(11*32+17) /* "" Fill RSB on VM exit when EIBRS is enabled */
  
@@ -241,11 +241,11 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  /* Intel-defined CPU features, CPUID level 0x00000007:1 (EAX), word 12 */
  #define X86_FEATURE_AVX512_BF16		(12*32+ 5) /* AVX512 BFLOAT16 instructions */
  
-@@ -411,5 +414,6 @@
- #define X86_BUG_MMIO_STALE_DATA		X86_BUG(25) /* CPU is affected by Processor MMIO Stale Data vulnerabilities */
- #define X86_BUG_RETBLEED		X86_BUG(26) /* CPU is affected by RETBleed */
- #define X86_BUG_EIBRS_PBRSB		X86_BUG(27) /* EIBRS is vulnerable to Post Barrier RSB Predictions */
-+#define X86_BUG_SRSO			X86_BUG(28) /* AMD SRSO bug */
+@@ -414,5 +417,6 @@
+ #define X86_BUG_MMIO_UNKNOWN		X86_BUG(26) /* CPU is too old and its MMIO Stale Data status is unknown */
+ #define X86_BUG_RETBLEED		X86_BUG(27) /* CPU is affected by RETBleed */
+ #define X86_BUG_EIBRS_PBRSB		X86_BUG(28) /* EIBRS is vulnerable to Post Barrier RSB Predictions */
++#define X86_BUG_SRSO			X86_BUG(29) /* AMD SRSO bug */
  
  #endif /* _ASM_X86_CPUFEATURES_H */
 --- a/arch/x86/include/asm/nospec-branch.h
@@ -289,7 +289,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  	uint32_t base, eax, signature[3];
 --- a/arch/x86/kernel/cpu/amd.c
 +++ b/arch/x86/kernel/cpu/amd.c
-@@ -1243,6 +1243,20 @@ void set_dr_addr_mask(unsigned long mask
+@@ -1252,6 +1252,20 @@ void set_dr_addr_mask(unsigned long mask
  	}
  }
  
@@ -320,7 +320,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  
  /* The base value of the SPEC_CTRL MSR without task-specific bits set */
  u64 x86_spec_ctrl_base;
-@@ -156,6 +157,7 @@ void __init check_bugs(void)
+@@ -164,6 +165,7 @@ void __init check_bugs(void)
  	l1tf_select_mitigation();
  	md_clear_select_mitigation();
  	srbds_select_mitigation();
@@ -328,7 +328,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  
  	arch_smt_update();
  
-@@ -1568,6 +1570,95 @@ static void update_indir_branch_cond(voi
+@@ -1579,6 +1581,95 @@ static void update_indir_branch_cond(voi
  }
  
  #undef pr_fmt
@@ -424,7 +424,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  #define pr_fmt(fmt) fmt
  
  /* Update the static key controlling the MDS CPU buffer clear in idle */
-@@ -2302,6 +2393,13 @@ static ssize_t retbleed_show_state(char
+@@ -2316,6 +2407,13 @@ static ssize_t retbleed_show_state(char
  	return sprintf(buf, "%s\n", retbleed_strings[retbleed_mitigation]);
  }
  
@@ -438,7 +438,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  static ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr,
  			       char *buf, unsigned int bug)
  {
-@@ -2352,6 +2450,9 @@ static ssize_t cpu_show_common(struct de
+@@ -2367,6 +2465,9 @@ static ssize_t cpu_show_common(struct de
  	case X86_BUG_RETBLEED:
  		return retbleed_show_state(buf);
  
@@ -448,7 +448,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  	default:
  		break;
  	}
-@@ -2413,4 +2514,9 @@ ssize_t cpu_show_retbleed(struct device
+@@ -2431,4 +2532,9 @@ ssize_t cpu_show_retbleed(struct device
  {
  	return cpu_show_common(dev, attr, buf, X86_BUG_RETBLEED);
  }
@@ -460,7 +460,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  #endif
 --- a/arch/x86/kernel/cpu/common.c
 +++ b/arch/x86/kernel/cpu/common.c
-@@ -1022,6 +1022,7 @@ static const __initconst struct x86_cpu_
+@@ -1028,6 +1028,7 @@ static const __initconst struct x86_cpu_
  #define MMIO_SBDS	BIT(2)
  /* CPU is affected by RETbleed, speculating where you would not expect it */
  #define RETBLEED	BIT(3)
@@ -468,7 +468,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  
  static const struct x86_cpu_id cpu_vuln_blacklist[] __initconst = {
  	VULNBL_INTEL_STEPPINGS(IVYBRIDGE,	X86_STEPPING_ANY,		SRBDS),
-@@ -1046,8 +1047,9 @@ static const struct x86_cpu_id cpu_vuln_
+@@ -1052,8 +1053,9 @@ static const struct x86_cpu_id cpu_vuln_
  
  	VULNBL_AMD(0x15, RETBLEED),
  	VULNBL_AMD(0x16, RETBLEED),
@@ -479,7 +479,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  	{}
  };
  
-@@ -1157,6 +1159,9 @@ static void __init cpu_set_bug_bits(stru
+@@ -1169,6 +1171,9 @@ static void __init cpu_set_bug_bits(stru
  	    !(ia32_cap & ARCH_CAP_PBRSB_NO))
  		setup_force_cpu_bug(X86_BUG_EIBRS_PBRSB);
  

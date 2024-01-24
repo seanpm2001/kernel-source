@@ -1,0 +1,71 @@
+From: Christoph Hellwig <hch@lst.de>
+Date: Wed, 8 Apr 2020 17:27:42 +0200
+Subject: x86/mm: Add a x86_has_pat_wp() helper
+Git-commit: 1f6f655e01adebf5bd5e6c3da2e843c104ded051
+Patch-mainline: v5.8-rc1
+References: git-fixes
+
+Abstract the ioremap code away from the caching mode internals.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Acked-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20200408152745.1565832-2-hch@lst.de
+
+Acked-by: Nikolay Borisov <nik.borisov@suse.com>
+---
+ arch/x86/include/asm/pat.h |    2 ++
+ arch/x86/mm/init.c         |    6 ++++++
+ arch/x86/mm/ioremap.c      |    8 ++------
+ 3 files changed, 10 insertions(+), 6 deletions(-)
+
+--- a/arch/x86/include/asm/pat.h
++++ b/arch/x86/include/asm/pat.h
+@@ -23,4 +23,6 @@ void io_free_memtype(resource_size_t sta
+ 
+ bool pat_pfn_immune_to_uc_mtrr(unsigned long pfn);
+ 
++bool x86_has_pat_wp(void);
++
+ #endif /* _ASM_X86_PAT_H */
+--- a/arch/x86/mm/init.c
++++ b/arch/x86/mm/init.c
+@@ -69,6 +69,12 @@ uint8_t __pte2cachemode_tbl[8] = {
+ };
+ EXPORT_SYMBOL(__pte2cachemode_tbl);
+ 
++/* Check that the write-protect PAT entry is set for write-protect */
++bool x86_has_pat_wp(void)
++{
++	return __pte2cachemode_tbl[_PAGE_CACHE_MODE_WP] == _PAGE_CACHE_MODE_WP;
++}
++
+ static unsigned long __initdata pgt_buf_start;
+ static unsigned long __initdata pgt_buf_end;
+ static unsigned long __initdata pgt_buf_top;
+--- a/arch/x86/mm/ioremap.c
++++ b/arch/x86/mm/ioremap.c
+@@ -740,10 +740,8 @@ void __init *early_memremap_encrypted(re
+ void __init *early_memremap_encrypted_wp(resource_size_t phys_addr,
+ 					 unsigned long size)
+ {
+-	/* Be sure the write-protect PAT entry is set for write-protect */
+-	if (__pte2cachemode_tbl[_PAGE_CACHE_MODE_WP] != _PAGE_CACHE_MODE_WP)
++	if (!x86_has_pat_wp())
+ 		return NULL;
+-
+ 	return early_memremap_prot(phys_addr, size, __PAGE_KERNEL_ENC_WP);
+ }
+ 
+@@ -761,10 +759,8 @@ void __init *early_memremap_decrypted(re
+ void __init *early_memremap_decrypted_wp(resource_size_t phys_addr,
+ 					 unsigned long size)
+ {
+-	/* Be sure the write-protect PAT entry is set for write-protect */
+-	if (__pte2cachemode_tbl[_PAGE_CACHE_MODE_WP] != _PAGE_CACHE_MODE_WP)
++	if (!x86_has_pat_wp())
+ 		return NULL;
+-
+ 	return early_memremap_prot(phys_addr, size, __PAGE_KERNEL_NOENC_WP);
+ }
+ #endif	/* CONFIG_ARCH_USE_MEMREMAP_PROT */
