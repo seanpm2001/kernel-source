@@ -1,0 +1,54 @@
+From 86a7a5ded03d99f309c302ae151252799daaff94 Mon Sep 17 00:00:00 2001
+From: Jose Abreu <Jose.Abreu@synopsys.com>
+Date: Fri, 24 May 2019 10:20:25 +0200
+Subject: [PATCH 5/6] net: stmmac: dwmac4/5: Clear unused address entries
+Patch-mainline: v5.3-rc1
+Git-commit: 0620ec6c62a5a07625b65f699adc5d1b90394ee6
+References: git-fixes
+
+In case we don't use a given address entry we need to clear it because
+it could contain previous values that are no longer valid.
+
+Found out while running stmmac selftests.
+
+Signed-off-by: Jose Abreu <joabreu@synopsys.com>
+Cc: Joao Pinto <jpinto@synopsys.com>
+Cc: David S. Miller <davem@davemloft.net>
+Cc: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Cc: Alexandre Torgue <alexandre.torgue@st.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/dwmac4_core.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/dwmac4_core.c b/drivers/net/ethernet/stmicro/stmmac/dwmac4_core.c
+index 3c2d4afbc81a..2652431140ef 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/dwmac4_core.c
++++ b/drivers/net/ethernet/stmicro/stmmac/dwmac4_core.c
+@@ -440,14 +440,20 @@ static void dwmac4_set_filter(struct mac_device_info *hw,
+ 		 * are required
+ 		 */
+ 		value |= GMAC_PACKET_FILTER_PR;
+-	} else if (!netdev_uc_empty(dev)) {
+-		int reg = 1;
++	} else {
+ 		struct netdev_hw_addr *ha;
++		int reg = 1;
+ 
+ 		netdev_for_each_uc_addr(ha, dev) {
+ 			dwmac4_set_umac_addr(hw, ha->addr, reg);
+ 			reg++;
+ 		}
++
++		while (reg <= GMAC_MAX_PERFECT_ADDRESSES) {
++			writel(0, ioaddr + GMAC_ADDR_HIGH(reg));
++			writel(0, ioaddr + GMAC_ADDR_LOW(reg));
++			reg++;
++		}
+ 	}
+ 
+ 	writel(value, ioaddr + GMAC_PACKET_FILTER);
+-- 
+2.16.4
+
