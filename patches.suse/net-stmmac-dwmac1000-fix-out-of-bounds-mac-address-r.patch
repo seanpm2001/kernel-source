@@ -1,0 +1,40 @@
+From 7ae73459ad01cfa4667346e96767a51ac731fc28 Mon Sep 17 00:00:00 2001
+From: Jisheng Zhang <Jisheng.Zhang@synaptics.com>
+Date: Fri, 3 Apr 2020 10:23:29 +0800
+Subject: [PATCH] net: stmmac: dwmac1000: fix out-of-bounds mac address reg
+ setting
+Patch-mainline: v5.7-rc1
+Git-commit: 3e1221acf6a8f8595b5ce354bab4327a69d54d18
+References: git-fixes
+
+Commit 9463c4455900 ("net: stmmac: dwmac1000: Clear unused address
+entries") cleared the unused mac address entries, but introduced an
+out-of bounds mac address register programming bug -- After setting
+the secondary unicast mac addresses, the "reg" value has reached
+netdev_uc_count() + 1, thus we should only clear address entries
+if (addr < perfect_addr_number)
+
+Fixes: 9463c4455900 ("net: stmmac: dwmac1000: Clear unused address entries")
+Signed-off-by: Jisheng Zhang <Jisheng.Zhang@synaptics.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/dwmac1000_core.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/dwmac1000_core.c b/drivers/net/ethernet/stmicro/stmmac/dwmac1000_core.c
+index 4ccb6f53942a..671d04e9501b 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/dwmac1000_core.c
++++ b/drivers/net/ethernet/stmicro/stmmac/dwmac1000_core.c
+@@ -219,7 +219,7 @@ static void dwmac1000_set_filter(struct mac_device_info *hw,
+ 			reg++;
+ 		}
+ 
+-		while (reg <= perfect_addr_number) {
++		while (reg < perfect_addr_number) {
+ 			writel(0, ioaddr + GMAC_ADDR_HIGH(reg));
+ 			writel(0, ioaddr + GMAC_ADDR_LOW(reg));
+ 			reg++;
+-- 
+2.16.4
+
