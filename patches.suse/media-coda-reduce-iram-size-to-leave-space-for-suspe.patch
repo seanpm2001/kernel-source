@@ -1,0 +1,41 @@
+From e047c5e0dad14c7b6d1470dc2e237a7a55252233 Mon Sep 17 00:00:00 2001
+From: Jan Luebbe <jlu@pengutronix.de>
+Date: Fri, 28 Jul 2017 09:26:47 -0400
+Subject: [PATCH] media: coda: reduce iram size to leave space for suspend to
+ ram
+Git-commit: e047c5e0dad14c7b6d1470dc2e237a7a55252233
+References: git-fixes
+Patch-mainline: v4.14-rc1
+
+The on-chip SRAM of i.MX6S is only 128 KiB. 4 KiB of that are allocated
+for suspend to RAM since commit df595746fa69 ("ARM: imx: add suspend in
+ocram support for i.mx6q"). Reduce the requested IRAM size to 124 KiB to
+avoid an allocation failure that causes the coda driver to not use the
+SRAM at all.
+
+Signed-off-by: Jan Luebbe <jlu@pengutronix.de>
+Signed-off-by: Philipp Zabel <p.zabel@pengutronix.de>
+Signed-off-by: Hans Verkuil <hans.verkuil@cisco.com>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@s-opensource.com>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/media/platform/coda/coda-common.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/platform/coda/coda-common.c b/drivers/media/platform/coda/coda-common.c
+index 40f31038249d..27c613752fbf 100644
+--- a/drivers/media/platform/coda/coda-common.c
++++ b/drivers/media/platform/coda/coda-common.c
+@@ -2443,7 +2443,7 @@ static const struct coda_devtype coda_devdata[] = {
+ 		.num_vdevs    = ARRAY_SIZE(coda9_video_devices),
+ 		.workbuf_size = 80 * 1024,
+ 		.tempbuf_size = 204 * 1024,
+-		.iram_size    = 0x20000,
++		.iram_size    = 0x1f000, /* leave 4k for suspend code */
+ 	},
+ };
+ 
+-- 
+2.43.0
+
