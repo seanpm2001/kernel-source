@@ -1,0 +1,42 @@
+From e112146f3b19e47193ca78c117b86ba0c760ebe4 Mon Sep 17 00:00:00 2001
+From: Lucas Stach <l.stach@pengutronix.de>
+Date: Thu, 7 Dec 2017 06:09:46 -0500
+Subject: [PATCH] media: coda: set min_buffers_needed
+Git-commit: e112146f3b19e47193ca78c117b86ba0c760ebe4
+References: git-fixes
+Patch-mainline: v4.16-rc1
+
+The current driver implementation expects at least one buffer on
+all queues to start streaming. Properly signal this to the vb2
+core, to avoid confusion when streamon is racing with qbuf.
+
+Signed-off-by: Lucas Stach <l.stach@pengutronix.de>
+Signed-off-by: Philipp Zabel <p.zabel@pengutronix.de>
+Signed-off-by: Hans Verkuil <hans.verkuil@cisco.com>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@s-opensource.com>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/media/platform/coda/coda-common.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/media/platform/coda/coda-common.c b/drivers/media/platform/coda/coda-common.c
+index 15eb5dc4dff9..46a628a548d9 100644
+--- a/drivers/media/platform/coda/coda-common.c
++++ b/drivers/media/platform/coda/coda-common.c
+@@ -1884,6 +1884,12 @@ static int coda_queue_init(struct coda_ctx *ctx, struct vb2_queue *vq)
+ 	 * that videobuf2 will keep the value of bytesused intact.
+ 	 */
+ 	vq->allow_zero_bytesused = 1;
++	/*
++	 * We might be fine with no buffers on some of the queues, but that
++	 * would need to be reflected in job_ready(). Currently we expect all
++	 * queues to have at least one buffer queued.
++	 */
++	vq->min_buffers_needed = 1;
+ 	vq->dev = &ctx->dev->plat_dev->dev;
+ 
+ 	return vb2_queue_init(vq);
+-- 
+2.43.0
+
