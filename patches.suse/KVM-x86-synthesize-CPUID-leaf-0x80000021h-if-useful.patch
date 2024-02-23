@@ -1,0 +1,76 @@
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Thu, 21 Oct 2021 17:19:27 -0400
+Subject: KVM: x86: synthesize CPUID leaf 0x80000021h if useful
+Git-commit: f144c49e8c3950add1b051e76ebf40a258984c9d
+Patch-mainline: v5.18-rc1
+References: git-fixes
+
+Guests X86_BUG_NULL_SEG if and only if the host has them.  Use the info
+from static_cpu_has_bug to form the 0x80000021 CPUID leaf that was
+defined for Zen3.  Userspace can then set the bit even on older CPUs
+that do not have the bug, such as Zen2.
+
+Do the same for X86_FEATURE_LFENCE_RDTSC as well, since various processors
+have had very different ways of detecting it and not all of them are
+available to userspace.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Nikolay Borisov <nik.borisov@suse.com>
+---
+ arch/x86/kvm/cpuid.c |   31 +++++++++++++++++++++++++++++++
+ 1 file changed, 31 insertions(+)
+
+--- a/arch/x86/kvm/cpuid.c
++++ b/arch/x86/kvm/cpuid.c
+@@ -281,6 +281,25 @@ static void do_cpuid_1_ent(struct kvm_cp
+ {
+ 	entry->function = function;
+ 	entry->index = index;
++	switch(function & 0xC0000000) {
++	case 0x80000000:
++		/*
++		 * 0x80000021 is sometimes synthesized by __do_cpuid_func, which
++		 * would result in out-of-bounds calls to do_host_cpuid.
++		 */
++		{
++			static int max_cpuid_80000000;
++			if (!READ_ONCE(max_cpuid_80000000))
++				WRITE_ONCE(max_cpuid_80000000, cpuid_eax(0x80000000));
++			if (function > READ_ONCE(max_cpuid_80000000))
++				return;
++		}
++		break;
++
++	default:
++		break;
++
++	}
+ 	cpuid_count(entry->function, entry->index,
+ 		    &entry->eax, &entry->ebx, &entry->ecx, &entry->edx);
+ 	entry->flags = 0;
+@@ -633,6 +652,14 @@ static inline int __do_cpuid_ent(struct
+ 		break;
+ 	case 0x80000000:
+ 		entry->eax = min(entry->eax, 0x80000021);
++		/*
++		 * Serializing LFENCE is reported in a multitude of ways,
++		 * and NullSegClearsBase is not reported in CPUID on Zen2;
++		 * help userspace by providing the CPUID leaf ourselves.
++		 */
++		if (static_cpu_has(X86_FEATURE_LFENCE_RDTSC)
++		    || !static_cpu_has_bug(X86_BUG_NULL_SEG))
++			entry->eax = max(entry->eax, 0x80000021);
+ 		break;
+ 	case 0x80000001:
+ 		entry->edx &= kvm_cpuid_8000_0001_edx_x86_features;
+@@ -712,6 +739,10 @@ static inline int __do_cpuid_ent(struct
+ 		 *   EAX      13     PCMSR, Prefetch control MSR
+ 		 */
+ 		entry->eax &= BIT(0) | BIT(2) | BIT(6);
++		if (static_cpu_has(X86_FEATURE_LFENCE_RDTSC))
++			entry->eax |= BIT(2);
++		if (!static_cpu_has_bug(X86_BUG_NULL_SEG))
++			entry->eax |= BIT(6);
+ 		break;
+ 	/*Add support for Centaur's CPUID instruction*/
+ 	case 0xC0000000:

@@ -1,0 +1,61 @@
+From: Pawan Gupta <pawan.kumar.gupta@linux.intel.com>
+Date: Tue, 13 Feb 2024 18:22:56 -0800
+Subject: KVM: VMX: Move VERW closer to VMentry for MDS mitigation
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git
+Git-commit: 43fb862de8f628c5db5e96831c915b9aebf62d33
+Patch-mainline: Queued in subsystem maintainer repo
+References: git-fixes
+
+During VMentry VERW is executed to mitigate MDS. After VERW, any memory
+access like register push onto stack may put host data in MDS affected
+CPU buffers. A guest can then use MDS to sample host data.
+
+Although likelihood of secrets surviving in registers at current VERW
+callsite is less, but it can't be ruled out. Harden the MDS mitigation
+by moving the VERW mitigation late in VMentry path.
+
+Note that VERW for MMIO Stale Data mitigation is unchanged because of
+the complexity of per-guest conditional VERW which is not easy to handle
+that late in asm with no GPRs available. If the CPU is also affected by
+MDS, VERW is unconditionally executed late in asm regardless of guest
+having MMIO access.
+
+Cc:  <stable@kernel.org>
+Signed-off-by: Pawan Gupta <pawan.kumar.gupta@linux.intel.com>
+Acked-by: Sean Christopherson <seanjc@google.com>
+Acked-by: Nikolay Borisov <nik.borisov@suse.com>
+---
+ arch/x86/kvm/vmx.c |    8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+--- a/arch/x86/kvm/vmx.c
++++ b/arch/x86/kvm/vmx.c
+@@ -1738,7 +1738,8 @@ static __always_inline void vmx_enable_f
+
+ static void vmx_update_fb_clear_dis(struct kvm_vcpu *vcpu, struct vcpu_vmx *vmx)
+ {
+-	vmx->disable_fb_clear = vmx_fb_clear_ctrl_available;
++	vmx->disable_fb_clear = !cpu_feature_enabled(X86_FEATURE_CLEAR_CPU_BUF) &&
++		vmx_fb_clear_ctrl_available;
+
+ 	/*
+ 	 * If guest will not execute VERW, there is no need to set FB_CLEAR_DIS
+@@ -9929,8 +9930,6 @@ static void __noclone vmx_vcpu_run(struc
+ 	/* L1D Flush includes CPU buffer clear to mitigate MDS */
+ 	if (static_branch_unlikely(&vmx_l1d_should_flush))
+ 		vmx_l1d_flush(vcpu);
+-	else if (cpu_feature_enabled(X86_FEATURE_CLEAR_CPU_BUF))
+-		mds_clear_cpu_buffers();
+ 	else if (static_branch_unlikely(&mmio_stale_data_clear) &&
+ 		 kvm_arch_has_assigned_device(vcpu->kvm))
+ 		mds_clear_cpu_buffers();
+@@ -9975,6 +9974,9 @@ static void __noclone vmx_vcpu_run(struc
+ #endif
+ 		"mov %c[rcx](%0), %%" _ASM_CX " \n\t" /* kills %0 (ecx) */
+
++		/* Clobbers EFLAGS.ZF */
++		CLEAR_CPU_BUFFERS
++
+ 		/* Enter guest mode */
+ 		"jc 1f \n\t"
+ 		__ex(ASM_VMX_VMLAUNCH) "\n\t"
