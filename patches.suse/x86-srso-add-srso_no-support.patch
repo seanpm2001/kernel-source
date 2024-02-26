@@ -22,9 +22,9 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
 
 --- a/arch/x86/include/asm/cpufeatures.h
 +++ b/arch/x86/include/asm/cpufeatures.h
-@@ -375,7 +375,9 @@
- #define X86_FEATURE_ARCH_CAPABILITIES	(18*32+29) /* IA32_ARCH_CAPABILITIES MSR (Intel) */
- #define X86_FEATURE_SPEC_CTRL_SSBD	(18*32+31) /* "" Speculative Store Bypass Disable */
+@@ -380,7 +380,9 @@
+  /* AMD-defined Extended Feature 2 EAX, CPUID level 0x80000021 (EAX), word 20 */
+ #define X86_FEATURE_LFENCE_RDTSC	(20*32+ 2) /* "" LFENCE always serializing / synchronizes RDTSC */
  
 +#define X86_FEATURE_SBPB		(20*32+27) /* "" Selective Branch Prediction Barrier */
  #define X86_FEATURE_IBPB_BRTYPE		(20*32+28) /* "" MSR_PRED_CMD[IBPB] flushes all branch type predictions */
@@ -34,7 +34,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
   * BUG word(s)
 --- a/arch/x86/include/asm/msr-index.h
 +++ b/arch/x86/include/asm/msr-index.h
-@@ -51,6 +51,7 @@
+@@ -55,6 +55,7 @@
  
  #define MSR_IA32_PRED_CMD		0x00000049 /* Prediction Command */
  #define PRED_CMD_IBPB			BIT(0)	   /* Indirect Branch Prediction Barrier */
@@ -61,7 +61,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  /* The Intel SPEC CTRL MSR base value cache */
 --- a/arch/x86/kernel/cpu/amd.c
 +++ b/arch/x86/kernel/cpu/amd.c
-@@ -1247,14 +1247,14 @@ bool cpu_has_ibpb_brtype_microcode(void)
+@@ -1256,14 +1256,14 @@ bool cpu_has_ibpb_brtype_microcode(void)
  {
  	u8 fam = boot_cpu_data.x86;
  
@@ -94,7 +94,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  static DEFINE_MUTEX(spec_ctrl_mutex);
  
  /* Update SPEC_CTRL MSR and its cached copy unconditionally */
-@@ -1618,7 +1621,7 @@ static void __init srso_select_mitigatio
+@@ -1629,7 +1632,7 @@ static void __init srso_select_mitigatio
  	bool has_microcode;
  
  	if (!boot_cpu_has_bug(X86_BUG_SRSO) || cpu_mitigations_off())
@@ -103,7 +103,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  
  	/*
  	 * The first check is for the kernel running as a guest in order
-@@ -1631,9 +1634,18 @@ static void __init srso_select_mitigatio
+@@ -1642,9 +1645,18 @@ static void __init srso_select_mitigatio
  	} else {
  		/*
  		 * Enable the synthetic (even if in a real CPUID leaf)
@@ -123,7 +123,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  	}
  
  	switch (srso_cmd) {
-@@ -1656,16 +1668,20 @@ static void __init srso_select_mitigatio
+@@ -1667,16 +1679,20 @@ static void __init srso_select_mitigatio
  			srso_mitigation = SRSO_MITIGATION_SAFE_RET;
  		} else {
  			pr_err("WARNING: kernel not compiled with CPU_SRSO.\n");
@@ -148,7 +148,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  #undef pr_fmt
 --- a/arch/x86/kernel/cpu/common.c
 +++ b/arch/x86/kernel/cpu/common.c
-@@ -1159,8 +1159,10 @@ static void __init cpu_set_bug_bits(stru
+@@ -1165,8 +1165,10 @@ static void __init cpu_set_bug_bits(stru
  	    !(ia32_cap & ARCH_CAP_PBRSB_NO))
  		setup_force_cpu_bug(X86_BUG_EIBRS_PBRSB);
  
