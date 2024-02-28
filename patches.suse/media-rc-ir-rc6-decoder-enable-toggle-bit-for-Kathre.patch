@@ -1,0 +1,54 @@
+From 85e4af0a7ae2f146769b7475ae531bf8a3f3afb4 Mon Sep 17 00:00:00 2001
+From: Matthias Reichl <hias@horus.com>
+Date: Tue, 28 Aug 2018 09:49:42 -0400
+Subject: [PATCH] media: rc: ir-rc6-decoder: enable toggle bit for Kathrein
+ RCU-676 remote
+Git-commit: 85e4af0a7ae2f146769b7475ae531bf8a3f3afb4
+References: git-fixes
+Patch-mainline: v4.20-rc1
+
+The Kathrein RCU-676 remote uses the 32-bit rc6 protocol and toggles
+bit 15 (0x8000) on repeated button presses, like MCE remotes.
+
+Add it's customer code 0x80460000 to the 32-bit rc6 toggle
+handling code to get proper scancodes and toggle reports.
+
+Signed-off-by: Matthias Reichl <hias@horus.com>
+Signed-off-by: Sean Young <sean@mess.org>
+Signed-off-by: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/media/rc/ir-rc6-decoder.c |    9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+--- a/drivers/media/rc/ir-rc6-decoder.c
++++ b/drivers/media/rc/ir-rc6-decoder.c
+@@ -40,6 +40,7 @@
+ #define RC6_6A_MCE_TOGGLE_MASK	0x8000	/* for the body bits */
+ #define RC6_6A_LCC_MASK		0xffff0000 /* RC6-6A-32 long customer code mask */
+ #define RC6_6A_MCE_CC		0x800f0000 /* MCE customer code */
++#define RC6_6A_KATHREIN_CC	0x80460000 /* Kathrein RCU-676 customer code */
+ #ifndef CHAR_BIT
+ #define CHAR_BIT 8	/* Normally in <limits.h> */
+ #endif
+@@ -252,13 +253,17 @@ again:
+ 				toggle = 0;
+ 				break;
+ 			case 32:
+-				if ((scancode & RC6_6A_LCC_MASK) == RC6_6A_MCE_CC) {
++				switch (scancode & RC6_6A_LCC_MASK) {
++				case RC6_6A_MCE_CC:
++				case RC6_6A_KATHREIN_CC:
+ 					protocol = RC_TYPE_RC6_MCE;
+ 					toggle = !!(scancode & RC6_6A_MCE_TOGGLE_MASK);
+ 					scancode &= ~RC6_6A_MCE_TOGGLE_MASK;
+-				} else {
++					break;
++				default:
+ 					protocol = RC_TYPE_RC6_6A_32;
+ 					toggle = 0;
++					break;
+ 				}
+ 				break;
+ 			default:

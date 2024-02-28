@@ -1,0 +1,38 @@
+From 8056402c54dcc7fcae48e28e51af3ca07f9480ff Mon Sep 17 00:00:00 2001
+From: Philipp Zabel <p.zabel@pengutronix.de>
+Date: Mon, 17 Jul 2017 06:43:15 -0400
+Subject: [PATCH] media: coda: wake up capture queue on encoder stop after
+ output streamoff
+Git-commit: 8056402c54dcc7fcae48e28e51af3ca07f9480ff
+References: git-fixes
+Patch-mainline: v4.14-rc1
+
+If an encoder stop command is issued after the output queue has already
+stopped streaming, the qsequence counter has been reset to 0. Always
+wake up the capture queue if the output queue is not streaming.
+
+Signed-off-by: Philipp Zabel <p.zabel@pengutronix.de>
+Signed-off-by: Hans Verkuil <hans.verkuil@cisco.com>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@s-opensource.com>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/media/platform/coda/coda-common.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/platform/coda/coda-common.c b/drivers/media/platform/coda/coda-common.c
+index 3f80fb3c3b43..3992ef2bda42 100644
+--- a/drivers/media/platform/coda/coda-common.c
++++ b/drivers/media/platform/coda/coda-common.c
+@@ -933,7 +933,7 @@ static int coda_encoder_cmd(struct file *file, void *fh,
+ 	ctx->bit_stream_param |= CODA_BIT_STREAM_END_FLAG;
+ 
+ 	/* If there is no buffer in flight, wake up */
+-	if (ctx->qsequence == ctx->osequence) {
++	if (!ctx->streamon_out || ctx->qsequence == ctx->osequence) {
+ 		dst_vq = v4l2_m2m_get_vq(ctx->fh.m2m_ctx,
+ 					 V4L2_BUF_TYPE_VIDEO_CAPTURE);
+ 		dst_vq->last_buffer_dequeued = true;
+-- 
+2.43.0
+
