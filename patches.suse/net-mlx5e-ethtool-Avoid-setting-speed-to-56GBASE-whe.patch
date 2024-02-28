@@ -1,0 +1,43 @@
+From a18b7dadebfcdcc0895ed035b9295c8e11abbbe2 Mon Sep 17 00:00:00 2001
+From: Mohamad Heib <mohamadh@mellanox.com>
+Date: Tue, 23 Apr 2019 21:13:48 +0300
+Subject: [PATCH 01/10] net/mlx5e: ethtool, Avoid setting speed to 56GBASE when
+ autoneg off
+Patch-mainline: v5.3-rc6
+Git-commit: 5faf5b70c51dd9c9905bf8209e33cbd867486607
+References: git-fixes
+
+Setting speed to 56GBASE is allowed only with auto-negotiation enabled.
+
+This patch prevent setting speed to 56GBASE when auto-negotiation disabled.
+
+Fixes: f62b8bb8f2d3 ("net/mlx5: Extend mlx5_core to support ConnectX-4 Ethernet functionality")
+Signed-off-by: Mohamad Heib <mohamadh@mellanox.com>
+Signed-off-by: Saeed Mahameed <saeedm@mellanox.com>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/mellanox/mlx5/core/en_ethtool.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_ethtool.c b/drivers/net/ethernet/mellanox/mlx5/core/en_ethtool.c
+index 20b9c0c4b8f4..16e27d00bf42 100644
+--- a/drivers/net/ethernet/mellanox/mlx5/core/en_ethtool.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/en_ethtool.c
+@@ -907,6 +907,14 @@ static int mlx5e_set_link_ksettings(struct net_device *netdev,
+ 		goto out;
+ 	}
+ 
++	if ((link_modes & MLX5E_PROT_MASK(MLX5E_56GBASE_R4)) &&
++	    link_ksettings->base.autoneg != AUTONEG_ENABLE) {
++		netdev_err(priv->netdev, "%s: 56G link speed requires autoneg enabled\n",
++			   __func__);
++		err = -EINVAL;
++		goto out;
++	}
++
+ 	link_modes = link_modes & eth_proto_cap;
+ 	if (!link_modes) {
+ 		netdev_err(netdev, "%s: Not supported link mode(s) requested",
+-- 
+2.16.4
+
