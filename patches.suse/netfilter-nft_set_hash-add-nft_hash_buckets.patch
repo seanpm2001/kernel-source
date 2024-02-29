@@ -1,0 +1,46 @@
+From 795231bc2490da4e0eb5caea1965b95590a254db Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Mon, 22 May 2017 17:47:56 +0100
+Subject: [PATCH 1/2] netfilter: nft_set_hash: add nft_hash_buckets()
+Patch-mainline: v4.13-rc1
+Git-commit: 2111515abc46cb3e18b22d8551067029acfd1f55
+References: CVE-2021-46992 bsc#1220638
+
+Add nft_hash_buckets() helper function to calculate the number of
+hashtable buckets based on the elements. This function can be reused
+from the follow up patch to add non-resizable hashtables.
+
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/netfilter/nft_set_hash.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/net/netfilter/nft_set_hash.c b/net/netfilter/nft_set_hash.c
+index 3d3a6df4ce70..9edf7a1f5386 100644
+--- a/net/netfilter/nft_set_hash.c
++++ b/net/netfilter/nft_set_hash.c
+@@ -364,6 +364,11 @@ static void nft_hash_destroy(const struct nft_set *set)
+ 				    (void *)set);
+ }
+ 
++static u32 nft_hash_buckets(u32 size)
++{
++	return roundup_pow_of_two(size * 4 / 3);
++}
++
+ static bool nft_hash_estimate(const struct nft_set_desc *desc, u32 features,
+ 			      struct nft_set_estimate *est)
+ {
+@@ -372,7 +377,7 @@ static bool nft_hash_estimate(const struct nft_set_desc *desc, u32 features,
+ 	esize = sizeof(struct nft_hash_elem);
+ 	if (desc->size) {
+ 		est->size = sizeof(struct nft_hash) +
+-			    roundup_pow_of_two(desc->size * 4 / 3) *
++			    nft_hash_buckets(desc->size) *
+ 			    sizeof(struct nft_hash_elem *) +
+ 			    desc->size * esize;
+ 	} else {
+-- 
+2.16.4
+
