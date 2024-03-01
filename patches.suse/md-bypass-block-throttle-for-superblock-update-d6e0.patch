@@ -1,0 +1,41 @@
+From d6e035aad6c09991da1c667fb83419329a3baed8 Mon Sep 17 00:00:00 2001
+From: Junxiao Bi <junxiao.bi@oracle.com>
+Date: Wed, 8 Nov 2023 10:22:15 -0800
+Subject: [PATCH] md: bypass block throttle for superblock update
+Git-commit: d6e035aad6c09991da1c667fb83419329a3baed8
+Patch-mainline: v6.8-rc1
+References: git-fixes
+
+commit 5e2cf333b7bd ("md/raid5: Wait for MD_SB_CHANGE_PENDING in raid5d")
+introduced a hung bug and will be reverted in next patch, since the issue
+that commit is fixing is due to md superblock write is throttled by wbt,
+to fix it, we can have superblock write bypass block layer throttle.
+
+(Coly Li: rebased for Linux 4.12 based SUSE kernel)
+
+Fixes: 5e2cf333b7bd ("md/raid5: Wait for MD_SB_CHANGE_PENDING in raid5d")
+Cc: stable@vger.kernel.org # v5.19+
+Suggested-by: Yu Kuai <yukuai3@huawei.com>
+Signed-off-by: Junxiao Bi <junxiao.bi@oracle.com>
+Reviewed-by: Logan Gunthorpe <logang@deltatee.com>
+Reviewed-by: Yu Kuai <yukuai3@huawei.com>
+Signed-off-by: Song Liu <song@kernel.org>
+Link: https://lore.kernel.org/r/20231108182216.73611-1-junxiao.bi@oracle.com
+Signed-off-by: Coly Li <colyli@suse.de>
+
+---
+ drivers/md/md.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -953,7 +953,8 @@ void md_super_write(struct mddev *mddev,
+ 	    test_bit(FailFast, &rdev->flags) &&
+ 	    !test_bit(LastDev, &rdev->flags))
+ 		ff = MD_FAILFAST;
+-	bio->bi_opf = REQ_OP_WRITE | REQ_SYNC | REQ_PREFLUSH | REQ_FUA | ff;
++	bio->bi_opf = REQ_OP_WRITE | REQ_SYNC | REQ_IDLE | REQ_META |
++			REQ_PREFLUSH | REQ_FUA | ff;
+ 
+ 	atomic_inc(&mddev->pending_writes);
+ 	submit_bio(bio);
