@@ -1,0 +1,904 @@
+From 06eeefe8e310bf955da7f82547c72c43e4653d97 Mon Sep 17 00:00:00 2001
+From: Mauro Carvalho Chehab <mchehab@s-opensource.com>
+Date: Thu, 18 May 2017 08:13:28 -0300
+Subject: [PATCH] [media] media drivers: annotate fall-through
+Git-commit: 06eeefe8e310bf955da7f82547c72c43e4653d97
+References: git-fixes
+Patch-mainline: v4.13-rc1
+
+Avoid warnings like those:
+
+Drivers/media/pci/ddbridge/ddbridge-core.c: In function 'dvb_input_detach':
+drivers/media/pci/ddbridge/ddbridge-core.c:787:6: warning: this statement may fall through [-Wimplicit-fallthrough=]
+   if (input->fe) {
+      ^
+drivers/media/pci/ddbridge/ddbridge-core.c:792:2: note: here
+  case 4:
+  ^~~~
+...
+
+On several cases, it is just that gcc 7.1 is not capable of
+understanding the comment, but on other places, we need an
+annotation.
+
+Signed-off-by: Mauro Carvalho Chehab <mchehab@s-opensource.com>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/media/dvb-frontends/af9013.c          |  1 +
+ drivers/media/dvb-frontends/bcm3510.c         |  3 +-
+ drivers/media/dvb-frontends/dib7000p.c        |  6 +--
+ drivers/media/dvb-frontends/drx39xyj/drxj.c   | 20 ++++----
+ drivers/media/dvb-frontends/drxd_hard.c       | 10 ++--
+ drivers/media/dvb-frontends/drxk_hard.c       | 20 +++++---
+ drivers/media/dvb-frontends/mt352.c           |  1 +
+ drivers/media/dvb-frontends/or51132.c         |  4 +-
+ drivers/media/dvb-frontends/s5h1411.c         |  4 +-
+ drivers/media/dvb-frontends/zl10353.c         |  3 +-
+ drivers/media/i2c/msp3400-kthreads.c          |  1 +
+ drivers/media/i2c/soc_camera/ov6650.c         |  2 +
+ drivers/media/pci/cx23885/cx23885-cards.c     |  3 +-
+ drivers/media/pci/cx88/cx88-video.c           |  2 +-
+ drivers/media/pci/ddbridge/ddbridge-core.c    |  7 +--
+ drivers/media/pci/saa7134/saa7134-cards.c     |  4 +-
+ drivers/media/pci/solo6x10/solo6x10-core.c    |  1 +
+ drivers/media/pci/solo6x10/solo6x10-i2c.c     |  1 +
+ .../media/platform/exynos4-is/fimc-capture.c  |  3 ++
+ .../media/platform/marvell-ccic/mcam-core.c   |  1 +
+ drivers/media/platform/pxa_camera.c           |  1 +
+ drivers/media/platform/sh_vou.c               |  2 +
+ drivers/media/rc/iguanair.c                   |  1 +
+ drivers/media/tuners/tda18271-fe.c            |  2 +-
+ drivers/media/tuners/xc5000.c                 |  1 +
+ drivers/media/usb/cpia2/cpia2_core.c          | 51 ++++++++++++-------
+ drivers/media/usb/cx231xx/cx231xx-video.c     |  2 +-
+ drivers/media/usb/dvb-usb-v2/af9015.c         |  1 +
+ drivers/media/usb/dvb-usb-v2/lmedm04.c        |  1 +
+ drivers/media/usb/dvb-usb/dib0700_devices.c   |  1 +
+ drivers/media/usb/dvb-usb/dw2102.c            |  4 +-
+ drivers/media/usb/gspca/ov519.c               |  3 +-
+ drivers/media/usb/pwc/pwc-v4l.c               |  3 +-
+ drivers/media/usb/usbvision/usbvision-i2c.c   |  3 ++
+ drivers/media/usb/uvc/uvc_video.c             |  2 +-
+ 35 files changed, 117 insertions(+), 58 deletions(-)
+
+diff --git a/drivers/media/dvb-frontends/af9013.c b/drivers/media/dvb-frontends/af9013.c
+index b978002af4d8..51f942fc0669 100644
+--- a/drivers/media/dvb-frontends/af9013.c
++++ b/drivers/media/dvb-frontends/af9013.c
+@@ -535,6 +535,7 @@ static void af9013_statistics_work(struct work_struct *work)
+ 	switch (state->statistics_step) {
+ 	default:
+ 		state->statistics_step = 0;
++		/* fall-through */
+ 	case 0:
+ 		af9013_statistics_signal_strength(&state->fe);
+ 		state->statistics_step++;
+diff --git a/drivers/media/dvb-frontends/bcm3510.c b/drivers/media/dvb-frontends/bcm3510.c
+index 30cfc0f2b575..ba63ad170d3c 100644
+--- a/drivers/media/dvb-frontends/bcm3510.c
++++ b/drivers/media/dvb-frontends/bcm3510.c
+@@ -773,7 +773,8 @@ static int bcm3510_init(struct dvb_frontend* fe)
+ 			deb_info("attempting to download firmware\n");
+ 			if ((ret = bcm3510_init_cold(st)) < 0)
+ 				return ret;
+-		case JDEC_EEPROM_LOAD_WAIT: /* fall-through is wanted */
++			/* fall-through */
++		case JDEC_EEPROM_LOAD_WAIT:
+ 			deb_info("firmware is loaded\n");
+ 			bcm3510_check_firmware_version(st);
+ 			break;
+diff --git a/drivers/media/dvb-frontends/dib7000p.c b/drivers/media/dvb-frontends/dib7000p.c
+index 3815ea515364..1caa04d8f60f 100644
+--- a/drivers/media/dvb-frontends/dib7000p.c
++++ b/drivers/media/dvb-frontends/dib7000p.c
+@@ -279,10 +279,10 @@ static int dib7000p_set_power_mode(struct dib7000p_state *state, enum dib7000p_p
+ 		if (state->version != SOC7090)
+ 			reg_1280 &= ~((1 << 11));
+ 		reg_1280 &= ~(1 << 6);
+-		/* fall through wanted to enable the interfaces */
+-
++		/* fall-through */
++	case DIB7000P_POWER_INTERFACE_ONLY:
+ 		/* just leave power on the control-interfaces: GPIO and (I2C or SDIO) */
+-	case DIB7000P_POWER_INTERFACE_ONLY:	/* TODO power up either SDIO or I2C */
++		/* TODO power up either SDIO or I2C */
+ 		if (state->version == SOC7090)
+ 			reg_1280 &= ~((1 << 7) | (1 << 5));
+ 		else
+diff --git a/drivers/media/dvb-frontends/drx39xyj/drxj.c b/drivers/media/dvb-frontends/drx39xyj/drxj.c
+index daeaf965dd56..14040c915dbb 100644
+--- a/drivers/media/dvb-frontends/drx39xyj/drxj.c
++++ b/drivers/media/dvb-frontends/drx39xyj/drxj.c
+@@ -2837,7 +2837,8 @@ ctrl_set_cfg_mpeg_output(struct drx_demod_instance *demod, struct drx_cfg_mpeg_o
+ 			/* coef = 188/204                          */
+ 			max_bit_rate =
+ 			    (ext_attr->curr_symbol_rate / 8) * nr_bits * 188;
+-			/* pass through b/c Annex A/c need following settings */
++			/* pass through as b/c Annex A/c need following settings */
++			/* fall-through */
+ 		case DRX_STANDARD_ITU_B:
+ 			rc = drxj_dap_write_reg16(dev_addr, FEC_OC_FCT_USAGE__A, FEC_OC_FCT_USAGE__PRE, 0);
+ 			if (rc != 0) {
+@@ -4776,9 +4777,9 @@ set_frequency(struct drx_demod_instance *demod,
+ 	   No need to account for mirroring on RF
+ 	 */
+ 	switch (ext_attr->standard) {
+-	case DRX_STANDARD_ITU_A:	/* fallthrough */
+-	case DRX_STANDARD_ITU_C:	/* fallthrough */
+-	case DRX_STANDARD_PAL_SECAM_LP:	/* fallthrough */
++	case DRX_STANDARD_ITU_A:
++	case DRX_STANDARD_ITU_C:
++	case DRX_STANDARD_PAL_SECAM_LP:
+ 	case DRX_STANDARD_8VSB:
+ 		select_pos_image = true;
+ 		break;
+@@ -4787,11 +4788,12 @@ set_frequency(struct drx_demod_instance *demod,
+ 		   Sound carrier is already 3Mhz above centre frequency due
+ 		   to tuner setting so now add an extra shift of 1MHz... */
+ 		fm_frequency_shift = 1000;
+-	case DRX_STANDARD_ITU_B:	/* fallthrough */
+-	case DRX_STANDARD_NTSC:	/* fallthrough */
+-	case DRX_STANDARD_PAL_SECAM_BG:	/* fallthrough */
+-	case DRX_STANDARD_PAL_SECAM_DK:	/* fallthrough */
+-	case DRX_STANDARD_PAL_SECAM_I:	/* fallthrough */
++		/*fall through */
++	case DRX_STANDARD_ITU_B:
++	case DRX_STANDARD_NTSC:
++	case DRX_STANDARD_PAL_SECAM_BG:
++	case DRX_STANDARD_PAL_SECAM_DK:
++	case DRX_STANDARD_PAL_SECAM_I:
+ 	case DRX_STANDARD_PAL_SECAM_L:
+ 		select_pos_image = false;
+ 		break;
+diff --git a/drivers/media/dvb-frontends/drxd_hard.c b/drivers/media/dvb-frontends/drxd_hard.c
+index 71910561005f..17638e08835a 100644
+--- a/drivers/media/dvb-frontends/drxd_hard.c
++++ b/drivers/media/dvb-frontends/drxd_hard.c
+@@ -1517,12 +1517,14 @@ static int SetDeviceTypeId(struct drxd_state *state)
+ 			switch (deviceId) {
+ 			case 4:
+ 				state->diversity = 1;
++				/* fall through */
+ 			case 3:
+ 			case 7:
+ 				state->PGA = 1;
+ 				break;
+ 			case 6:
+ 				state->diversity = 1;
++				/* fall through */
+ 			case 5:
+ 			case 8:
+ 				break;
+@@ -1969,7 +1971,8 @@ static int DRX_Start(struct drxd_state *state, s32 off)
+ 		switch (p->transmission_mode) {
+ 		default:	/* Not set, detect it automatically */
+ 			operationMode |= SC_RA_RAM_OP_AUTO_MODE__M;
+-			/* fall through , try first guess DRX_FFTMODE_8K */
++			/* try first guess DRX_FFTMODE_8K */
++			/* fall through */
+ 		case TRANSMISSION_MODE_8K:
+ 			transmissionParams |= SC_RA_RAM_OP_PARAM_MODE_8K;
+ 			if (state->type_A) {
+@@ -2143,8 +2146,8 @@ static int DRX_Start(struct drxd_state *state, s32 off)
+ 		switch (p->modulation) {
+ 		default:
+ 			operationMode |= SC_RA_RAM_OP_AUTO_CONST__M;
+-			/* fall through , try first guess
+-			   DRX_CONSTELLATION_QAM64 */
++			/* try first guess DRX_CONSTELLATION_QAM64 */
++			/* fall through */
+ 		case QAM_64:
+ 			transmissionParams |= SC_RA_RAM_OP_PARAM_CONST_QAM64;
+ 			if (state->type_A) {
+@@ -2280,6 +2283,7 @@ static int DRX_Start(struct drxd_state *state, s32 off)
+ 			break;
+ 		default:
+ 			operationMode |= SC_RA_RAM_OP_AUTO_RATE__M;
++			/* fall through */
+ 		case FEC_2_3:
+ 			transmissionParams |= SC_RA_RAM_OP_PARAM_RATE_2_3;
+ 			if (state->type_A) {
+diff --git a/drivers/media/dvb-frontends/drxk_hard.c b/drivers/media/dvb-frontends/drxk_hard.c
+index 050fe34342d3..48a8aad47a74 100644
+--- a/drivers/media/dvb-frontends/drxk_hard.c
++++ b/drivers/media/dvb-frontends/drxk_hard.c
+@@ -3271,10 +3271,12 @@ static int dvbt_sc_command(struct drxk_state *state,
+ 	case OFDM_SC_RA_RAM_CMD_PROGRAM_PARAM:
+ 		status |= write16(state, OFDM_SC_RA_RAM_PARAM1__A, param1);
+ 		/* All commands using 1 parameters */
++		/* fall through */
+ 	case OFDM_SC_RA_RAM_CMD_SET_ECHO_TIMING:
+ 	case OFDM_SC_RA_RAM_CMD_USER_IO:
+ 		status |= write16(state, OFDM_SC_RA_RAM_PARAM0__A, param0);
+ 		/* All commands using 0 parameters */
++		/* fall through */
+ 	case OFDM_SC_RA_RAM_CMD_GET_OP_PARAM:
+ 	case OFDM_SC_RA_RAM_CMD_NULL:
+ 		/* Write command */
+@@ -3782,7 +3784,8 @@ static int set_dvbt(struct drxk_state *state, u16 intermediate_freqk_hz,
+ 	case TRANSMISSION_MODE_AUTO:
+ 	default:
+ 		operation_mode |= OFDM_SC_RA_RAM_OP_AUTO_MODE__M;
+-		/* fall through , try first guess DRX_FFTMODE_8K */
++		/* try first guess DRX_FFTMODE_8K */
++		/* fall through */
+ 	case TRANSMISSION_MODE_8K:
+ 		transmission_params |= OFDM_SC_RA_RAM_OP_PARAM_MODE_8K;
+ 		break;
+@@ -3796,7 +3799,8 @@ static int set_dvbt(struct drxk_state *state, u16 intermediate_freqk_hz,
+ 	default:
+ 	case GUARD_INTERVAL_AUTO:
+ 		operation_mode |= OFDM_SC_RA_RAM_OP_AUTO_GUARD__M;
+-		/* fall through , try first guess DRX_GUARD_1DIV4 */
++		/* try first guess DRX_GUARD_1DIV4 */
++		/* fall through */
+ 	case GUARD_INTERVAL_1_4:
+ 		transmission_params |= OFDM_SC_RA_RAM_OP_PARAM_GUARD_4;
+ 		break;
+@@ -3817,9 +3821,9 @@ static int set_dvbt(struct drxk_state *state, u16 intermediate_freqk_hz,
+ 	case HIERARCHY_NONE:
+ 	default:
+ 		operation_mode |= OFDM_SC_RA_RAM_OP_AUTO_HIER__M;
+-		/* fall through , try first guess SC_RA_RAM_OP_PARAM_HIER_NO */
++		/* try first guess SC_RA_RAM_OP_PARAM_HIER_NO */
+ 		/* transmission_params |= OFDM_SC_RA_RAM_OP_PARAM_HIER_NO; */
+-		/* break; */
++		/* fall through */
+ 	case HIERARCHY_1:
+ 		transmission_params |= OFDM_SC_RA_RAM_OP_PARAM_HIER_A1;
+ 		break;
+@@ -3837,7 +3841,8 @@ static int set_dvbt(struct drxk_state *state, u16 intermediate_freqk_hz,
+ 	case QAM_AUTO:
+ 	default:
+ 		operation_mode |= OFDM_SC_RA_RAM_OP_AUTO_CONST__M;
+-		/* fall through , try first guess DRX_CONSTELLATION_QAM64 */
++		/* try first guess DRX_CONSTELLATION_QAM64 */
++		/* fall through */
+ 	case QAM_64:
+ 		transmission_params |= OFDM_SC_RA_RAM_OP_PARAM_CONST_QAM64;
+ 		break;
+@@ -3880,7 +3885,8 @@ static int set_dvbt(struct drxk_state *state, u16 intermediate_freqk_hz,
+ 	case FEC_AUTO:
+ 	default:
+ 		operation_mode |= OFDM_SC_RA_RAM_OP_AUTO_RATE__M;
+-		/* fall through , try first guess DRX_CODERATE_2DIV3 */
++		/* try first guess DRX_CODERATE_2DIV3 */
++		/* fall through */
+ 	case FEC_2_3:
+ 		transmission_params |= OFDM_SC_RA_RAM_OP_PARAM_RATE_2_3;
+ 		break;
+@@ -3914,7 +3920,7 @@ static int set_dvbt(struct drxk_state *state, u16 intermediate_freqk_hz,
+ 	switch (state->props.bandwidth_hz) {
+ 	case 0:
+ 		state->props.bandwidth_hz = 8000000;
+-		/* fall though */
++		/* fall through */
+ 	case 8000000:
+ 		bandwidth = DRXK_BANDWIDTH_8MHZ_IN_HZ;
+ 		status = write16(state, OFDM_SC_RA_RAM_SRMM_FIX_FACT_8K__A,
+diff --git a/drivers/media/dvb-frontends/mt352.c b/drivers/media/dvb-frontends/mt352.c
+index e127090f2d22..d5fa96f0a6cd 100644
+--- a/drivers/media/dvb-frontends/mt352.c
++++ b/drivers/media/dvb-frontends/mt352.c
+@@ -211,6 +211,7 @@ static int mt352_set_parameters(struct dvb_frontend *fe)
+ 			if (op->hierarchy == HIERARCHY_AUTO ||
+ 			    op->hierarchy == HIERARCHY_NONE)
+ 				break;
++			/* fall through */
+ 		default:
+ 			return -EINVAL;
+ 	}
+diff --git a/drivers/media/dvb-frontends/or51132.c b/drivers/media/dvb-frontends/or51132.c
+index 62aa00767015..5f2549c48eb0 100644
+--- a/drivers/media/dvb-frontends/or51132.c
++++ b/drivers/media/dvb-frontends/or51132.c
+@@ -493,8 +493,8 @@ static int or51132_read_snr(struct dvb_frontend* fe, u16* snr)
+ 	switch (reg&0xff) {
+ 	case 0x06:
+ 		if (reg & 0x1000) usK = 3 << 24;
+-		/* Fall through to QAM64 case */
+-	case 0x43:
++		/* fall through */
++	case 0x43: /* QAM64 */
+ 		c = 150204167;
+ 		break;
+ 	case 0x45:
+diff --git a/drivers/media/dvb-frontends/s5h1411.c b/drivers/media/dvb-frontends/s5h1411.c
+index f29750a96196..dd09336a135b 100644
+--- a/drivers/media/dvb-frontends/s5h1411.c
++++ b/drivers/media/dvb-frontends/s5h1411.c
+@@ -51,7 +51,7 @@ static int debug;
+ #define dprintk(arg...) do {	\
+ 	if (debug)		\
+ 		printk(arg);	\
+-	} while (0)
++} while (0)
+ 
+ /* Register values to initialise the demod, defaults to VSB */
+ static struct init_tab {
+@@ -410,7 +410,7 @@ static int s5h1411_set_if_freq(struct dvb_frontend *fe, int KHz)
+ 	default:
+ 		dprintk("%s(%d KHz) Invalid, defaulting to 5380\n",
+ 			__func__, KHz);
+-		/* no break, need to continue */
++		/* fall through */
+ 	case 5380:
+ 	case 44000:
+ 		s5h1411_writereg(state, S5H1411_I2C_TOP_ADDR, 0x38, 0x1be4);
+diff --git a/drivers/media/dvb-frontends/zl10353.c b/drivers/media/dvb-frontends/zl10353.c
+index 47c0549eb7b2..1c689f7f4ab8 100644
+--- a/drivers/media/dvb-frontends/zl10353.c
++++ b/drivers/media/dvb-frontends/zl10353.c
+@@ -211,7 +211,7 @@ static int zl10353_set_parameters(struct dvb_frontend *fe)
+ 		break;
+ 	default:
+ 		c->bandwidth_hz = 8000000;
+-		/* fall though */
++		/* fall through */
+ 	case 8000000:
+ 		zl10353_single_write(fe, MCLK_RATIO, 0x75);
+ 		zl10353_single_write(fe, 0x64, 0x36);
+@@ -268,6 +268,7 @@ static int zl10353_set_parameters(struct dvb_frontend *fe)
+ 		if (c->hierarchy == HIERARCHY_AUTO ||
+ 		    c->hierarchy == HIERARCHY_NONE)
+ 			break;
++		/* fall through */
+ 	default:
+ 		return -EINVAL;
+ 	}
+diff --git a/drivers/media/i2c/msp3400-kthreads.c b/drivers/media/i2c/msp3400-kthreads.c
+index 11fc593ed908..4dd01e9f553b 100644
+--- a/drivers/media/i2c/msp3400-kthreads.c
++++ b/drivers/media/i2c/msp3400-kthreads.c
+@@ -655,6 +655,7 @@ int msp3400c_thread(void *data)
+ 			break;
+ 		case 0: /* 4.5 */
+ 			state->detected_std = V4L2_STD_MN;
++			/* fall-through */
+ 		default:
+ no_second:
+ 			state->second = msp3400c_carrier_detect_main[max1].cdo;
+diff --git a/drivers/media/i2c/soc_camera/ov6650.c b/drivers/media/i2c/soc_camera/ov6650.c
+index dbd6d92c589f..d2be64d54b22 100644
+--- a/drivers/media/i2c/soc_camera/ov6650.c
++++ b/drivers/media/i2c/soc_camera/ov6650.c
+@@ -709,6 +709,7 @@ static int ov6650_set_fmt(struct v4l2_subdev *sd,
+ 	switch (mf->code) {
+ 	case MEDIA_BUS_FMT_Y10_1X10:
+ 		mf->code = MEDIA_BUS_FMT_Y8_1X8;
++		/* fall through */
+ 	case MEDIA_BUS_FMT_Y8_1X8:
+ 	case MEDIA_BUS_FMT_YVYU8_2X8:
+ 	case MEDIA_BUS_FMT_YUYV8_2X8:
+@@ -718,6 +719,7 @@ static int ov6650_set_fmt(struct v4l2_subdev *sd,
+ 		break;
+ 	default:
+ 		mf->code = MEDIA_BUS_FMT_SBGGR8_1X8;
++		/* fall through */
+ 	case MEDIA_BUS_FMT_SBGGR8_1X8:
+ 		mf->colorspace = V4L2_COLORSPACE_SRGB;
+ 		break;
+diff --git a/drivers/media/pci/cx23885/cx23885-cards.c b/drivers/media/pci/cx23885/cx23885-cards.c
+index 9e39aea85df6..c48fa8e25a70 100644
+--- a/drivers/media/pci/cx23885/cx23885-cards.c
++++ b/drivers/media/pci/cx23885/cx23885-cards.c
+@@ -2081,7 +2081,7 @@ void cx23885_card_setup(struct cx23885_dev *dev)
+ 		ts2->gen_ctrl_val  = 0xc; /* Serial bus + punctured clock */
+ 		ts2->ts_clk_en_val = 0x1; /* Enable TS_CLK */
+ 		ts2->src_sel_val   = CX23885_SRC_SEL_PARALLEL_MPEG_VIDEO;
+-		/* break omitted intentionally */
++		/* fall-through */
+ 	case CX23885_BOARD_DVICO_FUSIONHDTV_5_EXP:
+ 		ts1->gen_ctrl_val  = 0xc; /* Serial bus + punctured clock */
+ 		ts1->ts_clk_en_val = 0x1; /* Enable TS_CLK */
+@@ -2238,6 +2238,7 @@ void cx23885_card_setup(struct cx23885_dev *dev)
+ 		/* Currently only enabled for the integrated IR controller */
+ 		if (!enable_885_ir)
+ 			break;
++		/* fall-through */
+ 	case CX23885_BOARD_HAUPPAUGE_HVR1250:
+ 	case CX23885_BOARD_HAUPPAUGE_HVR1800:
+ 	case CX23885_BOARD_HAUPPAUGE_IMPACTVCBE:
+diff --git a/drivers/media/pci/cx88/cx88-video.c b/drivers/media/pci/cx88/cx88-video.c
+index c7d4e87ccb64..36b4fb908e31 100644
+--- a/drivers/media/pci/cx88/cx88-video.c
++++ b/drivers/media/pci/cx88/cx88-video.c
+@@ -1420,7 +1420,7 @@ static int cx8800_initdev(struct pci_dev *pci_dev,
+ 		request_module("rtc-isl1208");
+ 		core->i2c_rtc = i2c_new_device(&core->i2c_adap, &rtc_info);
+ 	}
+-		/* break intentionally omitted */
++		/* fall-through */
+ 	case CX88_BOARD_DVICO_FUSIONHDTV_5_PCI_NANO:
+ 		request_module("ir-kbd-i2c");
+ 	}
+diff --git a/drivers/media/pci/ddbridge/ddbridge-core.c b/drivers/media/pci/ddbridge/ddbridge-core.c
+index 340cff02dee2..09b5338f4f8b 100644
+--- a/drivers/media/pci/ddbridge/ddbridge-core.c
++++ b/drivers/media/pci/ddbridge/ddbridge-core.c
+@@ -789,9 +789,10 @@ static void dvb_input_detach(struct ddb_input *input)
+ 			dvb_frontend_detach(input->fe);
+ 			input->fe = NULL;
+ 		}
++		/* fall-through */
+ 	case 4:
+ 		dvb_net_release(&input->dvbnet);
+-
++		/* fall-through */
+ 	case 3:
+ 		dvbdemux->dmx.close(&dvbdemux->dmx);
+ 		dvbdemux->dmx.remove_frontend(&dvbdemux->dmx,
+@@ -799,10 +800,10 @@ static void dvb_input_detach(struct ddb_input *input)
+ 		dvbdemux->dmx.remove_frontend(&dvbdemux->dmx,
+ 					      &input->mem_frontend);
+ 		dvb_dmxdev_release(&input->dmxdev);
+-
++		/* fall-through */
+ 	case 2:
+ 		dvb_dmx_release(&input->demux);
+-
++		/* fall-through */
+ 	case 1:
+ 		dvb_unregister_adapter(adap);
+ 	}
+diff --git a/drivers/media/pci/saa7134/saa7134-cards.c b/drivers/media/pci/saa7134/saa7134-cards.c
+index f79380faf499..9965d3531c80 100644
+--- a/drivers/media/pci/saa7134/saa7134-cards.c
++++ b/drivers/media/pci/saa7134/saa7134-cards.c
+@@ -7806,7 +7806,7 @@ int saa7134_board_init2(struct saa7134_dev *dev)
+ 				dev->name, saa7134_boards[dev->board].name);
+ 			break;
+ 		}
+-		/* break intentionally omitted */
++		/* fall-through */
+ 	case SAA7134_BOARD_VIDEOMATE_DVBT_300:
+ 	case SAA7134_BOARD_ASUS_EUROPA2_HYBRID:
+ 	case SAA7134_BOARD_ASUS_EUROPA_HYBRID:
+@@ -7864,7 +7864,7 @@ int saa7134_board_init2(struct saa7134_dev *dev)
+ 		break;
+ 	case SAA7134_BOARD_HAUPPAUGE_HVR1110:
+ 		hauppauge_eeprom(dev, dev->eedata+0x80);
+-		/* break intentionally omitted */
++		/* fall-through */
+ 	case SAA7134_BOARD_PINNACLE_PCTV_310i:
+ 	case SAA7134_BOARD_KWORLD_DVBT_210:
+ 	case SAA7134_BOARD_TEVION_DVBT_220RF:
+diff --git a/drivers/media/pci/solo6x10/solo6x10-core.c b/drivers/media/pci/solo6x10/solo6x10-core.c
+index f50d07229236..ca0873e47bea 100644
+--- a/drivers/media/pci/solo6x10/solo6x10-core.c
++++ b/drivers/media/pci/solo6x10/solo6x10-core.c
+@@ -511,6 +511,7 @@ static int solo_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+ 	default:
+ 		dev_warn(&pdev->dev, "Invalid chip_id 0x%02x, assuming 4 ch\n",
+ 			 chip_id);
++		/* fall through */
+ 	case 5:
+ 		solo_dev->nr_chans = 4;
+ 		solo_dev->nr_ext = 1;
+diff --git a/drivers/media/pci/solo6x10/solo6x10-i2c.c b/drivers/media/pci/solo6x10/solo6x10-i2c.c
+index e83bb79f9349..89f2f2a493c2 100644
+--- a/drivers/media/pci/solo6x10/solo6x10-i2c.c
++++ b/drivers/media/pci/solo6x10/solo6x10-i2c.c
+@@ -192,6 +192,7 @@ int solo_i2c_isr(struct solo_dev *solo_dev)
+ 		}
+ 
+ 		solo_dev->i2c_state = IIC_STATE_WRITE;
++		/* fall through */
+ 	case IIC_STATE_WRITE:
+ 		ret = solo_i2c_handle_write(solo_dev);
+ 		break;
+diff --git a/drivers/media/platform/exynos4-is/fimc-capture.c b/drivers/media/platform/exynos4-is/fimc-capture.c
+index 8a7cd07dbe28..db60a63c0768 100644
+--- a/drivers/media/platform/exynos4-is/fimc-capture.c
++++ b/drivers/media/platform/exynos4-is/fimc-capture.c
+@@ -1277,6 +1277,7 @@ static int fimc_cap_g_selection(struct file *file, void *fh,
+ 	case V4L2_SEL_TGT_COMPOSE_DEFAULT:
+ 	case V4L2_SEL_TGT_COMPOSE_BOUNDS:
+ 		f = &ctx->d_frame;
++		/* fall through */
+ 	case V4L2_SEL_TGT_CROP_BOUNDS:
+ 	case V4L2_SEL_TGT_CROP_DEFAULT:
+ 		s->r.left = 0;
+@@ -1287,6 +1288,7 @@ static int fimc_cap_g_selection(struct file *file, void *fh,
+ 
+ 	case V4L2_SEL_TGT_COMPOSE:
+ 		f = &ctx->d_frame;
++		/* fall through */
+ 	case V4L2_SEL_TGT_CROP:
+ 		s->r.left = f->offs_h;
+ 		s->r.top = f->offs_v;
+@@ -1610,6 +1612,7 @@ static int fimc_subdev_get_selection(struct v4l2_subdev *sd,
+ 	switch (sel->target) {
+ 	case V4L2_SEL_TGT_COMPOSE_BOUNDS:
+ 		f = &ctx->d_frame;
++		/* fall through */
+ 	case V4L2_SEL_TGT_CROP_BOUNDS:
+ 		r->width = f->o_width;
+ 		r->height = f->o_height;
+diff --git a/drivers/media/platform/marvell-ccic/mcam-core.c b/drivers/media/platform/marvell-ccic/mcam-core.c
+index a8bda6679422..8cac2f202099 100644
+--- a/drivers/media/platform/marvell-ccic/mcam-core.c
++++ b/drivers/media/platform/marvell-ccic/mcam-core.c
+@@ -393,6 +393,7 @@ static int mcam_alloc_dma_bufs(struct mcam_camera *cam, int loadtime)
+ 		dma_free_coherent(cam->dev, cam->dma_buf_size,
+ 				cam->dma_bufs[0], cam->dma_handles[0]);
+ 		cam->nbufs = 0;
++		/* fall-through */
+ 	case 0:
+ 		cam_err(cam, "Insufficient DMA buffers, cannot operate\n");
+ 		return -ENOMEM;
+diff --git a/drivers/media/platform/pxa_camera.c b/drivers/media/platform/pxa_camera.c
+index 6615f80fe059..5d3f04210a0b 100644
+--- a/drivers/media/platform/pxa_camera.c
++++ b/drivers/media/platform/pxa_camera.c
+@@ -1291,6 +1291,7 @@ static void pxa_camera_setup_cicr(struct pxa_camera_dev *pcdev,
+ 		 * transformation. Note that UYVY is the only format that
+ 		 * should be used if pxa framebuffer Overlay2 is used.
+ 		 */
++		/* fall through */
+ 	case V4L2_PIX_FMT_UYVY:
+ 	case V4L2_PIX_FMT_VYUY:
+ 	case V4L2_PIX_FMT_YUYV:
+diff --git a/drivers/media/platform/sh_vou.c b/drivers/media/platform/sh_vou.c
+index 992d61a8b961..871da2a2a91c 100644
+--- a/drivers/media/platform/sh_vou.c
++++ b/drivers/media/platform/sh_vou.c
+@@ -229,6 +229,7 @@ static void sh_vou_stream_config(struct sh_vou_device *vou_dev)
+ 		break;
+ 	case V4L2_PIX_FMT_RGB565:
+ 		dataswap ^= 1;
++		/* fall through */
+ 	case V4L2_PIX_FMT_RGB565X:
+ 		row_coeff = 2;
+ 		break;
+@@ -815,6 +816,7 @@ static u32 sh_vou_ntsc_mode(enum sh_vou_bus_fmt bus_fmt)
+ 	default:
+ 		pr_warn("%s(): Invalid bus-format code %d, using default 8-bit\n",
+ 			__func__, bus_fmt);
++		/* fall through */
+ 	case SH_VOU_BUS_8BIT:
+ 		return 1;
+ 	case SH_VOU_BUS_16BIT:
+diff --git a/drivers/media/rc/iguanair.c b/drivers/media/rc/iguanair.c
+index ccf24fd7ec1b..8711a7ff55cc 100644
+--- a/drivers/media/rc/iguanair.c
++++ b/drivers/media/rc/iguanair.c
+@@ -113,6 +113,7 @@ static void process_ir_data(struct iguanair *ir, unsigned len)
+ 			break;
+ 		case CMD_TX_OVERFLOW:
+ 			ir->tx_overflow = true;
++			/* fall through */
+ 		case CMD_RECEIVER_OFF:
+ 		case CMD_RECEIVER_ON:
+ 		case CMD_SEND:
+diff --git a/drivers/media/tuners/tda18271-fe.c b/drivers/media/tuners/tda18271-fe.c
+index b4e5fa2ff5e5..147155553648 100644
+--- a/drivers/media/tuners/tda18271-fe.c
++++ b/drivers/media/tuners/tda18271-fe.c
+@@ -960,7 +960,7 @@ static int tda18271_set_params(struct dvb_frontend *fe)
+ 		break;
+ 	case SYS_DVBC_ANNEX_B:
+ 		bw = 6000000;
+-		/* falltrough */
++		/* fall through */
+ 	case SYS_DVBC_ANNEX_A:
+ 	case SYS_DVBC_ANNEX_C:
+ 		if (bw <= 6000000) {
+diff --git a/drivers/media/tuners/xc5000.c b/drivers/media/tuners/xc5000.c
+index e823aafce276..afdf0c9903d2 100644
+--- a/drivers/media/tuners/xc5000.c
++++ b/drivers/media/tuners/xc5000.c
+@@ -788,6 +788,7 @@ static int xc5000_set_digital_params(struct dvb_frontend *fe)
+ 		if (!bw)
+ 			bw = 6000000;
+ 		/* fall to OFDM handling */
++		/* fall through */
+ 	case SYS_DMBTH:
+ 	case SYS_DVBT:
+ 	case SYS_DVBT2:
+diff --git a/drivers/media/usb/cpia2/cpia2_core.c b/drivers/media/usb/cpia2/cpia2_core.c
+index b1d13444ff30..0efba0da0a45 100644
+--- a/drivers/media/usb/cpia2/cpia2_core.c
++++ b/drivers/media/usb/cpia2/cpia2_core.c
+@@ -173,7 +173,8 @@ int cpia2_do_command(struct camera_data *cam,
+ 		cmd.start = CPIA2_VP_DEVICEH;
+ 		break;
+ 	case CPIA2_CMD_SET_VP_BRIGHTNESS:
+-		cmd.buffer.block_data[0] = param;	/* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_VP_BRIGHTNESS:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VP;
+ 		cmd.reg_count = 1;
+@@ -183,14 +184,16 @@ int cpia2_do_command(struct camera_data *cam,
+ 			cmd.start = CPIA2_VP5_EXPOSURE_TARGET;
+ 		break;
+ 	case CPIA2_CMD_SET_CONTRAST:
+-		cmd.buffer.block_data[0] = param;	/* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_CONTRAST:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VP;
+ 		cmd.reg_count = 1;
+ 		cmd.start = CPIA2_VP_YRANGE;
+ 		break;
+ 	case CPIA2_CMD_SET_VP_SATURATION:
+-		cmd.buffer.block_data[0] = param;	/* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_VP_SATURATION:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VP;
+ 		cmd.reg_count = 1;
+@@ -200,28 +203,32 @@ int cpia2_do_command(struct camera_data *cam,
+ 			cmd.start = CPIA2_VP5_MCUVSATURATION;
+ 		break;
+ 	case CPIA2_CMD_SET_VP_GPIO_DATA:
+-		cmd.buffer.block_data[0] = param;	/* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_VP_GPIO_DATA:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VP;
+ 		cmd.reg_count = 1;
+ 		cmd.start = CPIA2_VP_GPIO_DATA;
+ 		break;
+ 	case CPIA2_CMD_SET_VP_GPIO_DIRECTION:
+-		cmd.buffer.block_data[0] = param;	/* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_VP_GPIO_DIRECTION:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VP;
+ 		cmd.reg_count = 1;
+ 		cmd.start = CPIA2_VP_GPIO_DIRECTION;
+ 		break;
+ 	case CPIA2_CMD_SET_VC_MP_GPIO_DATA:
+-		cmd.buffer.block_data[0] = param;	/* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_VC_MP_GPIO_DATA:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VC;
+ 		cmd.reg_count = 1;
+ 		cmd.start = CPIA2_VC_MP_DATA;
+ 		break;
+ 	case CPIA2_CMD_SET_VC_MP_GPIO_DIRECTION:
+-		cmd.buffer.block_data[0] = param;	/* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/*fall through */
+ 	case CPIA2_CMD_GET_VC_MP_GPIO_DIRECTION:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VC;
+ 		cmd.reg_count = 1;
+@@ -235,7 +242,8 @@ int cpia2_do_command(struct camera_data *cam,
+ 		cmd.buffer.block_data[0] = param;
+ 		break;
+ 	case CPIA2_CMD_SET_FLICKER_MODES:
+-		cmd.buffer.block_data[0] = param;	/* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_FLICKER_MODES:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VP;
+ 		cmd.reg_count = 1;
+@@ -280,8 +288,9 @@ int cpia2_do_command(struct camera_data *cam,
+ 		cmd.start = CPIA2_SYSTEM_SYSTEM_CONTROL;
+ 		cmd.buffer.block_data[0] = CPIA2_SYSTEM_CONTROL_CLEAR_ERR;
+ 		break;
+-	case CPIA2_CMD_SET_USER_MODE:   /* Then fall through */
++	case CPIA2_CMD_SET_USER_MODE:
+ 		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_USER_MODE:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VP;
+ 		cmd.reg_count = 1;
+@@ -300,14 +309,16 @@ int cpia2_do_command(struct camera_data *cam,
+ 		cmd.buffer.block_data[0] = param;
+ 		break;
+ 	case CPIA2_CMD_SET_WAKEUP:
+-		cmd.buffer.block_data[0] = param;	/* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_WAKEUP:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VC;
+ 		cmd.reg_count = 1;
+ 		cmd.start = CPIA2_VC_WAKEUP;
+ 		break;
+ 	case CPIA2_CMD_SET_PW_CONTROL:
+-		cmd.buffer.block_data[0] = param;	/* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_PW_CONTROL:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VC;
+ 		cmd.reg_count = 1;
+@@ -319,7 +330,8 @@ int cpia2_do_command(struct camera_data *cam,
+ 		cmd.start = CPIA2_VP_SYSTEMSTATE;
+ 		break;
+ 	case CPIA2_CMD_SET_SYSTEM_CTRL:
+-		cmd.buffer.block_data[0] = param;	/* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_SYSTEM_CTRL:
+ 		cmd.req_mode =
+ 		    CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_SYSTEM;
+@@ -327,21 +339,24 @@ int cpia2_do_command(struct camera_data *cam,
+ 		cmd.start = CPIA2_SYSTEM_SYSTEM_CONTROL;
+ 		break;
+ 	case CPIA2_CMD_SET_VP_SYSTEM_CTRL:
+-		cmd.buffer.block_data[0] = param;	/* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_VP_SYSTEM_CTRL:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VP;
+ 		cmd.reg_count = 1;
+ 		cmd.start = CPIA2_VP_SYSTEMCTRL;
+ 		break;
+ 	case CPIA2_CMD_SET_VP_EXP_MODES:
+-		cmd.buffer.block_data[0] = param;	/* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_VP_EXP_MODES:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VP;
+ 		cmd.reg_count = 1;
+ 		cmd.start = CPIA2_VP_EXPOSURE_MODES;
+ 		break;
+ 	case CPIA2_CMD_SET_DEVICE_CONFIG:
+-		cmd.buffer.block_data[0] = param;	/* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_DEVICE_CONFIG:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VP;
+ 		cmd.reg_count = 1;
+@@ -361,7 +376,8 @@ int cpia2_do_command(struct camera_data *cam,
+ 		cmd.start = CPIA2_SENSOR_CR1;
+ 		break;
+ 	case CPIA2_CMD_SET_VC_CONTROL:
+-		cmd.buffer.block_data[0] = param;	/* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_VC_CONTROL:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VC;
+ 		cmd.reg_count = 1;
+@@ -395,7 +411,8 @@ int cpia2_do_command(struct camera_data *cam,
+ 	case CPIA2_CMD_SET_USER_EFFECTS:  /* Note: Be careful with this as
+ 					     this register can also affect
+ 					     flicker modes */
+-		cmd.buffer.block_data[0] = param;      /* Then fall through */
++		cmd.buffer.block_data[0] = param;
++		/* fall through */
+ 	case CPIA2_CMD_GET_USER_EFFECTS:
+ 		cmd.req_mode = CAMERAACCESS_TYPE_BLOCK | CAMERAACCESS_VP;
+ 		cmd.reg_count = 1;
+diff --git a/drivers/media/usb/cx231xx/cx231xx-video.c b/drivers/media/usb/cx231xx/cx231xx-video.c
+index 6414188ffdfa..f67f86876625 100644
+--- a/drivers/media/usb/cx231xx/cx231xx-video.c
++++ b/drivers/media/usb/cx231xx/cx231xx-video.c
+@@ -1134,7 +1134,7 @@ void cx231xx_v4l2_create_entities(struct cx231xx *dev)
+ 			/* The DVB core will handle it */
+ 			if (dev->tuner_type == TUNER_ABSENT)
+ 				continue;
+-			/* fall though */
++			/* fall through */
+ 		default: /* just to shut up a gcc warning */
+ 			ent->function = MEDIA_ENT_F_CONN_RF;
+ 			break;
+diff --git a/drivers/media/usb/dvb-usb-v2/af9015.c b/drivers/media/usb/dvb-usb-v2/af9015.c
+index caa1e6101f58..612431ab0fb3 100644
+--- a/drivers/media/usb/dvb-usb-v2/af9015.c
++++ b/drivers/media/usb/dvb-usb-v2/af9015.c
+@@ -52,6 +52,7 @@ static int af9015_ctrl_msg(struct dvb_usb_device *d, struct req_t *req)
+ 	case READ_I2C:
+ 		write = 0;
+ 		state->buf[2] |= 0x01; /* set I2C direction */
++		/* fall through */
+ 	case WRITE_I2C:
+ 		state->buf[0] = READ_WRITE_I2C;
+ 		break;
+diff --git a/drivers/media/usb/dvb-usb-v2/lmedm04.c b/drivers/media/usb/dvb-usb-v2/lmedm04.c
+index 924adfdb660d..594360a63c18 100644
+--- a/drivers/media/usb/dvb-usb-v2/lmedm04.c
++++ b/drivers/media/usb/dvb-usb-v2/lmedm04.c
+@@ -1065,6 +1065,7 @@ static int dm04_lme2510_frontend_attach(struct dvb_usb_adapter *adap)
+ 			}
+ 			break;
+ 		}
++		/* fall through */
+ 	case 0x22f0:
+ 		st->i2c_gate = 5;
+ 		adap->fe[0] = dvb_attach(m88rs2000_attach,
+diff --git a/drivers/media/usb/dvb-usb/dib0700_devices.c b/drivers/media/usb/dvb-usb/dib0700_devices.c
+index 85ab3fa48f9a..6a57fc6d3472 100644
+--- a/drivers/media/usb/dvb-usb/dib0700_devices.c
++++ b/drivers/media/usb/dvb-usb/dib0700_devices.c
+@@ -1659,6 +1659,7 @@ static int dib8096_set_param_override(struct dvb_frontend *fe)
+ 	switch (band) {
+ 	default:
+ 			deb_info("Warning : Rf frequency  (%iHz) is not in the supported range, using VHF switch ", fe->dtv_property_cache.frequency);
++			/* fall through */
+ 	case BAND_VHF:
+ 			state->dib8000_ops.set_gpio(fe, 3, 0, 1);
+ 			break;
+diff --git a/drivers/media/usb/dvb-usb/dw2102.c b/drivers/media/usb/dvb-usb/dw2102.c
+index 6e654e5026dd..57b187240110 100644
+--- a/drivers/media/usb/dvb-usb/dw2102.c
++++ b/drivers/media/usb/dvb-usb/dw2102.c
+@@ -1840,11 +1840,12 @@ static int dw2102_load_firmware(struct usb_device *dev,
+ 		switch (le16_to_cpu(dev->descriptor.idProduct)) {
+ 		case USB_PID_TEVII_S650:
+ 			dw2104_properties.rc.core.rc_codes = RC_MAP_TEVII_NEC;
++			/* fall through */
+ 		case USB_PID_DW2104:
+ 			reset = 1;
+ 			dw210x_op_rw(dev, 0xc4, 0x0000, 0, &reset, 1,
+ 					DW210X_WRITE_MSG);
+-			/* break omitted intentionally */
++			/* fall through */
+ 		case USB_PID_DW3101:
+ 			reset = 0;
+ 			dw210x_op_rw(dev, 0xbf, 0x0040, 0, &reset, 0,
+@@ -1877,6 +1878,7 @@ static int dw2102_load_firmware(struct usb_device *dev,
+ 					break;
+ 				}
+ 			}
++			/* fall through */
+ 		case 0x2101:
+ 			dw210x_op_rw(dev, 0xbc, 0x0030, 0, &reset16[0], 2,
+ 					DW210X_READ_MSG);
+diff --git a/drivers/media/usb/gspca/ov519.c b/drivers/media/usb/gspca/ov519.c
+index f4c41f043cda..cdb79c5f0c38 100644
+--- a/drivers/media/usb/gspca/ov519.c
++++ b/drivers/media/usb/gspca/ov519.c
+@@ -3526,7 +3526,8 @@ static void ov511_mode_init_regs(struct sd *sd)
+ 				sd->clockdiv = 0;
+ 				break;
+ 			}
+-			/* Fall through for 640x480 case */
++			/* For 640x480 case */
++			/* fall through */
+ 		default:
+ /*		case 20: */
+ /*		case 15: */
+diff --git a/drivers/media/usb/pwc/pwc-v4l.c b/drivers/media/usb/pwc/pwc-v4l.c
+index 92f04db6bbae..043b2b97cee6 100644
+--- a/drivers/media/usb/pwc/pwc-v4l.c
++++ b/drivers/media/usb/pwc/pwc-v4l.c
+@@ -568,7 +568,8 @@ static int pwc_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
+ 		pdev->gain_valid = true;
+ 		if (!DEVICE_USE_CODEC3(pdev->type))
+ 			break;
+-		/* Fall through for CODEC3 where autogain also controls expo */
++		/* For CODEC3 where autogain also controls expo */
++		/* fall through */
+ 	case V4L2_CID_EXPOSURE_AUTO:
+ 		if (pdev->exposure_valid && time_before(jiffies,
+ 				pdev->last_exposure_update + HZ / 4)) {
+diff --git a/drivers/media/usb/usbvision/usbvision-i2c.c b/drivers/media/usb/usbvision/usbvision-i2c.c
+index 5a3f788ad033..fdf6b6e285da 100644
+--- a/drivers/media/usb/usbvision/usbvision-i2c.c
++++ b/drivers/media/usb/usbvision/usbvision-i2c.c
+@@ -311,10 +311,13 @@ usbvision_i2c_read_max4(struct usb_usbvision *usbvision, unsigned char addr,
+ 	switch (len) {
+ 	case 4:
+ 		buf[3] = usbvision_read_reg(usbvision, USBVISION_SER_DAT4);
++		/* fall through */
+ 	case 3:
+ 		buf[2] = usbvision_read_reg(usbvision, USBVISION_SER_DAT3);
++		/* fall through */
+ 	case 2:
+ 		buf[1] = usbvision_read_reg(usbvision, USBVISION_SER_DAT2);
++		/* fall through */
+ 	case 1:
+ 		buf[0] = usbvision_read_reg(usbvision, USBVISION_SER_DAT1);
+ 		break;
+diff --git a/drivers/media/usb/uvc/uvc_video.c b/drivers/media/usb/uvc/uvc_video.c
+index 47d93a938dde..a29f39d4e05b 100644
+--- a/drivers/media/usb/uvc/uvc_video.c
++++ b/drivers/media/usb/uvc/uvc_video.c
+@@ -1327,7 +1327,7 @@ static void uvc_video_complete(struct urb *urb)
+ 	case -ENOENT:		/* usb_kill_urb() called. */
+ 		if (stream->frozen)
+ 			return;
+-
++		/* fall through */
+ 	case -ECONNRESET:	/* usb_unlink_urb() called. */
+ 	case -ESHUTDOWN:	/* The endpoint is being disabled. */
+ 		uvc_queue_cancel(queue, urb->status == -ESHUTDOWN);
+-- 
+2.43.1
+

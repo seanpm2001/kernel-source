@@ -1,0 +1,93 @@
+From 80008ddbed83b40d5b745a9bae721b736dd7314c Mon Sep 17 00:00:00 2001
+From: Sean Young <sean@mess.org>
+Date: Fri, 5 Jan 2018 08:38:43 -0500
+Subject: [PATCH] media: rc: do not remove first bit if leader pulse is present
+Mime-version: 1.0
+Content-type: text/plain; charset=UTF-8
+Content-transfer-encoding: 8bit
+Git-commit: 80008ddbed83b40d5b745a9bae721b736dd7314c
+References: git-fixes
+Patch-mainline: v4.16-rc1
+
+The rc5 protocol does not have a leading pulse or space, but we encode
+the first bit using a single leading pulse. For other protocols, the
+leading pulse or space does not represent any bit. So, don't remove the
+first bit if a leading pulse is present.
+
+Cc: Antti Seppälä <a.seppala@gmail.com>
+Signed-off-by: Sean Young <sean@mess.org>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@s-opensource.com>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/media/rc/ir-mce_kbd-decoder.c |    4 ++--
+ drivers/media/rc/ir-rc5-decoder.c     |   13 ++++++++-----
+ drivers/media/rc/rc-ir-raw.c          |    1 -
+ 3 files changed, 10 insertions(+), 8 deletions(-)
+
+--- a/drivers/media/rc/ir-mce_kbd-decoder.c
++++ b/drivers/media/rc/ir-mce_kbd-decoder.c
+@@ -448,11 +448,11 @@ static int ir_mce_kbd_encode(enum rc_typ
+ 	if (protocol == RC_TYPE_MCIR2_KBD) {
+ 		raw = scancode |
+ 		      ((u64)MCIR2_KEYBOARD_HEADER << MCIR2_KEYBOARD_NBITS);
+-		len = MCIR2_KEYBOARD_NBITS + MCIR2_HEADER_NBITS + 1;
++		len = MCIR2_KEYBOARD_NBITS + MCIR2_HEADER_NBITS;
+ 	} else {
+ 		raw = scancode |
+ 		      ((u64)MCIR2_MOUSE_HEADER << MCIR2_MOUSE_NBITS);
+-		len = MCIR2_MOUSE_NBITS + MCIR2_HEADER_NBITS + 1;
++		len = MCIR2_MOUSE_NBITS + MCIR2_HEADER_NBITS;
+ 	}
+ 
+ 	ret = ir_raw_gen_manchester(&e, max, &ir_mce_kbd_timings, len, raw);
+--- a/drivers/media/rc/ir-rc5-decoder.c
++++ b/drivers/media/rc/ir-rc5-decoder.c
+@@ -237,9 +237,9 @@ static int ir_rc5_encode(enum rc_type pr
+ 		/* encode data */
+ 		data = !commandx << 12 | system << 6 | command;
+ 
+-		/* Modulate the data */
++		/* First bit is encoded by leader_pulse */
+ 		ret = ir_raw_gen_manchester(&e, max, &ir_rc5_timings,
+-					    RC5_NBITS, data);
++					    RC5_NBITS - 1, data);
+ 		if (ret < 0)
+ 			return ret;
+ 	} else if (protocol == RC_TYPE_RC5X_20) {
+@@ -252,10 +252,11 @@ static int ir_rc5_encode(enum rc_type pr
+ 		/* encode data */
+ 		data = commandx << 18 | system << 12 | command << 6 | xdata;
+ 
+-		/* Modulate the data */
++		/* First bit is encoded by leader_pulse */
+ 		pre_space_data = data >> (RC5X_NBITS - CHECK_RC5X_NBITS);
+ 		ret = ir_raw_gen_manchester(&e, max, &ir_rc5x_timings[0],
+-					    CHECK_RC5X_NBITS, pre_space_data);
++					    CHECK_RC5X_NBITS - 1,
++					    pre_space_data);
+ 		if (ret < 0)
+ 			return ret;
+ 		ret = ir_raw_gen_manchester(&e, max - (e - events),
+@@ -266,8 +267,10 @@ static int ir_rc5_encode(enum rc_type pr
+ 			return ret;
+ 	} else if (protocol == RC_TYPE_RC5_SZ) {
+ 		/* RC5-SZ scancode is raw enough for Manchester as it is */
++		/* First bit is encoded by leader_pulse */
+ 		ret = ir_raw_gen_manchester(&e, max, &ir_rc5_sz_timings,
+-					    RC5_SZ_NBITS, scancode & 0x2fff);
++					    RC5_SZ_NBITS - 1,
++					    scancode & 0x2fff);
+ 		if (ret < 0)
+ 			return ret;
+ 	} else {
+--- a/drivers/media/rc/rc-ir-raw.c
++++ b/drivers/media/rc/rc-ir-raw.c
+@@ -258,7 +258,6 @@ int ir_raw_gen_manchester(struct ir_raw_
+ 		} else {
+ 			init_ir_raw_event_duration((*ev), 1, timings->leader);
+ 		}
+-		i >>= 1;
+ 	} else {
+ 		/* continue existing signal */
+ 		--(*ev);
