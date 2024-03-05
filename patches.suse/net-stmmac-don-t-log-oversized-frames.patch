@@ -1,0 +1,34 @@
+From aa345d27b558d6c9074efd4d3b68c12f516e7c23 Mon Sep 17 00:00:00 2001
+From: Aaro Koskinen <aaro.koskinen@nokia.com>
+Date: Wed, 27 Mar 2019 22:35:40 +0200
+Subject: [PATCH 25/35] net: stmmac: don't log oversized frames
+Git-commit: 057a0c5642a2ff2db7c421cdcde34294a23bf37b
+Patch-mainline: v5.1-rc4
+References: git-fixes
+
+This is log is harmful as it can trigger multiple times per packet. Delete
+it.
+
+Signed-off-by: Aaro Koskinen <aaro.koskinen@nokia.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/stmicro/stmmac/norm_desc.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/norm_desc.c b/drivers/net/ethernet/stmicro/stmmac/norm_desc.c
+index db4cee57bb24..66c17bab5997 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/norm_desc.c
++++ b/drivers/net/ethernet/stmicro/stmmac/norm_desc.c
+@@ -91,8 +91,6 @@ static int ndesc_get_rx_status(void *data, struct stmmac_extra_stats *x,
+ 		return dma_own;
+ 
+ 	if (unlikely(!(rdes0 & RDES0_LAST_DESCRIPTOR))) {
+-		pr_warn("%s: Oversized frame spanned multiple buffers\n",
+-			__func__);
+ 		stats->rx_length_errors++;
+ 		return discard_frame;
+ 	}
+-- 
+2.16.4
+

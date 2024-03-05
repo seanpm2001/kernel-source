@@ -12,11 +12,11 @@ Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
 Acked-by: Lee Duncan <lduncan@suse.com>
 ---
  drivers/scsi/qedf/qedf_debugfs.c |   16 +++++-----
- drivers/scsi/qedf/qedf_els.c     |   38 ++++++++++++++++++++-----
+ drivers/scsi/qedf/qedf_els.c     |   38 +++++++++++++++++++-----
  drivers/scsi/qedf/qedf_fip.c     |    5 ++-
- drivers/scsi/qedf/qedf_io.c      |   58 ++++++++++++++++++++++++++++++++-------
- drivers/scsi/qedf/qedf_main.c    |   53 ++++++++++++++++++++++++++---------
- 5 files changed, 130 insertions(+), 40 deletions(-)
+ drivers/scsi/qedf/qedf_io.c      |   60 ++++++++++++++++++++++++++++++++-------
+ drivers/scsi/qedf/qedf_main.c    |   53 +++++++++++++++++++++++++---------
+ 5 files changed, 131 insertions(+), 41 deletions(-)
 
 --- a/drivers/scsi/qedf/qedf_debugfs.c
 +++ b/drivers/scsi/qedf/qedf_debugfs.c
@@ -71,7 +71,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
 --- a/drivers/scsi/qedf/qedf_els.c
 +++ b/drivers/scsi/qedf/qedf_els.c
-@@ -186,8 +186,11 @@ static void qedf_rrq_compl(struct qedf_e
+@@ -182,8 +182,11 @@ static void qedf_rrq_compl(struct qedf_e
  
  	orig_io_req = cb_arg->aborted_io_req;
  
@@ -84,7 +84,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	if (rrq_req->event != QEDF_IOREQ_EV_ELS_TMO &&
  	    rrq_req->event != QEDF_IOREQ_EV_ELS_ERR_DETECT)
-@@ -330,8 +333,10 @@ void qedf_restart_rport(struct qedf_rpor
+@@ -353,8 +356,10 @@ void qedf_restart_rport(struct qedf_rpor
  	u32 port_id;
  	unsigned long flags;
  
@@ -96,7 +96,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	spin_lock_irqsave(&fcport->rport_lock, flags);
  	if (test_bit(QEDF_RPORT_IN_RESET, &fcport->flags) ||
-@@ -391,8 +396,11 @@ static void qedf_l2_els_compl(struct qed
+@@ -421,8 +426,11 @@ static void qedf_l2_els_compl(struct qed
  	 * If we are flushing the command just free the cb_arg as none of the
  	 * response data will be valid.
  	 */
@@ -109,7 +109,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	fcport = els_req->fcport;
  	mp_req = &(els_req->mp_req);
-@@ -505,8 +513,10 @@ static void qedf_srr_compl(struct qedf_e
+@@ -535,8 +543,10 @@ static void qedf_srr_compl(struct qedf_e
  
  	orig_io_req = cb_arg->aborted_io_req;
  
@@ -121,7 +121,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	clear_bit(QEDF_CMD_SRR_SENT, &orig_io_req->flags);
  
-@@ -520,8 +530,11 @@ static void qedf_srr_compl(struct qedf_e
+@@ -550,8 +560,11 @@ static void qedf_srr_compl(struct qedf_e
  		   orig_io_req, orig_io_req->xid, srr_req->xid, refcount);
  
  	/* If a SRR times out, simply free resources */
@@ -134,7 +134,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	/* Normalize response data into struct fc_frame */
  	mp_req = &(srr_req->mp_req);
-@@ -694,8 +707,11 @@ void qedf_process_seq_cleanup_compl(stru
+@@ -724,8 +737,11 @@ void qedf_process_seq_cleanup_compl(stru
  	cb_arg = io_req->cb_arg;
  
  	/* If we timed out just free resources */
@@ -147,7 +147,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	/* Kill the timer we put on the request */
  	cancel_delayed_work_sync(&io_req->timeout_work);
-@@ -798,8 +814,10 @@ static void qedf_rec_compl(struct qedf_e
+@@ -828,8 +844,10 @@ static void qedf_rec_compl(struct qedf_e
  
  	orig_io_req = cb_arg->aborted_io_req;
  
@@ -159,7 +159,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	if (rec_req->event != QEDF_IOREQ_EV_ELS_TMO &&
  	    rec_req->event != QEDF_IOREQ_EV_ELS_ERR_DETECT)
-@@ -811,8 +829,12 @@ static void qedf_rec_compl(struct qedf_e
+@@ -841,8 +859,12 @@ static void qedf_rec_compl(struct qedf_e
  		   orig_io_req, orig_io_req->xid, rec_req->xid, refcount);
  
  	/* If a REC times out, free resources */
@@ -190,7 +190,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  	vlan = (struct fip_vlan *)eth_fr;
 --- a/drivers/scsi/qedf/qedf_io.c
 +++ b/drivers/scsi/qedf/qedf_io.c
-@@ -94,6 +94,8 @@ static void qedf_cmd_timeout(struct work
+@@ -107,6 +107,8 @@ static void qedf_cmd_timeout(struct work
  		qedf_process_seq_cleanup_compl(qedf, NULL, io_req);
  		break;
  	default:
@@ -199,7 +199,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		break;
  	}
  }
-@@ -112,8 +114,10 @@ void qedf_cmd_mgr_free(struct qedf_cmd_m
+@@ -125,8 +127,10 @@ void qedf_cmd_mgr_free(struct qedf_cmd_m
  	num_ios = max_xid - min_xid + 1;
  
  	/* Free fcoe_bdt_ctx structures */
@@ -211,7 +211,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	bd_tbl_sz = QEDF_MAX_BDS_PER_CMD * sizeof(struct scsi_sge);
  	for (i = 0; i < num_ios; i++) {
-@@ -215,8 +219,11 @@ struct qedf_cmd_mgr *qedf_cmd_mgr_alloc(
+@@ -229,8 +233,11 @@ struct qedf_cmd_mgr *qedf_cmd_mgr_alloc(
  		io_req->sense_buffer = dma_alloc_coherent(&qedf->pdev->dev,
  		    QEDF_SCSI_SENSE_BUFFERSIZE, &io_req->sense_buffer_dma,
  		    GFP_KERNEL);
@@ -224,7 +224,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  		/* Allocate task parameters to pass to f/w init funcions */
  		io_req->task_params = kzalloc(sizeof(*io_req->task_params),
-@@ -413,8 +420,12 @@ void qedf_release_cmd(struct kref *ref)
+@@ -440,8 +447,12 @@ void qedf_release_cmd(struct kref *ref)
  	struct qedf_rport *fcport = io_req->fcport;
  	unsigned long flags;
  
@@ -238,7 +238,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	if (io_req->cmd_type == QEDF_ELS ||
  	    io_req->cmd_type == QEDF_TASK_MGMT_CMD)
-@@ -423,8 +434,10 @@ void qedf_release_cmd(struct kref *ref)
+@@ -450,8 +461,10 @@ void qedf_release_cmd(struct kref *ref)
  	atomic_inc(&cmd_mgr->free_list_cnt);
  	atomic_dec(&fcport->num_active_ios);
  	atomic_set(&io_req->state, QEDF_CMD_ST_INACTIVE);
@@ -250,7 +250,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	/* Increment task retry identifier now that the request is released */
  	io_req->task_retry_identifier++;
-@@ -945,6 +961,9 @@ qedf_queuecommand(struct Scsi_Host *host
+@@ -996,6 +1009,9 @@ qedf_queuecommand(struct Scsi_Host *host
  
  	if (test_bit(QEDF_UNLOADING, &qedf->flags) ||
  	    test_bit(QEDF_DBG_STOP_IO, &qedf->flags)) {
@@ -260,7 +260,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		sc_cmd->result = DID_NO_CONNECT << 16;
  		sc_cmd->scsi_done(sc_cmd);
  		return 0;
-@@ -961,6 +980,9 @@ qedf_queuecommand(struct Scsi_Host *host
+@@ -1012,6 +1028,9 @@ qedf_queuecommand(struct Scsi_Host *host
  
  	rval = fc_remote_port_chkready(rport);
  	if (rval) {
@@ -270,7 +270,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		sc_cmd->result = rval;
  		sc_cmd->scsi_done(sc_cmd);
  		return 0;
-@@ -968,12 +990,14 @@ qedf_queuecommand(struct Scsi_Host *host
+@@ -1019,12 +1038,14 @@ qedf_queuecommand(struct Scsi_Host *host
  
  	/* Retry command if we are doing a qed drain operation */
  	if (test_bit(QEDF_DRAIN_ACTIVE, &qedf->flags)) {
@@ -285,7 +285,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		rc = SCSI_MLQUEUE_HOST_BUSY;
  		goto exit_qcmd;
  	}
-@@ -1263,8 +1287,10 @@ void qedf_scsi_done(struct qedf_ctx *qed
+@@ -1348,8 +1369,10 @@ void qedf_scsi_done(struct qedf_ctx *qed
  	struct scsi_cmnd *sc_cmd;
  	int refcount;
  
@@ -297,7 +297,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	if (test_and_set_bit(QEDF_CMD_ERR_SCSI_DONE, &io_req->flags)) {
  		QEDF_INFO(&qedf->dbg_ctx, QEDF_LOG_IO,
-@@ -1320,8 +1346,12 @@ void qedf_process_warning_compl(struct q
+@@ -1465,8 +1488,12 @@ void qedf_process_warning_compl(struct q
  	u64 err_warn_bit_map;
  	u8 err_warn = 0xff;
  
@@ -311,7 +311,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	QEDF_ERR(&(io_req->fcport->qedf->dbg_ctx), "Warning CQE, "
  		  "xid=0x%x\n", io_req->xid);
-@@ -1383,8 +1413,11 @@ void qedf_process_error_detect(struct qe
+@@ -1528,8 +1555,11 @@ void qedf_process_error_detect(struct qe
  {
  	int rval;
  
@@ -324,7 +324,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	QEDF_ERR(&(io_req->fcport->qedf->dbg_ctx), "Error detection CQE, "
  		  "xid=0x%x\n", io_req->xid);
-@@ -1445,8 +1478,10 @@ void qedf_flush_active_ios(struct qedf_r
+@@ -1594,8 +1624,10 @@ void qedf_flush_active_ios(struct qedf_r
  	int wait_cnt = 100;
  	int refcount = 0;
  
@@ -336,7 +336,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	/* Check that fcport is still offloaded */
  	if (!test_bit(QEDF_RPORT_SESSION_READY, &fcport->flags)) {
-@@ -1683,6 +1718,10 @@ void qedf_process_abts_compl(struct qedf
+@@ -2027,6 +2059,10 @@ void qedf_process_abts_compl(struct qedf
  	clear_bit(QEDF_CMD_IN_ABORT, &io_req->flags);
  
  	if (io_req->sc_cmd) {
@@ -347,7 +347,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		if (io_req->return_scsi_cmd_on_abts)
  			qedf_scsi_done(qedf, io_req, DID_ERROR);
  	}
-@@ -1888,6 +1927,10 @@ int qedf_initiate_cleanup(struct qedf_io
+@@ -2249,6 +2285,10 @@ int qedf_initiate_cleanup(struct qedf_io
  	}
  
  	if (io_req->sc_cmd) {
@@ -358,8 +358,8 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		if (io_req->return_scsi_cmd_on_abts)
  			qedf_scsi_done(qedf, io_req, DID_ERROR);
  	}
-@@ -1927,7 +1970,7 @@ static int qedf_execute_tmf(struct qedf_
- 	u16 sqe_idx;
+@@ -2290,7 +2330,7 @@ static int qedf_execute_tmf(struct qedf_
+ 	struct fc_rport_priv *rdata = fcport->rdata;
  
  	if (!sc_cmd) {
 -		QEDF_ERR(&(qedf->dbg_ctx), "invalid arg\n");
@@ -367,6 +367,15 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		return FAILED;
  	}
  
+@@ -2309,7 +2349,7 @@ static int qedf_execute_tmf(struct qedf_
+ 		QEDF_ERR(&(qedf->dbg_ctx), "Failed TMF");
+ 		rc = -EAGAIN;
+ 		goto no_flush;
+-	}
++}
+ 
+ 	if (tm_flags == FCP_TMF_LUN_RESET)
+ 		qedf->lun_resets++;
 --- a/drivers/scsi/qedf/qedf_main.c
 +++ b/drivers/scsi/qedf/qedf_main.c
 @@ -131,8 +131,11 @@ static bool qedf_initiate_fipvlan_req(st
@@ -382,7 +391,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  		QEDF_INFO(&(qedf->dbg_ctx), QEDF_LOG_DISC,
  			   "Retry %d.\n", qedf->fipvlan_retries);
-@@ -164,6 +167,8 @@ static void qedf_handle_link_update(stru
+@@ -165,6 +168,8 @@ static void qedf_handle_link_update(stru
  			return;
  
  		if (atomic_read(&qedf->link_state) != QEDF_LINK_UP) {
@@ -391,7 +400,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  			qedf->vlan_id = 0;
  			return;
  		}
-@@ -311,8 +316,10 @@ int qedf_send_flogi(struct qedf_ctx *qed
+@@ -314,8 +319,10 @@ int qedf_send_flogi(struct qedf_ctx *qed
  
  	lport = qedf->lport;
  
@@ -403,7 +412,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	fp = fc_frame_alloc(lport, sizeof(struct fc_els_flogi));
  	if (!fp) {
-@@ -2224,12 +2231,14 @@ static void qedf_recv_frame(struct qedf_
+@@ -2331,12 +2338,14 @@ static void qedf_recv_frame(struct qedf_
  	fr_dev(fp) = lport;
  	fr_sof(fp) = hp->fcoe_sof;
  	if (skb_copy_bits(skb, fr_len, &crc_eof, sizeof(crc_eof))) {
@@ -418,7 +427,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		kfree_skb(skb);
  		return;
  	}
-@@ -2290,9 +2299,9 @@ static void qedf_recv_frame(struct qedf_
+@@ -2397,9 +2406,9 @@ static void qedf_recv_frame(struct qedf_
  	 * empty then this is not addressed to our port so simply drop it.
  	 */
  	if (lport->port_id != ntoh24(fh->fh_d_id) && !vn_port) {
@@ -431,7 +440,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		kfree_skb(skb);
  		return;
  	}
-@@ -2301,6 +2310,8 @@ static void qedf_recv_frame(struct qedf_
+@@ -2408,6 +2417,8 @@ static void qedf_recv_frame(struct qedf_
  	if ((fh->fh_type == FC_TYPE_BLS) && (f_ctl & FC_FC_SEQ_CTX) &&
  	    (f_ctl & FC_FC_EX_CTX)) {
  		/* Drop incoming ABTS response that has both SEQ/EX CTX set */
@@ -440,7 +449,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		kfree_skb(skb);
  		return;
  	}
-@@ -2444,8 +2455,9 @@ static int qedf_alloc_and_init_sb(struct
+@@ -2551,8 +2562,9 @@ static int qedf_alloc_and_init_sb(struct
  	    sizeof(struct status_block_e4), &sb_phys, GFP_KERNEL);
  
  	if (!sb_virt) {
@@ -452,7 +461,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		return -ENOMEM;
  	}
  
-@@ -2453,8 +2465,9 @@ static int qedf_alloc_and_init_sb(struct
+@@ -2560,8 +2572,9 @@ static int qedf_alloc_and_init_sb(struct
  	    sb_id, QED_SB_TYPE_STORAGE);
  
  	if (ret) {
@@ -464,7 +473,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		return ret;
  	}
  
-@@ -2538,13 +2551,18 @@ void qedf_process_cqe(struct qedf_ctx *q
+@@ -2645,13 +2658,18 @@ void qedf_process_cqe(struct qedf_ctx *q
  	io_req = &qedf->cmd_mgr->cmds[xid];
  
  	/* Completion not for a valid I/O anymore so just return */
@@ -485,7 +494,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		return;
  	}
  
-@@ -2553,7 +2571,8 @@ void qedf_process_cqe(struct qedf_ctx *q
+@@ -2660,7 +2678,8 @@ void qedf_process_cqe(struct qedf_ctx *q
  	 * isn't valid and shouldn't be taken. We should just return.
  	 */
  	if (!test_bit(QEDF_RPORT_SESSION_READY, &fcport->flags)) {
@@ -495,7 +504,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		return;
  	}
  
-@@ -2763,6 +2782,7 @@ static int qedf_alloc_global_queues(stru
+@@ -2870,6 +2889,7 @@ static int qedf_alloc_global_queues(stru
  	 */
  	if (!qedf->p_cpuq) {
  		status = 1;
@@ -503,7 +512,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		goto mem_alloc_failure;
  	}
  
-@@ -2778,8 +2798,10 @@ static int qedf_alloc_global_queues(stru
+@@ -2885,8 +2905,10 @@ static int qedf_alloc_global_queues(stru
  
  	/* Allocate DMA coherent buffers for BDQ */
  	rc = qedf_alloc_bdq(qedf);
@@ -515,7 +524,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	/* Allocate a CQ and an associated PBL for each MSI-X vector */
  	for (i = 0; i < qedf->num_queues; i++) {
-@@ -3087,6 +3109,7 @@ static int __qedf_probe(struct pci_dev *
+@@ -3195,6 +3217,7 @@ static int __qedf_probe(struct pci_dev *
  	qed_params.is_vf = is_vf;
  	qedf->cdev = qed_ops->common->probe(pdev, &qed_params);
  	if (!qedf->cdev) {
@@ -523,7 +532,7 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  		rc = -ENODEV;
  		goto err1;
  	}
-@@ -3155,8 +3178,10 @@ static int __qedf_probe(struct pci_dev *
+@@ -3258,8 +3281,10 @@ static int __qedf_probe(struct pci_dev *
  
  	/* Setup interrupts */
  	rc = qedf_setup_int(qedf);

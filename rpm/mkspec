@@ -35,27 +35,36 @@ my @kmps = read_kmps();
 
 # config.sh variables
 my %vars = parse_config_sh();
-my ($srcversion, $variant, $vanilla_only) =
-	($vars{'SRCVERSION'}, $vars{'VARIANT'}, $vars{'VANILLA_ONLY'});
+my ($srcversion, $variant, $obs_build_variant) =
+	($vars{'SRCVERSION'}, $vars{'VARIANT'}, $vars{'OBS_BUILD_VARIANT'});
+$obs_build_variant = ($obs_build_variant ? $variant : "" );
 my $compress_modules = 'none';
 my $compress_vmlinux = 'gz';
-my $build_dtbs = ();
-my $livepatch = "";
 if (defined($vars{'COMPRESS_MODULES'})) {
 	$compress_modules = $vars{'COMPRESS_MODULES'};
 }
 if (defined($vars{'COMPRESS_VMLINUX'})) {
 	$compress_vmlinux = $vars{'COMPRESS_VMLINUX'};
 }
-if (defined($vars{'BUILD_DTBS'})) {
-	$build_dtbs = $vars{'BUILD_DTBS'};
-	$build_dtbs = () if $build_dtbs =~ /^(0+|no|false)$/i;
+sub detect_false {
+my $arg = $_[0];
+	return "" if not $arg;
+	return $arg =~ /^(0+|no|none)$/i ? "" : $arg;
 }
-if (defined($vars{'LIVEPATCH'})) {
-	$livepatch = $vars{'LIVEPATCH'};
-	$livepatch = "" if $livepatch =~ /^(0+|no|none)$/i;
+my $build_dtbs = detect_false $vars{'BUILD_DTBS'};
+my $multibuild = detect_false $vars{'MULTIBUILD'};
+my $livepatch = detect_false $vars{'LIVEPATCH'};
+my $livepatch_rt = detect_false $vars{'LIVEPATCH_RT'};
+sub to_bool {
+	return detect_false($_[0]) ? 1 : 0 ;
 }
-$vanilla_only ||= "0";
+my $sb_efi_only = to_bool  $vars{'SB_EFI_ONLY'};
+my $split_base = to_bool $vars{'SPLIT_BASE'};
+my $split_optional = to_bool $vars{'SPLIT_OPTIONAL'};
+my $supported_modules_check = to_bool $vars{'SUPPORTED_MODULES_CHECK'};
+my $build_pdf = to_bool $vars{'BUILD_PDF'};
+my $build_html = to_bool $vars{'BUILD_HTML'};
+
 if (!defined ($rpmrelease)) {
 	$rpmrelease = $vars{'RELEASE'} || 0;
 }
@@ -109,7 +118,7 @@ my $commit_full = get_commit(1);
 
 my %macros = (
 	VARIANT => $variant,
-	VANILLA_ONLY => $vanilla_only,
+	OBS_BUILD_VARIANT => $obs_build_variant . "%{nil}",
 	SRCVERSION => $srcversion,
 	PATCHVERSION => $patchversion,
 	RPMVERSION => $rpmversion,
@@ -121,6 +130,13 @@ my %macros = (
 	UNPACK_PATCHES => $unpack_patches,
 	SCRIPTS => $scripts,
 	LIVEPATCH => $livepatch,
+	LIVEPATCH_RT => $livepatch_rt,
+	SB_EFI_ONLY => $sb_efi_only,
+	SPLIT_BASE => $split_base,
+	SPLIT_OPTIONAL => $split_optional,
+	SUPPORTED_MODULES_CHECK => $supported_modules_check,
+	BUILD_PDF => $build_pdf,
+	BUILD_HTML => $build_html,
 	YEAR => (localtime time)[5] + 1900,
 	COMPRESS_MODULES => $compress_modules,
 	COMPRESS_VMLINUX => $compress_vmlinux,
@@ -210,14 +226,16 @@ if ($variant eq "") {
 }
 
 # kernel-obs-*.spec
-if (!$variant) {
+if (!$variant || $obs_build_variant) {
 	my @default_archs;
-
-	if ($vanilla_only) {
-		@default_archs = arch2rpm(@{$flavor_archs{vanilla}});
+	my $flavor = $obs_build_variant;
+	if ($flavor) {
+		$flavor =~ s/^-//;
 	} else {
-		@default_archs = arch2rpm(@{$flavor_archs{default}});
+		$flavor = 'default';
 	}
+
+	@default_archs = arch2rpm(@{$flavor_archs{$flavor}});
 	# No kernel-obs-* for 32bit ppc and x86
 	@default_archs = grep { $_ ne "ppc" && $_ ne '%ix86' } @default_archs;
 	my $default_archs = join(" ", @default_archs);
@@ -228,7 +246,7 @@ if (!$variant) {
 }
 
 # dtb-*.spec
-if (!$variant && $build_dtbs) {
+if ((!$variant || $obs_build_variant) && $build_dtbs) {
 	do_spec('dtb', "dtb.spec.in", %macros);
 	print "./mkspec-dtb $all_archs\n";
 	system("./mkspec-dtb $all_archs\n");
@@ -242,10 +260,11 @@ copy_changes();
 
 # _constraints
 {
-	my @packages = map { "<package>kernel-$_</package>" } sort keys(%flavor_archs);
+	my @packages = map { "<package>kernel-$_</package>\n<package>kernel-source$variant:kernel-$_</package>" } sort keys(%flavor_archs);
 	my $packages = join("\n", @packages);
 	do_spec('constraints', "_constraints",
-		BINARY_PACKAGES_XML => $packages);
+		BINARY_PACKAGES_XML => $packages,
+		VARIANT => $variant);
 }
 
 exit 0;
@@ -399,7 +418,7 @@ sub read_kmps {
 		my @guards = split(' ');
 		pop(@guards);
 		for my $g (@guards) {
-			if ($g =~ /^\+(.*-kmp)$/) {
+			if ($g =~ /^(?:\+|-!)(.*-kmp)$/) {
 				$res{$1} = 1;
 			}
 		}
@@ -472,12 +491,6 @@ sub provides_obsoletes {
 		for my $pack (@packs) {
 			my $name = $pack->[0] . $subpac;
 			my $version = $pack->[1];
-			if ($subpac) {
-				# The -base and -extra split has been
-				# introduced in SLE11 (2.6.27)
-				my ($v1, $v2, $v3) = split(/\./, $version);
-				next if ($v1 <= 2 && $v2 <= 6 && $v3 < 27);
-			}
 			if (!$printed) {
 				$res .= "\%ifarch $rpmarch\n";
 				$printed = 1;
@@ -548,14 +561,19 @@ sub do_spec {
 sub copy_changes {
 
 	opendir(my $dh, $dir) or die "$dir: $!\n";
+	xopen(my $fh, '>', "$dir/_multibuild") if $multibuild;
+	print $fh "<multibuild>\n" if $fh;
 
-	while (my $name = readdir $dh) {
+	foreach my $name (sort readdir $dh) {
 		next unless $name =~ /\.spec$/;
 		next if $name eq "kernel-source$variant.spec";
 
-		$name =~ s/\.spec$/.changes/;
-		copy("$dir/kernel-source$variant.changes", "$dir/$name");
+		$name =~ s/\.spec$//;
+		copy("$dir/kernel-source$variant.changes", "$dir/$name.changes");
+		print $fh "\t<package>$name</package>\n" if $fh;
 	}
+	print $fh "</multibuild>\n" if $fh;
+	close($fh) if $fh;
 	closedir($dh);
 }
 

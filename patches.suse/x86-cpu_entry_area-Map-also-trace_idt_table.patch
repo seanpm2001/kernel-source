@@ -17,16 +17,14 @@ https://lkml.kernel.org/r/20170828064715.802987421@linutronix.de.
 Signed-off-by: Petr Mladek <pmladek@suse.com>
 Signed-off-by: Jessica Yu <ppyu@suse.com>
 ---
- arch/x86/include/asm/cpu_entry_area.h   | 4 +++-
- arch/x86/include/asm/pgtable_32_types.h | 3 ++-
- arch/x86/kernel/traps.c                 | 6 ++++++
+ arch/x86/include/asm/cpu_entry_area.h   |    4 +++-
+ arch/x86/include/asm/pgtable_32_types.h |    3 ++-
+ arch/x86/kernel/traps.c                 |    6 ++++++
  3 files changed, 11 insertions(+), 2 deletions(-)
 
-diff --git a/arch/x86/include/asm/cpu_entry_area.h b/arch/x86/include/asm/cpu_entry_area.h
-index 4a7884b8dca5..d19a1823e554 100644
 --- a/arch/x86/include/asm/cpu_entry_area.h
 +++ b/arch/x86/include/asm/cpu_entry_area.h
-@@ -64,9 +64,11 @@ extern void setup_cpu_entry_areas(void);
+@@ -63,9 +63,11 @@ extern void setup_cpu_entry_areas(void);
  extern void cea_set_pte(void *cea_vaddr, phys_addr_t pa, pgprot_t flags);
  
  #define	CPU_ENTRY_AREA_RO_IDT		CPU_ENTRY_AREA_BASE
@@ -37,13 +35,11 @@ index 4a7884b8dca5..d19a1823e554 100644
  #define CPU_ENTRY_AREA_RO_IDT_VADDR	((void *)CPU_ENTRY_AREA_RO_IDT)
 +#define CPU_ENTRY_AREA_RO_TRACE_IDT_VADDR ((void *)CPU_ENTRY_AREA_RO_TRACE_IDT)
  
- #define CPU_ENTRY_AREA_MAP_SIZE			\
- 	(CPU_ENTRY_AREA_PER_CPU + CPU_ENTRY_AREA_TOT_SIZE - CPU_ENTRY_AREA_BASE)
-diff --git a/arch/x86/include/asm/pgtable_32_types.h b/arch/x86/include/asm/pgtable_32_types.h
-index 67b60e11b70d..d2046a3b3f03 100644
+ #ifdef CONFIG_X86_32
+ #define CPU_ENTRY_AREA_MAP_SIZE		(CPU_ENTRY_AREA_PER_CPU +		\
 --- a/arch/x86/include/asm/pgtable_32_types.h
 +++ b/arch/x86/include/asm/pgtable_32_types.h
-@@ -43,8 +43,9 @@ extern bool __vmalloc_start_set; /* set once high_memory is set */
+@@ -43,8 +43,9 @@ extern bool __vmalloc_start_set; /* set
   */
  #define CPU_ENTRY_AREA_PAGES	(NR_CPUS * 40)
  
@@ -54,11 +50,9 @@ index 67b60e11b70d..d2046a3b3f03 100644
  
  #define PKMAP_BASE		\
  	((CPU_ENTRY_AREA_BASE - PAGE_SIZE) & PMD_MASK)
-diff --git a/arch/x86/kernel/traps.c b/arch/x86/kernel/traps.c
-index a21ec5727315..66746cbdd105 100644
 --- a/arch/x86/kernel/traps.c
 +++ b/arch/x86/kernel/traps.c
-@@ -1042,6 +1042,12 @@ void __init trap_init(void)
+@@ -1035,6 +1035,12 @@ void __init trap_init(void)
  		    PAGE_KERNEL_RO);
  	idt_descr.address = CPU_ENTRY_AREA_RO_IDT;
  
@@ -71,6 +65,3 @@ index a21ec5727315..66746cbdd105 100644
  	/*
  	 * Should be a barrier for any external CPU state:
  	 */
--- 
-2.12.3
-

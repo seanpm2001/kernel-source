@@ -1,0 +1,36 @@
+From 224e2b4ab702cd150e8bdbfb574d8900c87d6cf7 Mon Sep 17 00:00:00 2001
+From: Kyeongdon Kim <kyeongdon.kim@lge.com>
+Date: Tue, 16 Oct 2018 14:57:26 +0900
+Subject: [PATCH 1/4] net: fix warning in af_unix
+Git-commit: 33c4368ee2589c165aebd8d388cbd91e9adb9688
+Patch-mainline: v4.20-rc1
+References: git-fixes
+
+This fixes the "'hash' may be used uninitialized in this function"
+
+net/unix/af_unix.c:1041:20: warning: 'hash' may be used uninitialized in this function [-Wmaybe-uninitialized]
+  addr->hash = hash ^ sk->sk_type;
+
+Signed-off-by: Kyeongdon Kim <kyeongdon.kim@lge.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/unix/af_unix.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/net/unix/af_unix.c b/net/unix/af_unix.c
+index 880562163641..46c37be51aa3 100644
+--- a/net/unix/af_unix.c
++++ b/net/unix/af_unix.c
+@@ -227,6 +227,8 @@ static inline void unix_release_addr(struct unix_address *addr)
+ 
+ static int unix_mkname(struct sockaddr_un *sunaddr, int len, unsigned int *hashp)
+ {
++	*hashp = 0;
++
+ 	if (len <= sizeof(short) || len > sizeof(*sunaddr))
+ 		return -EINVAL;
+ 	if (!sunaddr || sunaddr->sun_family != AF_UNIX)
+-- 
+2.16.4
+

@@ -3,7 +3,7 @@ Date: Wed, 25 Apr 2018 22:04:21 -0400
 Subject: x86/bugs: Provide boot parameters for the spec_store_bypass_disable mitigation
 Patch-mainline: v4.17-rc7
 Git-commit: 24f7fc83b9204d20f878c57cb77d261ae825e033
-References: bsc#1087082 CVE-2018-3639
+References: bsc#1087082 CVE-2018-3639 bsc#1207561
 
 Contemporary high performance processors use a common industry-wide
 optimization known as "Speculative Store Bypass" in which loads from
@@ -45,7 +45,7 @@ Reviewed-by: Ingo Molnar <mingo@kernel.org>
 Acked-by: Borislav Petkov <bp@suse.de>
 ---
  Documentation/admin-guide/kernel-parameters.txt |   33 +++++++
- arch/x86/include/asm/cpufeatures.h              |    1 
+ arch/x86/include/asm/cpufeatures.h              |    1
  arch/x86/include/asm/nospec-branch.h            |    6 +
  arch/x86/kernel/cpu/bugs.c                      |  103 ++++++++++++++++++++++++
  4 files changed, 143 insertions(+)
@@ -53,11 +53,11 @@ Acked-by: Borislav Petkov <bp@suse.de>
 --- a/arch/x86/include/asm/cpufeatures.h
 +++ b/arch/x86/include/asm/cpufeatures.h
 @@ -215,6 +215,7 @@
- 
+
  #define X86_FEATURE_USE_IBPB		( 7*32+21) /* "" Indirect Branch Prediction Barrier enabled */
  #define X86_FEATURE_USE_IBRS_FW		( 7*32+22) /* "" Use IBRS during runtime firmware calls */
 +#define X86_FEATURE_SPEC_STORE_BYPASS_DISABLE	( 7*32+24) /* "" Disable Speculative Store Bypass. */
- 
+
  /* Virtualization flags: Linux defined, word 8 */
  #define X86_FEATURE_TPR_SHADOW  ( 8*32+ 0) /* Intel TPR Shadow */
 --- a/arch/x86/include/asm/nospec-branch.h
@@ -65,7 +65,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
 @@ -238,6 +238,12 @@ extern u64 x86_spec_ctrl_get_default(voi
  extern void x86_spec_ctrl_set_guest(u64);
  extern void x86_spec_ctrl_restore_host(u64);
- 
+
 +/* The Speculative Store Bypass disable variants */
 +enum ssb_mitigation {
 +	SPEC_STORE_BYPASS_NONE,
@@ -74,21 +74,21 @@ Acked-by: Borislav Petkov <bp@suse.de>
 +
  extern char __indirect_thunk_start[];
  extern char __indirect_thunk_end[];
- 
+
 --- a/arch/x86/kernel/cpu/bugs.c
 +++ b/arch/x86/kernel/cpu/bugs.c
 @@ -26,6 +26,7 @@
  #include <asm/intel-family.h>
- 
+
  static void __init spectre_v2_select_mitigation(void);
 +static void __init ssb_select_mitigation(void);
- 
+
  /*
   * Our boot-time value of the SPEC_CTRL MSR. We read it once so that any
 @@ -52,6 +53,12 @@ void __init check_bugs(void)
  	/* Select the proper spectre mitigation before patching alternatives */
  	spectre_v2_select_mitigation();
- 
+
 +	/*
 +	 * Select proper mitigation for any exposure to the Speculative Store
 +	 * Bypass vulnerability.
@@ -100,7 +100,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  	 * Check whether we are able to run this kernel safely on SMP.
 @@ -357,6 +364,99 @@ retpoline_auto:
  }
- 
+
  #undef pr_fmt
 +#define pr_fmt(fmt)	"Speculative Store Bypass: " fmt
 +
@@ -195,13 +195,13 @@ Acked-by: Borislav Petkov <bp@suse.de>
 +}
 +
 +#undef pr_fmt
- 
+
  #ifdef CONFIG_SYSFS
- 
+
 @@ -382,6 +482,9 @@ ssize_t cpu_show_common(struct device *d
  			       boot_cpu_has(X86_FEATURE_USE_IBRS_FW) ? ", IBRS_FW" : "",
  			       spectre_v2_module_string());
- 
+
 +	case X86_BUG_SPEC_STORE_BYPASS:
 +		return sprintf(buf, "%s\n", ssb_strings[ssb_mode]);
 +
@@ -213,7 +213,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
 @@ -2592,6 +2592,9 @@
  			allow data leaks with this option, which is equivalent
  			to spectre_v2=off.
- 
+
 +	nospec_store_bypass_disable
 +			[HW] Disable all mitigations for the Speculative Store Bypass vulnerability
 +
@@ -223,7 +223,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
 @@ -3899,6 +3902,36 @@
  			Not specifying this option is equivalent to
  			spectre_v2=auto.
- 
+
 +	spec_store_bypass_disable=
 +			[HW] Control Speculative Store Bypass (SSB) Disable mitigation
 +			(Speculative Store Bypass vulnerability)

@@ -1,0 +1,94 @@
+From c6522a5076e1a65877c51cfee313a74ef61cabf8 Mon Sep 17 00:00:00 2001
+From: Loic Poulain <loic.poulain@linaro.org>
+Date: Tue, 25 Aug 2020 15:45:27 +0200
+Subject: [PATCH] wcn36xx: Disable bmps when encryption is disabled
+Git-commit: c6522a5076e1a65877c51cfee313a74ef61cabf8
+References: git-fixes
+Patch-mainline: v5.10-rc1
+
+For whatever reason, when connected to an open/no-security BSS,
+the wcn36xx controller in bmps mode does not forward 'wake-up'
+beacons despite AP sends DTIM with station AID.
+
+Meaning that AP is not able to wakeup the station and needs to wait
+for the station to wakeup by its own (TX data, keep alive pkt...),
+causing serious latency issues and unexpected deauth.
+
+When connected to AP with encryption enabled, this issue does not occur.
+So a simple workaround is to only enable bmps support in that case.
+
+Ideally, it should be propertly fixed to allow bmps support with open
+BSS, whatever the issue is at driver or firmware level.
+
+Tested on wcn3620 and wcn3680.
+
+Signed-off-by: Loic Poulain <loic.poulain@linaro.org>
+Tested-by: Bryan O'Donoghue <bryan.odonoghue@linaro.org>
+Signed-off-by: Kalle Valo <kvalo@codeaurora.org>
+Link: https://lore.kernel.org/r/1598363127-26066-1-git-send-email-loic.poulain@linaro.org
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/net/wireless/ath/wcn36xx/main.c    | 10 ++++++++++
+ drivers/net/wireless/ath/wcn36xx/pmc.c     |  5 ++++-
+ drivers/net/wireless/ath/wcn36xx/wcn36xx.h |  1 +
+ 3 files changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/ath/wcn36xx/main.c b/drivers/net/wireless/ath/wcn36xx/main.c
+index 2c3e68646fe4..8becd667fe7b 100644
+--- a/drivers/net/wireless/ath/wcn36xx/main.c
++++ b/drivers/net/wireless/ath/wcn36xx/main.c
+@@ -610,6 +610,15 @@ static int wcn36xx_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
+ 				}
+ 			}
+ 		}
++		/* FIXME: Only enable bmps support when encryption is enabled.
++		 * For any reasons, when connected to open/no-security BSS,
++		 * the wcn36xx controller in bmps mode does not forward
++		 * 'wake-up' beacons despite AP sends DTIM with station AID.
++		 * It could be due to a firmware issue or to the way driver
++		 * configure the station.
++		 */
++		if (vif->type == NL80211_IFTYPE_STATION)
++			vif_priv->allow_bmps = true;
+ 		break;
+ 	case DISABLE_KEY:
+ 		if (!(IEEE80211_KEY_FLAG_PAIRWISE & key_conf->flags)) {
+@@ -891,6 +900,7 @@ static void wcn36xx_bss_info_changed(struct ieee80211_hw *hw,
+ 				    vif->addr,
+ 				    bss_conf->aid);
+ 			vif_priv->sta_assoc = false;
++			vif_priv->allow_bmps = false;
+ 			wcn36xx_smd_set_link_st(wcn,
+ 						bss_conf->bssid,
+ 						vif->addr,
+diff --git a/drivers/net/wireless/ath/wcn36xx/pmc.c b/drivers/net/wireless/ath/wcn36xx/pmc.c
+index 1976b80c235f..8441031b667c 100644
+--- a/drivers/net/wireless/ath/wcn36xx/pmc.c
++++ b/drivers/net/wireless/ath/wcn36xx/pmc.c
+@@ -23,7 +23,10 @@ int wcn36xx_pmc_enter_bmps_state(struct wcn36xx *wcn,
+ {
+ 	int ret = 0;
+ 	struct wcn36xx_vif *vif_priv = wcn36xx_vif_to_priv(vif);
+-	/* TODO: Make sure the TX chain clean */
++
++	if (!vif_priv->allow_bmps)
++		return -ENOTSUPP;
++
+ 	ret = wcn36xx_smd_enter_bmps(wcn, vif);
+ 	if (!ret) {
+ 		wcn36xx_dbg(WCN36XX_DBG_PMC, "Entered BMPS\n");
+diff --git a/drivers/net/wireless/ath/wcn36xx/wcn36xx.h b/drivers/net/wireless/ath/wcn36xx/wcn36xx.h
+index 3221fed15620..719a6daf9298 100644
+--- a/drivers/net/wireless/ath/wcn36xx/wcn36xx.h
++++ b/drivers/net/wireless/ath/wcn36xx/wcn36xx.h
+@@ -122,6 +122,7 @@ struct wcn36xx_vif {
+ 	enum wcn36xx_hal_bss_type bss_type;
+ 
+ 	/* Power management */
++	bool allow_bmps;
+ 	enum wcn36xx_power_state pw_state;
+ 
+ 	u8 bss_index;
+-- 
+2.40.1
+

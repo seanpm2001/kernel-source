@@ -19,23 +19,24 @@ Acked-by: Borislav Petkov <bp@suse.de>
 
 --- a/include/linux/cpu.h
 +++ b/include/linux/cpu.h
-@@ -191,11 +191,13 @@ extern enum cpuhp_smt_control cpu_smt_co
+@@ -190,12 +190,14 @@ enum cpuhp_smt_control {
+ extern enum cpuhp_smt_control cpu_smt_control;
  extern void cpu_smt_disable(bool force);
- extern void cpu_smt_check_topology_early(void);
  extern void cpu_smt_check_topology(void);
 +extern bool cpu_smt_possible(void);
+ extern int cpuhp_smt_enable(void);
+ extern int cpuhp_smt_disable(enum cpuhp_smt_control ctrlval);
  #else
- # define cpu_smt_control		(CPU_SMT_ENABLED)
+ # define cpu_smt_control		(CPU_SMT_NOT_SUPPORTED)
  static inline void cpu_smt_disable(bool force) { }
- static inline void cpu_smt_check_topology_early(void) { }
  static inline void cpu_smt_check_topology(void) { }
 +static inline bool cpu_smt_possible(void) { return false; }
+ static inline int cpuhp_smt_enable(void) { return 0; }
+ static inline int cpuhp_smt_disable(enum cpuhp_smt_control ctrlval) { return 0; }
  #endif
- 
- /*
 --- a/kernel/cpu.c
 +++ b/kernel/cpu.c
-@@ -360,8 +360,7 @@ static bool cpu_smt_available __read_mos
+@@ -357,8 +357,7 @@ enum cpuhp_smt_control cpu_smt_control _
  
  void __init cpu_smt_disable(bool force)
  {
@@ -45,7 +46,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  		return;
  
  	if (force) {
-@@ -427,6 +426,14 @@ static inline bool cpu_smt_allowed(unsig
+@@ -402,6 +401,14 @@ static inline bool cpu_smt_allowed(unsig
  	 */
  	return !per_cpu(cpuhp_state, cpu).booted_once;
  }

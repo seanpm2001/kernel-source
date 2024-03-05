@@ -1,0 +1,59 @@
+From 7f8714f5d1d1e510de451f17ec2e44bde458e891 Mon Sep 17 00:00:00 2001
+From: Petr Pavlu <petr.pavlu@suse.com>
+Date: Fri, 17 Mar 2023 11:36:01 +0100
+Subject: [PATCH] Revert "mei: me: enable asynchronous probing"
+Patch-mainline: Never, a workaround to avoid a more intrusive fix
+References: bsc#1208048, bsc#1209126
+
+This reverts upstream commit 67de6bf1e4f869a490656448f471fdc4a0a405ad.
+
+The following scenario can occur during system boot on machines that
+have PCI devices requiring modules intel_lpss_pci and mei_me:
+* A systemd-udevd task starts loading intel_lpss_pci. Its init function
+  registers a new driver which gets matched with a PCI device. The code
+  takes a lock on the device plus on its parent (__driver_attach() ->
+  device_driver_attach()), and invokes the probe function of the driver
+  intel_lpss_pci_probe().
+* The probe requests a load of module idma64. A modprobe task is spawned
+  for that. Initialization of this module is successful but the module
+  loader code waits before returning on all async work to complete:
+  do_init_module() -> async_synchronize_full() ->
+  async_synchronize_full_domain() -> async_synchronize_cookie_domain().
+* Concurrently to intel_lpss_pci, the mei_me module gets loaded. This
+  driver allows async probing which is handled by
+  __driver_attach_async_helper() and run on a kworker task. The function
+  tries to probe a matched PCI device which requires taking a lock on
+  the device and its parent, but finds that the parent is already locked
+  by systemd-udevd and so sleeps.
+* Result is a deadlock where the systemd-udevd task holds the PCI bus
+  lock and indirectly waits on all async work to complete (through
+  request_module()), but the async worker probing the mei_me device on
+  the bus cannot proceed because it requires the same PCI lock.
+
+The issue has been fixed upstream effectively by 8c97a46af04b ("driver
+core: hold dev's parent lock when needed") but that patch breaks kABI
+and cannot be easily backported.
+
+Use of async probing is limited on SLE12-SP5. As an alternative, disable
+this method again for mei_me too in order to avoid the described issue.
+
+Signed-off-by: Petr Pavlu <petr.pavlu@suse.com>
+---
+ drivers/misc/mei/pci-me.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/misc/mei/pci-me.c b/drivers/misc/mei/pci-me.c
+index 5bf0d50d55a0..fb470c3e0466 100644
+--- a/drivers/misc/mei/pci-me.c
++++ b/drivers/misc/mei/pci-me.c
+@@ -523,7 +523,6 @@ static struct pci_driver mei_me_driver = {
+ 	.remove = mei_me_remove,
+ 	.shutdown = mei_me_shutdown,
+ 	.driver.pm = MEI_ME_PM_OPS,
+-	.driver.probe_type = PROBE_PREFER_ASYNCHRONOUS,
+ };
+ 
+ module_pci_driver(mei_me_driver);
+-- 
+2.35.3
+

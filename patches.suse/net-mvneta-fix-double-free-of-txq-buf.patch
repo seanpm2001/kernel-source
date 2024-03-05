@@ -1,0 +1,68 @@
+From dbe2df0b0b91b20f816336240221bbe507cc36a6 Mon Sep 17 00:00:00 2001
+From: Tom Rix <trix@redhat.com>
+Date: Sat, 3 Oct 2020 11:51:21 -0700
+Subject: [PATCH] net: mvneta: fix double free of txq->buf
+Git-commit: f4544e5361da5050ff5c0330ceea095cb5dbdd72
+Patch-mainline: v5.9
+References: git-fixes
+
+clang static analysis reports this problem:
+
+drivers/net/ethernet/marvell/mvneta.c:3465:2: warning:
+  Attempt to free released memory
+        kfree(txq->buf);
+        ^~~~~~~~~~~~~~~
+
+When mvneta_txq_sw_init() fails to alloc txq->tso_hdrs,
+it frees without poisoning txq->buf.  The error is caught
+in the mvneta_setup_txqs() caller which handles the error
+by cleaning up all of the txqs with a call to
+mvneta_txq_sw_deinit which also frees txq->buf.
+
+Since mvneta_txq_sw_deinit is a general cleaner, all of the
+partial cleaning in mvneta_txq_sw_deinit()'s error handling
+is not needed.
+
+Fixes: 2adb719d74f6 ("net: mvneta: Implement software TSO")
+Signed-off-by: Tom Rix <trix@redhat.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/marvell/mvneta.c | 14 +++-----------
+ 1 file changed, 3 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/net/ethernet/marvell/mvneta.c b/drivers/net/ethernet/marvell/mvneta.c
+index 8d9afb0ca3d6..ff868599b0cb 100644
+--- a/drivers/net/ethernet/marvell/mvneta.c
++++ b/drivers/net/ethernet/marvell/mvneta.c
+@@ -2907,24 +2907,16 @@ static int mvneta_txq_init(struct mvneta_port *pp,
+ 
+ 	txq->tx_skb = kmalloc_array(txq->size, sizeof(*txq->tx_skb),
+ 				    GFP_KERNEL);
+-	if (!txq->tx_skb) {
+-		dma_free_coherent(pp->dev->dev.parent,
+-				  txq->size * MVNETA_DESC_ALIGNED_SIZE,
+-				  txq->descs, txq->descs_phys);
++	if (!txq->tx_skb)
+ 		return -ENOMEM;
+-	}
+ 
+ 	/* Allocate DMA buffers for TSO MAC/IP/TCP headers */
+ 	txq->tso_hdrs = dma_alloc_coherent(pp->dev->dev.parent,
+ 					   txq->size * TSO_HEADER_SIZE,
+ 					   &txq->tso_hdrs_phys, GFP_KERNEL);
+-	if (!txq->tso_hdrs) {
+-		kfree(txq->tx_skb);
+-		dma_free_coherent(pp->dev->dev.parent,
+-				  txq->size * MVNETA_DESC_ALIGNED_SIZE,
+-				  txq->descs, txq->descs_phys);
++	if (!txq->tso_hdrs)
+ 		return -ENOMEM;
+-	}
++
+ 	mvneta_tx_done_pkts_coal_set(pp, txq, txq->done_pkts_coal);
+ 
+ 	/* Setup XPS mapping */
+-- 
+2.16.4
+

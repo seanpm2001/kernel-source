@@ -18,6 +18,11 @@ As a result, memory leakage occurs.
 
 fix CVE-2020-25672
 
+Joey Lee:
+Modified this patch to the original error path because
+"d7737d4257 nfc: Fix to check for kmemdup failure" patch be
+backported. (bsc#1213601)(CVE-2023-3863)
+
 Fixes: d646960f7986 ("NFC: Initial LLCP support")
 Reported-by: "kiyin(尹亮)" <kiyin@tencent.com>
 Link: https://www.openwall.com/lists/oss-security/2020/11/01/1
@@ -27,18 +32,17 @@ Signed-off-by: David S. Miller <davem@davemloft.net>
 Acked-by: Takashi Iwai <tiwai@suse.de>
 
 ---
- net/nfc/llcp_sock.c |    3 +++
- 1 file changed, 3 insertions(+)
+ net/nfc/llcp_sock.c |    2 ++
+ 1 file changed, 2 insertions(+)
 
 --- a/net/nfc/llcp_sock.c
 +++ b/net/nfc/llcp_sock.c
-@@ -757,6 +757,9 @@ sock_unlink:
- 	nfc_llcp_put_ssap(local, llcp_sock->ssap);
+@@ -759,6 +759,8 @@ static int llcp_sock_connect(struct sock
  
+ sock_unlink:
  	nfc_llcp_sock_unlink(&local->connecting_sockets, sk);
 +	kfree(llcp_sock->service_name);
 +	llcp_sock->service_name = NULL;
-+
- 	nfc_llcp_local_put(llcp_sock->local);
  
- put_dev:
+ sock_llcp_release:
+ 	nfc_llcp_put_ssap(local, llcp_sock->ssap);

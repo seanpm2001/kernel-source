@@ -1,0 +1,30 @@
+From: Jiri Slaby <jslaby@suse.cz>
+Subject: kabi: PCI: endpoint: Fix for concurrent memory allocation in OB
+ address region
+Patch-mainline: never, kabi
+References: git-fixes
+
+Commit 04e046ca57eb (PCI: endpoint: Fix for concurrent memory allocation
+in OB address region) added a mutex to struct pci_epc_mem. That struct
+is allocated only in __pci_epc_mem_init(). And the struct is referenced
+only by a pointer in struct pci_epc.
+
+So hide the change by usual __GENKSYMS__ #ifdef.
+
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ include/linux/pci-epc.h |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/include/linux/pci-epc.h
++++ b/include/linux/pci-epc.h
+@@ -72,7 +72,9 @@ struct pci_epc_mem {
+ 	size_t		page_size;
+ 	int		pages;
+ 	/* mutex to protect against concurrent access for memory allocation*/
++#ifndef __GENKSYMS__
+ 	struct mutex	lock;
++#endif
+ };
+ 
+ /**

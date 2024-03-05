@@ -34,9 +34,40 @@ Acked-by: Borislav Petkov <bp@suse.de>
  arch/x86/kernel/cpu/bugs.c                      |   70 ++++++++++++++++++++++++
  3 files changed, 97 insertions(+)
 
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -2232,6 +2232,28 @@
+ 			Format: <first>,<last>
+ 			Specifies range of consoles to be captured by the MDA.
+ 
++	mds=		[X86,INTEL]
++			Control mitigation for the Micro-architectural Data
++			Sampling (MDS) vulnerability.
++
++			Certain CPUs are vulnerable to an exploit against CPU
++			internal buffers which can forward information to a
++			disclosure gadget under certain conditions.
++
++			In vulnerable processors, the speculatively
++			forwarded data can be used in a cache side channel
++			attack, to access data to which the attacker does
++			not have direct access.
++
++			This parameter controls the MDS mitigation. The
++			options are:
++
++			full    - Enable MDS mitigation on vulnerable CPUs
++			off     - Unconditionally disable MDS mitigation
++
++			Not specifying this option is equivalent to
++			mds=full.
++
+ 	mem=nn[KMG]	[KNL,BOOT] Force usage of a specific amount of memory
+ 			Amount of memory to be used when the kernel is not able
+ 			to see the whole system memory or for test.
 --- a/arch/x86/include/asm/processor.h
 +++ b/arch/x86/include/asm/processor.h
-@@ -982,4 +982,9 @@ enum l1tf_mitigations {
+@@ -983,4 +983,9 @@ enum l1tf_mitigations {
  
  extern enum l1tf_mitigations l1tf_mitigation;
  
@@ -65,8 +96,8 @@ Acked-by: Borislav Petkov <bp@suse.de>
  #ifdef CONFIG_X86_32
  	/*
  	 * Check whether we are able to run this kernel safely on SMP.
-@@ -330,6 +333,50 @@ early_param("l1tf", l1tf_cmdline);
- 
+@@ -211,6 +214,50 @@ static void x86_amd_ssb_disable(void)
+ }
  
  #undef pr_fmt
 +#define pr_fmt(fmt)	"MDS: " fmt
@@ -116,7 +147,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  #define pr_fmt(fmt)     "Spectre V2 : " fmt
  
  static enum spectre_v2_mitigation spectre_v2_enabled __ro_after_init =
-@@ -738,6 +785,26 @@ static void update_indir_branch_cond(voi
+@@ -605,6 +652,26 @@ static void update_indir_branch_cond(voi
  		static_branch_disable(&switch_to_cond_stibp);
  }
  
@@ -143,7 +174,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  void arch_smt_update(void)
  {
  	/* Enhanced IBRS implies STIBP. No update required. */
-@@ -758,6 +825,9 @@ void arch_smt_update(void)
+@@ -625,6 +692,9 @@ void arch_smt_update(void)
  		break;
  	}
  
@@ -153,34 +184,3 @@ Acked-by: Borislav Petkov <bp@suse.de>
  	mutex_unlock(&spec_ctrl_mutex);
  }
  
---- a/Documentation/admin-guide/kernel-parameters.txt
-+++ b/Documentation/admin-guide/kernel-parameters.txt
-@@ -2205,6 +2205,28 @@
- 			Format: <first>,<last>
- 			Specifies range of consoles to be captured by the MDA.
- 
-+	mds=		[X86,INTEL]
-+			Control mitigation for the Micro-architectural Data
-+			Sampling (MDS) vulnerability.
-+
-+			Certain CPUs are vulnerable to an exploit against CPU
-+			internal buffers which can forward information to a
-+			disclosure gadget under certain conditions.
-+
-+			In vulnerable processors, the speculatively
-+			forwarded data can be used in a cache side channel
-+			attack, to access data to which the attacker does
-+			not have direct access.
-+
-+			This parameter controls the MDS mitigation. The
-+			options are:
-+
-+			full    - Enable MDS mitigation on vulnerable CPUs
-+			off     - Unconditionally disable MDS mitigation
-+
-+			Not specifying this option is equivalent to
-+			mds=full.
-+
- 	mem=nn[KMG]	[KNL,BOOT] Force usage of a specific amount of memory
- 			Amount of memory to be used when the kernel is not able
- 			to see the whole system memory or for test.

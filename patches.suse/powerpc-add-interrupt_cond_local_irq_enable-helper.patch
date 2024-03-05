@@ -71,16 +71,16 @@ diff --git a/arch/powerpc/include/asm/irq.h b/arch/powerpc/include/asm/irq.h
  	if (tm_abort_check(regs, TM_CAUSE_ALIGNMENT | TM_CAUSE_PERSISTENT))
  		goto bail;
 @@ -1887,9 +1883,7 @@ void facility_unavailable_exception(stru
- 	    facility_strings[status])
- 		facility = facility_strings[status];
+ 		die("Unexpected facility unavailable exception", regs, SIGABRT);
+ 	}
  
 -	/* We restore the interrupt state now */
 -	if (!arch_irq_disabled_regs(regs))
 -		local_irq_enable();
 +	interrupt_cond_local_irq_enable(regs);
  
- 	pr_err_ratelimited("%sFacility '%s' unavailable (%d), exception at 0x%lx, MSR=%lx\n",
- 		hv ? "Hypervisor " : "", facility, status, regs->nip, regs->msr);
+ 	if (status == FSCR_DSCR_LG) {
+ 		/*
 --- a/arch/powerpc/mm/fault.c
 +++ b/arch/powerpc/mm/fault.c
 @@ -251,9 +251,7 @@ int do_page_fault(struct pt_regs *regs,

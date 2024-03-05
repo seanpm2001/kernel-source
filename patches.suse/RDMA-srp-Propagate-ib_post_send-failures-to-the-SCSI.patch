@@ -1,0 +1,38 @@
+From 2ee00f6a98c36f7e4ba07cc33f24cc5a69060cc9 Mon Sep 17 00:00:00 2001
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Mon, 17 Dec 2018 13:20:36 -0800
+Subject: [PATCH 1/1] RDMA/srp: Propagate ib_post_send() failures to the SCSI
+ mid-layer
+Git-commit: 2ee00f6a98c36f7e4ba07cc33f24cc5a69060cc9
+Patch-mainline: v5.0-rc1
+References: git-fixes
+
+This patch avoids that the SCSI mid-layer keeps retrying forever if
+ib_post_send() fails. This was discovered while testing immediate
+data support and passing a too large num_sge value to ib_post_send().
+
+Cc: Sergey Gorenko <sergeygo@mellanox.com>
+Cc: Max Gurtovoy <maxg@mellanox.com>
+Cc: Laurence Oberman <loberman@redhat.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Signed-off-by: Doug Ledford <dledford@redhat.com>
+Acked-by: Nicolas Morey <nmorey@suse.com>
+---
+ drivers/infiniband/ulp/srp/ib_srp.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/infiniband/ulp/srp/ib_srp.c b/drivers/infiniband/ulp/srp/ib_srp.c
+index ef8d55dca136..b291278674d8 100644
+--- a/drivers/infiniband/ulp/srp/ib_srp.c
++++ b/drivers/infiniband/ulp/srp/ib_srp.c
+@@ -2358,6 +2358,7 @@ static int srp_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *scmnd)
+ 
+ 	if (srp_post_send(ch, iu, len)) {
+ 		shost_printk(KERN_ERR, target->scsi_host, PFX "Send failed\n");
++		scmnd->result = DID_ERROR << 16;
+ 		goto err_unmap;
+ 	}
+ 
+-- 
+2.39.1.1.gbe015eda0162
+

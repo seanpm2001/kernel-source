@@ -1,0 +1,50 @@
+From 9c65188b590b090c82d92838c7deb3779b3fbcf1 Mon Sep 17 00:00:00 2001
+From: Florian Westphal <fw@strlen.de>
+Date: Mon, 21 Jan 2019 21:54:36 +0100
+Subject: [PATCH 2/2] netfilter: ebtables: compat: un-break 32bit setsockopt
+ when no rules are present
+Git-commit: 2035f3ff8eaa29cfb5c8e2160b0f6e85eeb21a95
+Patch-mainline: v5.0-rc5
+References: git-fixes
+
+Unlike ip(6)tables ebtables only counts user-defined chains.
+
+The effect is that a 32bit ebtables binary on a 64bit kernel can do
+'ebtables -N FOO' only after adding at least one rule, else the request
+fails with -EINVAL.
+
+This is a similar fix as done in
+3f1e53abff84 ("netfilter: ebtables: don't attempt to allocate 0-sized compat array").
+
+Fixes: 7d7d7e02111e9 ("netfilter: compat: reject huge allocation requests")
+Reported-by: Francesco Ruggeri <fruggeri@arista.com>
+Signed-off-by: Florian Westphal <fw@strlen.de>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/bridge/netfilter/ebtables.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/net/bridge/netfilter/ebtables.c b/net/bridge/netfilter/ebtables.c
+index e9d4c76ab534..6d32ca5aea83 100644
+--- a/net/bridge/netfilter/ebtables.c
++++ b/net/bridge/netfilter/ebtables.c
+@@ -2301,9 +2301,12 @@ static int compat_do_replace(struct net *net, void __user *user,
+ 
+ 	xt_compat_lock(NFPROTO_BRIDGE);
+ 
+-	ret = xt_compat_init_offsets(NFPROTO_BRIDGE, tmp.nentries);
+-	if (ret < 0)
+-		goto out_unlock;
++	if (tmp.nentries) {
++		ret = xt_compat_init_offsets(NFPROTO_BRIDGE, tmp.nentries);
++		if (ret < 0)
++			goto out_unlock;
++	}
++
+ 	ret = compat_copy_entries(entries_tmp, tmp.entries_size, &state);
+ 	if (ret < 0)
+ 		goto out_unlock;
+-- 
+2.16.4
+

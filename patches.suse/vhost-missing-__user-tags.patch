@@ -1,0 +1,45 @@
+Patch-mainline: v5.7-rc7
+Git-commit: 1b0be99f1a426d9f17ced95c4118c6641a2ff13d
+References: git-fixes
+From: "Michael S. Tsirkin" <mst@redhat.com>
+Date: Fri, 15 May 2020 11:29:53 -0400
+Subject: [PATCH] vhost: missing __user tags
+
+sparse warns about converting void * to void __user *. This is not new
+but only got noticed now that vhost is built on more systems.
+This is just a question of __user tags missing in a couple of places,
+so fix it up.
+
+Fixes: f88949138058 ("vhost: introduce O(1) vq metadata cache")
+Reported-by: kbuild test robot <lkp@intel.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+---
+ drivers/vhost/vhost.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/vhost/vhost.c b/drivers/vhost/vhost.c
+index d450e16c5c25..21a59b598ed8 100644
+--- a/drivers/vhost/vhost.c
++++ b/drivers/vhost/vhost.c
+@@ -730,7 +730,7 @@ static inline void __user *vhost_vq_meta_fetch(struct vhost_virtqueue *vq,
+ 	if (!node)
+ 		return NULL;
+ 
+-	return (void *)(uintptr_t)(node->userspace_addr + addr - node->start);
++	return (void __user *)(uintptr_t)(node->userspace_addr + addr - node->start);
+ }
+ 
+ /* Can we switch to this memory table? */
+@@ -869,7 +869,7 @@ static void __user *__vhost_get_user_slow(struct vhost_virtqueue *vq,
+  * not happen in this case.
+  */
+ static inline void __user *__vhost_get_user(struct vhost_virtqueue *vq,
+-					    void *addr, unsigned int size,
++					    void __user *addr, unsigned int size,
+ 					    int type)
+ {
+ 	void __user *uaddr = vhost_vq_meta_fetch(vq,
+-- 
+2.35.3
+

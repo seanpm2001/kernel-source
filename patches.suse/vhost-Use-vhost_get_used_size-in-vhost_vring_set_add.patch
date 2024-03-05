@@ -1,0 +1,38 @@
+Patch-mainline: v5.9
+Git-commit: 71878fa46c7e3b40fa7b3f1b6e4ba3f92f1ac359
+References: git-fixes
+From: Greg Kurz <groug@kaod.org>
+Date: Sat, 3 Oct 2020 12:02:03 +0200
+Subject: [PATCH] vhost: Use vhost_get_used_size() in vhost_vring_set_addr()
+
+The open-coded computation of the used size doesn't take the event
+into account when the VIRTIO_RING_F_EVENT_IDX feature is present.
+Fix that by using vhost_get_used_size().
+
+Fixes: 8ea8cf89e19a ("vhost: support event index")
+Cc: stable@vger.kernel.org
+Signed-off-by: Greg Kurz <groug@kaod.org>
+Link: https://lore.kernel.org/r/160171932300.284610.11846106312938909461.stgit@bahia.lan
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+---
+ drivers/vhost/vhost.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/vhost/vhost.c b/drivers/vhost/vhost.c
+index c3b49975dc28..9d2c225fb518 100644
+--- a/drivers/vhost/vhost.c
++++ b/drivers/vhost/vhost.c
+@@ -1519,8 +1519,7 @@ static long vhost_vring_set_addr(struct vhost_dev *d,
+ 			/* Also validate log access for used ring if enabled. */
+ 			if ((a.flags & (0x1 << VHOST_VRING_F_LOG)) &&
+ 			    !log_access_ok(vq->log_base, a.log_guest_addr,
+-					   sizeof *vq->used +
+-					   vq->num * sizeof *vq->used->ring)) {
++					   vhost_get_used_size(vq, vq->num))) {
+ 				r = -EINVAL;
+ 				break;
+ 			}
+-- 
+2.35.3
+

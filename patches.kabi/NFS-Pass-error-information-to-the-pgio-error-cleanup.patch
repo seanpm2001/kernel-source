@@ -1,0 +1,48 @@
+From: NeilBrown <neilb@suse.com>
+Subject: KABI FIX FOR: NFS: Pass error information to the pgio error cleanup routine
+Patch-mainline: Never, kabi
+References: git-fixes
+
+Return this function signature to what it was.
+It isn't obvious that this is safe, but I think it is.
+
+It is extremely unlikely that an external module would either define an
+error_cleanup function (there is one for direct IO and one for async IO,
+both internal) and it is also unlikely that an external module would
+call one - all current calls are in pagelist.c which is very much
+internal code.
+
+But suppose they did:
+
+ If an external module defined a function, that function would be passed
+ and extra arg which it could ignore - and this is safe.  The direct IO
+ error_cleanup function ignores the error code.
+
+ If an external module called an error_cleanup function, that function
+ would read garbage for the error code.  That garbage would almost
+ certainly be NOT recognised as a 'fatal' error so the pre-fix behaviour
+ would result which is what that caller expected.  If by bad luck the
+ did appear fatal ....  I think it would just cause the error to spread
+ to a few more requests.  I think this is a mild consequence for an
+ extremely unlikely event.
+
+Signed-off-by: NeilBrown <neilb@suse.com>
+
+---
+ include/linux/nfs_xdr.h |    4 ++++
+ 1 file changed, 4 insertions(+)
+
+--- a/include/linux/nfs_xdr.h
++++ b/include/linux/nfs_xdr.h
+@@ -1509,7 +1509,11 @@ struct nfs_commit_data {
+ };
+ 
+ struct nfs_pgio_completion_ops {
++#ifdef __GENKSYMS__
++	void	(*error_cleanup)(struct list_head *head);
++#else
+ 	void	(*error_cleanup)(struct list_head *head, int);
++#endif
+ 	void	(*init_hdr)(struct nfs_pgio_header *hdr);
+ 	void	(*completion)(struct nfs_pgio_header *hdr);
+ 	void	(*reschedule_io)(struct nfs_pgio_header *hdr);

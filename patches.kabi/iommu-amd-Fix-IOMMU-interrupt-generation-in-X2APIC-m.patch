@@ -1,0 +1,46 @@
+From: Jiri Slaby <jslaby@suse.cz>
+Subject: kabi: iommu/amd: Fix IOMMU interrupt generation in X2APIC mode
+Patch-mainline: never, kabi
+References: bsc#1206010
+
+Commit d1adcfbb520c (iommu/amd: Fix IOMMU interrupt generation in X2APIC
+mode) added:
+1) a struct to the union in struct irq_alloc_info, and
+2) a new value to enum irq_alloc_type.
+
+Both can be fixed by hiding the change by usual __GENKSYMS__ #ifdef:
+1) the other structures in the union are larger, and
+2) if we move the member to the end, so that the previous values are not
+   affected, we are fine.
+
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ arch/x86/include/asm/hw_irq.h |    6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+--- a/arch/x86/include/asm/hw_irq.h
++++ b/arch/x86/include/asm/hw_irq.h
+@@ -77,8 +77,10 @@ enum irq_alloc_type {
+ 	X86_IRQ_ALLOC_TYPE_MSI,
+ 	X86_IRQ_ALLOC_TYPE_MSIX,
+ 	X86_IRQ_ALLOC_TYPE_DMAR,
+-	X86_IRQ_ALLOC_TYPE_AMDVI,
+ 	X86_IRQ_ALLOC_TYPE_UV,
++#ifndef __GENKSYMS__
++	X86_IRQ_ALLOC_TYPE_AMDVI,
++#endif
+ };
+ 
+ struct irq_alloc_info {
+@@ -138,9 +140,11 @@ struct irq_alloc_info {
+ 			struct msi_desc *desc;
+ 		};
+ #endif
++#ifndef __GENKSYMS__
+ 		struct {
+ 			struct amd_iommu *amd_iommu;
+ 		};
++#endif
+ 	};
+ };
+ 

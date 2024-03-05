@@ -1,0 +1,48 @@
+From 429f228f66b3dec61e2a12a826b2a48b98a5572c Mon Sep 17 00:00:00 2001
+From: Jason Wang <jasowang@redhat.com>
+Date: Wed, 8 May 2019 23:20:17 -0400
+Subject: [PATCH 2/2] tuntap: fix dividing by zero in ebpf queue selection
+Git-commit: a35d310f03a692bf4798eb309a1950a06a150620
+Patch-mainline: v5.2-rc1
+References: git-fixes
+
+We need check if tun->numqueues is zero (e.g for the persist device)
+before trying to use it for modular arithmetic.
+
+Reported-by: Eric Dumazet <eric.dumazet@gmail.com>
+Fixes: 96f84061620c6("tun: add eBPF based queue selection method")
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+Reviewed-by: Eric Dumazet <edumazet@google.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/tun.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/tun.c b/drivers/net/tun.c
+index ac50b45c3629..85e957e2663c 100644
+--- a/drivers/net/tun.c
++++ b/drivers/net/tun.c
+@@ -591,13 +591,18 @@ static u16 tun_automq_select_queue(struct tun_struct *tun, struct sk_buff *skb)
+ static u16 tun_ebpf_select_queue(struct tun_struct *tun, struct sk_buff *skb)
+ {
+ 	struct tun_prog *prog;
++	u32 numqueues;
+ 	u16 ret = 0;
+ 
++	numqueues = READ_ONCE(tun->numqueues);
++	if (!numqueues)
++		return 0;
++
+ 	prog = rcu_dereference(tun->steering_prog);
+ 	if (prog)
+ 		ret = bpf_prog_run_clear_cb(prog->prog, skb);
+ 
+-	return ret % tun->numqueues;
++	return ret % numqueues;
+ }
+ 
+ static u16 tun_select_queue(struct net_device *dev, struct sk_buff *skb,
+-- 
+2.16.4
+

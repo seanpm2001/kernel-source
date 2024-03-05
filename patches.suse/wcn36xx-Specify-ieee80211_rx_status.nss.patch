@@ -1,0 +1,38 @@
+From 1af05d43b9bef43ef71387b0d467c6c7aa6641a0 Mon Sep 17 00:00:00 2001
+From: Bryan O'Donoghue <bryan.odonoghue@linaro.org>
+Date: Sat, 29 Aug 2020 04:38:42 +0100
+Subject: [PATCH] wcn36xx: Specify ieee80211_rx_status.nss
+Git-commit: 1af05d43b9bef43ef71387b0d467c6c7aa6641a0
+References: git-fixes
+Patch-mainline: v5.10-rc1
+
+Specify the number of spatial streams in ieee80211_rx_status. For non VHT
+data-rates the wireless core doesn't care about this field, however for VHT
+data-rates it does.
+
+Every version of wcn36xx has one spatial stream, so specify nss for
+wcn3620, wcn3660 and wcn3680 now.
+
+Signed-off-by: Bryan O'Donoghue <bryan.odonoghue@linaro.org>
+Signed-off-by: Kalle Valo <kvalo@codeaurora.org>
+Link: https://lore.kernel.org/r/20200829033846.2167619-7-bryan.odonoghue@linaro.org
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/net/wireless/ath/wcn36xx/txrx.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/net/wireless/ath/wcn36xx/txrx.c b/drivers/net/wireless/ath/wcn36xx/txrx.c
+index 19f5e306848b..1b831157ede1 100644
+--- a/drivers/net/wireless/ath/wcn36xx/txrx.c
++++ b/drivers/net/wireless/ath/wcn36xx/txrx.c
+@@ -272,6 +272,7 @@ int wcn36xx_rx_skb(struct wcn36xx *wcn, struct sk_buff *skb)
+ 		status.bw = rate->bw;
+ 		status.rate_idx = rate->mcs_or_legacy_index;
+ 		sband = wcn->hw->wiphy->bands[status.band];
++		status.nss = 1;
+ 
+ 		if (status.band == NL80211_BAND_5GHZ &&
+ 		    status.encoding == RX_ENC_LEGACY &&
+-- 
+2.40.1
+

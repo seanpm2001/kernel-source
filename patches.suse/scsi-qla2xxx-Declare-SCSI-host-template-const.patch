@@ -1,0 +1,54 @@
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Wed, 22 Mar 2023 12:55:02 -0700
+Subject: scsi: qla2xxx: Declare SCSI host template const
+Patch-mainline: v6.4-rc1
+Git-commit: 421c20b7668e31a63c9dc1dad0e5ee79b5ae9027
+References: bsc#1211960
+
+Make it explicit that the SCSI host template is not modified.
+
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Link: https://lore.kernel.org/r/20230322195515.1267197-68-bvanassche@acm.org
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/scsi/qla2xxx/qla_gbl.h |    2 +-
+ drivers/scsi/qla2xxx/qla_mid.c |    2 +-
+ drivers/scsi/qla2xxx/qla_os.c  |    4 ++--
+ 3 files changed, 4 insertions(+), 4 deletions(-)
+
+--- a/drivers/scsi/qla2xxx/qla_gbl.h
++++ b/drivers/scsi/qla2xxx/qla_gbl.h
+@@ -215,7 +215,7 @@ extern void qla2x00_free_exchoffld_buffe
+ 
+ extern int qla81xx_restart_mpi_firmware(scsi_qla_host_t *);
+ 
+-extern struct scsi_qla_host *qla2x00_create_host(struct scsi_host_template *,
++extern struct scsi_qla_host *qla2x00_create_host(const struct scsi_host_template *,
+ 	struct qla_hw_data *);
+ extern void qla2x00_free_host(struct scsi_qla_host *);
+ extern void qla2x00_relogin(struct scsi_qla_host *);
+--- a/drivers/scsi/qla2xxx/qla_mid.c
++++ b/drivers/scsi/qla2xxx/qla_mid.c
+@@ -497,7 +497,7 @@ qla24xx_create_vhost(struct fc_vport *fc
+ 	scsi_qla_host_t *base_vha = shost_priv(fc_vport->shost);
+ 	struct qla_hw_data *ha = base_vha->hw;
+ 	scsi_qla_host_t *vha;
+-	struct scsi_host_template *sht = &qla2xxx_driver_template;
++	const struct scsi_host_template *sht = &qla2xxx_driver_template;
+ 	struct Scsi_Host *host;
+ 
+ 	vha = qla2x00_create_host(sht, ha);
+--- a/drivers/scsi/qla2xxx/qla_os.c
++++ b/drivers/scsi/qla2xxx/qla_os.c
+@@ -5025,8 +5025,8 @@ qla2x00_mem_free(struct qla_hw_data *ha)
+ 	ha->vp_map = NULL;
+ }
+ 
+-struct scsi_qla_host *qla2x00_create_host(struct scsi_host_template *sht,
+-						struct qla_hw_data *ha)
++struct scsi_qla_host *qla2x00_create_host(const struct scsi_host_template *sht,
++					  struct qla_hw_data *ha)
+ {
+ 	struct Scsi_Host *host;
+ 	struct scsi_qla_host *vha = NULL;

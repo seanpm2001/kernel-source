@@ -84,186 +84,10 @@ Link: https://lkml.kernel.org/r/20180713142323.202758176@linutronix.de
  Documentation/ABI/testing/sysfs-devices-system-cpu |    4 +
  Documentation/admin-guide/kernel-parameters.txt    |   68 +++++++++++++++++++--
  arch/x86/include/asm/processor.h                   |   12 +++
- arch/x86/kernel/cpu/bugs.c                         |   45 +++++++++++++
+ arch/x86/kernel/cpu/bugs.c                         |   44 +++++++++++++
  arch/x86/kvm/vmx.c                                 |   56 +++++++++++++----
- 5 files changed, 166 insertions(+), 19 deletions(-)
+ 5 files changed, 165 insertions(+), 19 deletions(-)
 
---- a/arch/x86/include/asm/processor.h
-+++ b/arch/x86/include/asm/processor.h
-@@ -965,4 +965,16 @@ bool xen_set_default_idle(void);
- void stop_this_cpu(void *dummy);
- void df_debug(struct pt_regs *regs, long error_code);
- void microcode_check(void);
-+
-+enum l1tf_mitigations {
-+	L1TF_MITIGATION_OFF,
-+	L1TF_MITIGATION_FLUSH_NOWARN,
-+	L1TF_MITIGATION_FLUSH,
-+	L1TF_MITIGATION_FLUSH_NOSMT,
-+	L1TF_MITIGATION_FULL,
-+	L1TF_MITIGATION_FULL_FORCE
-+};
-+
-+extern enum l1tf_mitigations l1tf_mitigation;
-+
- #endif /* _ASM_X86_PROCESSOR_H */
---- a/arch/x86/kernel/cpu/bugs.c
-+++ b/arch/x86/kernel/cpu/bugs.c
-@@ -216,7 +216,11 @@ static void x86_amd_ssb_disable(void)
- 		wrmsrl(MSR_AMD64_LS_CFG, msrval);
- }
- 
-+/* Default mitigation for L1TF-affected CPUs */
-+enum l1tf_mitigations l1tf_mitigation __ro_after_init = L1TF_MITIGATION_FLUSH;
- #if IS_ENABLED(CONFIG_KVM_INTEL)
-+EXPORT_SYMBOL_GPL(l1tf_mitigation);
-+
- enum vmx_l1d_flush_state l1tf_vmx_mitigation = VMENTER_L1D_FLUSH_AUTO;
- EXPORT_SYMBOL_GPL(l1tf_vmx_mitigation);
- #endif
-@@ -228,6 +232,20 @@ static void __init l1tf_select_mitigatio
- 	if (!boot_cpu_has_bug(X86_BUG_L1TF))
- 		return;
- 
-+	switch (l1tf_mitigation) {
-+	case L1TF_MITIGATION_OFF:
-+	case L1TF_MITIGATION_FLUSH_NOWARN:
-+	case L1TF_MITIGATION_FLUSH:
-+		break;
-+	case L1TF_MITIGATION_FLUSH_NOSMT:
-+	case L1TF_MITIGATION_FULL:
-+		cpu_smt_disable(false);
-+		break;
-+	case L1TF_MITIGATION_FULL_FORCE:
-+		cpu_smt_disable(true);
-+		break;
-+	}
-+
- #if CONFIG_PGTABLE_LEVELS == 2
- 	pr_warn("Kernel not compiled for PAE. No mitigation for L1TF\n");
- 	return;
-@@ -247,6 +265,33 @@ static void __init l1tf_select_mitigatio
- 	setup_force_cpu_cap(X86_FEATURE_L1TF_FIX);
- }
- 
-+
-+static int __init l1tf_cmdline(char *str)
-+{
-+	if (!boot_cpu_has_bug(X86_BUG_L1TF))
-+		return 0;
-+
-+	if (!str)
-+		return -EINVAL;
-+
-+	if (!strcmp(str, "off"))
-+		l1tf_mitigation = L1TF_MITIGATION_OFF;
-+	else if (!strcmp(str, "flush,nowarn"))
-+		l1tf_mitigation = L1TF_MITIGATION_FLUSH_NOWARN;
-+	else if (!strcmp(str, "flush"))
-+		l1tf_mitigation = L1TF_MITIGATION_FLUSH;
-+	else if (!strcmp(str, "flush,nosmt"))
-+		l1tf_mitigation = L1TF_MITIGATION_FLUSH_NOSMT;
-+	else if (!strcmp(str, "full"))
-+		l1tf_mitigation = L1TF_MITIGATION_FULL;
-+	else if (!strcmp(str, "full,force"))
-+		l1tf_mitigation = L1TF_MITIGATION_FULL_FORCE;
-+
-+	return 0;
-+}
-+early_param("l1tf", l1tf_cmdline);
-+
-+
- #ifdef RETPOLINE
- static bool spectre_v2_bad_module;
- 
---- a/arch/x86/kvm/vmx.c
-+++ b/arch/x86/kvm/vmx.c
-@@ -70,9 +70,6 @@ static const struct x86_cpu_id vmx_cpu_i
- };
- MODULE_DEVICE_TABLE(x86cpu, vmx_cpu_id);
- 
--static bool __read_mostly nosmt;
--module_param(nosmt, bool, S_IRUGO);
--
- static bool __read_mostly enable_vpid = 1;
- module_param_named(vpid, enable_vpid, bool, 0444);
- 
-@@ -212,15 +209,31 @@ static int vmx_setup_l1d_flush(enum vmx_
- {
- 	struct page *page;
- 
--	/* If set to 'auto' select 'cond' */
--	if (l1tf == VMENTER_L1D_FLUSH_AUTO)
--		l1tf = VMENTER_L1D_FLUSH_COND;
--
- 	if (!enable_ept) {
- 		l1tf_vmx_mitigation = VMENTER_L1D_FLUSH_EPT_DISABLED;
- 		return 0;
- 	}
- 
-+	/* If set to auto use the default l1tf mitigation method */
-+	if (l1tf == VMENTER_L1D_FLUSH_AUTO) {
-+		switch (l1tf_mitigation) {
-+		case L1TF_MITIGATION_OFF:
-+			l1tf = VMENTER_L1D_FLUSH_NEVER;
-+			break;
-+		case L1TF_MITIGATION_FLUSH_NOWARN:
-+		case L1TF_MITIGATION_FLUSH:
-+		case L1TF_MITIGATION_FLUSH_NOSMT:
-+			l1tf = VMENTER_L1D_FLUSH_COND;
-+			break;
-+		case L1TF_MITIGATION_FULL:
-+		case L1TF_MITIGATION_FULL_FORCE:
-+			l1tf = VMENTER_L1D_FLUSH_ALWAYS;
-+			break;
-+		}
-+	} else if (l1tf_mitigation == L1TF_MITIGATION_FULL_FORCE) {
-+		l1tf = VMENTER_L1D_FLUSH_ALWAYS;
-+	}
-+
- 	if (l1tf != VMENTER_L1D_FLUSH_NEVER && !vmx_l1d_flush_pages &&
- 	    !boot_cpu_has(X86_FEATURE_FLUSH_L1D)) {
- 		page = alloc_pages(GFP_KERNEL, L1D_CACHE_ORDER);
-@@ -10009,16 +10022,33 @@ free_vcpu:
- 	return ERR_PTR(err);
- }
- 
--#define L1TF_MSG "SMT enabled with L1TF CPU bug present. Refer to CVE-2018-3620 for details.\n"
-+#define L1TF_MSG_SMT "L1TF CPU bug present and SMT on, data leak possible. See CVE-2018-3646 and https://www.kernel.org/doc/html/latest/admin-guide/l1tf.html for details.\n"
-+#define L1TF_MSG_L1D "L1TF CPU bug present and virtualization mitigation disabled, data leak possible. See CVE-2018-3646 and https://www.kernel.org/doc/html/latest/admin-guide/l1tf.html for details.\n"
- 
- static int vmx_vm_init(struct kvm *kvm)
- {
--	if (boot_cpu_has(X86_BUG_L1TF) && cpu_smt_control == CPU_SMT_ENABLED) {
--		if (nosmt) {
--			pr_err(L1TF_MSG);
--			return -EOPNOTSUPP;
-+	if (boot_cpu_has(X86_BUG_L1TF) && enable_ept) {
-+		switch (l1tf_mitigation) {
-+		case L1TF_MITIGATION_OFF:
-+		case L1TF_MITIGATION_FLUSH_NOWARN:
-+			/* 'I explicitly don't care' is set */
-+			break;
-+		case L1TF_MITIGATION_FLUSH:
-+		case L1TF_MITIGATION_FLUSH_NOSMT:
-+		case L1TF_MITIGATION_FULL:
-+			/*
-+			 * Warn upon starting the first VM in a potentially
-+			 * insecure environment.
-+			 */
-+			if (cpu_smt_control == CPU_SMT_ENABLED)
-+				pr_warn_once(L1TF_MSG_SMT);
-+			if (l1tf_vmx_mitigation == VMENTER_L1D_FLUSH_NEVER)
-+				pr_warn_once(L1TF_MSG_L1D);
-+			break;
-+		case L1TF_MITIGATION_FULL_FORCE:
-+			/* Flush is enforced */
-+			break;
- 		}
--		pr_warn(L1TF_MSG);
- 	}
- 	return 0;
- }
 --- a/Documentation/ABI/testing/sysfs-devices-system-cpu
 +++ b/Documentation/ABI/testing/sysfs-devices-system-cpu
 @@ -379,6 +379,7 @@ What:		/sys/devices/system/cpu/vulnerabi
@@ -286,7 +110,7 @@ Link: https://lkml.kernel.org/r/20180713142323.202758176@linutronix.de
  		/sys/devices/system/cpu/smt/control
 --- a/Documentation/admin-guide/kernel-parameters.txt
 +++ b/Documentation/admin-guide/kernel-parameters.txt
-@@ -1862,12 +1862,6 @@
+@@ -1870,12 +1870,6 @@
  			[KVM,ARM] Allow use of GICv4 for direct injection of
  			LPIs.
  
@@ -299,7 +123,7 @@ Link: https://lkml.kernel.org/r/20180713142323.202758176@linutronix.de
  	kvm-intel.ept=	[KVM,Intel] Disable extended page tables
  			(virtualized MMU) support on capable Intel chips.
  			Default is 1 (enabled)
-@@ -1905,6 +1899,68 @@
+@@ -1913,6 +1907,68 @@
  			feature (tagged TLBs) on capable Intel chips.
  			Default is 1 (enabled)
  
@@ -368,3 +192,178 @@ Link: https://lkml.kernel.org/r/20180713142323.202758176@linutronix.de
  	l2cr=		[PPC]
  
  	l3cr=		[PPC]
+--- a/arch/x86/include/asm/processor.h
++++ b/arch/x86/include/asm/processor.h
+@@ -965,4 +965,16 @@ bool xen_set_default_idle(void);
+ void stop_this_cpu(void *dummy);
+ void df_debug(struct pt_regs *regs, long error_code);
+ void microcode_check(void);
++
++enum l1tf_mitigations {
++	L1TF_MITIGATION_OFF,
++	L1TF_MITIGATION_FLUSH_NOWARN,
++	L1TF_MITIGATION_FLUSH,
++	L1TF_MITIGATION_FLUSH_NOSMT,
++	L1TF_MITIGATION_FULL,
++	L1TF_MITIGATION_FULL_FORCE
++};
++
++extern enum l1tf_mitigations l1tf_mitigation;
++
+ #endif /* _ASM_X86_PROCESSOR_H */
+--- a/arch/x86/kernel/cpu/bugs.c
++++ b/arch/x86/kernel/cpu/bugs.c
+@@ -659,7 +659,11 @@ void x86_spec_ctrl_setup_ap(void)
+ #undef pr_fmt
+ #define pr_fmt(fmt)	"L1TF: " fmt
+ 
++/* Default mitigation for L1TF-affected CPUs */
++enum l1tf_mitigations l1tf_mitigation __ro_after_init = L1TF_MITIGATION_FLUSH;
+ #if IS_ENABLED(CONFIG_KVM_INTEL)
++EXPORT_SYMBOL_GPL(l1tf_mitigation);
++
+ enum vmx_l1d_flush_state l1tf_vmx_mitigation = VMENTER_L1D_FLUSH_AUTO;
+ EXPORT_SYMBOL_GPL(l1tf_vmx_mitigation);
+ #endif
+@@ -671,6 +675,20 @@ static void __init l1tf_select_mitigatio
+ 	if (!boot_cpu_has_bug(X86_BUG_L1TF))
+ 		return;
+ 
++	switch (l1tf_mitigation) {
++	case L1TF_MITIGATION_OFF:
++	case L1TF_MITIGATION_FLUSH_NOWARN:
++	case L1TF_MITIGATION_FLUSH:
++		break;
++	case L1TF_MITIGATION_FLUSH_NOSMT:
++	case L1TF_MITIGATION_FULL:
++		cpu_smt_disable(false);
++		break;
++	case L1TF_MITIGATION_FULL_FORCE:
++		cpu_smt_disable(true);
++		break;
++	}
++
+ #if CONFIG_PGTABLE_LEVELS == 2
+ 	pr_warn("Kernel not compiled for PAE. No mitigation for L1TF\n");
+ 	return;
+@@ -689,6 +707,32 @@ static void __init l1tf_select_mitigatio
+ 
+ 	setup_force_cpu_cap(X86_FEATURE_L1TF_PTEINV);
+ }
++
++static int __init l1tf_cmdline(char *str)
++{
++	if (!boot_cpu_has_bug(X86_BUG_L1TF))
++		return 0;
++
++	if (!str)
++		return -EINVAL;
++
++	if (!strcmp(str, "off"))
++		l1tf_mitigation = L1TF_MITIGATION_OFF;
++	else if (!strcmp(str, "flush,nowarn"))
++		l1tf_mitigation = L1TF_MITIGATION_FLUSH_NOWARN;
++	else if (!strcmp(str, "flush"))
++		l1tf_mitigation = L1TF_MITIGATION_FLUSH;
++	else if (!strcmp(str, "flush,nosmt"))
++		l1tf_mitigation = L1TF_MITIGATION_FLUSH_NOSMT;
++	else if (!strcmp(str, "full"))
++		l1tf_mitigation = L1TF_MITIGATION_FULL;
++	else if (!strcmp(str, "full,force"))
++		l1tf_mitigation = L1TF_MITIGATION_FULL_FORCE;
++
++	return 0;
++}
++early_param("l1tf", l1tf_cmdline);
++
+ #undef pr_fmt
+ 
+ #ifdef CONFIG_SYSFS
+--- a/arch/x86/kvm/vmx.c
++++ b/arch/x86/kvm/vmx.c
+@@ -70,9 +70,6 @@ static const struct x86_cpu_id vmx_cpu_i
+ };
+ MODULE_DEVICE_TABLE(x86cpu, vmx_cpu_id);
+ 
+-static bool __read_mostly nosmt;
+-module_param(nosmt, bool, S_IRUGO);
+-
+ static bool __read_mostly enable_vpid = 1;
+ module_param_named(vpid, enable_vpid, bool, 0444);
+ 
+@@ -212,15 +209,31 @@ static int vmx_setup_l1d_flush(enum vmx_
+ {
+ 	struct page *page;
+ 
+-	/* If set to 'auto' select 'cond' */
+-	if (l1tf == VMENTER_L1D_FLUSH_AUTO)
+-		l1tf = VMENTER_L1D_FLUSH_COND;
+-
+ 	if (!enable_ept) {
+ 		l1tf_vmx_mitigation = VMENTER_L1D_FLUSH_EPT_DISABLED;
+ 		return 0;
+ 	}
+ 
++	/* If set to auto use the default l1tf mitigation method */
++	if (l1tf == VMENTER_L1D_FLUSH_AUTO) {
++		switch (l1tf_mitigation) {
++		case L1TF_MITIGATION_OFF:
++			l1tf = VMENTER_L1D_FLUSH_NEVER;
++			break;
++		case L1TF_MITIGATION_FLUSH_NOWARN:
++		case L1TF_MITIGATION_FLUSH:
++		case L1TF_MITIGATION_FLUSH_NOSMT:
++			l1tf = VMENTER_L1D_FLUSH_COND;
++			break;
++		case L1TF_MITIGATION_FULL:
++		case L1TF_MITIGATION_FULL_FORCE:
++			l1tf = VMENTER_L1D_FLUSH_ALWAYS;
++			break;
++		}
++	} else if (l1tf_mitigation == L1TF_MITIGATION_FULL_FORCE) {
++		l1tf = VMENTER_L1D_FLUSH_ALWAYS;
++	}
++
+ 	if (l1tf != VMENTER_L1D_FLUSH_NEVER && !vmx_l1d_flush_pages &&
+ 	    !boot_cpu_has(X86_FEATURE_FLUSH_L1D)) {
+ 		page = alloc_pages(GFP_KERNEL, L1D_CACHE_ORDER);
+@@ -10047,16 +10060,33 @@ free_vcpu:
+ 	return ERR_PTR(err);
+ }
+ 
+-#define L1TF_MSG "SMT enabled with L1TF CPU bug present. Refer to CVE-2018-3620 for details.\n"
++#define L1TF_MSG_SMT "L1TF CPU bug present and SMT on, data leak possible. See CVE-2018-3646 and https://www.kernel.org/doc/html/latest/admin-guide/l1tf.html for details.\n"
++#define L1TF_MSG_L1D "L1TF CPU bug present and virtualization mitigation disabled, data leak possible. See CVE-2018-3646 and https://www.kernel.org/doc/html/latest/admin-guide/l1tf.html for details.\n"
+ 
+ static int vmx_vm_init(struct kvm *kvm)
+ {
+-	if (boot_cpu_has(X86_BUG_L1TF) && cpu_smt_control == CPU_SMT_ENABLED) {
+-		if (nosmt) {
+-			pr_err(L1TF_MSG);
+-			return -EOPNOTSUPP;
++	if (boot_cpu_has(X86_BUG_L1TF) && enable_ept) {
++		switch (l1tf_mitigation) {
++		case L1TF_MITIGATION_OFF:
++		case L1TF_MITIGATION_FLUSH_NOWARN:
++			/* 'I explicitly don't care' is set */
++			break;
++		case L1TF_MITIGATION_FLUSH:
++		case L1TF_MITIGATION_FLUSH_NOSMT:
++		case L1TF_MITIGATION_FULL:
++			/*
++			 * Warn upon starting the first VM in a potentially
++			 * insecure environment.
++			 */
++			if (cpu_smt_control == CPU_SMT_ENABLED)
++				pr_warn_once(L1TF_MSG_SMT);
++			if (l1tf_vmx_mitigation == VMENTER_L1D_FLUSH_NEVER)
++				pr_warn_once(L1TF_MSG_L1D);
++			break;
++		case L1TF_MITIGATION_FULL_FORCE:
++			/* Flush is enforced */
++			break;
+ 		}
+-		pr_warn(L1TF_MSG);
+ 	}
+ 	return 0;
+ }

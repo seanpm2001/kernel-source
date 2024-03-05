@@ -1,0 +1,53 @@
+From be076fdf8369f3b4842362c64cd681f3d498f3dd Mon Sep 17 00:00:00 2001
+From: Dan Carpenter <dan.carpenter@oracle.com>
+Date: Tue, 11 May 2021 10:12:00 +0300
+Subject: [PATCH] ubifs: fix snprintf() checking
+Git-commit: be076fdf8369f3b4842362c64cd681f3d498f3dd
+Patch-mainline: v5.14-rc1
+References: git-fixes
+
+The snprintf() function returns the number of characters (not
+counting the NUL terminator) that it would have printed if we
+had space.
+
+This buffer has UBIFS_DFS_DIR_LEN characters plus one extra for
+the terminator.  Printing UBIFS_DFS_DIR_LEN is okay but anything
+higher will result in truncation.  Thus the comparison needs to be
+change from == to >.
+
+These strings are compile time constants so this patch doesn't
+affect runtime.
+
+Fixes: ae380ce04731 ("UBIFS: lessen the size of debugging info data structure")
+Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
+Reviewed-by: Alexander Dahl <ada@thorsis.com>
+Signed-off-by: Richard Weinberger <richard@nod.at>
+Acked-by: Anthony Iliopoulos <ailiop@suse.com>
+
+---
+ drivers/mtd/ubi/debug.c |    2 +-
+ fs/ubifs/debug.c        |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+--- a/drivers/mtd/ubi/debug.c
++++ b/drivers/mtd/ubi/debug.c
+@@ -533,7 +533,7 @@ int ubi_debugfs_init_dev(struct ubi_devi
+ 
+ 	n = snprintf(d->dfs_dir_name, UBI_DFS_DIR_LEN + 1, UBI_DFS_DIR_NAME,
+ 		     ubi->ubi_num);
+-	if (n == UBI_DFS_DIR_LEN) {
++	if (n > UBI_DFS_DIR_LEN) {
+ 		/* The array size is too small */
+ 		fname = UBI_DFS_DIR_NAME;
+ 		dent = ERR_PTR(-EINVAL);
+--- a/fs/ubifs/debug.c
++++ b/fs/ubifs/debug.c
+@@ -2827,7 +2827,7 @@ int dbg_debugfs_init_fs(struct ubifs_inf
+ 
+ 	n = snprintf(d->dfs_dir_name, UBIFS_DFS_DIR_LEN + 1, UBIFS_DFS_DIR_NAME,
+ 		     c->vi.ubi_num, c->vi.vol_id);
+-	if (n == UBIFS_DFS_DIR_LEN) {
++	if (n > UBIFS_DFS_DIR_LEN) {
+ 		/* The array size is too small */
+ 		fname = UBIFS_DFS_DIR_NAME;
+ 		dent = ERR_PTR(-EINVAL);

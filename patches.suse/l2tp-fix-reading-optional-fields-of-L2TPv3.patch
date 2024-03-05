@@ -57,33 +57,33 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  
 --- a/net/l2tp/l2tp_core.h
 +++ b/net/l2tp/l2tp_core.h
-@@ -325,6 +325,26 @@ do {									\
+@@ -321,6 +321,26 @@ do {									\
  #define l2tp_session_dec_refcount(s) l2tp_session_dec_refcount_1(s)
  #endif
  
 +static inline int l2tp_v3_ensure_opt_in_linear(struct l2tp_session *session, struct sk_buff *skb,
-+					       unsigned char **ptr, unsigned char **optr)
++                                              unsigned char **ptr, unsigned char **optr)
 +{
-+	int opt_len = session->peer_cookie_len + session->l2specific_len;
++       int opt_len = session->peer_cookie_len + session->l2specific_len;
 +
-+	if (opt_len > 0) {
-+		int off = *ptr - *optr;
++       if (opt_len > 0) {
++               int off = *ptr - *optr;
 +
-+		if (!pskb_may_pull(skb, off + opt_len))
-+			return -1;
++               if (!pskb_may_pull(skb, off + opt_len))
++                       return -1;
 +
-+		if (skb->data != *optr) {
-+			*optr = skb->data;
-+			*ptr = skb->data + off;
-+		}
-+	}
++               if (skb->data != *optr) {
++                       *optr = skb->data;
++                       *ptr = skb->data + off;
++               }
++       }
 +
-+	return 0;
++       return 0;
 +}
 +
- #define l2tp_printk(ptr, type, func, fmt, ...)				\
- do {									\
- 	if (((ptr)->debug) & (type))					\
+ static inline int l2tp_get_l2specific_len(struct l2tp_session *session)
+ {
+        switch (session->l2specific_type) {
 --- a/net/l2tp/l2tp_ip.c
 +++ b/net/l2tp/l2tp_ip.c
 @@ -165,6 +165,9 @@ static int l2tp_ip_recv(struct sk_buff *

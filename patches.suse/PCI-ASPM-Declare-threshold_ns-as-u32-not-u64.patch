@@ -1,0 +1,47 @@
+From: "Gustavo A. R. Silva" <garsilva@embeddedor.com>
+Date: Tue, 27 Feb 2018 17:19:52 -0600
+Subject: PCI/ASPM: Declare threshold_ns as u32, not u64
+Git-commit: f51af8a63c5f633b572d00319ecdfa31f266b8fb
+Patch-mainline: 4.17-rc1
+References: git-fixes
+
+aspm_calc_l1ss_info() computes l1_2_threshold in microseconds as:
+
+  l1_2_threshold = 2 + 4 + t_common_mode + t_power_on;
+
+where t_common_mode is at most 255us:
+
+  PCI_L1SS_CAP_CM_RESTORE_TIME  0x0000ff00   <-- 8 bits; <256us
+
+and t_power_on is at most 31 * 100us = 3100us:
+
+  PCI_L1SS_CAP_P_PWR_ON_VALUE   0x00f80000   <-- 5 bits; <32
+  PCI_L1SS_CAP_P_PWR_ON_SCALE   0x00030000   <-- *2us, *10us, or *100us
+
+So l1_2_threshold is at most 2 + 4 + 255 + 3100 = 3361, which means
+threshold_ns is at most 3361 * 1000 = 3361000, which easily fits in a
+u32.
+
+Declare threshold_ns as u32, not u64.  This fixes a Coverity warning.
+
+Addresses-Coverity-ID: 1462501
+Signed-off-by: Gustavo A. R. Silva <garsilva@embeddedor.com>
+[bhelgaas: changelog]
+Signed-off-by: Bjorn Helgaas <helgaas@kernel.org>
+Reviewed-by: Andy Shevchenko <andy.shevchenko@gmail.com>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ drivers/pci/pcie/aspm.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/pci/pcie/aspm.c
++++ b/drivers/pci/pcie/aspm.c
+@@ -321,7 +321,7 @@ static u32 calc_l1ss_pwron(struct pci_de
+ 
+ static void encode_l12_threshold(u32 threshold_us, u32 *scale, u32 *value)
+ {
+-	u64 threshold_ns = threshold_us * 1000;
++	u32 threshold_ns = threshold_us * 1000;
+ 
+ 	/* See PCIe r3.1, sec 7.33.3 and sec 6.18 */
+ 	if (threshold_ns < 32) {

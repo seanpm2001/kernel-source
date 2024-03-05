@@ -21,7 +21,7 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
 
 --- a/net/kcm/kcmsock.c
 +++ b/net/kcm/kcmsock.c
-@@ -1381,19 +1381,25 @@ static int kcm_attach(struct socket *soc
+@@ -1381,24 +1381,33 @@ static int kcm_attach(struct socket *soc
  		.parse_msg = kcm_parse_func_strparser,
  		.read_sock_done = kcm_read_sock_done,
  	};
@@ -34,25 +34,32 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
  
 +	lock_sock(csk);
 +
- 	/* We must prevent loops or risk deadlock ! */
--	if (csk->sk_family == PF_KCM)
--		return -EOPNOTSUPP;
-+	if (csk->sk_family == PF_KCM) {
-+		err = -EOPNOTSUPP;
+ 	/* Only allow TCP sockets to be attached for now */
+ 	if ((csk->sk_family != AF_INET && csk->sk_family != AF_INET6) ||
+-	    csk->sk_protocol != IPPROTO_TCP)
++	    csk->sk_protocol != IPPROTO_TCP) {
+ 		return -EOPNOTSUPP;
 +		goto out;
 +	}
  
+ 	/* Don't allow listeners or closed sockets */
+-	if (csk->sk_state == TCP_LISTEN || csk->sk_state == TCP_CLOSE)
++	if (csk->sk_state == TCP_LISTEN || csk->sk_state == TCP_CLOSE) {
+ 		return -EOPNOTSUPP;
++		goto out;
++	}
++
+ 
  	psock = kmem_cache_zalloc(kcm_psockp, GFP_KERNEL);
 -	if (!psock)
--		return -ENOMEM;
 +	if (!psock) {
-+		err = -ENOMEM;
+ 		return -ENOMEM;
 +		goto out;
 +	}
  
  	psock->mux = mux;
  	psock->sk = csk;
-@@ -1402,7 +1408,7 @@ static int kcm_attach(struct socket *soc
+@@ -1407,7 +1407,7 @@ static int kcm_attach(struct socket *soc
  	err = strp_init(&psock->strp, csk, &cb);
  	if (err) {
  		kmem_cache_free(kcm_psockp, psock);
@@ -60,8 +67,8 @@ Signed-off-by: Jiri Slaby <jslaby@suse.cz>
 +		goto out;
  	}
  
- 	sock_hold(csk);
-@@ -1438,7 +1444,10 @@ static int kcm_attach(struct socket *soc
+ 	write_lock_bh(&csk->sk_callback_lock);
+@@ -1443,7 +1452,10 @@ static int kcm_attach(struct socket *soc
  	/* Schedule RX work in case there are already bytes queued */
  	strp_check_rcv(&psock->strp);
  

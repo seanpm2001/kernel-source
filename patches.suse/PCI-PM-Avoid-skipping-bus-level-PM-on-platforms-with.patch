@@ -1,0 +1,124 @@
+From: "Rafael J. Wysocki" <rafael.j.wysocki@intel.com>
+Date: Wed, 26 Jun 2019 00:20:23 +0200
+Subject: PCI: PM: Avoid skipping bus-level PM on platforms without ACPI
+Git-commit: 471a739a47aa7d582f0cdf9d392957d04632bae2
+Patch-mainline: 5.2-rc7
+References: git-fixes
+
+There are platforms that do not call pm_set_suspend_via_firmware(),
+so pm_suspend_via_firmware() returns 'false' on them, but the power
+states of PCI devices (PCIe ports in particular) are changed as a
+result of powering down core platform components during system-wide
+suspend.  Thus the pm_suspend_via_firmware() checks in
+pci_pm_suspend_noirq() and pci_pm_resume_noirq() introduced by
+commit 3e26c5feed2a ("PCI: PM: Skip devices in D0 for suspend-to-
+idle") are not sufficient to determine that devices left in D0
+during suspend will remain in D0 during resume and so the bus-level
+power management can be skipped for them.
+
+For this reason, introduce a new global suspend flag,
+PM_SUSPEND_FLAG_NO_PLATFORM, set it for suspend-to-idle only
+and replace the pm_suspend_via_firmware() checks mentioned above
+with checks against this flag.
+
+[js] use PM_SUSPEND_FREEZE instead of PM_SUSPEND_TO_IDLE
+
+Fixes: 3e26c5feed2a ("PCI: PM: Skip devices in D0 for suspend-to-idle")
+Reported-by: Jon Hunter <jonathanh@nvidia.com>
+Tested-by: Jon Hunter <jonathanh@nvidia.com>
+Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Tested-by: Mika Westerberg <mika.westerberg@linux.intel.com>
+Reviewed-by: Mika Westerberg <mika.westerberg@linux.intel.com>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ drivers/pci/pci-driver.c |    8 ++++----
+ include/linux/suspend.h  |   26 ++++++++++++++++++++++++--
+ kernel/power/suspend.c   |    3 +++
+ 3 files changed, 31 insertions(+), 6 deletions(-)
+
+--- a/drivers/pci/pci-driver.c
++++ b/drivers/pci/pci-driver.c
+@@ -861,7 +861,7 @@ static int pci_pm_suspend_noirq(struct d
+ 			pci_dev->bus->self->skip_bus_pm = true;
+ 	}
+ 
+-	if (pci_dev->skip_bus_pm && !pm_suspend_via_firmware()) {
++	if (pci_dev->skip_bus_pm && pm_suspend_no_platform()) {
+ 		dev_dbg(dev, "PCI PM: Skipped\n");
+ 		goto Fixup;
+ 	}
+@@ -916,10 +916,10 @@ static int pci_pm_resume_noirq(struct de
+ 	/*
+ 	 * In the suspend-to-idle case, devices left in D0 during suspend will
+ 	 * stay in D0, so it is not necessary to restore or update their
+-	 * configuration here and attempting to put them into D0 again may
+-	 * confuse some firmware, so avoid doing that.
++	 * configuration here and attempting to put them into D0 again is
++	 * pointless, so avoid doing that.
+ 	 */
+-	if (!pci_dev->skip_bus_pm || pm_suspend_via_firmware())
++	if (!(pci_dev->skip_bus_pm && pm_suspend_no_platform()))
+ 		pci_pm_default_resume_early(pci_dev);
+ 
+ 	pci_fixup_device(pci_fixup_resume_early, pci_dev);
+--- a/include/linux/suspend.h
++++ b/include/linux/suspend.h
+@@ -205,8 +205,9 @@ extern int suspend_valid_only_mem(suspen
+ 
+ extern unsigned int pm_suspend_global_flags;
+ 
+-#define PM_SUSPEND_FLAG_FW_SUSPEND	(1 << 0)
+-#define PM_SUSPEND_FLAG_FW_RESUME	(1 << 1)
++#define PM_SUSPEND_FLAG_FW_SUSPEND	BIT(0)
++#define PM_SUSPEND_FLAG_FW_RESUME	BIT(1)
++#define PM_SUSPEND_FLAG_NO_PLATFORM	BIT(2)
+ 
+ static inline void pm_suspend_clear_flags(void)
+ {
+@@ -223,6 +224,11 @@ static inline void pm_set_resume_via_fir
+ 	pm_suspend_global_flags |= PM_SUSPEND_FLAG_FW_RESUME;
+ }
+ 
++static inline void pm_set_suspend_no_platform(void)
++{
++	pm_suspend_global_flags |= PM_SUSPEND_FLAG_NO_PLATFORM;
++}
++
+ static inline bool pm_suspend_via_firmware(void)
+ {
+ 	return !!(pm_suspend_global_flags & PM_SUSPEND_FLAG_FW_SUSPEND);
+@@ -233,6 +239,22 @@ static inline bool pm_resume_via_firmwar
+ 	return !!(pm_suspend_global_flags & PM_SUSPEND_FLAG_FW_RESUME);
+ }
+ 
++/**
++ * pm_suspend_no_platform - Check if platform may change device power states.
++ *
++ * To be called during system-wide power management transitions to sleep states
++ * or during the subsequent system-wide transitions back to the working state.
++ *
++ * Return 'true' if the power states of devices remain under full control of the
++ * kernel throughout the system-wide suspend and resume cycle in progress (that
++ * is, if a device is put into a certain power state during suspend, it can be
++ * expected to remain in that state during resume).
++ */
++static inline bool pm_suspend_no_platform(void)
++{
++	return !!(pm_suspend_global_flags & PM_SUSPEND_FLAG_NO_PLATFORM);
++}
++
+ /* Suspend-to-idle state machnine. */
+ enum freeze_state {
+ 	FREEZE_STATE_NONE,      /* Not suspended/suspending. */
+--- a/kernel/power/suspend.c
++++ b/kernel/power/suspend.c
+@@ -455,6 +455,9 @@ int suspend_devices_and_enter(suspend_st
+ 	if (!sleep_state_supported(state))
+ 		return -ENOSYS;
+ 
++	if (state == PM_SUSPEND_FREEZE)
++		pm_set_suspend_no_platform();
++
+ 	error = platform_suspend_begin(state);
+ 	if (error)
+ 		goto Close;

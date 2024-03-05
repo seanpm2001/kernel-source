@@ -1,0 +1,387 @@
+From 715f67f33af45ce2cc3a5b1ef133cc8c8e7787b0 Mon Sep 17 00:00:00 2001
+From: Douglas Anderson <dianders@chromium.org>
+Date: Fri, 20 Oct 2023 14:06:58 -0700
+Subject: [PATCH] r8152: Rename RTL8152_UNPLUG to RTL8152_INACCESSIBLE
+Git-commit: 715f67f33af45ce2cc3a5b1ef133cc8c8e7787b0
+References: git-fixes
+Patch-mainline: v6.6
+
+Whenever the RTL8152_UNPLUG is set that just tells the driver that all
+accesses will fail and we should just immediately bail. A future patch
+will use this same concept at a time when the driver hasn't actually
+been unplugged but is about to be reset. Rename the flag in
+preparation for the future patch.
+
+This is a no-op change and just a search and replace.
+
+Signed-off-by: Douglas Anderson <dianders@chromium.org>
+Reviewed-by: Grant Grundler <grundler@chromium.org>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/net/usb/r8152.c |   80 ++++++++++++++++++++++++------------------------
+ 1 file changed, 40 insertions(+), 40 deletions(-)
+
+--- a/drivers/net/usb/r8152.c
++++ b/drivers/net/usb/r8152.c
+@@ -598,7 +598,7 @@ enum rtl_register_content {
+ 
+ /* rtl8152 flags */
+ enum rtl8152_flags {
+-	RTL8152_UNPLUG = 0,
++	RTL8152_INACCESSIBLE = 0,
+ 	RTL8152_SET_RX_MODE,
+ 	WORK_ENABLE,
+ 	RTL8152_LINK_CHG,
+@@ -823,7 +823,7 @@ static int generic_ocp_read(struct r8152
+ 	u16 limit = 64;
+ 	int ret = 0;
+ 
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return -ENODEV;
+ 
+ 	/* both size and indix must be 4 bytes align */
+@@ -855,7 +855,7 @@ static int generic_ocp_read(struct r8152
+ 	}
+ 
+ 	if (ret == -ENODEV)
+-		set_bit(RTL8152_UNPLUG, &tp->flags);
++		set_bit(RTL8152_INACCESSIBLE, &tp->flags);
+ 
+ 	return ret;
+ }
+@@ -867,7 +867,7 @@ static int generic_ocp_write(struct r815
+ 	u16 byteen_start, byteen_end, byen;
+ 	u16 limit = 512;
+ 
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return -ENODEV;
+ 
+ 	/* both size and indix must be 4 bytes align */
+@@ -925,7 +925,7 @@ static int generic_ocp_write(struct r815
+ 
+ error1:
+ 	if (ret == -ENODEV)
+-		set_bit(RTL8152_UNPLUG, &tp->flags);
++		set_bit(RTL8152_INACCESSIBLE, &tp->flags);
+ 
+ 	return ret;
+ }
+@@ -1103,7 +1103,7 @@ static int read_mii_word(struct net_devi
+ 	struct r8152 *tp = netdev_priv(netdev);
+ 	int ret;
+ 
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return -ENODEV;
+ 
+ 	if (phy_id != R8152_PHY_ID)
+@@ -1119,7 +1119,7 @@ void write_mii_word(struct net_device *n
+ {
+ 	struct r8152 *tp = netdev_priv(netdev);
+ 
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return;
+ 
+ 	if (phy_id != R8152_PHY_ID)
+@@ -1271,7 +1271,7 @@ static void read_bulk_callback(struct ur
+ 	if (!tp)
+ 		return;
+ 
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return;
+ 
+ 	if (!test_bit(WORK_ENABLE, &tp->flags))
+@@ -1297,7 +1297,7 @@ static void read_bulk_callback(struct ur
+ 		napi_schedule(&tp->napi);
+ 		return;
+ 	case -ESHUTDOWN:
+-		set_bit(RTL8152_UNPLUG, &tp->flags);
++		set_bit(RTL8152_INACCESSIBLE, &tp->flags);
+ 		netif_device_detach(tp->netdev);
+ 		return;
+ 	case -ENOENT:
+@@ -1355,7 +1355,7 @@ static void write_bulk_callback(struct u
+ 	if (!test_bit(WORK_ENABLE, &tp->flags))
+ 		return;
+ 
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return;
+ 
+ 	if (!skb_queue_empty(&tp->tx_queue))
+@@ -1376,7 +1376,7 @@ static void intr_callback(struct urb *ur
+ 	if (!test_bit(WORK_ENABLE, &tp->flags))
+ 		return;
+ 
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return;
+ 
+ 	switch (status) {
+@@ -1418,7 +1418,7 @@ static void intr_callback(struct urb *ur
+ resubmit:
+ 	res = usb_submit_urb(urb, GFP_ATOMIC);
+ 	if (res == -ENODEV) {
+-		set_bit(RTL8152_UNPLUG, &tp->flags);
++		set_bit(RTL8152_INACCESSIBLE, &tp->flags);
+ 		netif_device_detach(tp->netdev);
+ 	} else if (res) {
+ 		netif_err(tp, intr, tp->netdev,
+@@ -2013,7 +2013,7 @@ static void tx_bottom(struct r8152 *tp)
+ 			struct net_device *netdev = tp->netdev;
+ 
+ 			if (res == -ENODEV) {
+-				set_bit(RTL8152_UNPLUG, &tp->flags);
++				set_bit(RTL8152_INACCESSIBLE, &tp->flags);
+ 				netif_device_detach(netdev);
+ 			} else {
+ 				struct net_device_stats *stats = &netdev->stats;
+@@ -2033,7 +2033,7 @@ static void tx_bottom(struct r8152 *tp)
+ 
+ static void bottom_half(struct r8152 *tp)
+ {
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return;
+ 
+ 	if (!test_bit(WORK_ENABLE, &tp->flags))
+@@ -2077,7 +2077,7 @@ int r8152_submit_rx(struct r8152 *tp, st
+ 	int ret;
+ 
+ 	/* The rx would be stopped, so skip submitting */
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags) ||
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags) ||
+ 	    !test_bit(WORK_ENABLE, &tp->flags) || !netif_carrier_ok(tp->netdev))
+ 		return 0;
+ 
+@@ -2087,7 +2087,7 @@ int r8152_submit_rx(struct r8152 *tp, st
+ 
+ 	ret = usb_submit_urb(agg->urb, mem_flags);
+ 	if (ret == -ENODEV) {
+-		set_bit(RTL8152_UNPLUG, &tp->flags);
++		set_bit(RTL8152_INACCESSIBLE, &tp->flags);
+ 		netif_device_detach(tp->netdev);
+ 	} else if (ret) {
+ 		struct urb *urb = agg->urb;
+@@ -2361,7 +2361,7 @@ static int rtl_enable(struct r8152 *tp)
+ 
+ static int rtl8152_enable(struct r8152 *tp)
+ {
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return -ENODEV;
+ 
+ 	set_tx_qlen(tp);
+@@ -2432,7 +2432,7 @@ static void r8153_set_rx_early_size(stru
+ 
+ static int rtl8153_enable(struct r8152 *tp)
+ {
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return -ENODEV;
+ 
+ 	set_tx_qlen(tp);
+@@ -2448,7 +2448,7 @@ static void rtl_disable(struct r8152 *tp
+ 	u32 ocp_data;
+ 	int i;
+ 
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags)) {
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags)) {
+ 		rtl_drop_queued_tx(tp);
+ 		return;
+ 	}
+@@ -2685,7 +2685,7 @@ static u16 r8153_phy_status(struct r8152
+ 		}
+ 
+ 		msleep(20);
+-		if (test_bit(RTL8152_UNPLUG, &tp->flags))
++		if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 			break;
+ 	}
+ 
+@@ -3652,7 +3652,7 @@ out:
+ 
+ static void rtl8152_up(struct r8152 *tp)
+ {
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return;
+ 
+ 	r8152_aldps_en(tp, false);
+@@ -3662,7 +3662,7 @@ static void rtl8152_up(struct r8152 *tp)
+ 
+ static void rtl8152_down(struct r8152 *tp)
+ {
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags)) {
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags)) {
+ 		rtl_drop_queued_tx(tp);
+ 		return;
+ 	}
+@@ -3675,7 +3675,7 @@ static void rtl8152_down(struct r8152 *t
+ 
+ static void rtl8153_up(struct r8152 *tp)
+ {
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return;
+ 
+ 	r8153_u1u2en(tp, false);
+@@ -3700,7 +3700,7 @@ static void rtl8153_up(struct r8152 *tp)
+ 
+ static void rtl8153_down(struct r8152 *tp)
+ {
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags)) {
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags)) {
+ 		rtl_drop_queued_tx(tp);
+ 		return;
+ 	}
+@@ -3715,7 +3715,7 @@ static void rtl8153_down(struct r8152 *t
+ 
+ static void rtl8153b_up(struct r8152 *tp)
+ {
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSSIBLE, &tp->flags))
+ 		return;
+ 
+ 	r8153b_u1u2en(tp, false);
+@@ -3732,7 +3732,7 @@ static void rtl8153b_up(struct r8152 *tp
+ 
+ static void rtl8153b_down(struct r8152 *tp)
+ {
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags)) {
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags)) {
+ 		rtl_drop_queued_tx(tp);
+ 		return;
+ 	}
+@@ -3813,7 +3813,7 @@ static void rtl_work_func_t(struct work_
+ 	/* If the device is unplugged or !netif_running(), the workqueue
+ 	 * doesn't need to wake the device, and could return directly.
+ 	 */
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags) || !netif_running(tp->netdev))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags) || !netif_running(tp->netdev))
+ 		return;
+ 
+ 	if (usb_autopm_get_interface(tp->intf) < 0)
+@@ -3848,7 +3848,7 @@ static void rtl_hw_phy_work_func_t(struc
+ {
+ 	struct r8152 *tp = container_of(work, struct r8152, hw_phy_work.work);
+ 
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return;
+ 
+ 	if (usb_autopm_get_interface(tp->intf) < 0)
+@@ -3949,7 +3949,7 @@ static int rtl8152_close(struct net_devi
+ #ifdef CONFIG_PM_SLEEP
+ 	unregister_pm_notifier(&tp->pm_notifier);
+ #endif
+-	if (!test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (!test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		napi_disable(&tp->napi);
+ 	clear_bit(WORK_ENABLE, &tp->flags);
+ 	usb_kill_urb(tp->intr_urb);
+@@ -3957,7 +3957,7 @@ static int rtl8152_close(struct net_devi
+ 	netif_stop_queue(netdev);
+ 
+ 	res = usb_autopm_get_interface(tp->intf);
+-	if (res < 0 || test_bit(RTL8152_UNPLUG, &tp->flags)) {
++	if (res < 0 || test_bit(RTL8152_INACCESSIBLE, &tp->flags)) {
+ 		rtl_drop_queued_tx(tp);
+ 		rtl_stop_rx(tp);
+ 	} else {
+@@ -3990,7 +3990,7 @@ static void r8152b_init(struct r8152 *tp
+ 	u32 ocp_data;
+ 	u16 data;
+ 
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return;
+ 
+ 	data = r8152_mdio_read(tp, MII_BMCR);
+@@ -4034,7 +4034,7 @@ static void r8153_init(struct r8152 *tp)
+ 	u16 data;
+ 	int i;
+ 
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return;
+ 
+ 	r8153_u1u2en(tp, false);
+@@ -4045,7 +4045,7 @@ static void r8153_init(struct r8152 *tp)
+ 			break;
+ 
+ 		msleep(20);
+-		if (test_bit(RTL8152_UNPLUG, &tp->flags))
++		if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 			break;
+ 	}
+ 
+@@ -4160,7 +4160,7 @@ static void r8153b_init(struct r8152 *tp
+ 	u16 data;
+ 	int i;
+ 
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return;
+ 
+ 	r8153b_u1u2en(tp, false);
+@@ -4171,7 +4171,7 @@ static void r8153b_init(struct r8152 *tp
+ 			break;
+ 
+ 		msleep(20);
+-		if (test_bit(RTL8152_UNPLUG, &tp->flags))
++		if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 			break;
+ 	}
+ 
+@@ -4904,7 +4904,7 @@ static int rtl8152_ioctl(struct net_devi
+ 	struct mii_ioctl_data *data = if_mii(rq);
+ 	int res;
+ 
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return -ENODEV;
+ 
+ 	res = usb_autopm_get_interface(tp->intf);
+@@ -4997,7 +4997,7 @@ static const struct net_device_ops rtl81
+ 
+ static void rtl8152_unload(struct r8152 *tp)
+ {
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return;
+ 
+ 	if (tp->version != RTL_VER_01)
+@@ -5006,7 +5006,7 @@ static void rtl8152_unload(struct r8152
+ 
+ static void rtl8153_unload(struct r8152 *tp)
+ {
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return;
+ 
+ 	r8153_power_cut_en(tp, false);
+@@ -5014,7 +5014,7 @@ static void rtl8153_unload(struct r8152
+ 
+ static void rtl8153b_unload(struct r8152 *tp)
+ {
+-	if (test_bit(RTL8152_UNPLUG, &tp->flags))
++	if (test_bit(RTL8152_INACCESSIBLE, &tp->flags))
+ 		return;
+ 
+ 	r8153b_power_cut_en(tp, false);
+@@ -5299,7 +5299,7 @@ static void rtl8152_disconnect(struct us
+ 		struct usb_device *udev = tp->udev;
+ 
+ 		if (udev->state == USB_STATE_NOTATTACHED)
+-			set_bit(RTL8152_UNPLUG, &tp->flags);
++			set_bit(RTL8152_INACCESSIBLE, &tp->flags);
+ 
+ 		netif_napi_del(&tp->napi);
+ 		unregister_netdev(tp->netdev);

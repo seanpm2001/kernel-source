@@ -1,0 +1,89 @@
+From: Thiago Rafael Becker <tbecker@redhat.com>
+Date: Wed, 5 Apr 2023 10:16:48 -0300
+Subject: [PATCH] cifs: sanitize paths in cifs_update_super_prepath.
+Git-commit: d19342c6609b67f2ba83b9eccca2777e3687f625
+References: bsc#1190317
+Patch-mainline: v6.3-rc6
+
+[ematsumiya: adjust patch for pre-fs_context modifications]
+
+After a server reboot, clients are failing to move files with ENOENT.
+This is caused by DFS referrals containing multiple separators, which
+the server move call doesn't recognize.
+
+v1: Initial patch.
+v2: Move prototype to header.
+
+Link: https://bugzilla.redhat.com/show_bug.cgi?id=2182472
+Fixes: a31080899d5f ("cifs: sanitize multiple delimiters in prepath")
+Actually-Fixes: 24e0a1eff9e2 ("cifs: switch to new mount api")
+Reviewed-by: Paulo Alcantara (SUSE) <pc@manguebit.com>
+Signed-off-by: Thiago Rafael Becker <tbecker@redhat.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/cifsproto.h |    1 +
+ fs/cifs/connect.c   |   13 +++++++------
+ fs/cifs/misc.c      |    2 +-
+ 3 files changed, 9 insertions(+), 7 deletions(-)
+
+--- a/fs/cifs/cifsproto.h
++++ b/fs/cifs/cifsproto.h
+@@ -85,6 +85,7 @@ extern void release_mid(struct mid_q_ent
+ extern void cifs_wake_up_task(struct mid_q_entry *mid);
+ extern int cifs_handle_standard(struct TCP_Server_Info *server,
+ 				struct mid_q_entry *mid);
++extern char *cifs_sanitize_prepath(char *prepath, gfp_t gfp);
+ extern bool cifs_match_ipaddr(struct sockaddr *srcaddr, struct sockaddr *rhs);
+ extern int cifs_discard_remaining_data(struct TCP_Server_Info *server);
+ extern int cifs_call_async(struct TCP_Server_Info *server,
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -1584,13 +1584,14 @@ cifs_parse_smb_version(char *value, stru
+  * but there are some bugs that prevent rename from working if there are
+  * multiple delimiters.
+  *
+- * Returns a sanitized duplicate of @path. The caller is responsible for
+- * cleaning up the original.
++ * Returns a sanitized duplicate of @path. @gfp indicates the GFP_* flags
++ * for kstrdup.
++ * The caller is responsible for freeing the original.
+  */
+ #define IS_DELIM(c) ((c) == '/' || (c) == '\\')
+-static char *sanitize_path(char *path)
++char *cifs_sanitize_prepath(char *prepath, gfp_t gfp)
+ {
+-	char *cursor1 = path, *cursor2 = path;
++	char *cursor1 = prepath, *cursor2 = prepath;
+ 
+ 	/* skip all prepended delimiters */
+ 	while (IS_DELIM(*cursor1))
+@@ -1612,7 +1613,7 @@ static char *sanitize_path(char *path)
+ 		cursor2--;
+ 
+ 	*(cursor2) = '\0';
+-	return kstrdup(path, GFP_KERNEL);
++	return kstrdup(prepath, gfp);
+ }
+ 
+ /*
+@@ -1667,7 +1668,7 @@ cifs_parse_devname(const char *devname,
+ 	if (!*pos || !pos)
+ 		return 0;
+ 
+-	vol->prepath = sanitize_path(pos);
++	vol->prepath = cifs_sanitize_prepath(pos, GFP_KERNEL);
+ 	if (!vol->prepath)
+ 		return -ENOMEM;
+ 
+--- a/fs/cifs/misc.c
++++ b/fs/cifs/misc.c
+@@ -1126,7 +1126,7 @@ int cifs_update_super_prepath(struct cif
+ 	kfree(cifs_sb->prepath);
+ 
+ 	if (prefix && *prefix) {
+-		cifs_sb->prepath = kstrdup(prefix, GFP_ATOMIC);
++		cifs_sb->prepath = cifs_sanitize_prepath(prefix, GFP_ATOMIC);
+ 		if (!cifs_sb->prepath)
+ 			return -ENOMEM;
+ 

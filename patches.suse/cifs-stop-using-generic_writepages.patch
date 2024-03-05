@@ -1,0 +1,61 @@
+From: Christoph Hellwig <hch@lst.de>
+Date: Wed, 16 Nov 2022 14:18:34 +0100
+Subject: [PATCH] cifs: stop using generic_writepages
+Git-commit: bff9018d3a52c45711bd63c446a2c80c0275e935
+References: bsc#1190317
+Patch-mainline: v6.1
+
+generic_writepages is just a wrapper that calls ->writepages on a range,
+and thus in the way of eventually removing ->writepage.  Switch cifs
+to just open code it in preparation of removing ->writepage.
+
+[note: I suspect just integrating the small wsize case with the rest
+ of the writeback code might be a better idea here, but that needs
+ someone more familiar with the code]
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Paulo Alcantara (SUSE) <pc@cjr.nz>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/file.c |   20 ++++++++++++++++++--
+ 1 file changed, 18 insertions(+), 2 deletions(-)
+
+--- a/fs/cifs/file.c
++++ b/fs/cifs/file.c
+@@ -2342,6 +2342,21 @@ wdata_send_pages(struct cifs_writedata *
+ 	return rc;
+ }
+ 
++static int
++cifs_writepage_locked(struct page *page, struct writeback_control *wbc);
++
++static int cifs_write_one_page(struct page *page, struct writeback_control *wbc,
++		void *data)
++{
++	struct address_space *mapping = data;
++	int ret;
++
++	ret = cifs_writepage_locked(page, wbc);
++	unlock_page(page);
++	mapping_set_error(mapping, ret);
++	return ret;
++}
++
+ static int cifs_writepages(struct address_space *mapping,
+ 			   struct writeback_control *wbc)
+ {
+@@ -2358,10 +2373,11 @@ static int cifs_writepages(struct addres
+ 
+ 	/*
+ 	 * If wsize is smaller than the page cache size, default to writing
+-	 * one page at a time via cifs_writepage
++	 * one page at a time.
+ 	 */
+ 	if (cifs_sb->wsize < PAGE_SIZE)
+-		return generic_writepages(mapping, wbc);
++		return write_cache_pages(mapping, wbc, cifs_write_one_page,
++				mapping);
+ 
+ 	xid = get_xid();
+ 	if (wbc->range_cyclic) {

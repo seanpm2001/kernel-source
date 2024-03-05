@@ -1,0 +1,43 @@
+From: Borislav Petkov <bp@suse.de>
+Date: Tue, 4 Sep 2018 11:22:12 +0200
+Subject: x86/mce-inject: Reset injection struct after injection
+Git-commit: 7401a633c34adc7aefd3edfec60074cb0475a3e8
+Patch-mainline: 4.20-rc1
+References: git-fixes
+
+Clear the MCE struct which is used for collecting the injection details
+after injection.
+
+Also, populate it with more details from the machine.
+
+[js] this is in mce_amd_inj.c yet
+
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Link: https://lkml.kernel.org/r/20180905081954.10391-1-bp@alien8.de
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ arch/x86/ras/mce_amd_inj.c |    6 ++++++
+ 1 file changed, 6 insertions(+)
+
+--- a/arch/x86/ras/mce_amd_inj.c
++++ b/arch/x86/ras/mce_amd_inj.c
+@@ -94,6 +94,9 @@ static void setup_inj_struct(struct mce
+ 	memset(m, 0, sizeof(struct mce));
+ 
+ 	m->cpuvendor = boot_cpu_data.x86_vendor;
++	m->time	     = ktime_get_real_seconds();
++	m->cpuid     = cpuid_eax(1);
++	m->microcode = boot_cpu_data.microcode;
+ }
+ 
+ /*
+@@ -367,6 +370,9 @@ static int inj_bank_set(void *data, u64
+ 	m->bank = val;
+ 	do_inject();
+ 
++	/* Reset injection struct */
++	setup_inj_struct(&i_mce);
++
+ 	return 0;
+ }
+ 

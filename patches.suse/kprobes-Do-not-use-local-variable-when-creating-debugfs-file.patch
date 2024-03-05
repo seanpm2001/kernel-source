@@ -1,0 +1,55 @@
+From: Punit Agrawal <punitagrawal@gmail.com>
+Date: Tue, 14 Sep 2021 23:38:37 +0900
+Subject: kprobes: Do not use local variable when creating debugfs file
+Git-commit: 8f7262cd66699a4b02eb7549b35c81b2116aad95
+Patch-mainline: v5.16-rc1
+References: git-fixes
+
+debugfs_create_file() takes a pointer argument that can be used during
+file operation callbacks (accessible via i_private in the inode
+structure). An obvious requirement is for the pointer to refer to
+valid memory when used.
+
+When creating the debugfs file to dynamically enable / disable
+kprobes, a pointer to local variable is passed to
+debugfs_create_file(); which will go out of scope when the init
+function returns. The reason this hasn't triggered random memory
+corruption is because the pointer is not accessed during the debugfs
+file callbacks.
+
+Since the enabled state is managed by the kprobes_all_disabled global
+variable, the local variable is not needed. Fix the incorrect (and
+unnecessary) usage of local variable during debugfs_file_create() by
+passing NULL instead.
+
+Link: https://lkml.kernel.org/r/163163031686.489837.4476867635937014973.stgit@devnote2
+
+Fixes: bf8f6e5b3e51 ("Kprobes: The ON/OFF knob thru debugfs")
+Signed-off-by: Punit Agrawal <punitagrawal@gmail.com>
+Acked-by: Masami Hiramatsu <mhiramat@kernel.org>
+Signed-off-by: Masami Hiramatsu <mhiramat@kernel.org>
+Signed-off-by: Steven Rostedt (VMware) <rostedt@goodmis.org>
+Acked-by: Petr Pavlu <petr.pavlu@suse.com>
+---
+ kernel/kprobes.c |    3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+--- a/kernel/kprobes.c
++++ b/kernel/kprobes.c
+@@ -2576,7 +2576,6 @@ static const struct file_operations fops
+ static int __init debugfs_kprobe_init(void)
+ {
+ 	struct dentry *dir, *file;
+-	unsigned int value = 1;
+ 
+ 	dir = debugfs_create_dir("kprobes", NULL);
+ 	if (!dir)
+@@ -2588,7 +2587,7 @@ static int __init debugfs_kprobe_init(vo
+ 		goto error;
+ 
+ 	file = debugfs_create_file("enabled", 0600, dir,
+-					&value, &fops_kp);
++					NULL, &fops_kp);
+ 	if (!file)
+ 		goto error;
+ 

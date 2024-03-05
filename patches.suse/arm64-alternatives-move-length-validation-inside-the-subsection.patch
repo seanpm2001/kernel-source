@@ -1,0 +1,38 @@
+From: Sami Tolvanen <samitolvanen@google.com>
+Date: Thu, 30 Jul 2020 08:37:01 -0700
+Subject: arm64/alternatives: move length validation inside the subsection
+Git-commit: 966a0acce2fca776391823381dba95c40e03c339
+Patch-mainline: v5.8
+References: git-fixes
+
+Commit f7b93d42945c ("arm64/alternatives: use subsections for replacement
+sequences") breaks LLVM's integrated assembler, because due to its
+one-pass design, it cannot compute instruction sequence lengths before the
+layout for the subsection has been finalized. This change fixes the build
+by moving the .org directives inside the subsection, so they are processed
+after the subsection layout is known.
+
+Fixes: f7b93d42945c ("arm64/alternatives: use subsections for replacement sequences")
+Signed-off-by: Sami Tolvanen <samitolvanen@google.com>
+Link: https://github.com/ClangBuiltLinux/linux/issues/1078
+Link: https://lore.kernel.org/r/20200730153701.3892953-1-samitolvanen@google.com
+Signed-off-by: Will Deacon <will@kernel.org>
+Acked-by: Ivan T. Ivanov <iivanov@suse.de>
+---
+ arch/arm64/include/asm/alternative.h |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/arch/arm64/include/asm/alternative.h
++++ b/arch/arm64/include/asm/alternative.h
+@@ -69,9 +69,9 @@ void apply_alternatives(void *start, siz
+ 	"663:\n\t"							\
+ 	newinstr "\n"							\
+ 	"664:\n\t"							\
+-	".previous\n\t"							\
+ 	".org	. - (664b-663b) + (662b-661b)\n\t"			\
+-	".org	. - (662b-661b) + (664b-663b)\n"			\
++	".org	. - (662b-661b) + (664b-663b)\n\t"			\
++	".previous\n\t"							\
+ 	".else\n\t"							\
+ 	"663:\n\t"							\
+ 	"664:\n\t"							\

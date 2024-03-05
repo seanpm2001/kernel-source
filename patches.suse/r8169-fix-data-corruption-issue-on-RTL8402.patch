@@ -1,0 +1,41 @@
+From 7b8a48cf6f38ebf85e35b720d9528970b79dd622 Mon Sep 17 00:00:00 2001
+From: Heiner Kallweit <hkallweit1@gmail.com>
+Date: Thu, 1 Oct 2020 09:23:02 +0200
+Subject: [PATCH] r8169: fix data corruption issue on RTL8402
+Git-commit: ef9da46ddef071e1bbb943afbbe9b38771855554
+Patch-mainline: v5.9
+References: git-fixes
+
+Petr reported that after resume from suspend RTL8402 partially
+truncates incoming packets, and re-initializing register RxConfig
+before the actual chip re-initialization sequence is needed to avoid
+the issue.
+
+Reported-by: Petr Tesarik <ptesarik@suse.cz>
+Proposed-by: Petr Tesarik <ptesarik@suse.cz>
+Tested-by: Petr Tesarik <ptesarik@suse.cz>
+Signed-off-by: Heiner Kallweit <hkallweit1@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/realtek/r8169.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/net/ethernet/realtek/r8169.c b/drivers/net/ethernet/realtek/r8169.c
+index 7fc5f683b9ee..0ca723eb58af 100644
+--- a/drivers/net/ethernet/realtek/r8169.c
++++ b/drivers/net/ethernet/realtek/r8169.c
+@@ -7863,6 +7863,10 @@ static void __rtl8169_resume(struct net_device *dev)
+ {
+ 	struct rtl8169_private *tp = netdev_priv(dev);
+ 
++	/* Reportedly at least Asus X453MA truncates packets otherwise */
++	if (tp->mac_version == RTL_GIGA_MAC_VER_37)
++		rtl_init_rxcfg(tp);
++
+ 	netif_device_attach(dev);
+ 
+ 	rtl_pll_power_up(tp);
+-- 
+2.16.4
+

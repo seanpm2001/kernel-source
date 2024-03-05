@@ -1,0 +1,33 @@
+From: Francis Laniel <flaniel@linux.microsoft.com>
+Date: Wed, 8 Jun 2022 17:24:46 +0100
+Subject: arm64: Do not forget syscall when starting a new thread.
+Git-commit: de6921856f99c11d3986c6702d851e1328d4f7f6
+Patch-mainline: v6.0-rc1
+References: git-fixes
+
+Enable tracing of the execve*() system calls with the
+syscalls:sys_exit_execve tracepoint by removing the call to
+forget_syscall() when starting a new thread and preserving the value of
+regs->syscallno across exec.
+
+Signed-off-by: Francis Laniel <flaniel@linux.microsoft.com>
+Link: https://lore.kernel.org/r/20220608162447.666494-2-flaniel@linux.microsoft.com
+Signed-off-by: Will Deacon <will@kernel.org>
+Acked-by: Ivan T. Ivanov <iivanov@suse.de>
+---
+ arch/arm64/include/asm/processor.h |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/arch/arm64/include/asm/processor.h
++++ b/arch/arm64/include/asm/processor.h
+@@ -145,8 +145,9 @@ struct thread_struct {
+ 
+ static inline void start_thread_common(struct pt_regs *regs, unsigned long pc)
+ {
++	s32 previous_syscall = regs->syscallno;
+ 	memset(regs, 0, sizeof(*regs));
+-	forget_syscall(regs);
++	regs->syscallno = previous_syscall;
+ 	regs->pc = pc;
+ }
+ 

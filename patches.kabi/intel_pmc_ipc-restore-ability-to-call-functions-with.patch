@@ -1,0 +1,90 @@
+From d0aaed3d980915a32be512ae6adbd07144e87900 Mon Sep 17 00:00:00 2001
+From: Oliver Neukum <oneukum@suse.com>
+Date: Wed, 12 Apr 2023 16:04:37 +0200
+Subject: [PATCH] intel_pmc_ipc: restore ability to call functions with irq
+ enabled
+Patch-mainline: Never (local fix,driver shifted to another framework)
+References: git-fixes
+
+the most recent fix converted locking from a mutex
+to a spinlock. It was used in such a way that the caller was
+now responsible for switching off interrupts.
+
+Fixing this upstream is impossible as the driver has been converted
+to the MFD framework upstream.
+Hence we need a local fix restores the calling context in
+the driver.
+
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/platform/x86/intel_pmc_ipc.c |   19 +++++++++++--------
+ 1 file changed, 11 insertions(+), 8 deletions(-)
+
+--- a/drivers/platform/x86/intel_pmc_ipc.c
++++ b/drivers/platform/x86/intel_pmc_ipc.c
+@@ -226,18 +226,19 @@ static inline int is_gcr_valid(u32 offse
+ int intel_pmc_gcr_read(u32 offset, u32 *data)
+ {
+ 	int ret;
++	unsigned long flags;
+ 
+-	spin_lock(&ipcdev.gcr_lock);
++	spin_lock_irqsave(&ipcdev.gcr_lock, flags);
+ 
+ 	ret = is_gcr_valid(offset);
+ 	if (ret < 0) {
+-		spin_unlock(&ipcdev.gcr_lock);
++		spin_unlock_irqrestore(&ipcdev.gcr_lock, flags);
+ 		return ret;
+ 	}
+ 
+ 	*data = readl(ipcdev.gcr_mem_base + offset);
+ 
+-	spin_unlock(&ipcdev.gcr_lock);
++	spin_unlock_irqrestore(&ipcdev.gcr_lock, flags);
+ 
+ 	return 0;
+ }
+@@ -256,18 +257,19 @@ EXPORT_SYMBOL_GPL(intel_pmc_gcr_read);
+ int intel_pmc_gcr_write(u32 offset, u32 data)
+ {
+ 	int ret;
++	unsigned long flags;
+ 
+-	spin_lock(&ipcdev.gcr_lock);
++	spin_lock_irqsave(&ipcdev.gcr_lock, flags);
+ 
+ 	ret = is_gcr_valid(offset);
+ 	if (ret < 0) {
+-		spin_unlock(&ipcdev.gcr_lock);
++		spin_unlock_irqrestore(&ipcdev.gcr_lock, flags);
+ 		return ret;
+ 	}
+ 
+ 	writel(data, ipcdev.gcr_mem_base + offset);
+ 
+-	spin_unlock(&ipcdev.gcr_lock);
++	spin_unlock_irqrestore(&ipcdev.gcr_lock, flags);
+ 
+ 	return 0;
+ }
+@@ -288,8 +290,9 @@ int intel_pmc_gcr_update(u32 offset, u32
+ {
+ 	u32 new_val;
+ 	int ret = 0;
++	unsigned long flags;
+ 
+-	spin_lock(&ipcdev.gcr_lock);
++	spin_lock_irqsave(&ipcdev.gcr_lock, flags);
+ 
+ 	ret = is_gcr_valid(offset);
+ 	if (ret < 0)
+@@ -311,7 +314,7 @@ int intel_pmc_gcr_update(u32 offset, u32
+ 	}
+ 
+ gcr_ipc_unlock:
+-	spin_unlock(&ipcdev.gcr_lock);
++	spin_unlock_irqrestore(&ipcdev.gcr_lock, flags);
+ 	return ret;
+ }
+ EXPORT_SYMBOL_GPL(intel_pmc_gcr_update);

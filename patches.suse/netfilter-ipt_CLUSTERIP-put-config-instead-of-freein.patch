@@ -1,0 +1,59 @@
+From 0944101740778cfc198248b95b60fbb064c01625 Mon Sep 17 00:00:00 2001
+From: Florian Westphal <fw@strlen.de>
+Date: Fri, 16 Feb 2018 12:49:33 +0100
+Subject: [PATCH 7/8] netfilter: ipt_CLUSTERIP: put config instead of freeing
+ it
+Git-commit: 1a9da5937386dbe553ffcf6c65d985bd48c347c5
+Patch-mainline: v4.16-rc5
+References: git-fixes
+
+Once struct is added to per-netns list it becomes visible to other cpus,
+so we cannot use kfree().
+
+Also delay setting entries refcount to 1 until after everything is
+initialised so that when we call clusterip_config_put() in this spot
+entries is still zero.
+
+Signed-off-by: Florian Westphal <fw@strlen.de>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/ipv4/netfilter/ipt_CLUSTERIP.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/net/ipv4/netfilter/ipt_CLUSTERIP.c b/net/ipv4/netfilter/ipt_CLUSTERIP.c
+index f32f485136d5..c934fb7540d3 100644
+--- a/net/ipv4/netfilter/ipt_CLUSTERIP.c
++++ b/net/ipv4/netfilter/ipt_CLUSTERIP.c
+@@ -232,7 +232,6 @@ clusterip_config_init(struct net *net, const struct ipt_clusterip_tgt_info *i,
+ 	c->hash_mode = i->hash_mode;
+ 	c->hash_initval = i->hash_initval;
+ 	refcount_set(&c->refcount, 1);
+-	refcount_set(&c->entries, 1);
+ 
+ 	spin_lock_bh(&cn->lock);
+ 	if (__clusterip_config_find(net, ip)) {
+@@ -263,8 +262,10 @@ clusterip_config_init(struct net *net, const struct ipt_clusterip_tgt_info *i,
+ 
+ 	c->notifier.notifier_call = clusterip_netdev_event;
+ 	err = register_netdevice_notifier(&c->notifier);
+-	if (!err)
++	if (!err) {
++		refcount_set(&c->entries, 1);
+ 		return c;
++	}
+ 
+ #ifdef CONFIG_PROC_FS
+ 	proc_remove(c->pde);
+@@ -273,7 +274,7 @@ clusterip_config_init(struct net *net, const struct ipt_clusterip_tgt_info *i,
+ 	spin_lock_bh(&cn->lock);
+ 	list_del_rcu(&c->list);
+ 	spin_unlock_bh(&cn->lock);
+-	kfree(c);
++	clusterip_config_put(c);
+ 
+ 	return ERR_PTR(err);
+ }
+-- 
+2.16.4
+

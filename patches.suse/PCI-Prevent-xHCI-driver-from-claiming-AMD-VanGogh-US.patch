@@ -1,0 +1,63 @@
+From 7e6f3b6d2c352b5fde37ce3fed83bdf6172eebd4 Mon Sep 17 00:00:00 2001
+From: Vicki Pfau <vi@endrift.com>
+Date: Wed, 27 Sep 2023 13:22:12 -0700
+Subject: [PATCH] PCI: Prevent xHCI driver from claiming AMD VanGogh USB3 DRD
+ device
+Git-commit: 7e6f3b6d2c352b5fde37ce3fed83bdf6172eebd4
+References: git-fixes
+Patch-mainline: v6.7-rc1
+
+The AMD VanGogh SoC contains a DesignWare USB3 Dual-Role Device that can be
+operated as either a USB Host or a USB Device, similar to on the AMD Nolan
+platform.
+
+be6646bfbaec ("PCI: Prevent xHCI driver from claiming AMD Nolan USB3 DRD
+device") added a quirk to let the dwc3 driver claim the Nolan device since
+it provides more specific support.
+
+Extend that quirk to include the VanGogh SoC USB3 device.
+
+Link: https://lore.kernel.org/r/20230927202212.2388216-1-vi@endrift.com
+Signed-off-by: Vicki Pfau <vi@endrift.com>
+[bhelgaas: include be6646bfbaec reference, add stable tag]
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Cc: stable@vger.kernel.org	# v3.19+
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/pci/quirks.c    |    6 ++++--
+ include/linux/pci_ids.h |    1 +
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+--- a/drivers/pci/quirks.c
++++ b/drivers/pci/quirks.c
+@@ -437,7 +437,7 @@ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_AT
+  * defines as "USB device (not host controller)". The dwc3 driver can then
+  * claim it based on its Vendor and Device ID.
+  */
+-static void quirk_amd_nl_class(struct pci_dev *pdev)
++static void quirk_amd_dwc_class(struct pci_dev *pdev)
+ {
+ 	u32 class = pdev->class;
+ 
+@@ -447,7 +447,9 @@ static void quirk_amd_nl_class(struct pc
+ 		 class, pdev->class);
+ }
+ DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_NL_USB,
+-		quirk_amd_nl_class);
++		quirk_amd_dwc_class);
++DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_VANGOGH_USB,
++		quirk_amd_dwc_class);
+ 
+ /*
+  * Let's make the southbridge information explicit instead
+--- a/include/linux/pci_ids.h
++++ b/include/linux/pci_ids.h
+@@ -546,6 +546,7 @@
+ #define PCI_DEVICE_ID_AMD_17H_M70H_DF_F3 0x1443
+ #define PCI_DEVICE_ID_AMD_19H_DF_F3	0x1653
+ #define PCI_DEVICE_ID_AMD_CNB17H_F3	0x1703
++#define PCI_DEVICE_ID_AMD_VANGOGH_USB	0x163a
+ #define PCI_DEVICE_ID_AMD_LANCE		0x2000
+ #define PCI_DEVICE_ID_AMD_LANCE_HOME	0x2001
+ #define PCI_DEVICE_ID_AMD_SCSI		0x2020

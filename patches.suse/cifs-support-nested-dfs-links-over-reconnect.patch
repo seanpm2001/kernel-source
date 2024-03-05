@@ -42,12 +42,12 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  fs/cifs/cifs_fs_sb.h   |    5 
  fs/cifs/cifsglob.h     |   24 +
  fs/cifs/cifsproto.h    |    5 
- fs/cifs/connect.c      | 1122 ++++++++++++++++++++++++-------------------------
+ fs/cifs/connect.c      | 1124 ++++++++++++++++++++++++-------------------------
  fs/cifs/dfs_cache.c    |   44 +
  fs/cifs/misc.c         |   62 --
  fs/cifs/smb2ops.c      |   10 
  fs/cifs/smb2pdu.c      |    6 
- 9 files changed, 652 insertions(+), 690 deletions(-)
+ 9 files changed, 653 insertions(+), 691 deletions(-)
 
 --- a/fs/cifs/cifs_dfs_ref.c
 +++ b/fs/cifs/cifs_dfs_ref.c
@@ -187,7 +187,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	struct list_head ulist; /* cache update list */
  #endif
  };
-@@ -2017,4 +2029,14 @@ static inline bool is_tcon_dfs(struct ci
+@@ -1994,4 +2006,14 @@ static inline bool is_tcon_dfs(struct ci
  		tcon->share_flags & (SHI1005_FLAGS_DFS | SHI1005_FLAGS_DFS_ROOT);
  }
  
@@ -204,7 +204,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  #endif	/* _CIFS_GLOB_H */
 --- a/fs/cifs/cifsproto.h
 +++ b/fs/cifs/cifsproto.h
-@@ -609,7 +609,7 @@ int smb2_parse_query_directory(struct ci
+@@ -593,7 +593,7 @@ int smb2_parse_query_directory(struct ci
  
  struct super_block *cifs_get_tcp_super(struct TCP_Server_Info *server);
  void cifs_put_tcp_super(struct super_block *sb);
@@ -213,7 +213,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  char *extract_hostname(const char *unc);
  char *extract_sharename(const char *unc);
  
-@@ -636,4 +636,7 @@ static inline int cifs_create_options(st
+@@ -620,4 +620,7 @@ static inline int cifs_create_options(st
  		return options;
  }
  
@@ -530,8 +530,9 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	ses = cifs_get_smb_ses(server, vol);
  	if (IS_ERR(ses)) {
  		rc = PTR_ERR(ses);
+-		return rc;
 +		ses = NULL;
- 		return rc;
++		goto out;
  	}
  
 -	*nses = ses;
@@ -644,8 +645,10 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 -expand_dfs_referral(const unsigned int xid, struct cifs_ses *ses,
 -		    struct smb_vol *volume_info, struct cifs_sb_info *cifs_sb,
 -		    char *ref_path)
--{
--	int rc;
++static int expand_dfs_referral(struct mount_ctx *mnt_ctx, const char *full_path,
++			       struct dfs_info3_param *referral)
+ {
+ 	int rc;
 -	struct dfs_info3_param referral = {0};
 -	char *full_path = NULL, *mdata = NULL;
 -
@@ -722,10 +725,8 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 -			      struct cifs_sb_info *cifs_sb, struct smb_vol *vol, unsigned int *xid,
 -			      struct TCP_Server_Info **server, struct cifs_ses **ses,
 -			      struct cifs_tcon **tcon)
-+static int expand_dfs_referral(struct mount_ctx *mnt_ctx, const char *full_path,
-+			       struct dfs_info3_param *referral)
- {
- 	int rc;
+-{
+-	int rc;
 -	struct dfs_info3_param ref = {0};
 -	char *mdata = NULL, *fake_devname = NULL;
 -	struct smb_vol fake_vol = {NULL};
@@ -940,14 +941,14 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 +	struct dfs_info3_param ref = {};
 +	struct cifs_sb_info *cifs_sb = mnt_ctx->cifs_sb;
 +	char *oldmnt = cifs_sb->mountdata;
-+
-+	rc = dfs_cache_get_tgt_referral(ref_path, tit, &ref);
-+	if (rc)
-+		goto out;
  
 -		kfree(*dfs_path);
 -		*dfs_path = npath;
 -		rc = -EREMOTE;
++	rc = dfs_cache_get_tgt_referral(ref_path, tit, &ref);
++	if (rc)
++		goto out;
++
 +	rc = expand_dfs_referral(mnt_ctx, full_path, &ref);
 +	if (rc)
 +		goto out;
@@ -1164,9 +1165,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 -		oldmnt = cifs_sb->mountdata;
 -		rc = expand_dfs_referral(xid, root_ses, vol, cifs_sb, ref_path + 1);
 -		if (rc)
-+		rc = __follow_dfs_link(mnt_ctx);
-+		if (!rc || rc != -EREMOTE)
- 			break;
+-			break;
 -		/* Connect to new DFS target only if we were redirected */
 -		if (oldmnt != cifs_sb->mountdata) {
 -			mount_put_conns(cifs_sb, xid, server, ses, tcon);
@@ -1178,7 +1177,9 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 -					     &server, &ses, &tcon);
 -		}
 -		if (rc == -EACCES || rc == -EOPNOTSUPP || !server || !ses)
--			break;
++		rc = __follow_dfs_link(mnt_ctx);
++		if (!rc || rc != -EREMOTE)
+ 			break;
 -		if (!tcon)
 -			continue;
 +	} while (rc = -ELOOP, ++num_links < MAX_NESTED_LINKS);
@@ -1196,12 +1197,6 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 +static void setup_server_referral_paths(struct mount_ctx *mnt_ctx)
 +{
 +	struct TCP_Server_Info *server = mnt_ctx->server;
-+
-+	server->origin_fullpath = mnt_ctx->origin_fullpath;
-+	server->leaf_fullpath = mnt_ctx->leaf_fullpath;
-+	server->current_fullpath = mnt_ctx->leaf_fullpath;
-+	mnt_ctx->origin_fullpath = mnt_ctx->leaf_fullpath = NULL;
-+}
  
 -		/* Get next dfs path and then continue chasing them if -EREMOTE */
 -		rc = next_dfs_prepath(cifs_sb, vol, xid, server, tcon, &ref_path);
@@ -1209,14 +1204,20 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
 -		if (rc == -EREMOTE && ++count > MAX_NESTED_LINKS)
 -			rc = -ELOOP;
 -	} while (rc == -EREMOTE);
++	server->origin_fullpath = mnt_ctx->origin_fullpath;
++	server->leaf_fullpath = mnt_ctx->leaf_fullpath;
++	server->current_fullpath = mnt_ctx->leaf_fullpath;
++	mnt_ctx->origin_fullpath = mnt_ctx->leaf_fullpath = NULL;
++}
+ 
+-	if (rc || !tcon || !ses)
 +int cifs_mount(struct cifs_sb_info *cifs_sb, struct smb_vol *vol)
 +{
 +	int rc;
 +	struct mount_ctx mnt_ctx = { .cifs_sb = cifs_sb, .fs_ctx = vol, };
 +	struct dfs_cache_tgt_list tl = DFS_CACHE_TGT_LIST_INIT(tl);
 +	bool isdfs;
- 
--	if (rc || !tcon || !ses)
++
 +	rc = is_dfs_mount(&mnt_ctx, &isdfs, &tl);
 +	if (rc)
  		goto error;
@@ -1772,7 +1773,7 @@ Acked-by: Paulo Alcantara <palcantara@suse.de>
  	kfree(buf_to_free);
  }
  
-@@ -1294,69 +1291,20 @@ out:
+@@ -1133,69 +1130,20 @@ out:
  	return rc;
  }
  

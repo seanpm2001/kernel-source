@@ -1,0 +1,72 @@
+From dbf2bab7935b65689f3b39178cf87374f0334ead Mon Sep 17 00:00:00 2001
+From: Zhang Yi <yi.zhang@huawei.com>
+Date: Thu, 10 Jun 2021 19:24:38 +0800
+Subject: [PATCH] jbd2: simplify journal_clean_one_cp_list()
+Git-commit: dbf2bab7935b65689f3b39178cf87374f0334ead
+Patch-mainline: v5.14-rc1
+References: bsc#1215207
+
+Now that __try_to_free_cp_buf() remove checkpointed buffer or transaction
+when the buffer is not 'busy', which is only called by
+journal_clean_one_cp_list(). This patch simplify this function by remove
+__try_to_free_cp_buf() and invoke __cp_buffer_busy() directly.
+
+Signed-off-by: Zhang Yi <yi.zhang@huawei.com>
+Reviewed-by: Jan Kara <jack@suse.cz>
+Link: https://lore.kernel.org/r/20210610112440.3438139-7-yi.zhang@huawei.com
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Acked-by: Jan Kara <jack@suse.cz>
+
+---
+ fs/jbd2/checkpoint.c |   22 +++++++---------------
+ 1 file changed, 7 insertions(+), 15 deletions(-)
+
+--- a/fs/jbd2/checkpoint.c
++++ b/fs/jbd2/checkpoint.c
+@@ -89,17 +89,12 @@ static inline void __buffer_relink_io(st
+  *
+  * Requires j_list_lock
+  */
+-static int __try_to_free_cp_buf(struct journal_head *jh)
++static inline bool __cp_buffer_busy(struct journal_head *jh)
+ {
+-	int ret = 0;
+ 	struct buffer_head *bh = jh2bh(jh);
+ 
+-	if (jh->b_transaction == NULL && !buffer_locked(bh) &&
+-	    !buffer_dirty(bh) && !buffer_write_io_error(bh)) {
+-		JBUFFER_TRACE(jh, "remove from checkpoint list");
+-		ret = __jbd2_journal_remove_checkpoint(jh) + 1;
+-	}
+-	return ret;
++	return jh->b_transaction || buffer_locked(bh) || buffer_dirty(bh) ||
++	       buffer_write_io_error(bh);
+ }
+ 
+ /*
+@@ -426,7 +421,6 @@ static int journal_clean_one_cp_list(str
+ {
+ 	struct journal_head *last_jh;
+ 	struct journal_head *next_jh = jh;
+-	int ret;
+ 
+ 	if (!jh)
+ 		return 0;
+@@ -435,13 +429,11 @@ static int journal_clean_one_cp_list(str
+ 	do {
+ 		jh = next_jh;
+ 		next_jh = jh->b_cpnext;
+-		if (!destroy)
+-			ret = __try_to_free_cp_buf(jh);
+-		else
+-			ret = __jbd2_journal_remove_checkpoint(jh) + 1;
+-		if (!ret)
++
++		if (!destroy && __cp_buffer_busy(jh))
+ 			return 0;
+-		if (ret == 2)
++
++		if (__jbd2_journal_remove_checkpoint(jh))
+ 			return 1;
+ 		/*
+ 		 * This function only frees up some memory

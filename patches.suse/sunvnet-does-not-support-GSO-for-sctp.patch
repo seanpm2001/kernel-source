@@ -1,0 +1,37 @@
+From 15f8e04409aedb5e33e6e662b128b9643d17a7f3 Mon Sep 17 00:00:00 2001
+From: Cathy Zhou <Cathy.Zhou@Oracle.COM>
+Date: Wed, 14 Mar 2018 10:56:07 -0700
+Subject: [PATCH 5/8] sunvnet: does not support GSO for sctp
+References: git-fixes
+Patch-mainline: v4.16-rc7
+Git-commit: cf55612a945039476abfd73e39064b2e721c3272
+
+The NETIF_F_GSO_SOFTWARE implies support for GSO on SCTP, but the
+sunvnet driver does not support GSO for sctp.  Here we remove the
+NETIF_F_GSO_SOFTWARE feature flag and only report NETIF_F_ALL_TSO
+instead.
+
+Signed-off-by: Cathy Zhou <Cathy.Zhou@Oracle.COM>
+Signed-off-by: Shannon Nelson <shannon.nelson@oracle.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/sun/sunvnet.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/sun/sunvnet.c b/drivers/net/ethernet/sun/sunvnet.c
+index e9e4b582082b..6e0947d69048 100644
+--- a/drivers/net/ethernet/sun/sunvnet.c
++++ b/drivers/net/ethernet/sun/sunvnet.c
+@@ -312,7 +312,7 @@ static struct vnet *vnet_new(const u64 *local_mac,
+ 	dev->ethtool_ops = &vnet_ethtool_ops;
+ 	dev->watchdog_timeo = VNET_TX_TIMEOUT;
+ 
+-	dev->hw_features = NETIF_F_TSO | NETIF_F_GSO | NETIF_F_GSO_SOFTWARE |
++	dev->hw_features = NETIF_F_TSO | NETIF_F_GSO | NETIF_F_ALL_TSO |
+ 			   NETIF_F_HW_CSUM | NETIF_F_SG;
+ 	dev->features = dev->hw_features;
+ 
+-- 
+2.16.4
+

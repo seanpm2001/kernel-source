@@ -1,0 +1,51 @@
+From b90ca9d74fb72eacac3a13962428fd59e7e21cee Mon Sep 17 00:00:00 2001
+From: Florian Westphal <fw@strlen.de>
+Date: Fri, 16 Feb 2018 12:49:32 +0100
+Subject: [PATCH 6/8] netfilter: ipt_CLUSTERIP: put config struct if we can't
+ increment ct refcount
+Git-commit: 8ae56822812ddedc26a152ab1916eb30120b4748
+Patch-mainline: v4.16-rc5
+References: git-fixes
+
+This needs to put() the entry to avoid a resource leak in error path.
+
+Signed-off-by: Florian Westphal <fw@strlen.de>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/ipv4/netfilter/ipt_CLUSTERIP.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/net/ipv4/netfilter/ipt_CLUSTERIP.c b/net/ipv4/netfilter/ipt_CLUSTERIP.c
+index e4275e9f7b11..f32f485136d5 100644
+--- a/net/ipv4/netfilter/ipt_CLUSTERIP.c
++++ b/net/ipv4/netfilter/ipt_CLUSTERIP.c
+@@ -496,12 +496,15 @@ static int clusterip_tg_check(const struct xt_tgchk_param *par)
+ 				return PTR_ERR(config);
+ 		}
+ 	}
+-	cipinfo->config = config;
+ 
+ 	ret = nf_ct_netns_get(par->net, par->family);
+-	if (ret < 0)
++	if (ret < 0) {
+ 		pr_info("cannot load conntrack support for proto=%u\n",
+ 			par->family);
++		clusterip_config_entry_put(par->net, config);
++		clusterip_config_put(config);
++		return ret;
++	}
+ 
+ 	if (!par->net->xt.clusterip_deprecated_warning) {
+ 		pr_info("ipt_CLUSTERIP is deprecated and it will removed soon, "
+@@ -509,6 +512,7 @@ static int clusterip_tg_check(const struct xt_tgchk_param *par)
+ 		par->net->xt.clusterip_deprecated_warning = true;
+ 	}
+ 
++	cipinfo->config = config;
+ 	return ret;
+ }
+ 
+-- 
+2.16.4
+

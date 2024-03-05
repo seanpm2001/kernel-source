@@ -1,0 +1,40 @@
+From 56667fecd157743f173a93f764e78864e7d833c2 Mon Sep 17 00:00:00 2001
+From: Kangjie Lu <kjlu@umn.edu>
+Date: Tue, 25 Dec 2018 22:08:18 -0600
+Subject: [PATCH 2/2] net: dsa: bcm_sf2: Propagate error value from mdio_write
+Git-commit: e49505f7255be8ced695919c08a29bf2c3d79616
+Patch-mainline: v5.0-rc1
+References: git-fixes
+
+Both bcm_sf2_sw_indir_rw and mdiobus_write_nested could fail, so let's
+return their error codes upstream.
+
+Signed-off-by: Kangjie Lu <kjlu@umn.edu>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/dsa/bcm_sf2.c | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/dsa/bcm_sf2.c b/drivers/net/dsa/bcm_sf2.c
+index e8a65d36f7ae..c51890df4ae0 100644
+--- a/drivers/net/dsa/bcm_sf2.c
++++ b/drivers/net/dsa/bcm_sf2.c
+@@ -436,11 +436,10 @@ static int bcm_sf2_sw_mdio_write(struct mii_bus *bus, int addr, int regnum,
+ 	 * send them to our master MDIO bus controller
+ 	 */
+ 	if (addr == BRCM_PSEUDO_PHY_ADDR && priv->indir_phy_mask & BIT(addr))
+-		bcm_sf2_sw_indir_rw(priv, 0, addr, regnum, val);
++		return bcm_sf2_sw_indir_rw(priv, 0, addr, regnum, val);
+ 	else
+-		mdiobus_write_nested(priv->master_mii_bus, addr, regnum, val);
+-
+-	return 0;
++		return mdiobus_write_nested(priv->master_mii_bus, addr,
++				regnum, val);
+ }
+ 
+ static irqreturn_t bcm_sf2_switch_0_isr(int irq, void *dev_id)
+-- 
+2.16.4
+

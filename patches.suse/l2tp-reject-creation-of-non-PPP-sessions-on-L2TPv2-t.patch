@@ -1,0 +1,48 @@
+From 5dd691d13dc4e921aedbf5b53267d950d741b2c5 Mon Sep 17 00:00:00 2001
+From: Guillaume Nault <g.nault@alphalink.fr>
+Date: Fri, 15 Jun 2018 15:39:17 +0200
+Subject: [PATCH 4/4] l2tp: reject creation of non-PPP sessions on L2TPv2
+ tunnels
+Git-commit: de9bada5d389903f4faf33980e6a95a2911c7e6d
+Patch-mainline: v4.18-rc1
+References: git-fixes
+
+The /proc/net/pppol2tp handlers (pppol2tp_seq_*()) iterate over all
+L2TPv2 tunnels, and rightfully expect that only PPP sessions can be
+found there. However, l2tp_netlink accepts creating Ethernet sessions
+regardless of the underlying tunnel version.
+
+This confuses pppol2tp_seq_session_show(), which expects that
+l2tp_session_priv() returns a pppol2tp_session structure. When the
+session is an Ethernet pseudo-wire, a struct l2tp_eth_sess is returned
+instead. This leads to invalid memory access when
+pppol2tp_session_get_sock() later tries to dereference ps->sk.
+
+Fixes: d9e31d17ceba ("l2tp: Add L2TP ethernet pseudowire support")
+Signed-off-by: Guillaume Nault <g.nault@alphalink.fr>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/l2tp/l2tp_netlink.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/net/l2tp/l2tp_netlink.c b/net/l2tp/l2tp_netlink.c
+index 2377aa16c3a7..6cd7ffdef633 100644
+--- a/net/l2tp/l2tp_netlink.c
++++ b/net/l2tp/l2tp_netlink.c
+@@ -550,6 +550,12 @@ static int l2tp_nl_cmd_session_create(st
+ 		goto out_tunnel;
+ 	}
+ 
++	/* L2TPv2 only accepts PPP pseudo-wires */
++	if (tunnel->version == 2 && cfg.pw_type != L2TP_PWTYPE_PPP) {
++		ret = -EPROTONOSUPPORT;
++		goto out_tunnel;
++	}
++
+ 	if (tunnel->version > 2) {
+ 		if (info->attrs[L2TP_ATTR_DATA_SEQ])
+ 			cfg.data_seq = nla_get_u8(info->attrs[L2TP_ATTR_DATA_SEQ]);
+-- 
+2.16.4
+

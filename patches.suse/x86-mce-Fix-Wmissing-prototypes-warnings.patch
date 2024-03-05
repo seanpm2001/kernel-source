@@ -1,0 +1,108 @@
+From: Borislav Petkov <bp@suse.de>
+Date: Fri, 9 Nov 2018 23:13:13 +0100
+Subject: x86/mce: Fix -Wmissing-prototypes warnings
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Git-commit: 68b5e4326e4b8ac9080835005d8254fed0fb3c56
+Patch-mainline: 5.0-rc1
+References: git-fixes
+
+Add the proper includes and make smca_get_name() static.
+
+Fix an actual bug too which the warning triggered:
+
+  arch/x86/kernel/cpu/mcheck/therm_throt.c:395:39: error: conflicting \
+  types for ‘smp_thermal_interrupt’
+   asmlinkage __visible void __irq_entry smp_thermal_interrupt(struct pt_regs *r)
+                                         ^~~~~~~~~~~~~~~~~~~~~
+  In file included from arch/x86/kernel/cpu/mcheck/therm_throt.c:29:
+  ./arch/x86/include/asm/traps.h:107:17: note: previous declaration of \
+	  ‘smp_thermal_interrupt’ was here
+   asmlinkage void smp_thermal_interrupt(void);
+
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Cc: Yi Wang <wang.yi59@zte.com.cn>
+Cc: Michael Matz <matz@suse.de>
+Cc: x86@kernel.org
+Link: https://lkml.kernel.org/r/alpine.DEB.2.21.1811081633160.1549@nanos.tec.linutronix.de
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ arch/x86/include/asm/traps.h             |    6 +++---
+ arch/x86/kernel/cpu/mcheck/mce_amd.c     |    5 +++--
+ arch/x86/kernel/cpu/mcheck/therm_throt.c |    1 +
+ arch/x86/kernel/cpu/mcheck/threshold.c   |    3 ++-
+ 4 files changed, 9 insertions(+), 6 deletions(-)
+
+--- a/arch/x86/include/asm/traps.h
++++ b/arch/x86/include/asm/traps.h
+@@ -121,9 +121,9 @@ extern int panic_on_unrecovered_nmi;
+ 
+ void math_emulate(struct math_emu_info *);
+ #ifndef CONFIG_X86_32
+-asmlinkage void smp_thermal_interrupt(void);
+-asmlinkage void smp_threshold_interrupt(void);
+-asmlinkage void smp_deferred_error_interrupt(void);
++asmlinkage void smp_thermal_interrupt(struct pt_regs *regs);
++asmlinkage void smp_threshold_interrupt(struct pt_regs *regs);
++asmlinkage void smp_deferred_error_interrupt(struct pt_regs *regs);
+ #endif
+ 
+ extern void ist_enter(struct pt_regs *regs);
+--- a/arch/x86/kernel/cpu/mcheck/mce_amd.c
++++ b/arch/x86/kernel/cpu/mcheck/mce_amd.c
+@@ -23,6 +23,7 @@
+ #include <linux/string.h>
+ 
+ #include <asm/amd_nb.h>
++#include <asm/traps.h>
+ #include <asm/apic.h>
+ #include <asm/mce.h>
+ #include <asm/msr.h>
+@@ -92,7 +93,7 @@ static struct smca_bank_name smca_names[
+ 	[SMCA_SMU]	= { "smu",		"System Management Unit" },
+ };
+ 
+-const char *smca_get_name(enum smca_bank_types t)
++static const char *smca_get_name(enum smca_bank_types t)
+ {
+ 	if (t >= N_SMCA_BANK_TYPES)
+ 		return NULL;
+@@ -857,7 +858,7 @@ static inline void __smp_deferred_error_
+ 	deferred_error_int_vector();
+ }
+ 
+-asmlinkage __visible void __irq_entry smp_deferred_error_interrupt(void)
++asmlinkage __visible void __irq_entry smp_deferred_error_interrupt(struct pt_regs *regs)
+ {
+ 	entering_irq();
+ 	__smp_deferred_error_interrupt();
+--- a/arch/x86/kernel/cpu/mcheck/therm_throt.c
++++ b/arch/x86/kernel/cpu/mcheck/therm_throt.c
+@@ -25,6 +25,7 @@
+ #include <linux/cpu.h>
+ 
+ #include <asm/processor.h>
++#include <asm/traps.h>
+ #include <asm/apic.h>
+ #include <asm/mce.h>
+ #include <asm/msr.h>
+--- a/arch/x86/kernel/cpu/mcheck/threshold.c
++++ b/arch/x86/kernel/cpu/mcheck/threshold.c
+@@ -5,6 +5,7 @@
+ #include <linux/kernel.h>
+ 
+ #include <asm/irq_vectors.h>
++#include <asm/traps.h>
+ #include <asm/apic.h>
+ #include <asm/mce.h>
+ #include <asm/trace/irq_vectors.h>
+@@ -23,7 +24,7 @@ static inline void __smp_threshold_inter
+ 	mce_threshold_vector();
+ }
+ 
+-asmlinkage __visible void __irq_entry smp_threshold_interrupt(void)
++asmlinkage __visible void __irq_entry smp_threshold_interrupt(struct pt_regs *regs)
+ {
+ 	entering_irq();
+ 	__smp_threshold_interrupt();

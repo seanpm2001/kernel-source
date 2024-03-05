@@ -1,0 +1,49 @@
+From 5f02a30eac5cc1c081cbdb42d19fd0ded00b0618 Mon Sep 17 00:00:00 2001
+From: Yang Li <yang.lee@linux.alibaba.com>
+Date: Fri, 14 Jul 2023 10:55:28 +0800
+Subject: [PATCH] jbd2: remove unused function '__cp_buffer_busy'
+Git-commit: 5f02a30eac5cc1c081cbdb42d19fd0ded00b0618
+Patch-mainline: v6.6-rc1
+References: bsc#1215162
+
+The code calling function '__cp_buffer_busy' has been removed, so the
+function should also be removed.
+silence the warning:
+fs/jbd2/checkpoint.c:48:20: warning: unused function '__cp_buffer_busy'
+
+Reported-by: Abaci Robot <abaci@linux.alibaba.com>
+Closes: https://bugzilla.openanolis.cn/show_bug.cgi?id=5518
+Signed-off-by: Yang Li <yang.lee@linux.alibaba.com>
+Reviewed-by: Jan Kara <jack@suse.cz>
+Link: https://lore.kernel.org/r/20230714025528.564988-4-yi.zhang@huaweicloud.com
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Acked-by: Jan Kara <jack@suse.cz>
+
+---
+ fs/jbd2/checkpoint.c |   15 ---------------
+ 1 file changed, 15 deletions(-)
+
+--- a/fs/jbd2/checkpoint.c
++++ b/fs/jbd2/checkpoint.c
+@@ -44,21 +44,6 @@ static inline void __buffer_unlink(struc
+ }
+ 
+ /*
+- * Try to release a checkpointed buffer from its transaction.
+- * Returns 1 if we released it and 2 if we also released the
+- * whole transaction.
+- *
+- * Requires j_list_lock
+- */
+-static inline bool __cp_buffer_busy(struct journal_head *jh)
+-{
+-	struct buffer_head *bh = jh2bh(jh);
+-
+-	return jh->b_transaction || buffer_locked(bh) || buffer_dirty(bh) ||
+-	       buffer_write_io_error(bh);
+-}
+-
+-/*
+  * __jbd2_log_wait_for_space: wait until there is space in the journal.
+  *
+  * Called under j-state_lock *only*.  It will be unlocked if we have to wait

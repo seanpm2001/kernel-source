@@ -1,0 +1,51 @@
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Fri, 19 Nov 2021 10:29:47 +0100
+Subject: x86: Pin task-stack in __get_wchan()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Git-commit: 0dc636b3b757a6b747a156de613275f9d74a4a66
+Patch-mainline: v5.16-rc2
+References: git-fixes
+
+When commit 5d1ceb3969b6 ("x86: Fix __get_wchan() for !STACKTRACE")
+moved from stacktrace to native unwind_*() usage, the
+try_get_task_stack() got lost, leading to use-after-free issues for
+dying tasks.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Fixes: 5d1ceb3969b6 ("x86: Fix __get_wchan() for !STACKTRACE")
+Link: https://bugzilla.kernel.org/show_bug.cgi?id=215031
+Link: https://lore.kernel.org/stable/YZV02RCRVHIa144u@fedora64.linuxtx.org/
+Reported-by: Justin Forbes <jmforbes@linuxtx.org>
+Reported-by: Holger Hoffstätte <holger@applied-asynchrony.com>
+Cc: Qi Zheng <zhengqi.arch@bytedance.com>
+Cc: Kees Cook <keescook@chromium.org>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Acked-by: Nikolay Borisov <nik.borisov@suse.com>
+---
+ arch/x86/kernel/process.c |    5 +++++
+ 1 file changed, 5 insertions(+)
+
+--- a/arch/x86/kernel/process.c
++++ b/arch/x86/kernel/process.c
+@@ -795,6 +795,9 @@ unsigned long get_wchan(struct task_stru
+ 	if (p == current || p->state == TASK_RUNNING)
+ 		return 0;
+ 
++	if (!try_get_task_stack(p))
++		return 0;
++
+ 	for (unwind_start(&state, p, NULL, NULL); !unwind_done(&state);
+ 	     unwind_next_frame(&state)) {
+ 		addr = unwind_get_return_address(&state);
+@@ -805,6 +808,8 @@ unsigned long get_wchan(struct task_stru
+ 		break;
+ 	}
+ 
++	put_task_stack(p);
++
+ 	return addr;
+ }
+ 

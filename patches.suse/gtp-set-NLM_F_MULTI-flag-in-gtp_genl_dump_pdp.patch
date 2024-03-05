@@ -1,0 +1,60 @@
+From 2e99dd047e6b180ac5698d9dbe594502e4a6eccc Mon Sep 17 00:00:00 2001
+From: Yoshiyuki Kurauchi <ahochauwaaaaa@gmail.com>
+Date: Thu, 30 Apr 2020 14:01:36 +0900
+Subject: [PATCH 5/6] gtp: set NLM_F_MULTI flag in gtp_genl_dump_pdp()
+Git-commit: 846c68f7f1ac82c797a2f1db3344a2966c0fe2e1
+References: git-fixes
+Patch-mainline: v5.7-rc5
+
+In drivers/net/gtp.c, gtp_genl_dump_pdp() should set NLM_F_MULTI
+flag since it returns multipart message.
+This patch adds a new arg "flags" in gtp_genl_fill_info() so that
+flags can be set by the callers.
+
+Signed-off-by: Yoshiyuki Kurauchi <ahochauwaaaaa@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/gtp.c | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/gtp.c b/drivers/net/gtp.c
+index 8c41a20c60a6..6e4d9ac08c9f 100644
+--- a/drivers/net/gtp.c
++++ b/drivers/net/gtp.c
+@@ -1159,11 +1159,11 @@ static int gtp_genl_del_pdp(struct sk_buff *skb, struct genl_info *info)
+ static struct genl_family gtp_genl_family;
+ 
+ static int gtp_genl_fill_info(struct sk_buff *skb, u32 snd_portid, u32 snd_seq,
+-			      u32 type, struct pdp_ctx *pctx)
++			      int flags, u32 type, struct pdp_ctx *pctx)
+ {
+ 	void *genlh;
+ 
+-	genlh = genlmsg_put(skb, snd_portid, snd_seq, &gtp_genl_family, 0,
++	genlh = genlmsg_put(skb, snd_portid, snd_seq, &gtp_genl_family, flags,
+ 			    type);
+ 	if (genlh == NULL)
+ 		goto nlmsg_failure;
+@@ -1218,8 +1218,8 @@ static int gtp_genl_get_pdp(struct sk_buff *skb, struct genl_info *info)
+ 		goto err_unlock;
+ 	}
+ 
+-	err = gtp_genl_fill_info(skb2, NETLINK_CB(skb).portid,
+-				 info->snd_seq, info->nlhdr->nlmsg_type, pctx);
++	err = gtp_genl_fill_info(skb2, NETLINK_CB(skb).portid, info->snd_seq,
++				 0, info->nlhdr->nlmsg_type, pctx);
+ 	if (err < 0)
+ 		goto err_unlock_free;
+ 
+@@ -1262,6 +1262,7 @@ static int gtp_genl_dump_pdp(struct sk_buff *skb,
+ 				    gtp_genl_fill_info(skb,
+ 					    NETLINK_CB(cb->skb).portid,
+ 					    cb->nlh->nlmsg_seq,
++					    NLM_F_MULTI,
+ 					    cb->nlh->nlmsg_type, pctx)) {
+ 					cb->args[0] = i;
+ 					cb->args[1] = j;
+-- 
+2.16.4
+

@@ -1,0 +1,32 @@
+From: Heiko Carstens <hca@linux.ibm.com>
+Date: Wed, 17 Feb 2021 07:13:02 +0100
+Subject: s390/smp: __smp_rescan_cpus() - move cpumask away from stack
+Git-commit: 62c8dca9e194326802b43c60763f856d782b225c
+Patch-mainline: v5.12-rc1
+References: git-fixes bsc#1213906
+
+Avoid a potentially large stack frame and overflow by making
+"cpumask_t avail" a static variable. There is no concurrent
+access due to the existing locking.
+
+Signed-off-by: Heiko Carstens <hca@linux.ibm.com>
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Acked-by: Miroslav Franc <mfranc@suse.cz>
+---
+ arch/s390/kernel/smp.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/s390/kernel/smp.c b/arch/s390/kernel/smp.c
+index 9fa85c927a0c..3d838b7bbb3b 100644
+--- a/arch/s390/kernel/smp.c
++++ b/arch/s390/kernel/smp.c
+@@ -775,7 +775,7 @@ static int smp_add_core(struct sclp_core_entry *core, cpumask_t *avail,
+ static int __smp_rescan_cpus(struct sclp_core_info *info, bool early)
+ {
+ 	struct sclp_core_entry *core;
+-	cpumask_t avail;
++	static cpumask_t avail;
+ 	bool configured;
+ 	u16 core_id;
+ 	int nr, i;
+

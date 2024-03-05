@@ -1,0 +1,51 @@
+From 86babfe48324ef6063c9e5eba38f25453fd53993 Mon Sep 17 00:00:00 2001
+From: Florian Westphal <fw@strlen.de>
+Date: Sun, 15 Oct 2017 11:00:34 +0200
+Subject: [PATCH 5/7] netfilter: xt_connlimit: don't store address in the conn
+ nodes
+Git-commit: ce49480dba8666cba0106e8e31a942c9ce4c438a
+Patch-mainline: v4.15-rc1
+References: git-fixes
+
+Only stored, never read.  This is a leftover from commit 7d08487777c8
+("netfilter: connlimit: use rbtree for per-host conntrack obj storage"),
+which added the rbtree node struct that stores the address instead.
+
+Signed-off-by: Florian Westphal <fw@strlen.de>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/netfilter/xt_connlimit.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/net/netfilter/xt_connlimit.c b/net/netfilter/xt_connlimit.c
+index b8fd4ab762ed..89640b1a6527 100644
+--- a/net/netfilter/xt_connlimit.c
++++ b/net/netfilter/xt_connlimit.c
+@@ -46,7 +46,6 @@
+ struct xt_connlimit_conn {
+ 	struct hlist_node		node;
+ 	struct nf_conntrack_tuple	tuple;
+-	union nf_inet_addr		addr;
+ };
+ 
+ struct xt_connlimit_rb {
+@@ -126,7 +125,6 @@ static bool add_hlist(struct hlist_head *head,
+ 	if (conn == NULL)
+ 		return false;
+ 	conn->tuple = *tuple;
+-	conn->addr = *addr;
+ 	hlist_add_head(&conn->node, head);
+ 	return true;
+ }
+@@ -274,7 +272,6 @@ count_tree(struct net *net, struct rb_root *root,
+ 	}
+ 
+ 	conn->tuple = *tuple;
+-	conn->addr = *addr;
+ 	rbconn->addr = *addr;
+ 
+ 	INIT_HLIST_HEAD(&rbconn->hhead);
+-- 
+2.16.4
+

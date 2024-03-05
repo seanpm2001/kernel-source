@@ -1,0 +1,81 @@
+From 7ded429152e84831f6696585755f318fb351e67f Mon Sep 17 00:00:00 2001
+From: Nicholas Piggin <npiggin@gmail.com>
+Date: Wed, 14 Jun 2017 23:02:41 +1000
+Subject: [PATCH] cpuidle: powerpc: no memory barrier after break from idle
+
+References: PED-3947 bsc#1210544 ltc#202303
+Patch-mainline: v4.13-rc1
+Git-commit: 7ded429152e84831f6696585755f318fb351e67f
+
+A memory barrier is not required after the task wakes up,
+only if we clear the polling flag before waking. The case
+where we have work to do is the important one, so optimise
+for it.
+
+Reviewed-by: Vaidyanathan Srinivasan <svaidy@linux.vnet.ibm.com>
+Signed-off-by: Nicholas Piggin <npiggin@gmail.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ drivers/cpuidle/cpuidle-powernv.c | 11 +++++++++--
+ drivers/cpuidle/cpuidle-pseries.c | 11 +++++++++--
+ 2 files changed, 18 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/cpuidle/cpuidle-powernv.c b/drivers/cpuidle/cpuidle-powernv.c
+index 9d03326ac05e..37b0698b7193 100644
+--- a/drivers/cpuidle/cpuidle-powernv.c
++++ b/drivers/cpuidle/cpuidle-powernv.c
+@@ -59,14 +59,21 @@ static int snooze_loop(struct cpuidle_device *dev,
+ 	ppc64_runlatch_off();
+ 	HMT_very_low();
+ 	while (!need_resched()) {
+-		if (likely(snooze_timeout_en) && get_tb() > snooze_exit_time)
++		if (likely(snooze_timeout_en) && get_tb() > snooze_exit_time) {
++			/*
++			 * Task has not woken up but we are exiting the polling
++			 * loop anyway. Require a barrier after polling is
++			 * cleared to order subsequent test of need_resched().
++			 */
++			clear_thread_flag(TIF_POLLING_NRFLAG);
++			smp_mb();
+ 			break;
++		}
+ 	}
+ 
+ 	HMT_medium();
+ 	ppc64_runlatch_on();
+ 	clear_thread_flag(TIF_POLLING_NRFLAG);
+-	smp_mb();
+ 
+ 	return index;
+ }
+diff --git a/drivers/cpuidle/cpuidle-pseries.c b/drivers/cpuidle/cpuidle-pseries.c
+index a404f352d284..e9b3853d93ea 100644
+--- a/drivers/cpuidle/cpuidle-pseries.c
++++ b/drivers/cpuidle/cpuidle-pseries.c
+@@ -71,13 +71,20 @@ static int snooze_loop(struct cpuidle_device *dev,
+ 	while (!need_resched()) {
+ 		HMT_low();
+ 		HMT_very_low();
+-		if (snooze_timeout_en && get_tb() > snooze_exit_time)
++		if (likely(snooze_timeout_en) && get_tb() > snooze_exit_time) {
++			/*
++			 * Task has not woken up but we are exiting the polling
++			 * loop anyway. Require a barrier after polling is
++			 * cleared to order subsequent test of need_resched().
++			 */
++			clear_thread_flag(TIF_POLLING_NRFLAG);
++			smp_mb();
+ 			break;
++		}
+ 	}
+ 
+ 	HMT_medium();
+ 	clear_thread_flag(TIF_POLLING_NRFLAG);
+-	smp_mb();
+ 
+ 	idle_loop_epilog(in_purr);
+ 
+-- 
+2.40.0
+

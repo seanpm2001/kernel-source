@@ -1,0 +1,33 @@
+From: Martin Wilck <mwilck@suse.com>
+Subject: scsi: smartpqi: use processor ID for hwqueue for non-mq case 
+
+The out-of-tree smartpqi driver uses this logic to determine the hardware queue for 
+a given CPU. Without this patch and without blk-mq, the driver will route all IRQs
+to CPU 0 (bsc#1179310)
+
+It is also possible to simply set force_blk_mq=1 for this driver, but that caused
+regressions with I/O accounting (bsc#1205397).
+
+Patch-mainline: Never, not needed with recent kernels
+Signed-off-by: Martin Wilck <mwilck@suse.com>
+References: bsc#1189310, bsc#1205397
+
+---
+ drivers/scsi/smartpqi/smartpqi_init.c |    6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+--- a/drivers/scsi/smartpqi/smartpqi_init.c
++++ b/drivers/scsi/smartpqi/smartpqi_init.c
+@@ -5308,7 +5308,11 @@ static inline u16 pqi_get_hw_queue(struc
+ {
+ 	u16 hw_queue;
+ 
+-	hw_queue = blk_mq_unique_tag_to_hwq(blk_mq_unique_tag(scmd->request));
++	if (shost_use_blk_mq(scmd->device->host))
++		hw_queue = blk_mq_unique_tag_to_hwq(blk_mq_unique_tag(scmd->request));
++	else
++		hw_queue = smp_processor_id();
++
+ 	if (hw_queue > ctrl_info->max_hw_queue_index)
+ 		hw_queue = 0;
+ 

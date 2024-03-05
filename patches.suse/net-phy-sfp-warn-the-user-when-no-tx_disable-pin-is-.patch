@@ -1,0 +1,46 @@
+From f75eb7871319d7e81f38615ff494d64630cac2e2 Mon Sep 17 00:00:00 2001
+From: Antoine Tenart <antoine.tenart@bootlin.com>
+Date: Tue, 22 May 2018 12:17:59 +0200
+Subject: [PATCH] net: phy: sfp: warn the user when no tx_disable pin is
+ available
+Git-commit: a1f5d1f0dfccea54e1d9c2da16fd8c9b54f81a75
+Patch-mainline: v4.18-rc1
+References: git-fixes
+
+In case no Tx disable pin is available the SFP modules will always be
+emitting. This could be an issue when using modules using laser as their
+light source as we would have no way to disable it when the fiber is
+removed. This patch adds a warning when registering an SFP cage which do
+not have its tx_disable pin wired or available.
+
+Signed-off-by: Antoine Tenart <antoine.tenart@bootlin.com>
+Acked-by: Russell King <rmk+kernel@armlinux.org.uk>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/phy/sfp.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/drivers/net/phy/sfp.c b/drivers/net/phy/sfp.c
+index b025b7d2c865..7f54ff15aec4 100644
+--- a/drivers/net/phy/sfp.c
++++ b/drivers/net/phy/sfp.c
+@@ -869,6 +869,15 @@ static int sfp_probe(struct platform_device *pdev)
+ 	if (poll)
+ 		mod_delayed_work(system_wq, &sfp->poll, poll_jiffies);
+ 
++	/* We could have an issue in cases no Tx disable pin is available or
++	 * wired as modules using a laser as their light source will continue to
++	 * be active when the fiber is removed. This could be a safety issue and
++	 * we should at least warn the user about that.
++	 */
++	if (!sfp->gpio[GPIO_TX_DISABLE])
++		dev_warn(sfp->dev,
++			 "No tx_disable pin: SFP modules will always be emitting.\n");
++
+ 	return 0;
+ }
+ 
+-- 
+2.16.4
+

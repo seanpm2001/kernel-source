@@ -1,0 +1,33 @@
+From c6aa00e3d20c2767ba3f57b64eb862572b9744b3 Mon Sep 17 00:00:00 2001
+From: Alexander Aring <aahringo@redhat.com>
+Date: Fri, 21 May 2021 15:08:38 -0400
+Subject: [PATCH] fs: dlm: cancel work sync othercon
+Git-commit: c6aa00e3d20c2767ba3f57b64eb862572b9744b3
+Patch-mainline: v5.14-rc1
+References: git-fixes
+
+These rx tx flags arguments are for signaling close_connection() from
+which worker they are called. Obviously the receive worker cannot cancel
+itself and vice versa for swork. For the othercon the receive worker
+should only be used, however to avoid deadlocks we should pass the same
+flags as the original close_connection() was called.
+
+Signed-off-by: Alexander Aring <aahringo@redhat.com>
+Signed-off-by: David Teigland <teigland@redhat.com>
+Acked-by: Anthony Iliopoulos <ailiop@suse.com>
+
+---
+ fs/dlm/lowcomms.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/fs/dlm/lowcomms.c
++++ b/fs/dlm/lowcomms.c
+@@ -610,7 +610,7 @@ static void close_connection(struct conn
+ 	}
+ 	if (con->othercon && and_other) {
+ 		/* Will only re-enter once. */
+-		close_connection(con->othercon, false, true, true);
++		close_connection(con->othercon, false, tx, rx);
+ 	}
+ 	if (con->rx_page) {
+ 		__free_page(con->rx_page);

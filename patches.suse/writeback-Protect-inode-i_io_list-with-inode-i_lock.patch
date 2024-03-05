@@ -31,7 +31,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  
  	list_del_init(&inode->i_io_list);
  	wb_io_lists_depopulated(wb);
-@@ -1004,7 +1005,9 @@ void inode_io_list_del(struct inode *ino
+@@ -1010,7 +1011,9 @@ void inode_io_list_del(struct inode *ino
  	struct bdi_writeback *wb;
  
  	wb = inode_to_wb_and_lock_list(inode);
@@ -40,8 +40,8 @@ Acked-by: Jan Kara <jack@suse.cz>
 +	spin_unlock(&inode->i_lock);
  	spin_unlock(&wb->list_lock);
  }
- 
-@@ -1053,8 +1056,10 @@ void sb_clear_inode_writeback(struct ino
+ EXPORT_SYMBOL(inode_io_list_del);
+@@ -1060,8 +1063,10 @@ void sb_clear_inode_writeback(struct ino
   * the case then the inode must have been redirtied while it was being written
   * out and we don't reset its dirtied_when.
   */
@@ -53,7 +53,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  	if (!list_empty(&wb->b_dirty)) {
  		struct inode *tail;
  
-@@ -1065,6 +1070,13 @@ static void redirty_tail(struct inode *i
+@@ -1072,6 +1077,13 @@ static void redirty_tail(struct inode *i
  	inode_io_list_move_locked(inode, wb, &wb->b_dirty);
  }
  
@@ -67,7 +67,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  /*
   * requeue inode for re-scanning after bdi->b_io list is exhausted.
   */
-@@ -1275,7 +1287,7 @@ static void requeue_inode(struct inode *
+@@ -1282,7 +1294,7 @@ static void requeue_inode(struct inode *
  		 * writeback is not making progress due to locked
  		 * buffers. Skip this inode for now.
  		 */
@@ -76,7 +76,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  		return;
  	}
  
-@@ -1295,7 +1307,7 @@ static void requeue_inode(struct inode *
+@@ -1302,7 +1314,7 @@ static void requeue_inode(struct inode *
  			 * retrying writeback of the dirty page/inode
  			 * that cannot be performed immediately.
  			 */
@@ -85,7 +85,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  		}
  	} else if (inode->i_state & I_DIRTY) {
  		/*
-@@ -1303,7 +1315,7 @@ static void requeue_inode(struct inode *
+@@ -1310,7 +1322,7 @@ static void requeue_inode(struct inode *
  		 * such as delayed allocation during submission or metadata
  		 * updates after data IO completion.
  		 */
@@ -94,7 +94,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  	} else if (inode->i_state & I_DIRTY_TIME) {
  		inode->dirtied_when = jiffies;
  		inode_io_list_move_locked(inode, wb, &wb->b_dirty_time);
-@@ -1550,8 +1562,8 @@ static long writeback_sb_inodes(struct s
+@@ -1557,8 +1569,8 @@ static long writeback_sb_inodes(struct s
  		 */
  		spin_lock(&inode->i_lock);
  		if (inode->i_state & (I_NEW | I_FREEING | I_WILL_FREE)) {

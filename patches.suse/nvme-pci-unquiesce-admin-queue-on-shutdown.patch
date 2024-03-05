@@ -1,0 +1,34 @@
+From: Keith Busch <keith.busch@intel.com>
+Date: Tue, 30 Apr 2019 09:33:41 -0600
+Subject: nvme-pci: unquiesce admin queue on shutdown
+Patch-mainline: v5.2-rc1
+Git-commit: c8e9e9b7646ebe1c5066ddc420d7630876277eb4
+References: git-fixes
+
+Just like IO queues, the admin queue also will not be restarted after a
+controller shutdown. Unquiesce this queue so that we do not block
+request dispatch on a permanently disabled controller.
+
+Reported-by: Yufen Yu <yuyufen@huawei.com>
+Signed-off-by: Keith Busch <keith.busch@intel.com>
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Acked-by: Daniel Wagner <dwagner@suse.de>
+---
+ drivers/nvme/host/pci.c |    5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/drivers/nvme/host/pci.c
++++ b/drivers/nvme/host/pci.c
+@@ -2187,8 +2187,11 @@ static void nvme_dev_disable(struct nvme
+ 	 * must flush all entered requests to their failed completion to avoid
+ 	 * deadlocking blk-mq hot-cpu notifier.
+ 	 */
+-	if (shutdown)
++	if (shutdown) {
+ 		nvme_start_queues(&dev->ctrl);
++		if (dev->ctrl.admin_q && !blk_queue_dying(dev->ctrl.admin_q))
++			blk_mq_unquiesce_queue(dev->ctrl.admin_q);
++	}
+ 	mutex_unlock(&dev->shutdown_lock);
+ }
+ 

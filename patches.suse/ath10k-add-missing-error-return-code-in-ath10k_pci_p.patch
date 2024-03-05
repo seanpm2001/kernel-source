@@ -1,0 +1,50 @@
+From e2783e2f39ba99178dedfc1646d5cc0979d1bab3 Mon Sep 17 00:00:00 2001
+From: Yang Yingliang <yangyingliang@huawei.com>
+Date: Mon, 31 May 2021 17:41:28 +0300
+Subject: [PATCH] ath10k: add missing error return code in ath10k_pci_probe()
+Git-commit: e2783e2f39ba99178dedfc1646d5cc0979d1bab3
+References: git-fixes
+Patch-mainline: v5.14-rc1
+
+When chip_id is not supported, the resources will be freed
+on path err_unsupported, these resources will also be freed
+when calling ath10k_pci_remove(), it will cause double free,
+so return -ENODEV when it doesn't support the device with wrong
+chip_id.
+
+Fixes: c0c378f9907c ("ath10k: remove target soc ps code")
+Fixes: 7505f7c3ec1d ("ath10k: create a chip revision whitelist")
+Fixes: f8914a14623a ("ath10k: restore QCA9880-AR1A (v1) detection")
+Reported-by: Hulk Robot <hulkci@huawei.com>
+Signed-off-by: Yang Yingliang <yangyingliang@huawei.com>
+Signed-off-by: Kalle Valo <kvalo@codeaurora.org>
+Link: https://lore.kernel.org/r/20210522105822.1091848-3-yangyingliang@huawei.com
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/net/wireless/ath/ath10k/pci.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/drivers/net/wireless/ath/ath10k/pci.c
++++ b/drivers/net/wireless/ath/ath10k/pci.c
+@@ -3630,18 +3630,21 @@ static int ath10k_pci_probe(struct pci_d
+ 	ret = ath10k_pci_chip_reset(ar);
+ 	if (ret) {
+ 		ath10k_err(ar, "failed to reset chip: %d\n", ret);
++		ret = -ENODEV;
+ 		goto err_free_irq;
+ 	}
+ 
+ 	chip_id = ath10k_pci_soc_read32(ar, SOC_CHIP_ID_ADDRESS);
+ 	if (chip_id == 0xffffffff) {
+ 		ath10k_err(ar, "failed to get chip id\n");
++		ret = -ENODEV;
+ 		goto err_free_irq;
+ 	}
+ 
+ 	if (!ath10k_pci_chip_is_supported(pdev->device, chip_id)) {
+ 		ath10k_err(ar, "device %04x with chip_id %08x isn't supported\n",
+ 			   pdev->device, chip_id);
++		ret = -ENODEV;
+ 		goto err_free_irq;
+ 	}
+ 

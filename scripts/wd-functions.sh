@@ -34,7 +34,7 @@ get_branch_name()
     if $using_git; then
         # FIXME: guess a branch name when a non-branch revision is checked
         # out
-        local res=$(sed -ne 's|^ref: refs/heads/||p' "$scripts_dir"/../.git/HEAD 2>/dev/null)
+        local res=$(sed -ne 's|^ref: refs/heads/||p' "$(git rev-parse --git-dir)"/HEAD 2>/dev/null)
         echo "$res"
     fi
 }
@@ -60,7 +60,7 @@ _find_tarball()
             suffixes="tar.bz2"
         fi
     fi
-    for dir in . $MIRROR {/mounts,/labs,}/mirror/kernel; do
+    for dir in . $LINUX_TAR_DIR {/mounts,/labs,}/mirror/kernel; do
         for subdir in "" "/v$major" "/testing" "/v$major/testing"; do
             for suffix in $suffixes; do
                 tarball="$dir$subdir/linux-$version.$suffix"
@@ -157,6 +157,9 @@ get_tarball()
         ;;
     tar.xz)
         compress="xz"
+        if command -v 'pixz' > /dev/null ; then
+            compress='pixz'
+        fi
         ;;
     *)
         echo "Unknown compression format: $suffix" >&2

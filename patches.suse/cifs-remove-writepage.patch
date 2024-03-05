@@ -1,0 +1,52 @@
+From: Christoph Hellwig <hch@lst.de>
+Date: Wed, 16 Nov 2022 14:18:35 +0100
+Subject: [PATCH] cifs: remove ->writepage
+Git-commit: ebaad77c89921c8237ca17791d5462bd289052d0
+References: bsc#1190317
+Patch-mainline: v6.1
+
+->writepage is a very inefficient method to write back data, and only
+used through write_cache_pages or a a fallback when no ->migrate_folio
+method is present.  Now that cifs implements ->migrate_folio and
+doesn't call generic_writepages, the writepage method can be removed.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Paulo Alcantara (SUSE) <pc@cjr.nz>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/file.c |    9 ---------
+ 1 file changed, 9 deletions(-)
+
+--- a/fs/cifs/file.c
++++ b/fs/cifs/file.c
+@@ -2560,13 +2560,6 @@ retry_write:
+ 	return rc;
+ }
+ 
+-static int cifs_writepage(struct page *page, struct writeback_control *wbc)
+-{
+-	int rc = cifs_writepage_locked(page, wbc);
+-	unlock_page(page);
+-	return rc;
+-}
+-
+ static int cifs_write_end(struct file *file, struct address_space *mapping,
+ 			loff_t pos, unsigned len, unsigned copied,
+ 			struct page *page, void *fsdata)
+@@ -4955,7 +4948,6 @@ static void cifs_swap_deactivate(struct
+ const struct address_space_operations cifs_addr_ops = {
+ 	.readpage = cifs_readpage,
+ 	.readpages = cifs_readpages,
+-	.writepage = cifs_writepage,
+ 	.writepages = cifs_writepages,
+ 	.write_begin = cifs_write_begin,
+ 	.write_end = cifs_write_end,
+@@ -4980,7 +4972,6 @@ const struct address_space_operations ci
+  */
+ const struct address_space_operations cifs_addr_ops_smallbuf = {
+ 	.readpage = cifs_readpage,
+-	.writepage = cifs_writepage,
+ 	.writepages = cifs_writepages,
+ 	.write_begin = cifs_write_begin,
+ 	.write_end = cifs_write_end,

@@ -1,0 +1,109 @@
+From: Shung-Hsi Yu <shung-hsi.yu@suse.com>
+Date: Fri, 25 Aug 2023 13:30:00 +0800
+Subject: [PATCH] net: mana: add support for XDP_QUERY_PROG
+Patch-mainline: Never, old kernel
+References: jsc#SLE-18779, bsc#1214209
+
+The MANA driver is added in v5.13, when the XDP_QUERY_PROG kernel is already
+removed. However in SLE12-SP5 still expect driver to support the
+XDP_QUERY_PROG since it based on 4.12 kernel, which leads to the warning
+seen below.
+
+Luckily XDP_QUERY_PROG is easy to support. So let's just add XDP_QUERY_PROG
+support to MANA driver.
+
+  WARNING: CPU: 0 PID: 624 at ../net/core/dev.c:7029 __dev_xdp_attached+0x60/0x70
+  Modules linked in: kvm mana(X+) hyperv_fb(X+) i2c_piix4 pcspkr joydev irqbypass pci_hyperv(X) xfs libcrc32c ata_generic pata_acpi sd_mod sr_mod cdrom hid_generic crc32_pclmul crc32c_intel ghash_clmulni_intel pcbc hid_hyperv(X) hyperv_keyboard(X) hv_netvsc(X) hv_storvsc(X) scsi_transport_fc serio_raw aesni_intel ata_piix floppy hv_vmbus(X) libata aes_x86_64 crypto_simd glue_helper cryptd sunrpc dm_mirror dm_region_hash dm_log dm_mod sg scsi_transport_iscsi scsi_mod autofs4
+  Supported: Yes, External
+  CPU: 0 PID: 624 Comm: systemd-udevd Tainted: G                   4.12.14-95.102-default #1 SLE12-SP4
+  Hardware name: Microsoft Corporation Virtual Machine/Virtual Machine, BIOS 090008  02/27/2023
+  task: ffff8ffe5f51c480 task.stack: ffffacec82eb4000
+  RIP: 0010:__dev_xdp_attached+0x60/0x70
+  RSP: 0018:ffffacec82eb7860 EFLAGS: 00010282
+  RAX: 00000000ffffffa1 RBX: ffffacec82eb78a4 RCX: 0000000000000000
+  RDX: ffffacec82eb78a4 RSI: ffffacec82eb7860 RDI: ffff8ffe6a2d6000
+  RBP: ffff8ffe6a2d6000 R08: 0000000000000000 R09: ffff8ffe5efae210
+  R10: 0000000000000004 R11: 0000000000000000 R12: ffff8ffe5efae20c
+  R13: ffff8ffe5efae000 R14: 0000000000000000 R15: ffffffffc03dd080
+  FS:  00007fa5259438c0(0000) GS:ffff8ffe7fc00000(0000) knlGS:0000000000000000
+  CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+  CR2: 00007fa5257b9e24 CR3: 000000029eaee004 CR4: 00000000003606f0
+  DR0: 0000000000000000 DR1: 0000000000000000 DR2: 0000000000000000
+  DR3: 0000000000000000 DR6: 00000000fffe07f0 DR7: 0000000000000400
+  Call Trace:
+   rtnl_fill_ifinfo+0xe25/0xf60
+   ? __alloc_skb+0x87/0x260
+   rtmsg_ifinfo_build_skb+0x7f/0xe0
+   rtmsg_ifinfo_event.part.26+0x12/0x50
+   rtnetlink_event+0x50/0x70
+   notifier_call_chain+0x47/0x70
+   __netdev_upper_dev_link+0x110/0x1a0
+   netvsc_netdev_event+0x289/0x340 [hv_netvsc]
+   notifier_call_chain+0x47/0x70
+   register_netdevice+0x332/0x410
+   register_netdev+0x16/0x30
+   mana_probe+0x325/0x3f0 [mana]
+   mana_gd_probe+0x191/0x200 [mana]
+   local_pci_probe+0x44/0xb0
+   pci_device_probe+0x109/0x170
+   driver_probe_device+0x387/0x480
+   device_driver_attach+0x7a/0x80
+   __driver_attach+0xc5/0x150
+   ? device_driver_attach+0x80/0x80
+   bus_for_each_dev+0x5a/0x90
+   bus_add_driver+0xfe/0x220
+   driver_register+0x5b/0xe0
+   ? 0xffffffffc03f9000
+   do_one_initcall+0x50/0x1b0
+   do_init_module+0x5a/0x1fe
+   load_module+0x1656/0x1f10
+   ? m_show+0x1b0/0x1b0
+   ? security_capable+0x47/0x70
+   SYSC_finit_module+0x80/0xc0
+   do_syscall_64+0x74/0x160
+   entry_SYSCALL_64_after_hwframe+0x77/0xdc
+  RIP: 0033:0x7fa5247acbc9
+  RSP: 002b:00007ffeb9d8d218 EFLAGS: 00000246 ORIG_RAX: 0000000000000139
+  RAX: ffffffffffffffda RBX: 0000558192790d80 RCX: 00007fa5247acbc9
+  RDX: 0000000000000000 RSI: 00007fa524ca82fb RDI: 0000000000000007
+  RBP: 00007fa524ca82fb R08: 0000558192784aad R09: 0000000000000000
+  R10: 0000000000000006 R11: 0000000000000246 R12: 0000000000020000
+  R13: 0000000000000000 R14: 00005581927843f0 R15: 0000000000000000
+  Code: 00 c7 04 24 02 00 00 00 e8 de 6e 41 00 85 c0 78 1a 48 85 db 74 06 8b 44 24 0c 89 03 0f b6 44 24 08 48 83 c4 20 5b e9 00 71 41 00 <0f> 0b eb e2 66 66 2e 0f 1f 84 00 00 00 00 00 90 0f 1f 44 00 00 
+
+Signed-off-by: Shung-Hsi Yu <shung-hsi.yu@suse.com>
+---
+ drivers/net/ethernet/microsoft/mana/mana_bpf.c |   15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+--- a/drivers/net/ethernet/microsoft/mana/mana_bpf.c
++++ b/drivers/net/ethernet/microsoft/mana/mana_bpf.c
+@@ -145,6 +145,19 @@ static int mana_xdp_set(struct net_devic
+ 	return 0;
+ }
+ 
++static int mana_xdp_query(struct net_device *ndev)
++{
++	struct mana_port_context *apc = netdev_priv(ndev);
++	struct bpf_prog *prog;
++
++	prog = mana_xdp_get(apc);
++
++	if (prog)
++		return prog->aux->id;
++
++	return 0;
++}
++
+ int mana_bpf(struct net_device *ndev, struct netdev_bpf *bpf)
+ {
+ 	struct netlink_ext_ack *extack = bpf->extack;
+@@ -153,6 +166,8 @@ int mana_bpf(struct net_device *ndev, st
+ 	switch (bpf->command) {
+ 	case XDP_SETUP_PROG:
+ 		return mana_xdp_set(ndev, bpf->prog, extack);
++	case XDP_QUERY_PROG:
++		return mana_xdp_query(ndev);
+ 
+ 	default:
+ 		return -EOPNOTSUPP;

@@ -1,0 +1,93 @@
+From fbe2026f3ad2bc8172353f902b5a8a8998eaf198 Mon Sep 17 00:00:00 2001
+From: Oliver Neukum <oneukum@suse.com>
+Date: Wed, 7 Jun 2023 14:32:59 +0200
+Subject: [PATCH] usb: xhci: rework grace period logic
+Patch-mainline: never (kABI fixup)
+References: git-fixes
+
+Use a global variable and a global lock.
+As the time on the lock extends monotonically
+and waiting longer than necessary only cost a little energy
+we can save the kABI by going global.
+
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/usb/host/xhci-hub.c | 11 ++++++++---
+ drivers/usb/host/xhci.c     |  7 ++++++-
+ drivers/usb/host/xhci.h     |  1 -
+ 3 files changed, 14 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/usb/host/xhci-hub.c b/drivers/usb/host/xhci-hub.c
+index 9f6636170..3f21859de 100644
+--- a/drivers/usb/host/xhci-hub.c
++++ b/drivers/usb/host/xhci-hub.c
+@@ -31,6 +31,9 @@
+ #define	PORT_RWC_BITS	(PORT_CSC | PORT_PEC | PORT_WRC | PORT_OCC | \
+ 			 PORT_RC | PORT_PLC | PORT_PE)
+ 
++extern unsigned long suse_xhci_grace_period;
++extern struct spinlock suse_grace_lock;
++
+ /* USB 3 BOS descriptor and a capability descriptors, combined.
+  * Fields will be adjusted and added later in xhci_create_usb3_bos_desc()
+  */
+@@ -1457,12 +1460,14 @@ int xhci_hub_status_data(struct usb_hcd *hcd, char *buf)
+ 	 * SS devices are only visible to roothub after link training completes.
+ 	 * Keep polling roothubs for a grace period after xHC start
+ 	 */
+-	if (xhci->run_graceperiod) {
+-		if (time_before(jiffies, xhci->run_graceperiod))
++	spin_lock(&suse_grace_lock);
++	if (suse_xhci_grace_period) {
++		if (time_before(jiffies, suse_xhci_grace_period))
+ 			status = 1;
+ 		else
+-			xhci->run_graceperiod = 0;
++			suse_xhci_grace_period = 0;
+ 	}
++	spin_unlock(&suse_grace_lock);
+ 
+ 	mask = PORT_CSC | PORT_PEC | PORT_OCC | PORT_PLC | PORT_WRC | PORT_CEC;
+ 
+diff --git a/drivers/usb/host/xhci.c b/drivers/usb/host/xhci.c
+index fd8c10c47..0bf07a4df 100644
+--- a/drivers/usb/host/xhci.c
++++ b/drivers/usb/host/xhci.c
+@@ -53,6 +53,9 @@ static unsigned long long quirks;
+ module_param(quirks, ullong, S_IRUGO);
+ MODULE_PARM_DESC(quirks, "Bit flags for quirks to be enabled as default");
+ 
++unsigned long suse_xhci_grace_period = 0;
++DEFINE_SPINLOCK(suse_grace_lock);
++
+ static bool td_on_ring(struct xhci_td *td, struct xhci_ring *ring)
+ {
+ 	struct xhci_segment *seg = ring->first_seg;
+@@ -165,9 +168,11 @@ int xhci_start(struct xhci_hcd *xhci)
+ 				"waited %u microseconds.\n",
+ 				XHCI_MAX_HALT_USEC);
+ 	if (!ret) {
++		spin_lock_irq(&suse_grace_lock);
+ 		/* clear state flags. Including dying, halted or removing */
+ 		xhci->xhc_state = 0;
+-		xhci->run_graceperiod = jiffies + msecs_to_jiffies(500);
++		suse_xhci_grace_period = jiffies + msecs_to_jiffies(500);
++		spin_unlock_irq(&suse_grace_lock);
+ 	}
+ 
+ 	return ret;
+diff --git a/drivers/usb/host/xhci.h b/drivers/usb/host/xhci.h
+index 30a17a4fd..87e2fb20d 100644
+--- a/drivers/usb/host/xhci.h
++++ b/drivers/usb/host/xhci.h
+@@ -1810,7 +1810,6 @@ struct xhci_hcd {
+ 
+ 	/* Host controller watchdog timer structures */
+ 	unsigned int		xhc_state;
+-	unsigned long		run_graceperiod;
+ 	u32			command;
+ 	struct s3_save		s3;
+ /* Host controller is dying - not responding to commands. "I'm not dead yet!"
+-- 
+2.40.1
+

@@ -1,0 +1,45 @@
+From b5f0e7a99cce7c47ff6ebb3035192b173d361ffd Mon Sep 17 00:00:00 2001
+From: Li RongQing <lirongqing@baidu.com>
+Date: Tue, 19 Jun 2018 17:23:17 +0800
+Subject: [PATCH 1/2] net: propagate dev_get_valid_name return code
+References: git-fixes
+Patch-mainline: v4.18-rc2
+Git-commit: 7892bd081045222b9e4027fec279a28d6fe7aa66
+
+if dev_get_valid_name failed, propagate its return code
+
+and remove the setting err to ENODEV, it will be set to
+0 again before dev_change_net_namespace exits.
+
+Signed-off-by: Li RongQing <lirongqing@baidu.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/core/dev.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/net/core/dev.c b/net/core/dev.c
+index 1213a4ac3a49..721f0abf1741 100644
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -9153,7 +9153,8 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
+ 		/* We get here if we can't use the current device name */
+ 		if (!pat)
+ 			goto out;
+-		if (dev_get_valid_name(net, dev, pat) < 0)
++		err = dev_get_valid_name(net, dev, pat);
++		if (err < 0)
+ 			goto out;
+ 	}
+ 
+@@ -9165,7 +9166,6 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
+ 	dev_close(dev);
+ 
+ 	/* And unlink it from device chain */
+-	err = -ENODEV;
+ 	unlist_netdevice(dev);
+ 
+ 	synchronize_net();
+-- 
+2.16.4
+

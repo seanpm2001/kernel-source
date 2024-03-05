@@ -1,0 +1,42 @@
+From 43f3b19e73558b26296c4be495624f3d4e61af99 Mon Sep 17 00:00:00 2001
+From: Michal Suchanek <msuchanek@suse.de>
+Date: Fri, 15 May 2020 18:05:55 +0200
+Subject: [PATCH] libnvdimm: cover up changes in struct nvdimm_bus_descriptor 
+
+References: git-fixes 
+Patch-mainline: never, kabi
+
+struct nvdimm_bus_descriptor is defined in include/linux/libnvdimm.h.
+Functions using this structure are exported and the structure might be
+exported to user space as kernel headers.
+This patch is to keep the KABI consistency of struct
+nvdimm_bus_descriptor.
+
+Signed-off-by: Coly Li <colyli@suse.de> 
+---
+---
+ include/linux/libnvdimm.h |    6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+--- a/include/linux/libnvdimm.h
++++ b/include/linux/libnvdimm.h
+@@ -85,8 +85,6 @@ struct nvdimm_bus_descriptor {
+ 	const struct attribute_group **attr_groups;
+ 	unsigned long bus_dsm_mask;
+ 	unsigned long cmd_mask;
+-	unsigned long dimm_family_mask;
+-	unsigned long bus_family_mask;
+ 	struct module *module;
+ 	char *provider_name;
+ 	struct device_node *of_node;
+@@ -94,6 +92,10 @@ struct nvdimm_bus_descriptor {
+ 	int (*flush_probe)(struct nvdimm_bus_descriptor *nd_desc);
+ 	int (*clear_to_send)(struct nvdimm_bus_descriptor *nd_desc,
+ 			struct nvdimm *nvdimm, unsigned int cmd, void *data);
++#ifndef __GENKSYMS__
++	unsigned long dimm_family_mask;
++	unsigned long bus_family_mask;
++#endif
+ };
+ 
+ struct nd_cmd_desc {

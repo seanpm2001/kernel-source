@@ -1,0 +1,148 @@
+From 7f2462acb6a995f2b0005192c0ba8eb2bce08da4 Mon Sep 17 00:00:00 2001
+From: Masahiro Yamada <yamada.masahiro@socionext.com>
+Date: Tue, 6 Sep 2016 20:21:50 +0900
+Subject: [PATCH] powerpc: Squash lines for simple wrapper functions
+
+References: bsc#1065729
+Patch-mainline: v4.14-rc1
+Git-commit: 7f2462acb6a995f2b0005192c0ba8eb2bce08da4
+
+Remove unneeded variables and assignments.
+
+Signed-off-by: Masahiro Yamada <yamada.masahiro@socionext.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Acked-by: Michal Suchanek <msuchanek@suse.de>
+---
+ arch/powerpc/kernel/ptrace.c            | 42 +++++++------------------
+ arch/powerpc/platforms/ps3/repository.c | 22 +++----------
+ 2 files changed, 17 insertions(+), 47 deletions(-)
+
+diff --git a/arch/powerpc/kernel/ptrace.c b/arch/powerpc/kernel/ptrace.c
+index 660ed39e9c9a..07cd22e35405 100644
+--- a/arch/powerpc/kernel/ptrace.c
++++ b/arch/powerpc/kernel/ptrace.c
+@@ -1594,11 +1594,8 @@ static int ppr_get(struct task_struct *target,
+ 		      unsigned int pos, unsigned int count,
+ 		      void *kbuf, void __user *ubuf)
+ {
+-	int ret;
+-
+-	ret = user_regset_copyout(&pos, &count, &kbuf, &ubuf,
+-				&target->thread.ppr, 0, sizeof(u64));
+-	return ret;
++	return user_regset_copyout(&pos, &count, &kbuf, &ubuf,
++				   &target->thread.ppr, 0, sizeof(u64));
+ }
+ 
+ static int ppr_set(struct task_struct *target,
+@@ -1606,11 +1603,8 @@ static int ppr_set(struct task_struct *target,
+ 		      unsigned int pos, unsigned int count,
+ 		      const void *kbuf, const void __user *ubuf)
+ {
+-	int ret;
+-
+-	ret = user_regset_copyin(&pos, &count, &kbuf, &ubuf,
+-				&target->thread.ppr, 0, sizeof(u64));
+-	return ret;
++	return user_regset_copyin(&pos, &count, &kbuf, &ubuf,
++				  &target->thread.ppr, 0, sizeof(u64));
+ }
+ 
+ static int dscr_get(struct task_struct *target,
+@@ -1618,22 +1612,16 @@ static int dscr_get(struct task_struct *target,
+ 		      unsigned int pos, unsigned int count,
+ 		      void *kbuf, void __user *ubuf)
+ {
+-	int ret;
+-
+-	ret = user_regset_copyout(&pos, &count, &kbuf, &ubuf,
+-				&target->thread.dscr, 0, sizeof(u64));
+-	return ret;
++	return user_regset_copyout(&pos, &count, &kbuf, &ubuf,
++				   &target->thread.dscr, 0, sizeof(u64));
+ }
+ static int dscr_set(struct task_struct *target,
+ 		      const struct user_regset *regset,
+ 		      unsigned int pos, unsigned int count,
+ 		      const void *kbuf, const void __user *ubuf)
+ {
+-	int ret;
+-
+-	ret = user_regset_copyin(&pos, &count, &kbuf, &ubuf,
+-				&target->thread.dscr, 0, sizeof(u64));
+-	return ret;
++	return user_regset_copyin(&pos, &count, &kbuf, &ubuf,
++				  &target->thread.dscr, 0, sizeof(u64));
+ }
+ #endif
+ #ifdef CONFIG_PPC_BOOK3S_64
+@@ -1642,22 +1630,16 @@ static int tar_get(struct task_struct *target,
+ 		      unsigned int pos, unsigned int count,
+ 		      void *kbuf, void __user *ubuf)
+ {
+-	int ret;
+-
+-	ret = user_regset_copyout(&pos, &count, &kbuf, &ubuf,
+-				&target->thread.tar, 0, sizeof(u64));
+-	return ret;
++	return user_regset_copyout(&pos, &count, &kbuf, &ubuf,
++				   &target->thread.tar, 0, sizeof(u64));
+ }
+ static int tar_set(struct task_struct *target,
+ 		      const struct user_regset *regset,
+ 		      unsigned int pos, unsigned int count,
+ 		      const void *kbuf, const void __user *ubuf)
+ {
+-	int ret;
+-
+-	ret = user_regset_copyin(&pos, &count, &kbuf, &ubuf,
+-				&target->thread.tar, 0, sizeof(u64));
+-	return ret;
++	return user_regset_copyin(&pos, &count, &kbuf, &ubuf,
++				  &target->thread.tar, 0, sizeof(u64));
+ }
+ 
+ static int ebb_active(struct task_struct *target,
+diff --git a/arch/powerpc/platforms/ps3/repository.c b/arch/powerpc/platforms/ps3/repository.c
+index 814a7eaa7769..50dbaf24b1ee 100644
+--- a/arch/powerpc/platforms/ps3/repository.c
++++ b/arch/powerpc/platforms/ps3/repository.c
+@@ -170,14 +170,8 @@ int ps3_repository_read_bus_str(unsigned int bus_index, const char *bus_str,
+ 
+ int ps3_repository_read_bus_id(unsigned int bus_index, u64 *bus_id)
+ {
+-	int result;
+-
+-	result = read_node(PS3_LPAR_ID_PME,
+-		make_first_field("bus", bus_index),
+-		make_field("id", 0),
+-		0, 0,
+-		bus_id, NULL);
+-	return result;
++	return read_node(PS3_LPAR_ID_PME, make_first_field("bus", bus_index),
++			 make_field("id", 0), 0, 0, bus_id, NULL);
+ }
+ 
+ int ps3_repository_read_bus_type(unsigned int bus_index,
+@@ -224,15 +218,9 @@ int ps3_repository_read_dev_str(unsigned int bus_index,
+ int ps3_repository_read_dev_id(unsigned int bus_index, unsigned int dev_index,
+ 	u64 *dev_id)
+ {
+-	int result;
+-
+-	result = read_node(PS3_LPAR_ID_PME,
+-		make_first_field("bus", bus_index),
+-		make_field("dev", dev_index),
+-		make_field("id", 0),
+-		0,
+-		dev_id, NULL);
+-	return result;
++	return read_node(PS3_LPAR_ID_PME, make_first_field("bus", bus_index),
++			 make_field("dev", dev_index), make_field("id", 0), 0,
++			 dev_id, NULL);
+ }
+ 
+ int ps3_repository_read_dev_type(unsigned int bus_index,
+-- 
+2.40.0
+

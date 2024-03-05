@@ -1,0 +1,61 @@
+From: Heiko Carstens <heiko.carstens@de.ibm.com>
+Date: Tue, 29 Oct 2019 14:09:47 +0100
+Subject: s390/time: ensure get_clock_monotonic() returns monotonic values
+Git-commit: 011620688a71f2f1fe9901dbc2479a7c01053196
+Patch-mainline: v5.5-rc1
+References: git-fixes bsc#1213911
+
+The current implementation of get_clock_monotonic() leaves it up to
+the caller to call the function with preemption disabled. The only
+core kernel caller (sched_clock) however does not disable preemption.
+
+In order to make sure that all callers of this function see monotonic
+values handle disabling preemption within the function itself.
+
+Signed-off-by: Heiko Carstens <heiko.carstens@de.ibm.com>
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Acked-by: Miroslav Franc <mfranc@suse.cz>
+---
+ arch/s390/include/asm/timex.h | 16 ++++++++++------
+ 1 file changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/arch/s390/include/asm/timex.h b/arch/s390/include/asm/timex.h
+index 0f5320617cc4..6da8885251d6 100644
+--- a/arch/s390/include/asm/timex.h
++++ b/arch/s390/include/asm/timex.h
+@@ -10,8 +10,9 @@
+ #ifndef _ASM_S390_TIMEX_H
+ #define _ASM_S390_TIMEX_H
+ 
+-#include <asm/lowcore.h>
++#include <linux/preempt.h>
+ #include <linux/time64.h>
++#include <asm/lowcore.h>
+ 
+ /* The value of the TOD clock for 1.1.1970. */
+ #define TOD_UNIX_EPOCH 0x7d91048bca000000ULL
+@@ -185,15 +186,18 @@ extern unsigned char tod_clock_base[16] __aligned(8);
+ /**
+  * get_clock_monotonic - returns current time in clock rate units
+  *
+- * The caller must ensure that preemption is disabled.
+  * The clock and tod_clock_base get changed via stop_machine.
+- * Therefore preemption must be disabled when calling this
+- * function, otherwise the returned value is not guaranteed to
+- * be monotonic.
++ * Therefore preemption must be disabled, otherwise the returned
++ * value is not guaranteed to be monotonic.
+  */
+ static inline unsigned long long get_tod_clock_monotonic(void)
+ {
+-	return get_tod_clock() - *(unsigned long long *) &tod_clock_base[1];
++	unsigned long long tod;
++
++	preempt_disable();
++	tod = get_tod_clock() - *(unsigned long long *) &tod_clock_base[1];
++	preempt_enable();
++	return tod;
+ }
+ 
+ /**
+

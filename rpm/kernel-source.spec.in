@@ -18,8 +18,8 @@
 
 %define srcversion @SRCVERSION@
 %define patchversion @PATCHVERSION@
+%define git_commit @COMMIT_FULL@
 %define variant @VARIANT@%{nil}
-%define vanilla_only @VANILLA_ONLY@
 
 %include %_sourcedir/kernel-spec-macros
 
@@ -49,10 +49,6 @@ BuildRequires:  coreutils
 BuildRequires:  fdupes
 BuildRequires:  sed
 Requires(post): coreutils sed
-Provides:       %name = %version-%source_rel
-Provides:       %name-srchash-@COMMIT_FULL@
-Provides:       linux
-Provides:       multiversion(kernel)
 Source0:        @TARBALL_URL@linux-%srcversion.tar.xz
 %if "@TARBALL_URL@" != ""
 Source1:        @TARBALL_URL@linux-%srcversion.tar.sign
@@ -62,6 +58,8 @@ Source3:        kernel-source.rpmlintrc
 Source14:       series.conf
 Source16:       guards
 Source17:       apply-patches
+Source19:       kernel-binary-conflicts
+Source20:       obsolete-kmps
 Source21:       config.conf
 Source23:       supported.conf
 Source33:       check-for-config-changes
@@ -69,7 +67,6 @@ Source35:       group-source-files.pl
 Source36:       README.PATCH-POLICY.SUSE
 Source37:       README.SUSE
 Source38:       README.KSYMS
-Source39:       config-options.changes.txt
 Source40:       source-timestamp
 Source46:       split-modules
 Source47:       modversions
@@ -109,6 +106,7 @@ Source82:       modflist
 Source83:       kernel-subpackage-build
 Source84:       kernel-subpackage-spec
 Source85:       kernel-default-base.spec.txt
+Source86:       old_changelog.txt
 Source100:      config.tar.bz2
 Source101:      config.addon.tar.bz2
 Source102:      patches.arch.tar.bz2
@@ -124,10 +122,18 @@ Source113:      patches.kabi.tar.bz2
 Source114:      patches.drm.tar.bz2
 Source120:      kabi.tar.bz2
 Source121:      sysctl.tar.bz2
+%if ! 0%{?is_kotd} || ! %{?is_kotd_qa}%{!?is_kotd_qa:0}
 BuildArch:      noarch
+%else
+ExclusiveArch:  do_not_build
+%endif
 Prefix:         /usr/src
 # Source is only complete with devel files.
 Requires:       kernel-devel%variant = %version-%source_rel
+Provides:       %name = %version-%source_rel
+Provides:       %name-srchash-%git_commit
+Provides:       linux
+Provides:       multiversion(kernel)
 # extra packages needed for building a kernel from scratch
 Recommends:     bc
 Recommends:     bison
@@ -152,7 +158,6 @@ Recommends:     kernel-install-tools
 %define _binary_payload w9.bzdio
 
 %define symbols %(set -- $([ -e %_sourcedir/extra-symbols ] && cat %_sourcedir/extra-symbols) ; echo $*)
-%define variant_symbols %(case %name in (*-rt) echo "RT" ;; esac)
 
 %define do_vanilla "%variant" == ""
 
@@ -185,7 +190,7 @@ Group:          Development/Sources
 Provides:       kernel-subpackage-macros
 
 %description -n kernel-macros
-This package provides the rpm macros and templates for Kernel Module Pakcages
+This package provides the rpm macros and templates for Kernel Module Packages
 
 %source_timestamp
 
@@ -226,17 +231,9 @@ find . -xtype l -delete -printf "deleted '%f'\n"
 if test "%srcversion" != "%kernelrelease%variant"; then
 	mv linux-%srcversion linux-%kernelrelease%variant
 fi
-%if 0%{?usrmerged}
-# fix MODLIB so kmps install to /usr
-sed -ie 's,/lib/modules/,%{kernel_module_directory}/,' linux-%kernelrelease%variant/Makefile
-%endif
 
 %if %do_vanilla
-%if %vanilla_only
-	mv \
-%else
 	cp -al \
-%endif
 	linux-%kernelrelease%variant linux-%kernelrelease-vanilla
 cd linux-%kernelrelease-vanilla
 %_sourcedir/apply-patches --vanilla %_sourcedir/series.conf %my_builddir %symbols
@@ -246,7 +243,6 @@ rm -f $(find . -name ".gitignore")
 cd ..
 %endif
 
-%if ! %vanilla_only
 cd linux-%kernelrelease%variant
 %_sourcedir/apply-patches %_sourcedir/series.conf %my_builddir %symbols
 rm -f $(find . -name ".gitignore")
@@ -257,14 +253,12 @@ fi
 # Hardlink duplicate files automatically (from package fdupes).
 %fdupes $PWD
 cd ..
-%endif
 popd
 
-%if ! %vanilla_only
 # Install the documentation and example Kernel Module Package.
 DOC=/usr/share/doc/packages/%name-%kernelrelease
 mkdir -p %buildroot/$DOC
-cp %_sourcedir/README.SUSE %_sourcedir/config-options.changes.txt %buildroot/$DOC
+cp %_sourcedir/README.SUSE %buildroot/$DOC
 ln -s $DOC/README.SUSE %buildroot/%src_install_dir/
 
 %if "%variant" == ""
@@ -287,7 +281,6 @@ perl "%_sourcedir/group-source-files.pl" \
 	-D "$OLDPWD/devel.files" -N "$OLDPWD/nondevel.files" \
 	-L "%src_install_dir"
 popd
-%endif
 
 find %{buildroot}/usr/src/linux* -type f -name '*.[ch]' -perm /0111 -exec chmod -v a-x {} +
 # OBS checks don't like /usr/bin/env in script interpreter lines
@@ -302,7 +295,6 @@ done
 ts="$(head -n1 %_sourcedir/source-timestamp)"
 find %buildroot/usr/src/linux* ! -type l | xargs touch -d "$ts"
 
-%if ! %vanilla_only
 %post
 %relink_function
 
@@ -314,28 +306,23 @@ relink linux-%kernelrelease%variant /usr/src/linux%variant
 relink linux-%kernelrelease%variant /usr/src/linux%variant
 
 %files -f nondevel.files
-%defattr(-, root, root)
 
 %files -n kernel-devel%variant -f devel.files
-%defattr(-,root,root)
 %ghost /usr/src/linux%variant
 %doc /usr/share/doc/packages/*
 
 %if "%variant" == ""
 %files -n kernel-macros
-%defattr(-,root,root)
 %{_rpmmacrodir}/macros.kernel-source
 /usr/lib/rpm/kernel-*-subpackage
 %dir /usr/lib/rpm/kernel
 /usr/lib/rpm/kernel/*
 %endif
 
-%endif
 
 %if %do_vanilla
 
 %files vanilla
-%defattr(-, root, root)
 /usr/src/linux-%kernelrelease-vanilla
 %endif
 

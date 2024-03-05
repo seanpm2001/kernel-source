@@ -1,0 +1,57 @@
+From ecaa4902439298f6b0e29f47424a86b310a9ff4f Mon Sep 17 00:00:00 2001
+From: D Scott Phillips <scott@os.amperecomputing.com>
+Date: Thu, 30 Mar 2023 17:30:54 +0300
+Subject: [PATCH] xhci: also avoid the XHCI_ZERO_64B_REGS quirk with a
+ passthrough iommu
+Git-commit: ecaa4902439298f6b0e29f47424a86b310a9ff4f
+References: git-fixes
+Patch-mainline: v6.3-rc6
+
+Previously the quirk was skipped when no iommu was present. The same
+rationale for skipping the quirk also applies in the iommu.passthrough=1
+case.
+
+Skip applying the XHCI_ZERO_64B_REGS quirk if the device's iommu domain is
+passthrough.
+
+Fixes: 12de0a35c996 ("xhci: Add quirk to zero 64bit registers on Renesas PCIe controllers")
+Cc: stable <stable@kernel.org>
+Signed-off-by: D Scott Phillips <scott@os.amperecomputing.com>
+Acked-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Mathias Nyman <mathias.nyman@linux.intel.com>
+Link: https://lore.kernel.org/r/20230330143056.1390020-2-mathias.nyman@linux.intel.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/usb/host/xhci.c |    6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+--- a/drivers/usb/host/xhci.c
++++ b/drivers/usb/host/xhci.c
+@@ -21,6 +21,7 @@
+  */
+ 
+ #include <linux/pci.h>
++#include <linux/iommu.h>
+ #include <linux/iopoll.h>
+ #include <linux/irq.h>
+ #include <linux/log2.h>
+@@ -237,6 +238,7 @@ int xhci_reset(struct xhci_hcd *xhci)
+ static void xhci_zero_64b_regs(struct xhci_hcd *xhci)
+ {
+ 	struct device *dev = xhci_to_hcd(xhci)->self.sysdev;
++	struct iommu_domain *domain;
+ 	int err, i;
+ 	u64 val;
+ 
+@@ -254,7 +256,9 @@ static void xhci_zero_64b_regs(struct xh
+ 	 * an iommu. Doing anything when there is no iommu is definitely
+ 	 * unsafe...
+ 	 */
+-	if (!(xhci->quirks & XHCI_ZERO_64B_REGS) || !dev->iommu_group)
++	domain = iommu_get_domain_for_dev(dev);
++	if (!(xhci->quirks & XHCI_ZERO_64B_REGS) || !dev->iommu_group ||
++			domain->type == IOMMU_DOMAIN_IDENTITY)
+ 		return;
+ 
+ 	xhci_info(xhci, "Zeroing 64bit base registers, expecting fault\n");

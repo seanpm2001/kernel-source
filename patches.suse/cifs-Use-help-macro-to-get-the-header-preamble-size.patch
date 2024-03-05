@@ -1,0 +1,189 @@
+From: Zhang Xiaoxu <zhangxiaoxu5@huawei.com>
+Date: Tue, 23 Aug 2022 20:52:00 +0800
+Subject: [PATCH] cifs: Use help macro to get the header preamble size
+Git-commit: 9789de8bdc92a9ec95c9bc7b43e94de91acc4460
+References: bsc#1190317
+Patch-mainline: v6.0-rc3
+
+It's better to use HEADER_PREAMBLE_SIZE because the unfolded expression
+too long. No actual functional changes, minor readability improvement.
+
+Signed-off-by: Zhang Xiaoxu <zhangxiaoxu5@huawei.com>
+Reviewed-by: Paulo Alcantara (SUSE) <pc@cjr.nz>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Acked-by: Enzo Matsumiya <ematsumiya@suse.de>
+---
+ fs/cifs/cifsencrypt.c |    2 +-
+ fs/cifs/cifsglob.h    |    1 +
+ fs/cifs/cifssmb.c     |   13 ++++++-------
+ fs/cifs/connect.c     |   20 ++++++++++----------
+ fs/cifs/transport.c   |    8 ++++----
+ 5 files changed, 22 insertions(+), 22 deletions(-)
+
+--- a/fs/cifs/cifsencrypt.c
++++ b/fs/cifs/cifsencrypt.c
+@@ -44,7 +44,7 @@ int __cifs_calc_signature(struct smb_rqs
+ 	int rc;
+ 	struct kvec *iov = rqst->rq_iov;
+ 	int n_vec = rqst->rq_nvec;
+-	int is_smb2 = server->vals->header_preamble_size == 0;
++	bool is_smb2 = HEADER_PREAMBLE_SIZE(server) == 0;
+ 
+ 	/* iov[0] is actual data and not the rfc1002 length for SMB2+ */
+ 	if (is_smb2) {
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -540,6 +540,7 @@ struct smb_version_values {
+ 
+ #define HEADER_SIZE(server) (server->vals->header_size)
+ #define MAX_HEADER_SIZE(server) (server->vals->max_header_size)
++#define HEADER_PREAMBLE_SIZE(server) (server->vals->header_preamble_size)
+ 
+ struct smb_vol {
+ 	char *username;
+--- a/fs/cifs/cifssmb.c
++++ b/fs/cifs/cifssmb.c
+@@ -1449,7 +1449,7 @@ int
+ cifs_discard_remaining_data(struct TCP_Server_Info *server)
+ {
+ 	unsigned int rfclen = server->pdu_size;
+-	int remaining = rfclen + server->vals->header_preamble_size -
++	int remaining = rfclen + HEADER_PREAMBLE_SIZE(server) -
+ 		server->total_read;
+ 
+ 	while (remaining > 0) {
+@@ -1495,8 +1495,7 @@ cifs_readv_receive(struct TCP_Server_Inf
+ 	unsigned int data_offset, data_len;
+ 	struct cifs_readdata *rdata = mid->callback_data;
+ 	char *buf = server->smallbuf;
+-	unsigned int buflen = server->pdu_size +
+-		server->vals->header_preamble_size;
++	unsigned int buflen = server->pdu_size + HEADER_PREAMBLE_SIZE(server);
+ 	bool use_rdma_mr = false;
+ 
+ 	cifs_dbg(FYI, "%s: mid=%llu offset=%llu bytes=%u\n",
+@@ -1530,10 +1529,10 @@ cifs_readv_receive(struct TCP_Server_Inf
+ 
+ 	/* set up first two iov for signature check and to get credits */
+ 	rdata->iov[0].iov_base = buf;
+-	rdata->iov[0].iov_len = server->vals->header_preamble_size;
+-	rdata->iov[1].iov_base = buf + server->vals->header_preamble_size;
++	rdata->iov[0].iov_len = HEADER_PREAMBLE_SIZE(server);
++	rdata->iov[1].iov_base = buf + HEADER_PREAMBLE_SIZE(server);
+ 	rdata->iov[1].iov_len =
+-		server->total_read - server->vals->header_preamble_size;
++		server->total_read - HEADER_PREAMBLE_SIZE(server);
+ 	cifs_dbg(FYI, "0: iov_base=%p iov_len=%zu\n",
+ 		 rdata->iov[0].iov_base, rdata->iov[0].iov_len);
+ 	cifs_dbg(FYI, "1: iov_base=%p iov_len=%zu\n",
+@@ -1558,7 +1557,7 @@ cifs_readv_receive(struct TCP_Server_Inf
+ 	}
+ 
+ 	data_offset = server->ops->read_data_offset(buf) +
+-		server->vals->header_preamble_size;
++		HEADER_PREAMBLE_SIZE(server);
+ 	if (data_offset < server->total_read) {
+ 		/*
+ 		 * win2k8 sometimes sends an offset of 0 when the read
+--- a/fs/cifs/connect.c
++++ b/fs/cifs/connect.c
+@@ -996,7 +996,7 @@ smb2_get_credits_from_hdr(char *buffer,
+ 	/*
+ 	 * SMB1 does not use credits.
+ 	 */
+-	if (server->vals->header_preamble_size)
++	if (HEADER_PREAMBLE_SIZE(server))
+ 		return 0;
+ 
+ 	return le16_to_cpu(shdr->CreditRequest);
+@@ -1128,7 +1128,7 @@ standard_receive3(struct TCP_Server_Info
+ 
+ 	/* make sure this will fit in a large buffer */
+ 	if (pdu_length > CIFSMaxBufSize + MAX_HEADER_SIZE(server) -
+-		server->vals->header_preamble_size) {
++	    HEADER_PREAMBLE_SIZE(server)) {
+ 		cifs_server_dbg(VFS, "SMB response too long (%u bytes)\n", pdu_length);
+ 		cifs_reconnect(server);
+ 		return -ECONNABORTED;
+@@ -1143,8 +1143,8 @@ standard_receive3(struct TCP_Server_Info
+ 
+ 	/* now read the rest */
+ 	length = cifs_read_from_socket(server, buf + HEADER_SIZE(server) - 1,
+-				       pdu_length - HEADER_SIZE(server) + 1
+-				       + server->vals->header_preamble_size);
++				       pdu_length - HEADER_SIZE(server) + 1 +
++				       HEADER_PREAMBLE_SIZE(server));
+ 
+ 	if (length < 0)
+ 		return length;
+@@ -1200,7 +1200,7 @@ smb2_add_credits_from_hdr(char *buffer,
+ 	/*
+ 	 * SMB1 does not use credits.
+ 	 */
+-	if (server->vals->header_preamble_size)
++	if (HEADER_PREAMBLE_SIZE(server))
+ 		return;
+ 
+ 	if (shdr->CreditRequest) {
+@@ -1256,7 +1256,7 @@ cifs_demultiplex_thread(void *p)
+ 		if (length < 0)
+ 			continue;
+ 
+-		if (server->vals->header_preamble_size == 0)
++		if (HEADER_PREAMBLE_SIZE(server) == 0)
+ 			server->total_read = 0;
+ 		else
+ 			server->total_read = length;
+@@ -1275,7 +1275,7 @@ next_pdu:
+ 
+ 		/* make sure we have enough to get to the MID */
+ 		if (server->pdu_size < HEADER_SIZE(server) - 1 -
+-		    server->vals->header_preamble_size) {
++		    HEADER_PREAMBLE_SIZE(server)) {
+ 			cifs_server_dbg(VFS, "SMB response too short (%u bytes)\n",
+ 				 server->pdu_size);
+ 			cifs_reconnect(server);
+@@ -1284,9 +1284,9 @@ next_pdu:
+ 
+ 		/* read down to the MID */
+ 		length = cifs_read_from_socket(server,
+-			     buf + server->vals->header_preamble_size,
+-			     HEADER_SIZE(server) - 1
+-			     - server->vals->header_preamble_size);
++			     buf + HEADER_PREAMBLE_SIZE(server),
++			     HEADER_SIZE(server) - 1 -
++			     HEADER_PREAMBLE_SIZE(server));
+ 		if (length < 0)
+ 			continue;
+ 		server->total_read += length;
+--- a/fs/cifs/transport.c
++++ b/fs/cifs/transport.c
+@@ -271,8 +271,8 @@ smb_rqst_len(struct TCP_Server_Info *ser
+ 	int nvec;
+ 	unsigned long buflen = 0;
+ 
+-	if (server->vals->header_preamble_size == 0 &&
+-	    rqst->rq_nvec >= 2 && rqst->rq_iov[0].iov_len == 4) {
++	if (HEADER_PREAMBLE_SIZE(server) == 0 && rqst->rq_nvec >= 2 &&
++	    rqst->rq_iov[0].iov_len == 4) {
+ 		iov = &rqst->rq_iov[1];
+ 		nvec = rqst->rq_nvec - 1;
+ 	} else {
+@@ -358,7 +358,7 @@ __smb_send_rqst(struct TCP_Server_Info *
+ 	sigprocmask(SIG_BLOCK, &mask, &oldmask);
+ 
+ 	/* Generate a rfc1002 marker for SMB2+ */
+-	if (server->vals->header_preamble_size == 0) {
++	if (HEADER_PREAMBLE_SIZE(server) == 0) {
+ 		struct kvec hiov = {
+ 			.iov_base = &rfc1002_marker,
+ 			.iov_len  = 4
+@@ -1198,7 +1198,7 @@ compound_send_recv(const unsigned int xi
+ 		buf = (char *)midQ[i]->resp_buf;
+ 		resp_iov[i].iov_base = buf;
+ 		resp_iov[i].iov_len = midQ[i]->resp_buf_size +
+-			server->vals->header_preamble_size;
++			HEADER_PREAMBLE_SIZE(server);
+ 
+ 		if (midQ[i]->large_buf)
+ 			resp_buf_type[i] = CIFS_LARGE_BUFFER;

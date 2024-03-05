@@ -1,0 +1,43 @@
+From: Douglas Anderson <dianders@chromium.org>
+Date: Mon, 20 Apr 2020 09:24:54 -0700
+Subject: Revert "scsi: core: run queue if SCSI device queue isn't ready and
+ queue is idle"
+Git-commit: b4fd63f42647110c963d4bfcd526ac48f5a5faff
+Patch-mainline: v5.8-rc1
+References: git-fixes
+
+This reverts commit 7e70aa789d4a0c89dbfbd2c8a974a4df717475ec.
+
+Now that we have the patches ("blk-mq: In blk_mq_dispatch_rq_list()
+"no budget" is a reason to kick") and ("blk-mq: Rerun dispatching in
+the case of budget contention") we should no longer need the fix in
+the SCSI code.  Revert it, resolving conflicts with other patches that
+have touched this code.
+
+With this revert (and the two new patches) I can run the script that
+was in commit 7e70aa789d4a ("scsi: core: run queue if SCSI device
+queue isn't ready and queue is idle") in a loop with no failure.  If I
+do this revert without the two new patches I can easily get a failure.
+
+[lduncan: hand applied since our code base is a little different.]
+
+Signed-off-by: Douglas Anderson <dianders@chromium.org>
+Reviewed-by: Ming Lei <ming.lei@redhat.com>
+Acked-by: Martin K. Petersen <martin.petersen@oracle.com>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Acked-by: Lee Duncan <lduncan@suse.com>
+---
+ drivers/scsi/scsi_lib.c |    2 --
+ 1 file changed, 2 deletions(-)
+
+--- a/drivers/scsi/scsi_lib.c
++++ b/drivers/scsi/scsi_lib.c
+@@ -2034,8 +2034,6 @@ static bool scsi_mq_get_budget(struct bl
+ out_put_device:
+ 	put_device(&sdev->sdev_gendev);
+ out:
+-	if (atomic_read(&sdev->device_busy) == 0 && !scsi_device_blocked(sdev))
+-		blk_mq_delay_run_hw_queue(hctx, SCSI_QUEUE_DELAY);
+ 	return false;
+ }
+ 

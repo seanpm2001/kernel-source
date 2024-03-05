@@ -11,25 +11,26 @@ Signed-off-by: Saurav Kashyap <skashyap@marvell.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
 Acked-by: Lee Duncan <lduncan@suse.com>
 ---
- drivers/scsi/qedf/qedf_io.c | 26 +++++++++++---------------
- 1 file changed, 11 insertions(+), 15 deletions(-)
+ drivers/scsi/qedf/qedf_io.c |   20 ++++++++++----------
+ 1 file changed, 10 insertions(+), 10 deletions(-)
 
-diff --git a/drivers/scsi/qedf/qedf_io.c b/drivers/scsi/qedf/qedf_io.c
-index db5d49e72652..b359ae3b78b5 100644
 --- a/drivers/scsi/qedf/qedf_io.c
 +++ b/drivers/scsi/qedf/qedf_io.c
-@@ -2294,17 +2294,14 @@ static int qedf_execute_tmf(struct qedf_
+@@ -2297,13 +2297,8 @@ static int qedf_execute_tmf(struct qedf_
  	if (!test_bit(QEDF_RPORT_SESSION_READY, &fcport->flags)) {
  		QEDF_ERR(&(qedf->dbg_ctx), "fcport not offloaded\n");
  		rc = FAILED;
 -		return FAILED;
-+		goto no_flush;
  	}
  
--	QEDF_INFO(&(qedf->dbg_ctx), QEDF_LOG_SCSI_TM, "portid = 0x%x "
--		   "tm_flags = %d\n", fcport->rdata->ids.port_id, tm_flags);
--
- 	io_req = qedf_alloc_cmd(fcport, QEDF_TASK_MGMT_CMD);
+-	if (!rdata || !kref_get_unless_zero(&rdata->kref)) {
+-		QEDF_INFO(&qedf->dbg_ctx, QEDF_LOG_SCSI_TM, "stale rport\n");
+-		return FAILED;
+-	}
+ 	QEDF_INFO(&qedf->dbg_ctx, QEDF_LOG_SCSI_TM,
+ 		  "portid = 0x%x tm_flags = %d\n",
+ 		  rdata->ids.port_id, tm_flags);
+@@ -2312,7 +2307,7 @@ static int qedf_execute_tmf(struct qedf_
  	if (!io_req) {
  		QEDF_ERR(&(qedf->dbg_ctx), "Failed TMF");
  		rc = -EAGAIN;
@@ -38,15 +39,16 @@ index db5d49e72652..b359ae3b78b5 100644
  	}
  
  	if (tm_flags == FCP_TMF_LUN_RESET)
-@@ -2393,7 +2390,6 @@ no_flush:
+@@ -2401,8 +2396,6 @@ static int qedf_execute_tmf(struct qedf_
  		QEDF_ERR(&(qedf->dbg_ctx), "task mgmt command success...\n");
  		rc = SUCCESS;
  	}
 -reset_tmf_err:
+-	kref_put(&rdata->kref, fc_rport_destroy);
  	return rc;
  }
  
-@@ -2405,7 +2394,7 @@ int qedf_initiate_tmf(struct scsi_cmnd *sc_cmd, u8 tm_flags)
+@@ -2450,7 +2443,7 @@ int qedf_initiate_tmf(struct scsi_cmnd *
  
  	rc = fc_block_scsi_eh(sc_cmd);
  	if (rc)
@@ -55,7 +57,7 @@ index db5d49e72652..b359ae3b78b5 100644
  
  	if (!fcport) {
  		QEDF_ERR(NULL, "device_reset: rport is NULL\n");
-@@ -2442,7 +2431,13 @@ int qedf_initiate_tmf(struct scsi_cmnd *sc_cmd, u8 tm_flags)
+@@ -2487,7 +2480,13 @@ int qedf_initiate_tmf(struct scsi_cmnd *
  	}
  
  	if (test_bit(QEDF_RPORT_UPLOADING_CONNECTION, &fcport->flags)) {
@@ -70,7 +72,7 @@ index db5d49e72652..b359ae3b78b5 100644
  		rc = FAILED;
  		goto tmf_err;
  	}
-@@ -2450,6 +2445,7 @@ int qedf_initiate_tmf(struct scsi_cmnd *sc_cmd, u8 tm_flags)
+@@ -2495,6 +2494,7 @@ int qedf_initiate_tmf(struct scsi_cmnd *
  	rc = qedf_execute_tmf(fcport, sc_cmd, tm_flags);
  
  tmf_err:
@@ -78,4 +80,3 @@ index db5d49e72652..b359ae3b78b5 100644
  	return rc;
  }
  
-

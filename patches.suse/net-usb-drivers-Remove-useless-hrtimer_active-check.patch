@@ -1,0 +1,40 @@
+From 2aee167c3675b088c86f648f834e793a0085e04d Mon Sep 17 00:00:00 2001
+From: Daniel Lezcano <daniel.lezcano@linaro.org>
+Date: Tue, 19 Jun 2018 16:14:30 +0200
+Subject: [PATCH] net/usb/drivers: Remove useless hrtimer_active check
+Git-commit: 2aee167c3675b088c86f648f834e793a0085e04d
+References: git-fixes
+Patch-mainline: v4.18-rc2
+
+The code does:
+
+ if (hrtimer_active(&t))
+    hrtimer_cancel(&t);
+
+However, hrtimer_cancel() checks if the timer is active, so the
+test above is pointless.
+
+Signed-off-by: Daniel Lezcano <daniel.lezcano@linaro.org>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/net/usb/cdc_ncm.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/net/usb/cdc_ncm.c b/drivers/net/usb/cdc_ncm.c
+index b0e8b9613054..1eaec648bd1f 100644
+--- a/drivers/net/usb/cdc_ncm.c
++++ b/drivers/net/usb/cdc_ncm.c
+@@ -967,8 +967,7 @@ void cdc_ncm_unbind(struct usbnet *dev, struct usb_interface *intf)
+ 
+ 	atomic_set(&ctx->stop, 1);
+ 
+-	if (hrtimer_active(&ctx->tx_timer))
+-		hrtimer_cancel(&ctx->tx_timer);
++	hrtimer_cancel(&ctx->tx_timer);
+ 
+ 	tasklet_kill(&ctx->bh);
+ 
+-- 
+2.40.1
+

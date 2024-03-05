@@ -1,0 +1,44 @@
+From: Aditya Pakki <pakki001@umn.edu>
+Date: Mon, 18 Mar 2019 22:19:44 -0500
+Subject: nfc: Fix to check for kmemdup failure
+Patch-mainline: v5.1-rc3
+Git-commit: d7737d4257459ca8921ff911c88937be1a11ea9d
+References: bsc#1213601 CVE-2023-3863
+
+In case of kmemdup failure while setting the service name the patch
+returns -ENOMEM upstream for processing.
+
+Signed-off-by: Aditya Pakki <pakki001@umn.edu>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Lee, Chun-Yi <jlee@suse.com>
+---
+ net/nfc/llcp_sock.c |    9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+--- a/net/nfc/llcp_sock.c
++++ b/net/nfc/llcp_sock.c
+@@ -727,6 +727,10 @@ static int llcp_sock_connect(struct sock
+ 	llcp_sock->service_name = kmemdup(addr->service_name,
+ 					  llcp_sock->service_name_len,
+ 					  GFP_KERNEL);
++	if (!llcp_sock->service_name) {
++		ret = -ENOMEM;
++		goto sock_llcp_release;
++	}
+ 
+ 	nfc_llcp_sock_link(&local->connecting_sockets, sk);
+ 
+@@ -746,10 +750,11 @@ static int llcp_sock_connect(struct sock
+ 	return ret;
+ 
+ sock_unlink:
+-	nfc_llcp_put_ssap(local, llcp_sock->ssap);
+-
+ 	nfc_llcp_sock_unlink(&local->connecting_sockets, sk);
+ 
++sock_llcp_release:
++	nfc_llcp_put_ssap(local, llcp_sock->ssap);
++
+ put_dev:
+ 	nfc_put_device(dev);
+ 

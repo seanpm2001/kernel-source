@@ -1,0 +1,52 @@
+From: Borislav Petkov <bp@suse.de>
+Date: Tue, 13 Jun 2017 18:28:33 +0200
+Subject: x86/mce/mce-inject: Preset the MCE injection struct
+Git-commit: 86d2eac5a7045933a88c97f0453f22106bb90b54
+Patch-mainline: 4.13-rc1
+References: git-fixes
+
+Populate the MCE injection struct before doing initial injection so that
+values which don't change have sane defaults.
+
+[js] this is in mce_amd_inj.c yet
+
+Tested-by: Yazen Ghannam <yazen.ghannam@amd.com>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Acked-by: Yazen Ghannam <yazen.ghannam@amd.com>
+Cc: Borislav Petkov <bp@alien8.de>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: Tony Luck <tony.luck@intel.com>
+Link: http://lkml.kernel.org/r/20170613162835.30750-7-bp@alien8.de
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ arch/x86/ras/mce_amd_inj.c |    9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+--- a/arch/x86/ras/mce_amd_inj.c
++++ b/arch/x86/ras/mce_amd_inj.c
+@@ -89,6 +89,13 @@ DEFINE_SIMPLE_ATTRIBUTE(misc_fops, inj_m
+ DEFINE_SIMPLE_ATTRIBUTE(addr_fops, inj_addr_get, inj_addr_set, "%llx\n");
+ DEFINE_SIMPLE_ATTRIBUTE(synd_fops, inj_synd_get, inj_synd_set, "%llx\n");
+ 
++static void setup_inj_struct(struct mce *m)
++{
++	memset(m, 0, sizeof(struct mce));
++
++	m->cpuvendor = boot_cpu_data.x86_vendor;
++}
++
+ /*
+  * Caller needs to be make sure this cpu doesn't disappear
+  * from under us, i.e.: get_cpu/put_cpu.
+@@ -463,6 +470,8 @@ static int __init init_mce_inject(void)
+ 			goto err_dfs_add;
+ 	}
+ 
++	setup_inj_struct(&i_mce);
++
+ 	return 0;
+ 
+ err_dfs_add:

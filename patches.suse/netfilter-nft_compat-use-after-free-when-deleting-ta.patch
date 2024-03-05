@@ -1,0 +1,42 @@
+From 16cbf5bf1e8e860e91f0fd94356502ad0f083add Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Wed, 13 Feb 2019 13:03:53 +0100
+Subject: [PATCH] netfilter: nft_compat: use-after-free when deleting targets
+Git-commit: 753c111f655e38bbd52fc01321266633f022ebe2
+Patch-mainline: v5.0-rc7
+References: git-fixes
+
+Fetch pointer to module before target object is released.
+
+Fixes: 29e3880109e3 ("netfilter: nf_tables: fix use-after-free when deleting compat expressions")
+Fixes: 0ca743a55991 ("netfilter: nf_tables: add compatibility layer for x_tables")
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/netfilter/nft_compat.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/net/netfilter/nft_compat.c b/net/netfilter/nft_compat.c
+index a6799de93462..97040ee8eeb3 100644
+--- a/net/netfilter/nft_compat.c
++++ b/net/netfilter/nft_compat.c
+@@ -277,6 +277,7 @@ nft_target_destroy(const struct nft_ctx *ctx, const struct nft_expr *expr)
+ {
+ 	struct xt_target *target = expr->ops->data;
+ 	void *info = nft_expr_priv(expr);
++	struct module *me = target->me;
+ 	struct xt_tgdtor_param par;
+ 
+ 	par.net = ctx->net;
+@@ -287,7 +288,7 @@ nft_target_destroy(const struct nft_ctx *ctx, const struct nft_expr *expr)
+ 		par.target->destroy(&par);
+ 
+ 	if (nft_xt_put(container_of(expr->ops, struct nft_xt, ops)))
+-		module_put(target->me);
++		module_put(me);
+ }
+ 
+ static int nft_extension_dump_info(struct sk_buff *skb, int attr,
+-- 
+2.16.4
+

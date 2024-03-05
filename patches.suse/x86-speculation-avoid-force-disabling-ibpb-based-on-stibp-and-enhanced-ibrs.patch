@@ -1,6 +1,7 @@
 From: Anthony Steinhauser <asteinhauser@google.com>
 Date: Tue, 19 May 2020 06:40:42 -0700
-Subject: x86/speculation: Avoid force-disabling IBPB based on STIBP and enhanced IBRS.
+Subject: x86/speculation: Avoid force-disabling IBPB based on STIBP and
+ enhanced IBRS.
 Git-commit: 21998a351512eba4ed5969006f0c55882d995ada
 Patch-mainline: v5.8-rc1
 References: bsc#1172782 CVE-2020-10767
@@ -42,12 +43,12 @@ Cc: stable@vger.kernel.org
 
 Acked-by: Borislav Petkov <bp@suse.de>
 ---
- arch/x86/kernel/cpu/bugs.c |   60 +++++++++++++++++++++++++++------------------
- 1 file changed, 37 insertions(+), 23 deletions(-)
+ arch/x86/kernel/cpu/bugs.c |   87 +++++++++++++++++++++++++--------------------
+ 1 file changed, 50 insertions(+), 37 deletions(-)
 
 --- a/arch/x86/kernel/cpu/bugs.c
 +++ b/arch/x86/kernel/cpu/bugs.c
-@@ -611,7 +611,9 @@ early_param("nospectre_v1", nospectre_v1
+@@ -580,7 +580,9 @@ early_param("nospectre_v1", nospectre_v1
  static enum spectre_v2_mitigation spectre_v2_enabled __ro_after_init =
  	SPECTRE_V2_NONE;
  
@@ -58,7 +59,23 @@ Acked-by: Borislav Petkov <bp@suse.de>
  	SPECTRE_V2_USER_NONE;
  
  #ifdef CONFIG_RETPOLINE
-@@ -778,23 +780,28 @@ spectre_v2_user_select_mitigation(enum s
+@@ -726,15 +728,6 @@ spectre_v2_user_select_mitigation(enum s
+ 		break;
+ 	}
+ 
+-	/*
+-	 * At this point, an STIBP mode other than "off" has been set.
+-	 * If STIBP support is not being forced, check if STIBP always-on
+-	 * is preferred.
+-	 */
+-	if (mode != SPECTRE_V2_USER_STRICT &&
+-	    boot_cpu_has(X86_FEATURE_AMD_STIBP_ALWAYS_ON))
+-		mode = SPECTRE_V2_USER_STRICT_PREFERRED;
+-
+ 	/* Initialize Indirect Branch Prediction Barrier */
+ 	if (boot_cpu_has(X86_FEATURE_IBPB)) {
+ 		setup_force_cpu_cap(X86_FEATURE_USE_IBPB);
+@@ -757,23 +750,36 @@ spectre_v2_user_select_mitigation(enum s
  		pr_info("mitigation: Enabling %s Indirect Branch Prediction Barrier\n",
  			static_key_enabled(&switch_mm_always_ibpb) ?
  			"always-on" : "conditional");
@@ -66,7 +83,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
 +		spectre_v2_user_ibpb = mode;
  	}
  
--	/* If enhanced IBRS is enabled no STIPB required */
+-	/* If enhanced IBRS is enabled no STIBP required */
 -	if (spectre_v2_enabled == SPECTRE_V2_IBRS_ENHANCED)
 +	/*
 +	 * If enhanced IBRS is enabled or SMT impossible, STIBP is not
@@ -76,8 +93,18 @@ Acked-by: Borislav Petkov <bp@suse.de>
  		return;
  
  	/*
- 	 * If SMT is not possible or STIBP is not available clear the STIPB
- 	 * mode.
+-	 * If SMT is not possible or STIBP is not available clear the STIBP
+-	 * mode.
++	 * At this point, an STIBP mode other than "off" has been set.
++	 * If STIBP support is not being forced, check if STIBP always-on
++	 * is preferred.
++	 */
++	if (mode != SPECTRE_V2_USER_STRICT &&
++	    boot_cpu_has(X86_FEATURE_AMD_STIBP_ALWAYS_ON))
++		mode = SPECTRE_V2_USER_STRICT_PREFERRED;
++
++	/*
++	 * If STIBP is not available, clear the STIBP mode.
  	 */
 -	if (!smt_possible || !boot_cpu_has(X86_FEATURE_STIBP))
 +	if (!boot_cpu_has(X86_FEATURE_STIBP))
@@ -94,7 +121,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  }
  
  static const char * const spectre_v2_strings[] = {
-@@ -1044,7 +1051,7 @@ void arch_smt_update(void)
+@@ -1006,7 +1012,7 @@ void arch_smt_update(void)
  {
  	mutex_lock(&spec_ctrl_mutex);
  
@@ -103,7 +130,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  	case SPECTRE_V2_USER_NONE:
  		break;
  	case SPECTRE_V2_USER_STRICT:
-@@ -1279,13 +1286,15 @@ static int ib_prctl_set(struct task_stru
+@@ -1242,14 +1248,16 @@ static int ib_prctl_set(struct task_stru
  {
  	switch (ctrl) {
  	case PR_SPEC_ENABLE:
@@ -115,13 +142,15 @@ Acked-by: Borislav Petkov <bp@suse.de>
  		 * Indirect branch speculation is always disabled in strict
  		 * mode.
  		 */
--		if (spectre_v2_user == SPECTRE_V2_USER_STRICT)
+-		if (spectre_v2_user == SPECTRE_V2_USER_STRICT ||
+-		    spectre_v2_user == SPECTRE_V2_USER_STRICT_PREFERRED)
 +		if (spectre_v2_user_ibpb == SPECTRE_V2_USER_STRICT ||
-+		    spectre_v2_user_stibp == SPECTRE_V2_USER_STRICT)
++		    spectre_v2_user_stibp == SPECTRE_V2_USER_STRICT ||
++		    spectre_v2_user_stibp == SPECTRE_V2_USER_STRICT_PREFERRED)
  			return -EPERM;
  		task_clear_spec_ib_disable(task);
  		task_update_spec_tif(task);
-@@ -1296,9 +1305,11 @@ static int ib_prctl_set(struct task_stru
+@@ -1260,10 +1268,12 @@ static int ib_prctl_set(struct task_stru
  		 * Indirect branch speculation is always allowed when
  		 * mitigation is force disabled.
  		 */
@@ -129,13 +158,15 @@ Acked-by: Borislav Petkov <bp@suse.de>
 +		if (spectre_v2_user_ibpb == SPECTRE_V2_USER_NONE &&
 +		    spectre_v2_user_stibp == SPECTRE_V2_USER_NONE)
  			return -EPERM;
--		if (spectre_v2_user == SPECTRE_V2_USER_STRICT)
+-		if (spectre_v2_user == SPECTRE_V2_USER_STRICT ||
+-		    spectre_v2_user == SPECTRE_V2_USER_STRICT_PREFERRED)
 +		if (spectre_v2_user_ibpb == SPECTRE_V2_USER_STRICT ||
-+		    spectre_v2_user_stibp == SPECTRE_V2_USER_STRICT)
++		    spectre_v2_user_stibp == SPECTRE_V2_USER_STRICT ||
++		    spectre_v2_user_stibp == SPECTRE_V2_USER_STRICT_PREFERRED)
  			return 0;
  		task_set_spec_ib_disable(task);
  		if (ctrl == PR_SPEC_FORCE_DISABLE)
-@@ -1329,7 +1340,8 @@ void arch_seccomp_spec_mitigate(struct t
+@@ -1294,7 +1304,8 @@ void arch_seccomp_spec_mitigate(struct t
  {
  	if (ssb_mode == SPEC_STORE_BYPASS_SECCOMP)
  		ssb_prctl_set(task, PR_SPEC_FORCE_DISABLE);
@@ -145,7 +176,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  		ib_prctl_set(task, PR_SPEC_FORCE_DISABLE);
  }
  #endif
-@@ -1358,21 +1370,23 @@ static int ib_prctl_get(struct task_stru
+@@ -1323,22 +1334,24 @@ static int ib_prctl_get(struct task_stru
  	if (!boot_cpu_has_bug(X86_BUG_SPECTRE_V2))
  		return PR_SPEC_NOT_AFFECTED;
  
@@ -157,7 +188,8 @@ Acked-by: Borislav Petkov <bp@suse.de>
 -	case SPECTRE_V2_USER_PRCTL:
 -	case SPECTRE_V2_USER_SECCOMP:
 +	else if (spectre_v2_user_ibpb == SPECTRE_V2_USER_STRICT ||
-+	    spectre_v2_user_stibp == SPECTRE_V2_USER_STRICT)
++	    spectre_v2_user_stibp == SPECTRE_V2_USER_STRICT ||
++	    spectre_v2_user_stibp == SPECTRE_V2_USER_STRICT_PREFERRED)
 +		return PR_SPEC_DISABLE;
 +	else if (spectre_v2_user_ibpb == SPECTRE_V2_USER_PRCTL ||
 +	    spectre_v2_user_ibpb == SPECTRE_V2_USER_SECCOMP ||
@@ -169,6 +201,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  			return PR_SPEC_PRCTL | PR_SPEC_DISABLE;
  		return PR_SPEC_PRCTL | PR_SPEC_ENABLE;
 -	case SPECTRE_V2_USER_STRICT:
+-	case SPECTRE_V2_USER_STRICT_PREFERRED:
 -		return PR_SPEC_DISABLE;
 -	default:
 +	} else
@@ -177,7 +210,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  }
  
  int arch_prctl_spec_ctrl_get(struct task_struct *task, unsigned long which)
-@@ -1483,7 +1497,7 @@ static char *stibp_state(void)
+@@ -1576,7 +1589,7 @@ static char *stibp_state(void)
  	if (spectre_v2_enabled == SPECTRE_V2_IBRS_ENHANCED)
  		return "";
  

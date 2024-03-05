@@ -1,0 +1,46 @@
+From: NeilBrown <neilb@suse.de>
+Date: Tue, 24 Oct 2023 09:53:33 +1100
+Subject: Fix termination state for idr_for_each_entry_ul()
+Patch-mainline: v6.7-rc1
+Git-commit: e8ae8ad479e2d037daa33756e5e72850a7bd37a9
+References: bsc#1109837
+
+The comment for idr_for_each_entry_ul() states
+
+  after normal termination @entry is left with the value NULL
+
+This is not correct in the case where UINT_MAX has an entry in the idr.
+In that case @entry will be non-NULL after termination.
+No current code depends on the documentation being correct, but to
+save future code we should fix it.
+
+Also fix idr_for_each_entry_continue_ul().  While this is not documented
+as leaving @entry as NULL, the mellanox driver appears to depend on
+it doing so.  So make that explicit in the documentation as well as in
+the code.
+
+SUSE: Dropped second hunk, because there is no idr_for_each_entry_continue_ul()
+      in SLE12-SP5
+
+Fixes: e33d2b74d805 ("idr: fix overflow case for idr_for_each_entry_ul()")
+Cc: Matthew Wilcox <willy@infradead.org>
+Cc: Chris Mi <chrism@mellanox.com>
+Cc: Cong Wang <xiyou.wangcong@gmail.com>
+Signed-off-by: NeilBrown <neilb@suse.de>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ include/linux/idr.h |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/include/linux/idr.h
++++ b/include/linux/idr.h
+@@ -165,7 +165,7 @@ static inline void *idr_find(const struc
+  */
+ #define idr_for_each_entry_ul(idr, entry, tmp, id)			\
+ 	for (tmp = 0, id = 0;						\
+-	     tmp <= id && ((entry) = idr_get_next_ul(idr, &(id))) != NULL; \
++	     ((entry) = tmp <= id ? idr_get_next_ul(idr, &(id)) : NULL) != NULL; \
+ 	     tmp = id, ++id)
+ 
+ /**

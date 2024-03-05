@@ -1,0 +1,45 @@
+From a9799541ca34652d9996e45f80e8e03144c12949 Mon Sep 17 00:00:00 2001
+From: Johannes Berg <johannes.berg@intel.com>
+Date: Wed, 9 Jun 2021 16:13:06 +0200
+Subject: [PATCH] mac80211: drop multicast fragments
+Git-commit: a9799541ca34652d9996e45f80e8e03144c12949
+References: git-fixes
+Patch-mainline: v5.13-rc7
+
+These are not permitted by the spec, just drop them.
+
+Link: https://lore.kernel.org/r/20210609161305.23def022b750.Ibd6dd3cdce573dae262fcdc47f8ac52b883a9c50@changeid
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ net/mac80211/rx.c |    9 +++------
+ 1 file changed, 3 insertions(+), 6 deletions(-)
+
+--- a/net/mac80211/rx.c
++++ b/net/mac80211/rx.c
+@@ -2097,14 +2097,12 @@ ieee80211_rx_h_defragment(struct ieee802
+ 	sc = le16_to_cpu(hdr->seq_ctrl);
+ 	frag = sc & IEEE80211_SCTL_FRAG;
+ 
+-	if (is_multicast_ether_addr(hdr->addr1)) {
+-		I802_DEBUG_INC(rx->local->dot11MulticastReceivedFrameCount);
+-		goto out_no_led;
+-	}
+-
+ 	if (likely(!ieee80211_has_morefrags(fc) && frag == 0))
+ 		goto out;
+ 
++	if (is_multicast_ether_addr(hdr->addr1))
++		return RX_DROP_MONITOR;
++
+ 	I802_DEBUG_INC(rx->local->rx_handlers_fragments);
+ 
+ 	if (skb_linearize(rx->skb))
+@@ -2214,7 +2212,6 @@ ieee80211_rx_h_defragment(struct ieee802
+ 
+  out:
+ 	ieee80211_led_rx(rx->local);
+- out_no_led:
+ 	if (rx->sta)
+ 		rx->sta->rx_stats.packets++;
+ 	return RX_CONTINUE;

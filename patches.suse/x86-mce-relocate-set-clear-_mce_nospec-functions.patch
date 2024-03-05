@@ -1,0 +1,174 @@
+From: Jane Chu <jane.chu@oracle.com>
+Date: Mon, 16 May 2022 11:21:46 -0700
+Subject: x86/mce: relocate set{clear}_mce_nospec() functions
+Git-commit: b3fdf9398a16f01dc013967a4ab25e99c3f4fc12
+Patch-mainline: v5.19-rc1
+References: git-fixes
+
+Relocate the twin mce functions to arch/x86/mm/pat/set_memory.c
+file where they belong.
+
+While at it, fixup a function name in a comment.
+
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Dan Williams <dan.j.williams@intel.com>
+Signed-off-by: Jane Chu <jane.chu@oracle.com>
+Acked-by: Borislav Petkov <bp@suse.de>
+Cc: Stephen Rothwell <sfr@canb.auug.org.au>
+[sfr: gate {set,clear}_mce_nospec() by CONFIG_X86_64]
+Link: https://lore.kernel.org/r/165272527328.90175.8336008202048685278.stgit@dwillia2-desk3.amr.corp.intel.com
+Signed-off-by: Dan Williams <dan.j.williams@intel.com>
+Acked-by: Nikolay Borisov <nik.borisov@suse.com>
+---
+ arch/x86/include/asm/set_memory.h |   50 --------------------------------------
+ arch/x86/mm/pageattr.c            |   45 +++++++++++++++++++++++++++++++++-
+ include/linux/set_memory.h        |    8 +++---
+ 3 files changed, 48 insertions(+), 55 deletions(-)
+
+--- a/arch/x86/include/asm/set_memory.h
++++ b/arch/x86/include/asm/set_memory.h
+@@ -87,55 +87,5 @@ extern int kernel_set_to_readonly;
+ void set_kernel_text_rw(void);
+ void set_kernel_text_ro(void);
+ 
+-#ifdef CONFIG_X86_64
+-#undef set_mce_nospec
+-/*
+- * Prevent speculative access to the page by either unmapping
+- * it (if we do not require access to any part of the page) or
+- * marking it uncacheable (if we want to try to retrieve data
+- * from non-poisoned lines in the page).
+- */
+-static inline int set_mce_nospec(unsigned long pfn, bool unmap)
+-{
+-	unsigned long decoy_addr;
+-	int rc;
+-
+-	/*
+-	 * We would like to just call:
+-	 *      set_memory_XX((unsigned long)pfn_to_kaddr(pfn), 1);
+-	 * but doing that would radically increase the odds of a
+-	 * speculative access to the poison page because we'd have
+-	 * the virtual address of the kernel 1:1 mapping sitting
+-	 * around in registers.
+-	 * Instead we get tricky.  We create a non-canonical address
+-	 * that looks just like the one we want, but has bit 63 flipped.
+-	 * This relies on set_memory_XX() properly sanitizing any __pa()
+-	 * results with __PHYSICAL_MASK or PTE_PFN_MASK.
+-	 */
+-	decoy_addr = (pfn << PAGE_SHIFT) + (PAGE_OFFSET ^ BIT(63));
+-
+-	if (unmap)
+-		rc = set_memory_np(decoy_addr, 1);
+-	else
+-		rc = set_memory_uc(decoy_addr, 1);
+-	if (rc)
+-		pr_warn("Could not invalidate pfn=0x%lx from 1:1 map\n", pfn);
+-	return rc;
+-}
+-#define set_mce_nospec set_mce_nospec
+-
+-#undef clear_mce_nospec
+-/* Restore full speculative operation to the pfn. */
+-static inline int clear_mce_nospec(unsigned long pfn)
+-{
+-	return set_memory_wb((unsigned long) pfn_to_kaddr(pfn), 1);
+-}
+-#define clear_mce_nospec clear_mce_nospec
+-#else
+-/*
+- * Few people would run a 32-bit kernel on a machine that supports
+- * recoverable errors because they have too much memory to boot 32-bit.
+- */
+-#endif
+ 
+ #endif /* _ASM_X86_SET_MEMORY_H */
+--- a/arch/x86/mm/pageattr.c
++++ b/arch/x86/mm/pageattr.c
+@@ -14,6 +14,7 @@
+ #include <linux/gfp.h>
+ #include <linux/pci.h>
+ #include <linux/vmalloc.h>
++#include <linux/set_memory.h>
+ 
+ #include <asm/e820/api.h>
+ #include <asm/processor.h>
+@@ -24,7 +25,6 @@
+ #include <asm/pgalloc.h>
+ #include <asm/proto.h>
+ #include <asm/pat.h>
+-#include <asm/set_memory.h>
+ 
+ /*
+  * The current flushing context - we pass it instead of 5 arguments:
+@@ -1743,6 +1743,49 @@ int set_memory_wb(unsigned long addr, in
+ }
+ EXPORT_SYMBOL(set_memory_wb);
+ 
++/*
++ * Prevent speculative access to the page by either unmapping
++ * it (if we do not require access to any part of the page) or
++ * marking it uncacheable (if we want to try to retrieve data
++ * from non-poisoned lines in the page).
++ */
++#ifdef CONFIG_X86_64
++int set_mce_nospec(unsigned long pfn, bool unmap)
++{
++	unsigned long decoy_addr;
++	int rc;
++
++	/*
++	 * We would like to just call:
++	 *      set_memory_XX((unsigned long)pfn_to_kaddr(pfn), 1);
++	 * but doing that would radically increase the odds of a
++	 * speculative access to the poison page because we'd have
++	 * the virtual address of the kernel 1:1 mapping sitting
++	 * around in registers.
++	 * Instead we get tricky.  We create a non-canonical address
++	 * that looks just like the one we want, but has bit 63 flipped.
++	 * This relies on set_memory_XX() properly sanitizing any __pa()
++	 * results with __PHYSICAL_MASK or PTE_PFN_MASK.
++	 */
++	decoy_addr = (pfn << PAGE_SHIFT) + (PAGE_OFFSET ^ BIT(63));
++
++	if (unmap)
++		rc = set_memory_np(decoy_addr, 1);
++	else
++		rc = set_memory_uc(decoy_addr, 1);
++	if (rc)
++		pr_warn("Could not invalidate pfn=0x%lx from 1:1 map\n", pfn);
++	return rc;
++}
++
++/* Restore full speculative operation to the pfn. */
++int clear_mce_nospec(unsigned long pfn)
++{
++	return set_memory_wb((unsigned long) pfn_to_kaddr(pfn), 1);
++}
++EXPORT_SYMBOL_GPL(clear_mce_nospec);
++#endif
++
+ int set_memory_array_wb(unsigned long *addr, int addrinarray)
+ {
+ 	int i;
+--- a/include/linux/set_memory.h
++++ b/include/linux/set_memory.h
+@@ -17,14 +17,14 @@ static inline int set_memory_x(unsigned
+ static inline int set_memory_nx(unsigned long addr, int numpages) { return 0; }
+ #endif
+ 
+-#ifndef set_mce_nospec
++#ifdef CONFIG_X86_64
++int set_mce_nospec(unsigned long pfn, bool unmap);
++int clear_mce_nospec(unsigned long pfn);
++#else
+ static inline int set_mce_nospec(unsigned long pfn, bool unmap)
+ {
+ 	return 0;
+ }
+-#endif
+-
+-#ifndef clear_mce_nospec
+ static inline int clear_mce_nospec(unsigned long pfn)
+ {
+ 	return 0;

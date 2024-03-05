@@ -33,12 +33,23 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  arch/x86/lib/memmove_64.S         |    7 ++++++-
  5 files changed, 17 insertions(+), 2 deletions(-)
 
+--- a/arch/x86/Makefile
++++ b/arch/x86/Makefile
+@@ -21,7 +21,7 @@ CODE16GCC_CFLAGS := -m32 -Wa,$(srctree)/
+ M16_CFLAGS	 := $(call cc-option, -m16, $(CODE16GCC_CFLAGS))
+ 
+ REALMODE_CFLAGS	:= $(M16_CFLAGS) -g -Os -D__KERNEL__ \
+-		   -DDISABLE_BRANCH_PROFILING \
++		   -DDISABLE_BRANCH_PROFILING -D__DISABLE_EXPORTS \
+ 		   -Wall -Wstrict-prototypes -march=i386 -mregparm=3 \
+ 		   -fno-strict-aliasing -fomit-frame-pointer -fno-pic \
+ 		   -mno-mmx -mno-sse \
 --- a/arch/x86/boot/compressed/Makefile
 +++ b/arch/x86/boot/compressed/Makefile
-@@ -34,6 +34,7 @@ KBUILD_CFLAGS += $(cflags-y)
- KBUILD_CFLAGS += -mno-mmx -mno-sse
- KBUILD_CFLAGS += $(call cc-option,-ffreestanding)
+@@ -36,6 +36,7 @@ KBUILD_CFLAGS += $(call cc-option,-ffree
  KBUILD_CFLAGS += $(call cc-option,-fno-stack-protector)
+ # Disable relocation relaxation in case the link is not PIE.
+ KBUILD_CFLAGS += $(call as-option,-Wa$(comma)-mrelax-relocations=no)
 +KBUILD_CFLAGS += -D__DISABLE_EXPORTS
  
  KBUILD_AFLAGS  := $(KBUILD_CFLAGS) -D__ASSEMBLY__
@@ -106,14 +117,3 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  ENDPROC(__memmove)
  ENDPROC(memmove)
  EXPORT_SYMBOL(__memmove)
---- a/arch/x86/Makefile
-+++ b/arch/x86/Makefile
-@@ -21,7 +21,7 @@ CODE16GCC_CFLAGS := -m32 -Wa,$(srctree)/
- M16_CFLAGS	 := $(call cc-option, -m16, $(CODE16GCC_CFLAGS))
- 
- REALMODE_CFLAGS	:= $(M16_CFLAGS) -g -Os -D__KERNEL__ \
--		   -DDISABLE_BRANCH_PROFILING \
-+		   -DDISABLE_BRANCH_PROFILING -D__DISABLE_EXPORTS \
- 		   -Wall -Wstrict-prototypes -march=i386 -mregparm=3 \
- 		   -fno-strict-aliasing -fomit-frame-pointer -fno-pic \
- 		   -mno-mmx -mno-sse \

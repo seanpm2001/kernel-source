@@ -1,0 +1,48 @@
+From 683275f6059a42cc23a8e606f725dad05fb48cdc Mon Sep 17 00:00:00 2001
+From: Xin Long <lucien.xin@gmail.com>
+Date: Mon, 25 Dec 2017 14:45:12 +0800
+Subject: [PATCH 3/4] ip6_tunnel: allow ip6gre dev mtu to be set below 1280
+Git-commit: 2fa771be953a17f8e0a9c39103464c2574444c62
+Patch-mainline: v4.15-rc8
+References: git-fixes
+
+Commit 582442d6d5bc ("ipv6: Allow the MTU of ipip6 tunnel to be set
+below 1280") fixed a mtu setting issue. It works for ipip6 tunnel.
+
+But ip6gre dev updates the mtu also with ip6_tnl_change_mtu. Since
+the inner packet over ip6gre can be ipv4 and it's mtu should also
+be allowed to set below 1280, the same issue also exists on ip6gre.
+
+This patch is to fix it by simply changing to check if parms.proto
+is IPPROTO_IPV6 in ip6_tnl_change_mtu instead, to make ip6gre to
+go to 'else' branch.
+
+Signed-off-by: Xin Long <lucien.xin@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/ipv6/ip6_tunnel.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/net/ipv6/ip6_tunnel.c b/net/ipv6/ip6_tunnel.c
+index 28789606ebfc..6c025c986eab 100644
+--- a/net/ipv6/ip6_tunnel.c
++++ b/net/ipv6/ip6_tunnel.c
+@@ -1685,11 +1685,11 @@ int ip6_tnl_change_mtu(struct net_device
+ {
+ 	struct ip6_tnl *tnl = netdev_priv(dev);
+ 
+-	if (tnl->parms.proto == IPPROTO_IPIP) {
+-		if (new_mtu < ETH_MIN_MTU)
++	if (tnl->parms.proto == IPPROTO_IPV6) {
++		if (new_mtu < IPV6_MIN_MTU)
+ 			return -EINVAL;
+ 	} else {
+-		if (new_mtu < IPV6_MIN_MTU)
++		if (new_mtu < ETH_MIN_MTU)
+ 			return -EINVAL;
+ 	}
+ 	if (new_mtu > 0xFFF8 - dev->hard_header_len)
+-- 
+2.16.4
+

@@ -1,0 +1,175 @@
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Wed, 13 Sep 2017 23:29:16 +0200
+Subject: x86/apic: Deinline x2apic functions
+Git-commit: 981c2eac1cb97c7db64acf567950e7e81019dd33
+Patch-mainline: 4.15-rc1
+References: bsc#1181001 jsc#ECO-3191
+
+These inline functions are used in both the cluster and the physical x2apic
+code to fill in the function pointers of the apic structure. That means the
+code is generated twice for no reason.
+
+Move it to a C code and reuse it.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Tested-by: Juergen Gross <jgross@suse.com>
+Tested-by: Yu Chen <yu.c.chen@intel.com>
+Acked-by: Juergen Gross <jgross@suse.com>
+Cc: Boris Ostrovsky <boris.ostrovsky@oracle.com>
+Cc: Tony Luck <tony.luck@intel.com>
+Cc: Marc Zyngier <marc.zyngier@arm.com>
+Cc: Alok Kataria <akataria@vmware.com>
+Cc: Joerg Roedel <joro@8bytes.org>
+Cc: "Rafael J. Wysocki" <rjw@rjwysocki.net>
+Cc: Steven Rostedt <rostedt@goodmis.org>
+Cc: Christoph Hellwig <hch@lst.de>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Borislav Petkov <bp@alien8.de>
+Cc: Paolo Bonzini <pbonzini@redhat.com>
+Cc: Rui Zhang <rui.zhang@intel.com>
+Cc: "K. Y. Srinivasan" <kys@microsoft.com>
+Cc: Arjan van de Ven <arjan@linux.intel.com>
+Cc: Dan Williams <dan.j.williams@intel.com>
+Cc: Len Brown <lenb@kernel.org>
+Link: https://lkml.kernel.org/r/20170913213153.358954066@linutronix.de
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ arch/x86/include/asm/x2apic.h         |   49 ----------------------------------
+ arch/x86/kernel/apic/x2apic.h         |    9 ++++++
+ arch/x86/kernel/apic/x2apic_cluster.c |    2 -
+ arch/x86/kernel/apic/x2apic_phys.c    |   40 +++++++++++++++++++++++++++
+ 4 files changed, 49 insertions(+), 51 deletions(-)
+ delete mode 100644 arch/x86/include/asm/x2apic.h
+ create mode 100644 arch/x86/kernel/apic/x2apic.h
+
+--- a/arch/x86/include/asm/x2apic.h
++++ /dev/null
+@@ -1,49 +0,0 @@
+-/*
+- * Common bits for X2APIC cluster/physical modes.
+- */
+-
+-#ifndef _ASM_X86_X2APIC_H
+-#define _ASM_X86_X2APIC_H
+-
+-#include <asm/apic.h>
+-#include <asm/ipi.h>
+-#include <linux/cpumask.h>
+-
+-static int x2apic_apic_id_valid(int apicid)
+-{
+-	return 1;
+-}
+-
+-static int x2apic_apic_id_registered(void)
+-{
+-	return 1;
+-}
+-
+-static void
+-__x2apic_send_IPI_dest(unsigned int apicid, int vector, unsigned int dest)
+-{
+-	unsigned long cfg = __prepare_ICR(0, vector, dest);
+-	native_x2apic_icr_write(cfg, apicid);
+-}
+-
+-static unsigned int x2apic_get_apic_id(unsigned long id)
+-{
+-	return id;
+-}
+-
+-static unsigned long x2apic_set_apic_id(unsigned int id)
+-{
+-	return id;
+-}
+-
+-static int x2apic_phys_pkg_id(int initial_apicid, int index_msb)
+-{
+-	return initial_apicid >> index_msb;
+-}
+-
+-static void x2apic_send_IPI_self(int vector)
+-{
+-	apic_write(APIC_SELF_IPI, vector);
+-}
+-
+-#endif /* _ASM_X86_X2APIC_H */
+--- /dev/null
++++ b/arch/x86/kernel/apic/x2apic.h
+@@ -0,0 +1,9 @@
++/* Common bits for X2APIC cluster/physical modes. */
++
++int x2apic_apic_id_valid(int apicid);
++int x2apic_apic_id_registered(void);
++void __x2apic_send_IPI_dest(unsigned int apicid, int vector, unsigned int dest);
++unsigned int x2apic_get_apic_id(unsigned long id);
++unsigned long x2apic_set_apic_id(unsigned int id);
++int x2apic_phys_pkg_id(int initial_apicid, int index_msb);
++void x2apic_send_IPI_self(int vector);
+--- a/arch/x86/kernel/apic/x2apic_cluster.c
++++ b/arch/x86/kernel/apic/x2apic_cluster.c
+@@ -7,7 +7,7 @@
+ #include <linux/cpu.h>
+ 
+ #include <asm/smp.h>
+-#include <asm/x2apic.h>
++#include "x2apic.h"
+ 
+ static DEFINE_PER_CPU(u32, x86_cpu_to_logical_apicid);
+ static DEFINE_PER_CPU(cpumask_var_t, cpus_in_cluster);
+--- a/arch/x86/kernel/apic/x2apic_phys.c
++++ b/arch/x86/kernel/apic/x2apic_phys.c
+@@ -6,7 +6,8 @@
+ #include <linux/dmar.h>
+ 
+ #include <asm/smp.h>
+-#include <asm/x2apic.h>
++#include <asm/ipi.h>
++#include "x2apic.h"
+ 
+ int x2apic_phys;
+ 
+@@ -98,6 +99,43 @@ static int x2apic_phys_probe(void)
+ 	return apic == &apic_x2apic_phys;
+ }
+ 
++/* Common x2apic functions, also used by x2apic_cluster */
++int x2apic_apic_id_valid(int apicid)
++{
++	return 1;
++}
++
++int x2apic_apic_id_registered(void)
++{
++	return 1;
++}
++
++void __x2apic_send_IPI_dest(unsigned int apicid, int vector, unsigned int dest)
++{
++	unsigned long cfg = __prepare_ICR(0, vector, dest);
++	native_x2apic_icr_write(cfg, apicid);
++}
++
++unsigned int x2apic_get_apic_id(unsigned long id)
++{
++	return id;
++}
++
++unsigned long x2apic_set_apic_id(unsigned int id)
++{
++	return id;
++}
++
++int x2apic_phys_pkg_id(int initial_apicid, int index_msb)
++{
++	return initial_apicid >> index_msb;
++}
++
++void x2apic_send_IPI_self(int vector)
++{
++	apic_write(APIC_SELF_IPI, vector);
++}
++
+ static struct apic apic_x2apic_phys __ro_after_init = {
+ 
+ 	.name				= "physical x2apic",

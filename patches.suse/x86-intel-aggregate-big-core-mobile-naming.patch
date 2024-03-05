@@ -83,12 +83,11 @@ Acked-by: Borislav Petkov <bp@suse.de>
  	case INTEL_FAM6_HASWELL_GT3E:
  		x86_add_quirk(intel_ht_bug);
  		x86_add_quirk(intel_pebs_isolation_quirk);
-@@ -4640,10 +4640,10 @@ __init int intel_pmu_init(void)
- 		pr_cont("Knights Landing/Mill events, ");
- 		break;
- 
--	case INTEL_FAM6_SKYLAKE_MOBILE:
+@@ -4640,9 +4640,9 @@ __init int intel_pmu_init(void)
  	case INTEL_FAM6_SKYLAKE_X:
+ 		pmem = true;
+ 		/* fall through */
+-	case INTEL_FAM6_SKYLAKE_MOBILE:
 +	case INTEL_FAM6_SKYLAKE_L:
  	case INTEL_FAM6_SKYLAKE:
 -	case INTEL_FAM6_KABYLAKE_MOBILE:
@@ -97,14 +96,14 @@ Acked-by: Borislav Petkov <bp@suse.de>
  		x86_add_quirk(intel_pebs_isolation_quirk);
  		x86_pmu.late_ack = true;
 @@ -4689,7 +4689,7 @@ __init int intel_pmu_init(void)
- 		pr_cont("Skylake events, ");
- 		break;
- 
+ 	case INTEL_FAM6_ICELAKE_XEON_D:
+ 		pmem = true;
+ 		/* fall through */
 -	case INTEL_FAM6_ICELAKE_MOBILE:
 +	case INTEL_FAM6_ICELAKE_L:
+ 	case INTEL_FAM6_ICELAKE:
  		x86_pmu.late_ack = true;
  		memcpy(hw_cache_event_ids, skl_hw_cache_event_ids, sizeof(hw_cache_event_ids));
- 		memcpy(hw_cache_extra_regs, skl_hw_cache_extra_regs, sizeof(hw_cache_extra_regs));
 --- a/arch/x86/events/intel/cstate.c
 +++ b/arch/x86/events/intel/cstate.c
 @@ -529,7 +529,7 @@ static const struct x86_cpu_id intel_cst
@@ -116,7 +115,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  
  	X86_CSTATES_MODEL(INTEL_FAM6_ATOM_SILVERMONT, slm_cstates),
  	X86_CSTATES_MODEL(INTEL_FAM6_ATOM_SILVERMONT_X, slm_cstates),
-@@ -540,16 +540,16 @@ static const struct x86_cpu_id intel_cst
+@@ -540,17 +540,17 @@ static const struct x86_cpu_id intel_cst
  	X86_CSTATES_MODEL(INTEL_FAM6_BROADWELL_GT3E,   snb_cstates),
  	X86_CSTATES_MODEL(INTEL_FAM6_BROADWELL_X,      snb_cstates),
  
@@ -132,7 +131,9 @@ Acked-by: Borislav Petkov <bp@suse.de>
  	X86_CSTATES_MODEL(INTEL_FAM6_XEON_PHI_KNM, knl_cstates),
  
 -	X86_CSTATES_MODEL(INTEL_FAM6_ICELAKE_MOBILE, snb_cstates),
+-	X86_CSTATES_MODEL(INTEL_FAM6_ICELAKE,        snb_cstates),
 +	X86_CSTATES_MODEL(INTEL_FAM6_ICELAKE_L, snb_cstates),
++	X86_CSTATES_MODEL(INTEL_FAM6_ICELAKE,   snb_cstates),
  	{ },
  };
  MODULE_DEVICE_TABLE(x86cpu, intel_cstates_match);
@@ -164,9 +165,9 @@ Acked-by: Borislav Petkov <bp@suse.de>
  
 -	X86_RAPL_MODEL_MATCH(INTEL_FAM6_ICELAKE_MOBILE,  skl_rapl_init),
 +	X86_RAPL_MODEL_MATCH(INTEL_FAM6_ICELAKE_L,  skl_rapl_init),
+ 	X86_RAPL_MODEL_MATCH(INTEL_FAM6_ICELAKE,         skl_rapl_init),
  	{},
  };
- 
 --- a/arch/x86/events/intel/uncore.c
 +++ b/arch/x86/events/intel/uncore.c
 @@ -1322,7 +1322,7 @@ static const struct x86_cpu_id intel_unc
@@ -189,10 +190,10 @@ Acked-by: Borislav Petkov <bp@suse.de>
 +	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_KABYLAKE_L, skl_uncore_init),
  	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_KABYLAKE,       skl_uncore_init),
 -	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_ICELAKE_MOBILE, icl_uncore_init),
-+	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_ICELAKE_L, icl_uncore_init),
- 	{},
- };
-
++	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_ICELAKE_L,	  icl_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_ICELAKE_NNPI,	  icl_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_ICELAKE,	  icl_uncore_init),
+ 	X86_UNCORE_MODEL_MATCH(INTEL_FAM6_ATOM_TREMONT_X, snr_uncore_init),
 --- a/arch/x86/events/msr.c
 +++ b/arch/x86/events/msr.c
 @@ -53,7 +53,7 @@ static bool test_intel(int idx)
@@ -248,12 +249,12 @@ Acked-by: Borislav Petkov <bp@suse.de>
  
  #define INTEL_FAM6_ICELAKE_X		0x6A
  #define INTEL_FAM6_ICELAKE_XEON_D	0x6C
- #define INTEL_FAM6_ICELAKE_DESKTOP	0x7D
+ #define INTEL_FAM6_ICELAKE		0x7D
 -#define INTEL_FAM6_ICELAKE_MOBILE	0x7E
 +#define INTEL_FAM6_ICELAKE_L		0x7E
+ #define INTEL_FAM6_ICELAKE_NNPI		0x9D
  
  /* "Small Core" Processors (Atom) */
- 
 --- a/arch/x86/kernel/cpu/bugs.c
 +++ b/arch/x86/kernel/cpu/bugs.c
 @@ -246,13 +246,13 @@ static void override_cache_bits(struct c

@@ -1,0 +1,55 @@
+From: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
+Date: Fri, 6 Apr 2018 16:55:35 +0200
+Subject: PCI: aardvark: Introduce an advk_pcie_valid_device() helper
+Git-commit: 248d4e59616c632f37f04c233eec6d5008384926
+Patch-mainline: 4.19-rc1
+References: git-fixes
+
+In other to mimic other PCIe host controller drivers, introduce an
+advk_pcie_valid_device() helper, used in the configuration read/write
+functions.
+
+Signed-off-by: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
+[lorenzo.pieralisi@arm.com: updated host->controller dir move]
+Signed-off-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ drivers/pci/host/pci-aardvark.c |   13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+--- a/drivers/pci/host/pci-aardvark.c
++++ b/drivers/pci/host/pci-aardvark.c
+@@ -434,6 +434,15 @@ static int advk_pcie_wait_pio(struct adv
+ 	return -ETIMEDOUT;
+ }
+ 
++static bool advk_pcie_valid_device(struct advk_pcie *pcie, struct pci_bus *bus,
++				  int devfn)
++{
++	if ((bus->number == pcie->root_bus_nr) && PCI_SLOT(devfn) != 0)
++		return false;
++
++	return true;
++}
++
+ static int advk_pcie_rd_conf(struct pci_bus *bus, u32 devfn,
+ 			     int where, int size, u32 *val)
+ {
+@@ -441,7 +450,7 @@ static int advk_pcie_rd_conf(struct pci_
+ 	u32 reg;
+ 	int ret;
+ 
+-	if ((bus->number == pcie->root_bus_nr) && PCI_SLOT(devfn) != 0) {
++	if (!advk_pcie_valid_device(pcie, bus, devfn)) {
+ 		*val = 0xffffffff;
+ 		return PCIBIOS_DEVICE_NOT_FOUND;
+ 	}
+@@ -495,7 +504,7 @@ static int advk_pcie_wr_conf(struct pci_
+ 	int offset;
+ 	int ret;
+ 
+-	if ((bus->number == pcie->root_bus_nr) && PCI_SLOT(devfn) != 0)
++	if (!advk_pcie_valid_device(pcie, bus, devfn))
+ 		return PCIBIOS_DEVICE_NOT_FOUND;
+ 
+ 	if (where % size)

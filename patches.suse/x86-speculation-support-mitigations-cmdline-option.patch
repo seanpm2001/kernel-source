@@ -49,63 +49,9 @@ Acked-by: Borislav Petkov <bp@suse.de>
  arch/x86/mm/pti.c                               |    4 +++-
  3 files changed, 23 insertions(+), 8 deletions(-)
 
---- a/arch/x86/kernel/cpu/bugs.c
-+++ b/arch/x86/kernel/cpu/bugs.c
-@@ -260,6 +260,11 @@ static void __init l1tf_select_mitigatio
- 	if (!boot_cpu_has_bug(X86_BUG_L1TF))
- 		return;
- 
-+	if (cpu_mitigations_off())
-+		l1tf_mitigation = L1TF_MITIGATION_OFF;
-+	else if (cpu_mitigations_auto_nosmt())
-+		l1tf_mitigation = L1TF_MITIGATION_FLUSH_NOSMT;
-+
- 	override_cache_bits(&boot_cpu_data);
- 
- 	switch (l1tf_mitigation) {
-@@ -546,7 +551,8 @@ static enum spectre_v2_mitigation_cmd __
- 	char arg[20];
- 	int ret, i;
- 
--	if (cmdline_find_option_bool(boot_command_line, "nospectre_v2"))
-+	if (cmdline_find_option_bool(boot_command_line, "nospectre_v2") ||
-+	    cpu_mitigations_off())
- 		return SPECTRE_V2_CMD_NONE;
- 
- 	ret = cmdline_find_option(boot_command_line, "spectre_v2", arg, sizeof(arg));
-@@ -792,7 +798,8 @@ static enum ssb_mitigation_cmd __init ss
- 	char arg[20];
- 	int ret, i;
- 
--	if (cmdline_find_option_bool(boot_command_line, "nospec_store_bypass_disable")) {
-+	if (cmdline_find_option_bool(boot_command_line, "nospec_store_bypass_disable") ||
-+	    cpu_mitigations_off()) {
- 		return SPEC_STORE_BYPASS_CMD_NONE;
- 	} else {
- 		ret = cmdline_find_option(boot_command_line, "spec_store_bypass_disable",
---- a/arch/x86/mm/pti.c
-+++ b/arch/x86/mm/pti.c
-@@ -35,6 +35,7 @@
- #include <linux/spinlock.h>
- #include <linux/mm.h>
- #include <linux/uaccess.h>
-+#include <linux/cpu.h>
- 
- #include <asm/cpufeature.h>
- #include <asm/hypervisor.h>
-@@ -90,7 +91,8 @@ void __init pti_check_boottime_disable(v
- 			goto autosel;
- 	}
- 
--	if (cmdline_find_option_bool(boot_command_line, "nopti")) {
-+	if (cmdline_find_option_bool(boot_command_line, "nopti") ||
-+	    cpu_mitigations_off()) {
- 		pti_print_if_insecure("disabled on command line.");
- 		return;
- 	}
 --- a/Documentation/admin-guide/kernel-parameters.txt
 +++ b/Documentation/admin-guide/kernel-parameters.txt
-@@ -2375,15 +2375,20 @@
+@@ -2381,15 +2381,20 @@
  			http://repo.or.cz/w/linux-2.6/mini2440.git
  
  	mitigations=
@@ -130,7 +76,7 @@ Acked-by: Borislav Petkov <bp@suse.de>
  
  			auto (default)
  				Mitigate all CPU vulnerabilities, but leave SMT
-@@ -2391,12 +2396,13 @@
+@@ -2397,12 +2402,13 @@
  				users who don't want to be surprised by SMT
  				getting disabled across kernel upgrades, or who
  				have other ways of avoiding SMT-based attacks.
@@ -145,3 +91,57 @@ Acked-by: Borislav Petkov <bp@suse.de>
  
  	mminit_loglevel=
  			[KNL] When CONFIG_DEBUG_MEMORY_INIT is set, this
+--- a/arch/x86/kernel/cpu/bugs.c
++++ b/arch/x86/kernel/cpu/bugs.c
+@@ -427,7 +427,8 @@ static enum spectre_v2_mitigation_cmd __
+ 	char arg[20];
+ 	int ret, i;
+ 
+-	if (cmdline_find_option_bool(boot_command_line, "nospectre_v2"))
++	if (cmdline_find_option_bool(boot_command_line, "nospectre_v2") ||
++	    cpu_mitigations_off())
+ 		return SPECTRE_V2_CMD_NONE;
+ 
+ 	ret = cmdline_find_option(boot_command_line, "spectre_v2", arg, sizeof(arg));
+@@ -658,7 +659,8 @@ static enum ssb_mitigation_cmd __init ss
+ 	char arg[20];
+ 	int ret, i;
+ 
+-	if (cmdline_find_option_bool(boot_command_line, "nospec_store_bypass_disable")) {
++	if (cmdline_find_option_bool(boot_command_line, "nospec_store_bypass_disable") ||
++	    cpu_mitigations_off()) {
+ 		return SPEC_STORE_BYPASS_CMD_NONE;
+ 	} else {
+ 		ret = cmdline_find_option(boot_command_line, "spec_store_bypass_disable",
+@@ -982,6 +984,11 @@ static void __init l1tf_select_mitigatio
+ 	if (!boot_cpu_has_bug(X86_BUG_L1TF))
+ 		return;
+ 
++	if (cpu_mitigations_off())
++		l1tf_mitigation = L1TF_MITIGATION_OFF;
++	else if (cpu_mitigations_auto_nosmt())
++		l1tf_mitigation = L1TF_MITIGATION_FLUSH_NOSMT;
++
+ 	override_cache_bits(&boot_cpu_data);
+ 
+ 	switch (l1tf_mitigation) {
+--- a/arch/x86/mm/pti.c
++++ b/arch/x86/mm/pti.c
+@@ -35,6 +35,7 @@
+ #include <linux/spinlock.h>
+ #include <linux/mm.h>
+ #include <linux/uaccess.h>
++#include <linux/cpu.h>
+ 
+ #include <asm/cpufeature.h>
+ #include <asm/hypervisor.h>
+@@ -90,7 +91,8 @@ void __init pti_check_boottime_disable(v
+ 			goto autosel;
+ 	}
+ 
+-	if (cmdline_find_option_bool(boot_command_line, "nopti")) {
++	if (cmdline_find_option_bool(boot_command_line, "nopti") ||
++	    cpu_mitigations_off()) {
+ 		pti_print_if_insecure("disabled on command line.");
+ 		return;
+ 	}

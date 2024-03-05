@@ -1,0 +1,77 @@
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+Date: Tue, 5 Dec 2023 03:45:01 +0300
+Subject: x86/kvm: Do not try to disable kvmclock if it was not enabled
+Git-commit: 1c6d984f523f67ecfad1083bb04c55d91977bb15
+Patch-mainline: v6.8-rc1
+References: git-fixes
+
+kvm_guest_cpu_offline() tries to disable kvmclock regardless if it is
+present in the VM. It leads to write to a MSR that doesn't exist on some
+configurations, namely in TDX guest:
+
+	unchecked MSR access error: WRMSR to 0x12 (tried to write 0x0000000000000000)
+	at rIP: 0xffffffff8110687c (kvmclock_disable+0x1c/0x30)
+
+kvmclock enabling is gated by CLOCKSOURCE and CLOCKSOURCE2 KVM paravirt
+features.
+
+Do not disable kvmclock if it was not enabled.
+
+Signed-off-by: Kirill A. Shutemov <kirill.shutemov@linux.intel.com>
+Fixes: c02027b5742b ("x86/kvm: Disable kvmclock on all CPUs on shutdown")
+Reviewed-by: Sean Christopherson <seanjc@google.com>
+Reviewed-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Cc: Paolo Bonzini <pbonzini@redhat.com>
+Cc: Wanpeng Li <wanpengli@tencent.com>
+Cc: stable@vger.kernel.org
+Message-Id: <20231205004510.27164-6-kirill.shutemov@linux.intel.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Acked-by: Nikolay Borisov <nik.borisov@suse.com>
+---
+ arch/x86/kernel/kvmclock.c |   15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+--- a/arch/x86/kernel/kvmclock.c
++++ b/arch/x86/kernel/kvmclock.c
+@@ -32,8 +32,8 @@
+ #include <asm/kvmclock.h>
+ 
+ static int kvmclock __ro_after_init = 1;
+-static int msr_kvm_system_time = MSR_KVM_SYSTEM_TIME;
+-static int msr_kvm_wall_clock = MSR_KVM_WALL_CLOCK;
++static int msr_kvm_system_time __ro_after_init;
++static int msr_kvm_wall_clock __ro_after_init;
+ static u64 kvm_sched_clock_offset;
+ 
+ static int parse_no_kvmclock(char *arg)
+@@ -222,7 +222,8 @@ static void kvm_setup_secondary_clock(vo
+ 
+ void kvmclock_disable(void)
+ {
+-	native_write_msr(msr_kvm_system_time, 0, 0);
++	if (msr_kvm_system_time)
++		native_write_msr(msr_kvm_system_time, 0, 0);
+ }
+ 
+ static phys_addr_t __init kvm_memblock_alloc(phys_addr_t size,
+@@ -262,14 +263,18 @@ void __init kvmclock_init(void)
+ 
+ 	size = PAGE_ALIGN(sizeof(struct pvclock_vsyscall_time_info)*NR_CPUS);
+ 
+-	if (!kvm_para_available())
++	if (!kvm_para_available() || !kvmclock)
+ 		return;
+ 
+ 	if (kvmclock && kvm_para_has_feature(KVM_FEATURE_CLOCKSOURCE2)) {
+ 		msr_kvm_system_time = MSR_KVM_SYSTEM_TIME_NEW;
+ 		msr_kvm_wall_clock = MSR_KVM_WALL_CLOCK_NEW;
+-	} else if (!(kvmclock && kvm_para_has_feature(KVM_FEATURE_CLOCKSOURCE)))
++	} else if (kvmclock && kvm_para_has_feature(KVM_FEATURE_CLOCKSOURCE)) {
++		msr_kvm_system_time = MSR_KVM_SYSTEM_TIME;
++		msr_kvm_wall_clock = MSR_KVM_WALL_CLOCK;
++	} else {
+ 		return;
++	}
+ 
+ 	wall_clock_size = PAGE_ALIGN(sizeof(struct pvclock_wall_clock));
+ 	mem_wall_clock = kvm_memblock_alloc(wall_clock_size, PAGE_SIZE);

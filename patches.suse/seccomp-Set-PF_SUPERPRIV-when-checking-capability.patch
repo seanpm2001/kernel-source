@@ -1,0 +1,57 @@
+From: =?utf-8?b?TWlja2HDq2wgU2FsYcO8biA8bWljQGxpbnV4Lm1pY3Jvc29mdC5jb20+?=
+Date: Fri, 30 Oct 2020 13:38:49 +0100
+Subject: seccomp: Set PF_SUPERPRIV when checking capability
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Git-commit: fb14528e443646dd3fd02df4437fcf5265b66baa
+Patch-mainline: v5.10-rc5
+References: git-fixes bsc#1211816
+
+Replace the use of security_capable(current_cred(), ...) with
+ns_capable_noaudit() which set PF_SUPERPRIV.
+
+Since commit 98f368e9e263 ("kernel: Add noaudit variant of
+ns_capable()"), a new ns_capable_noaudit() helper is available.  Let's
+use it!
+
+Cc: Jann Horn <jannh@google.com>
+Cc: Kees Cook <keescook@chromium.org>
+Cc: Tyler Hicks <tyhicks@linux.microsoft.com>
+Cc: Will Drewry <wad@chromium.org>
+Cc: stable@vger.kernel.org
+Fixes: e2cfabdfd075 ("seccomp: add system call filtering using BPF")
+Signed-off-by: Mickaël Salaün <mic@linux.microsoft.com>
+Reviewed-by: Jann Horn <jannh@google.com>
+Signed-off-by: Kees Cook <keescook@chromium.org>
+Link: https://lore.kernel.org/r/20201030123849.770769-3-mic@digikod.net
+
+Acked-by: Miroslav Franc <mfranc@suse.cz>
+---
+ kernel/seccomp.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/kernel/seccomp.c b/kernel/seccomp.c
+index 03049cd7f272..d6f07c00d9e3 100644
+--- a/kernel/seccomp.c
++++ b/kernel/seccomp.c
+@@ -33,7 +33,7 @@
+ #include <linux/filter.h>
+ #include <linux/pid.h>
+ #include <linux/ptrace.h>
+-#include <linux/security.h>
++#include <linux/capability.h>
+ #include <linux/tracehook.h>
+ #include <linux/uaccess.h>
+ 
+@@ -371,8 +371,7 @@ static struct seccomp_filter *seccomp_prepare_filter(struct sock_fprog *fprog)
+ 	 * behavior of privileged children.
+ 	 */
+ 	if (!task_no_new_privs(current) &&
+-	    security_capable_noaudit(current_cred(), current_user_ns(),
+-				     CAP_SYS_ADMIN) != 0)
++			!ns_capable_noaudit(current_user_ns(), CAP_SYS_ADMIN))
+ 		return ERR_PTR(-EACCES);
+ 
+ 	/* Allocate a new seccomp_filter */
+

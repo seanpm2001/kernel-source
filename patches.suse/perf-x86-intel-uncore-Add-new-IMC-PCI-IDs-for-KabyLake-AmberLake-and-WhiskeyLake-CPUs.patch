@@ -1,0 +1,130 @@
+From: Gayatri Kammela <gayatri.kammela@intel.com>
+Date: Fri, 10 May 2019 17:03:11 -0700
+Subject: perf/x86/intel/uncore: Add new IMC PCI IDs for KabyLake, AmberLake
+ and WhiskeyLake CPUs
+Git-commit: 6e86d3db5f8fb69eea76cc496c3c3da19c855aa9
+Patch-mainline: v5.3-rc1
+References: jsc#PED-5023 bsc#1211439
+
+AmberLake and WhiskeyLake have same client uncore events as
+KabyLake. Thus add the PCI IDs for AmberLake Y processor lines,
+for WhiskeyLake U processor lines and for KabyLake, add H
+processor line and workstation.
+
+ Platform		Device ID
+ ================================
+ AML Y 2 Core		590Ch
+ KBL H 4 Core		5910h
+ KBL 4 Core WorkStation	5918h
+ WHL U 4 Core		3ED0h
+ WHL U 4 Core		3E34h
+ WHL U 2 Core		3E35h
+ AML Y 4 Core		590Dh
+
+Signed-off-by: Gayatri Kammela <gayatri.kammela@intel.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Cc: Charles Prestopine <charles.d.prestopine@intel.com>
+Cc: Kan Liang <kan.liang@intel.com>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Link: https://lkml.kernel.org/r/20190511000311.20733-2-gayatri.kammela@intel.com
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+Signed-off-by: Tony Jones <tonyj@suse.de>
+---
+ arch/x86/events/intel/uncore_snb.c | 43 ++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 43 insertions(+)
+
+diff --git a/arch/x86/events/intel/uncore_snb.c b/arch/x86/events/intel/uncore_snb.c
+index db9eb64ce756..b0ca4f88c6f2 100644
+--- a/arch/x86/events/intel/uncore_snb.c
++++ b/arch/x86/events/intel/uncore_snb.c
+@@ -20,6 +20,8 @@
+ #define PCI_DEVICE_ID_INTEL_KBL_UQ_IMC		0x5914
+ #define PCI_DEVICE_ID_INTEL_KBL_SD_IMC		0x590f
+ #define PCI_DEVICE_ID_INTEL_KBL_SQ_IMC		0x591f
++#define PCI_DEVICE_ID_INTEL_KBL_HQ_IMC		0x5910
++#define PCI_DEVICE_ID_INTEL_KBL_WQ_IMC		0x5918
+ #define PCI_DEVICE_ID_INTEL_CFL_2U_IMC		0x3ecc
+ #define PCI_DEVICE_ID_INTEL_CFL_4U_IMC		0x3ed0
+ #define PCI_DEVICE_ID_INTEL_CFL_4H_IMC		0x3e10
+@@ -34,9 +36,15 @@
+ #define PCI_DEVICE_ID_INTEL_CFL_4S_S_IMC	0x3e33
+ #define PCI_DEVICE_ID_INTEL_CFL_6S_S_IMC	0x3eca
+ #define PCI_DEVICE_ID_INTEL_CFL_8S_S_IMC	0x3e32
++#define PCI_DEVICE_ID_INTEL_AML_YD_IMC		0x590c
++#define PCI_DEVICE_ID_INTEL_AML_YQ_IMC		0x590d
++#define PCI_DEVICE_ID_INTEL_WHL_UQ_IMC		0x3ed0
++#define PCI_DEVICE_ID_INTEL_WHL_4_UQ_IMC	0x3e34
++#define PCI_DEVICE_ID_INTEL_WHL_UD_IMC		0x3e35
+ #define PCI_DEVICE_ID_INTEL_ICL_U_IMC		0x8a02
+ #define PCI_DEVICE_ID_INTEL_ICL_U2_IMC		0x8a12
+ 
++
+ /* SNB event control */
+ #define SNB_UNC_CTL_EV_SEL_MASK			0x000000ff
+ #define SNB_UNC_CTL_UMASK_MASK			0x0000ff00
+@@ -681,6 +689,14 @@ static const struct pci_device_id skl_uncore_pci_ids[] = {
+ 		PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_KBL_SQ_IMC),
+ 		.driver_data = UNCORE_PCI_DEV_DATA(SNB_PCI_UNCORE_IMC, 0),
+ 	},
++	{ /* IMC */
++		PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_KBL_HQ_IMC),
++		.driver_data = UNCORE_PCI_DEV_DATA(SNB_PCI_UNCORE_IMC, 0),
++	},
++	{ /* IMC */
++		PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_KBL_WQ_IMC),
++		.driver_data = UNCORE_PCI_DEV_DATA(SNB_PCI_UNCORE_IMC, 0),
++	},
+ 	{ /* IMC */
+ 		PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_CFL_2U_IMC),
+ 		.driver_data = UNCORE_PCI_DEV_DATA(SNB_PCI_UNCORE_IMC, 0),
+@@ -737,6 +753,26 @@ static const struct pci_device_id skl_uncore_pci_ids[] = {
+ 		PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_CFL_8S_S_IMC),
+ 		.driver_data = UNCORE_PCI_DEV_DATA(SNB_PCI_UNCORE_IMC, 0),
+ 	},
++	{ /* IMC */
++		PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_AML_YD_IMC),
++		.driver_data = UNCORE_PCI_DEV_DATA(SNB_PCI_UNCORE_IMC, 0),
++	},
++	{ /* IMC */
++		PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_AML_YQ_IMC),
++		.driver_data = UNCORE_PCI_DEV_DATA(SNB_PCI_UNCORE_IMC, 0),
++	},
++	{ /* IMC */
++		PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_WHL_UQ_IMC),
++		.driver_data = UNCORE_PCI_DEV_DATA(SNB_PCI_UNCORE_IMC, 0),
++	},
++	{ /* IMC */
++		PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_WHL_4_UQ_IMC),
++		.driver_data = UNCORE_PCI_DEV_DATA(SNB_PCI_UNCORE_IMC, 0),
++	},
++	{ /* IMC */
++		PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_WHL_UD_IMC),
++		.driver_data = UNCORE_PCI_DEV_DATA(SNB_PCI_UNCORE_IMC, 0),
++	},
+ 	{ /* end: all zeroes */ },
+ };
+ 
+@@ -807,6 +843,8 @@ static const struct imc_uncore_pci_dev desktop_imc_pci_ids[] = {
+ 	IMC_DEV(KBL_UQ_IMC, &skl_uncore_pci_driver),  /* 7th Gen Core U Quad Core */
+ 	IMC_DEV(KBL_SD_IMC, &skl_uncore_pci_driver),  /* 7th Gen Core S Dual Core */
+ 	IMC_DEV(KBL_SQ_IMC, &skl_uncore_pci_driver),  /* 7th Gen Core S Quad Core */
++	IMC_DEV(KBL_HQ_IMC, &skl_uncore_pci_driver),  /* 7th Gen Core H Quad Core */
++	IMC_DEV(KBL_WQ_IMC, &skl_uncore_pci_driver),  /* 7th Gen Core S 4 cores Work Station */
+ 	IMC_DEV(CFL_2U_IMC, &skl_uncore_pci_driver),  /* 8th Gen Core U 2 Cores */
+ 	IMC_DEV(CFL_4U_IMC, &skl_uncore_pci_driver),  /* 8th Gen Core U 4 Cores */
+ 	IMC_DEV(CFL_4H_IMC, &skl_uncore_pci_driver),  /* 8th Gen Core H 4 Cores */
+@@ -821,6 +859,11 @@ static const struct imc_uncore_pci_dev desktop_imc_pci_ids[] = {
+ 	IMC_DEV(CFL_4S_S_IMC, &skl_uncore_pci_driver),  /* 8th Gen Core S 4 Cores Server */
+ 	IMC_DEV(CFL_6S_S_IMC, &skl_uncore_pci_driver),  /* 8th Gen Core S 6 Cores Server */
+ 	IMC_DEV(CFL_8S_S_IMC, &skl_uncore_pci_driver),  /* 8th Gen Core S 8 Cores Server */
++	IMC_DEV(AML_YD_IMC, &skl_uncore_pci_driver),	/* 8th Gen Core Y Mobile Dual Core */
++	IMC_DEV(AML_YQ_IMC, &skl_uncore_pci_driver),	/* 8th Gen Core Y Mobile Quad Core */
++	IMC_DEV(WHL_UQ_IMC, &skl_uncore_pci_driver),	/* 8th Gen Core U Mobile Quad Core */
++	IMC_DEV(WHL_4_UQ_IMC, &skl_uncore_pci_driver),	/* 8th Gen Core U Mobile Quad Core */
++	IMC_DEV(WHL_UD_IMC, &skl_uncore_pci_driver),	/* 8th Gen Core U Mobile Dual Core */
+ 	IMC_DEV(ICL_U_IMC, &icl_uncore_pci_driver),	/* 10th Gen Core Mobile */
+ 	IMC_DEV(ICL_U2_IMC, &icl_uncore_pci_driver),	/* 10th Gen Core Mobile */
+ 	{  /* end marker */ }
+

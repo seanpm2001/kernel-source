@@ -1,0 +1,48 @@
+From 05c2a61d69ea306e891884a86486e1ef37c4b78d Mon Sep 17 00:00:00 2001
+From: Zhang Changzhong <zhangchangzhong@huawei.com>
+Date: Fri, 4 Dec 2020 16:47:17 +0800
+Subject: [PATCH] adm8211: fix error return code in adm8211_probe()
+Git-commit: 05c2a61d69ea306e891884a86486e1ef37c4b78d
+References: git-fixes
+Patch-mainline: v5.11-rc1
+
+Fix to return a negative error code from the error handling
+case instead of 0, as done elsewhere in this function.
+
+Fixes: cc0b88cf5ecf ("[PATCH] Add adm8211 802.11b wireless driver")
+Reported-by: Hulk Robot <hulkci@huawei.com>
+Signed-off-by: Zhang Changzhong <zhangchangzhong@huawei.com>
+Signed-off-by: Kalle Valo <kvalo@codeaurora.org>
+Link: https://lore.kernel.org/r/1607071638-33619-1-git-send-email-zhangchangzhong@huawei.com
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+---
+ drivers/net/wireless/admtek/adm8211.c |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/wireless/admtek/adm8211.c
++++ b/drivers/net/wireless/admtek/adm8211.c
+@@ -1805,6 +1805,7 @@ static int adm8211_probe(struct pci_dev
+ 	if (io_len < 256 || mem_len < 1024) {
+ 		printk(KERN_ERR "%s (adm8211): Too short PCI resources\n",
+ 		       pci_name(pdev));
++		err = -ENOMEM;
+ 		goto err_disable_pdev;
+ 	}
+ 
+@@ -1814,6 +1815,7 @@ static int adm8211_probe(struct pci_dev
+ 	if (reg != ADM8211_SIG1 && reg != ADM8211_SIG2) {
+ 		printk(KERN_ERR "%s (adm8211): Invalid signature (0x%x)\n",
+ 		       pci_name(pdev), reg);
++		err = -EINVAL;
+ 		goto err_disable_pdev;
+ 	}
+ 
+@@ -1821,7 +1823,7 @@ static int adm8211_probe(struct pci_dev
+ 	if (err) {
+ 		printk(KERN_ERR "%s (adm8211): Cannot obtain PCI resources\n",
+ 		       pci_name(pdev));
+-		return err; /* someone else grabbed it? don't disable it */
++		goto err_disable_pdev;
+ 	}
+ 
+ 	if (pci_set_dma_mask(pdev, DMA_BIT_MASK(32)) ||
