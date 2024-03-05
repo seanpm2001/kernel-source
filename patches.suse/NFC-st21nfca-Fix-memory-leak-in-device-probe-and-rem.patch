@@ -1,0 +1,108 @@
+From 1b9dadba502234eea7244879b8d5d126bfaf9f0c Mon Sep 17 00:00:00 2001
+From: Wei Yongjun <weiyongjun1@huawei.com>
+Date: Tue, 28 Dec 2021 12:48:11 +0000
+Subject: [PATCH] NFC: st21nfca: Fix memory leak in device probe and remove
+Git-commit: 1b9dadba502234eea7244879b8d5d126bfaf9f0c
+Patch-mainline: v5.16-rc8
+References: CVE-2021-46924 bsc#1220459
+
+'phy->pending_skb' is alloced when device probe, but forgot to free
+in the error handling path and remove path, this cause memory leak
+as follows:
+
+unreferenced object 0xffff88800bc06800 (size 512):
+  comm "8", pid 11775, jiffies 4295159829 (age 9.032s)
+  hex dump (first 32 bytes):
+    00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+    00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+  backtrace:
+    [<00000000d66c09ce>] __kmalloc_node_track_caller+0x1ed/0x450
+    [<00000000c93382b3>] kmalloc_reserve+0x37/0xd0
+    [<000000005fea522c>] __alloc_skb+0x124/0x380
+    [<0000000019f29f9a>] st21nfca_hci_i2c_probe+0x170/0x8f2
+
+Fix it by freeing 'pending_skb' in error and remove.
+
+Fixes: 68957303f44a ("NFC: ST21NFCA: Add driver for STMicroelectronics ST21NFCA NFC Chip")
+Reported-by: Hulk Robot <hulkci@huawei.com>
+Signed-off-by: Wei Yongjun <weiyongjun1@huawei.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/nfc/st21nfca/i2c.c |   33 ++++++++++++++++++++++-----------
+ 1 file changed, 22 insertions(+), 11 deletions(-)
+
+--- a/drivers/nfc/st21nfca/i2c.c
++++ b/drivers/nfc/st21nfca/i2c.c
+@@ -566,17 +566,18 @@ static int st21nfca_hci_i2c_probe(struct
+ 		r = st21nfca_hci_i2c_of_request_resources(client);
+ 		if (r) {
+ 			nfc_err(&client->dev, "No platform data\n");
+-			return r;
++			goto out_free;
+ 		}
+ 	} else if (ACPI_HANDLE(&client->dev)) {
+ 		r = st21nfca_hci_i2c_acpi_request_resources(client);
+ 		if (r) {
+ 			nfc_err(&client->dev, "Cannot get ACPI data\n");
+-			return r;
++			goto out_free;
+ 		}
+ 	} else {
+ 		nfc_err(&client->dev, "st21nfca platform resources not available\n");
+-		return -ENODEV;
++		r = -ENODEV;
++		goto out_free;
+ 	}
+ 
+ 	phy->se_status.is_ese_present =
+@@ -587,7 +588,7 @@ static int st21nfca_hci_i2c_probe(struct
+ 	r = st21nfca_hci_platform_init(phy);
+ 	if (r < 0) {
+ 		nfc_err(&client->dev, "Unable to reboot st21nfca\n");
+-		return r;
++		goto out_free;
+ 	}
+ 
+ 	r = devm_request_threaded_irq(&client->dev, client->irq, NULL,
+@@ -596,15 +597,23 @@ static int st21nfca_hci_i2c_probe(struct
+ 				ST21NFCA_HCI_DRIVER_NAME, phy);
+ 	if (r < 0) {
+ 		nfc_err(&client->dev, "Unable to register IRQ handler\n");
+-		return r;
++		goto out_free;
+ 	}
+ 
+-	return st21nfca_hci_probe(phy, &i2c_phy_ops, LLC_SHDLC_NAME,
+-					ST21NFCA_FRAME_HEADROOM,
+-					ST21NFCA_FRAME_TAILROOM,
+-					ST21NFCA_HCI_LLC_MAX_PAYLOAD,
+-					&phy->hdev,
+-					&phy->se_status);
++	r = st21nfca_hci_probe(phy, &i2c_phy_ops, LLC_SHDLC_NAME,
++			       ST21NFCA_FRAME_HEADROOM,
++			       ST21NFCA_FRAME_TAILROOM,
++			       ST21NFCA_HCI_LLC_MAX_PAYLOAD,
++			       &phy->hdev,
++			       &phy->se_status);
++	if (r)
++		goto out_free;
++
++	return 0;
++
++out_free:
++	kfree_skb(phy->pending_skb);
++	return r;
+ }
+ 
+ static int st21nfca_hci_i2c_remove(struct i2c_client *client)
+@@ -617,6 +626,8 @@ static int st21nfca_hci_i2c_remove(struc
+ 
+ 	if (phy->powered)
+ 		st21nfca_hci_i2c_disable(phy);
++	if (phy->pending_skb)
++		kfree_skb(phy->pending_skb);
+ 
+ 	return 0;
+ }
