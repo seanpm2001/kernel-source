@@ -1,0 +1,30 @@
+From: Trond Myklebust <trond.myklebust@hammerspace.com>
+Date: Mon, 30 Mar 2020 20:13:48 -0400
+Subject: [PATCH] NFS: Fix a request reference leak in
+ nfs_direct_write_clear_reqs()
+Git-commit: f02cec9d33e0069c11e58f97529c1d697255889d
+Patch-mainline: v5.7
+References: git-fixes
+
+nfs_direct_write_scan_commit_list() will lock the request and bump
+the reference count, but we also need to account for the reference
+that was taken when we initially added the request to the commit list.
+
+Fixes: fb5f7f20cdb9 ("NFS: commit errors should be fatal")
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/direct.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/fs/nfs/direct.c
++++ b/fs/nfs/direct.c
+@@ -691,6 +691,7 @@ static void nfs_direct_write_clear_reqs(
+ 	while (!list_empty(&reqs)) {
+ 		req = nfs_list_entry(reqs.next);
+ 		nfs_list_remove_request(req);
++		nfs_release_request(req);
+ 		nfs_unlock_and_release_request(req);
+ 	}
+ }
