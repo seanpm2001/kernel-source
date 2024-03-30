@@ -53,38 +53,39 @@ Link: https://lore.kernel.org/r/20221128161526.79730-1-sven@svenpeter.dev
 Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
 Signed-off-by: Oliver Neukum <oneukum@suse.com>
 ---
- drivers/usb/dwc3/core.c |   17 +++++++++++------
- 1 file changed, 11 insertions(+), 6 deletions(-)
+ drivers/usb/dwc3/core.c |   16 ++++++++++------
+ 1 file changed, 10 insertions(+), 6 deletions(-)
 
 --- a/drivers/usb/dwc3/core.c
 +++ b/drivers/usb/dwc3/core.c
-@@ -118,17 +118,22 @@ static void __dwc3_set_mode(struct work_
- 	struct dwc3 *dwc = work_to_dwc(work);
+@@ -121,19 +121,23 @@ static void __dwc3_set_mode(struct work_
  	unsigned long flags;
  	int ret;
+ 	u32 reg;
 +	u32 desired_dr_role;
+ 
+ 	mutex_lock(&dwc->mutex);
  
 -	if (!dwc->desired_dr_role)
 +	spin_lock_irqsave(&dwc->lock, flags);
 +	desired_dr_role = dwc->desired_dr_role;
 +	spin_unlock_irqrestore(&dwc->lock, flags);
-+
 +	if (!desired_dr_role)
- 		return;
+ 		goto out;
  
 -	if (dwc->desired_dr_role == dwc->current_dr_role)
 +	if (desired_dr_role == dwc->current_dr_role)
- 		return;
+ 		goto out;
  
  	if (dwc->dr_mode != USB_DR_MODE_OTG)
- 		return;
+ 		goto out;
  
 -	if (dwc->desired_dr_role == DWC3_GCTL_PRTCAP_OTG)
 +	if (desired_dr_role == DWC3_GCTL_PRTCAP_OTG)
- 		return;
+ 		goto out;
  
  	switch (dwc->current_dr_role) {
-@@ -145,13 +150,13 @@ static void __dwc3_set_mode(struct work_
+@@ -169,13 +173,13 @@ static void __dwc3_set_mode(struct work_
  
  	spin_lock_irqsave(&dwc->lock, flags);
  
