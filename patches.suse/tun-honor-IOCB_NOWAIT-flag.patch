@@ -1,0 +1,63 @@
+From a04c006bb1f0374f9868de5db4888efc435205db Mon Sep 17 00:00:00 2001
+From: Jens Axboe <axboe@kernel.dk>
+Date: Fri, 20 Nov 2020 07:59:54 -0700
+Subject: [PATCH 5/8] tun: honor IOCB_NOWAIT flag
+Git-commit: 5aac0390a63b8718237a61dd0d24a29201d1c94a
+References: git-fixes
+Patch-mainline: v5.10-rc6
+
+tun only checks the file O_NONBLOCK flag, but it should also be checking
+the iocb IOCB_NOWAIT flag. Any fops using ->read/write_iter() should check
+both, otherwise it breaks users that correctly expect O_NONBLOCK semantics
+if IOCB_NOWAIT is set.
+
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Link: https://lore.kernel.org/r/e9451860-96cc-c7c7-47b8-fe42cadd5f4c@kernel.dk
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/tun.c | 14 +++++++++++---
+ 1 file changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/tun.c b/drivers/net/tun.c
+index 14d0ad3a98eb..46b02fdb50b7 100644
+--- a/drivers/net/tun.c
++++ b/drivers/net/tun.c
+@@ -2019,12 +2019,15 @@ static ssize_t tun_chr_write_iter(struct kiocb *iocb, struct iov_iter *from)
+ 	struct tun_file *tfile = file->private_data;
+ 	struct tun_struct *tun = tun_get(tfile);
+ 	ssize_t result;
++	int noblock = 0;
+ 
+ 	if (!tun)
+ 		return -EBADFD;
+ 
+-	result = tun_get_user(tun, tfile, NULL, from,
+-			      file->f_flags & O_NONBLOCK, false);
++	if ((file->f_flags & O_NONBLOCK) || (iocb->ki_flags & IOCB_NOWAIT))
++		noblock = 1;
++
++	result = tun_get_user(tun, tfile, NULL, from, noblock, false);
+ 
+ 	tun_put(tun);
+ 	return result;
+@@ -2245,10 +2248,15 @@ static ssize_t tun_chr_read_iter(struct kiocb *iocb, struct iov_iter *to)
+ 	struct tun_file *tfile = file->private_data;
+ 	struct tun_struct *tun = tun_get(tfile);
+ 	ssize_t len = iov_iter_count(to), ret;
++	int noblock = 0;
+ 
+ 	if (!tun)
+ 		return -EBADFD;
+-	ret = tun_do_read(tun, tfile, to, file->f_flags & O_NONBLOCK, NULL);
++
++	if ((file->f_flags & O_NONBLOCK) || (iocb->ki_flags & IOCB_NOWAIT))
++		noblock = 1;
++
++	ret = tun_do_read(tun, tfile, to, noblock, NULL);
+ 	ret = min_t(ssize_t, ret, len);
+ 	if (ret > 0)
+ 		iocb->ki_pos = ret;
+-- 
+2.16.4
+
