@@ -17,12 +17,12 @@ Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
 Acked-by: Jan Kara <jack@suse.cz>
 
 ---
- fs/ext2/namei.c |   11 ++++++-----
- 1 file changed, 6 insertions(+), 5 deletions(-)
+ fs/ext2/namei.c |   15 ++++++---------
+ 1 file changed, 6 insertions(+), 9 deletions(-)
 
 --- a/fs/ext2/namei.c
 +++ b/fs/ext2/namei.c
-@@ -319,6 +319,7 @@ static int ext2_rename (struct inode * o
+@@ -321,6 +321,7 @@ static int ext2_rename (struct inode * o
  	struct ext2_dir_entry_2 * dir_de = NULL;
  	struct page * old_page;
  	struct ext2_dir_entry_2 * old_de;
@@ -30,7 +30,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  	int err;
  
  	if (flags & ~RENAME_NOREPLACE)
-@@ -338,7 +339,7 @@ static int ext2_rename (struct inode * o
+@@ -340,7 +341,7 @@ static int ext2_rename (struct inode * o
  		goto out;
  	}
  
@@ -39,7 +39,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  		err = -EIO;
  		dir_de = ext2_dotdot(old_inode, &dir_page);
  		if (!dir_de)
-@@ -350,7 +351,7 @@ static int ext2_rename (struct inode * o
+@@ -352,7 +353,7 @@ static int ext2_rename (struct inode * o
  		struct ext2_dir_entry_2 *new_de;
  
  		err = -ENOTEMPTY;
@@ -48,7 +48,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  			goto out_dir;
  
  		err = -ENOENT;
-@@ -359,14 +360,14 @@ static int ext2_rename (struct inode * o
+@@ -361,14 +362,14 @@ static int ext2_rename (struct inode * o
  			goto out_dir;
  		ext2_set_link(new_dir, new_de, new_page, old_inode, 1);
  		new_inode->i_ctime = current_time(new_inode);
@@ -65,7 +65,7 @@ Acked-by: Jan Kara <jack@suse.cz>
  			inode_inc_link_count(new_dir);
  	}
  
-@@ -379,7 +380,7 @@ static int ext2_rename (struct inode * o
+@@ -381,13 +382,9 @@ static int ext2_rename (struct inode * o
  
  	ext2_delete_entry (old_de, old_page);
  
@@ -73,4 +73,10 @@ Acked-by: Jan Kara <jack@suse.cz>
 +	if (old_is_dir) {
  		if (old_dir != new_dir)
  			ext2_set_link(old_inode, dir_de, dir_page, new_dir, 0);
- 		else {
+-		else {
+-			kunmap(dir_page);
+-			put_page(dir_page);
+-		}
+ 		inode_dec_link_count(old_dir);
+ 	}
+ 	return 0;
