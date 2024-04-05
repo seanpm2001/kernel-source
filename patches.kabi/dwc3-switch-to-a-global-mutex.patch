@@ -1,0 +1,80 @@
+From 8c756c48ee007733632bfcb141a35e6bcda1b9ac Mon Sep 17 00:00:00 2001
+From: Oliver Neukum <oneukum@suse.com>
+Date: Wed, 20 Mar 2024 16:30:33 +0100
+Subject: [PATCH] dwc3: switch to a global mutex
+Patch-mainline: Never, kABI fixup
+References: bsc#1220628 CVE-2021-46941
+
+Preserve kABI by replacing the per instance mutex
+with a global one.
+
+Signed-off-by: Oliver Neukum <oneukum@suse.comY
+---
+ drivers/usb/dwc3/core.c |    6 +++---
+ drivers/usb/dwc3/core.h |    5 -----
+ 2 files changed, 3 insertions(+), 8 deletions(-)
+
+--- a/drivers/usb/dwc3/core.c
++++ b/drivers/usb/dwc3/core.c
+@@ -49,6 +49,7 @@
+ 
+ #define DWC3_DEFAULT_AUTOSUSPEND_DELAY	5000 /* ms */
+ 
++static DEFINE_MUTEX(suse_roleswitch_mutex);
+ /**
+  * dwc3_get_dr_mode - Validates and sets dr_mode
+  * @dwc: pointer to our context structure
+@@ -123,7 +124,7 @@ static void __dwc3_set_mode(struct work_
+ 	u32 reg;
+ 	u32 desired_dr_role;
+ 
+-	mutex_lock(&dwc->mutex);
++	mutex_lock(&suse_roleswitch_mutex);
+ 
+ 	spin_lock_irqsave(&dwc->lock, flags);
+ 	desired_dr_role = dwc->desired_dr_role;
+@@ -197,7 +198,7 @@ static void __dwc3_set_mode(struct work_
+ 		break;
+ 	}
+ out:
+-	mutex_unlock(&dwc->mutex);
++	mutex_unlock(&suse_roleswitch_mutex);
+ }
+ 
+ void dwc3_set_mode(struct dwc3 *dwc, u32 mode)
+@@ -1270,7 +1271,6 @@ static int dwc3_probe(struct platform_de
+ 	dwc3_cache_hwparams(dwc);
+ 
+ 	spin_lock_init(&dwc->lock);
+-	mutex_init(&dwc->mutex);
+ 
+ 	pm_runtime_get_noresume(dev);
+ 	pm_runtime_set_active(dev);
+--- a/drivers/usb/dwc3/core.h
++++ b/drivers/usb/dwc3/core.h
+@@ -21,7 +21,6 @@
+ 
+ #include <linux/device.h>
+ #include <linux/spinlock.h>
+-#include <linux/mutex.h>
+ #include <linux/ioport.h>
+ #include <linux/list.h>
+ #include <linux/bitops.h>
+@@ -777,7 +776,6 @@ struct dwc3_scratchpad_array {
+  * @scratch_addr: dma address of scratchbuf
+  * @ep0_in_setup: one control transfer is completed and enter setup phase
+  * @lock: for synchronizing
+- * @mutex: for mode switching
+  * @dev: pointer to our struct device
+  * @xhci: pointer to our xHCI child
+  * @event_buffer_list: a list of event buffers
+@@ -885,9 +883,6 @@ struct dwc3 {
+ 	/* device lock */
+ 	spinlock_t		lock;
+ 
+-	/* mode switching lock */
+-	struct mutex		mutex;
+-
+ 	struct device		*dev;
+ 	struct device		*sysdev;
+ 

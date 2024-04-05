@@ -1,0 +1,40 @@
+From 91781b604e98ebabfe73b2c612d4ac0232e31ccf Mon Sep 17 00:00:00 2001
+From: Jiapeng Chong <jiapeng.chong@linux.alibaba.com>
+Date: Tue, 25 May 2021 19:00:12 +0800
+Subject: [PATCH 3/4] bnx2x: Fix missing error code in bnx2x_iov_init_one()
+Git-commit: 65161c35554f7135e6656b3df1ce2c500ca0bdcf
+References: git-fixes
+Patch-mainline: v5.13-rc4
+
+Eliminate the follow smatch warning:
+
+drivers/net/ethernet/broadcom/bnx2x/bnx2x_sriov.c:1227
+bnx2x_iov_init_one() warn: missing error code 'err'.
+
+Reported-by: Abaci Robot <abaci@linux.alibaba.com>
+Signed-off-by: Jiapeng Chong <jiapeng.chong@linux.alibaba.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/broadcom/bnx2x/bnx2x_sriov.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/broadcom/bnx2x/bnx2x_sriov.c b/drivers/net/ethernet/broadcom/bnx2x/bnx2x_sriov.c
+index b3693b48e24f..959de068fc5f 100644
+--- a/drivers/net/ethernet/broadcom/bnx2x/bnx2x_sriov.c
++++ b/drivers/net/ethernet/broadcom/bnx2x/bnx2x_sriov.c
+@@ -1247,8 +1247,10 @@ int bnx2x_iov_init_one(struct bnx2x *bp, int int_mode_param,
+ 		goto failed;
+ 
+ 	/* SR-IOV capability was enabled but there are no VFs*/
+-	if (iov->total == 0)
++	if (iov->total == 0) {
++		err = -EINVAL;
+ 		goto failed;
++	}
+ 
+ 	iov->nr_virtfn = min_t(u16, iov->total, num_vfs_param);
+ 
+-- 
+2.16.4
+
