@@ -1,0 +1,39 @@
+From 9b9a609bf7439e682ac3639f1e9b44423682ae20 Mon Sep 17 00:00:00 2001
+From: Zhang Changzhong <zhangchangzhong@huawei.com>
+Date: Tue, 17 Nov 2020 10:55:21 +0800
+Subject: [PATCH 3/8] atl1c: fix error return code in atl1c_probe()
+Git-commit: 537a14726582c4e7bfe4dff9cb7fca19dc912cf6
+References: git-fixes
+Patch-mainline: v5.10-rc5
+
+Fix to return a negative error code from the error handling
+case instead of 0, as done elsewhere in this function.
+
+Fixes: 43250ddd75a3 ("atl1c: Atheros L1C Gigabit Ethernet driver")
+Reported-by: Hulk Robot <hulkci@huawei.com>
+Signed-off-by: Zhang Changzhong <zhangchangzhong@huawei.com>
+Link: https://lore.kernel.org/r/1605581721-36028-1-git-send-email-zhangchangzhong@huawei.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ drivers/net/ethernet/atheros/atl1c/atl1c_main.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/atheros/atl1c/atl1c_main.c b/drivers/net/ethernet/atheros/atl1c/atl1c_main.c
+index 7ef0d35c931f..d18314148f81 100644
+--- a/drivers/net/ethernet/atheros/atl1c/atl1c_main.c
++++ b/drivers/net/ethernet/atheros/atl1c/atl1c_main.c
+@@ -2567,8 +2567,8 @@ static int atl1c_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 	 * various kernel subsystems to support the mechanics required by a
+ 	 * fixed-high-32-bit system.
+ 	 */
+-	if ((dma_set_mask(&pdev->dev, DMA_BIT_MASK(32)) != 0) ||
+-	    (dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(32)) != 0)) {
++	err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
++	if (err) {
+ 		dev_err(&pdev->dev, "No usable DMA configuration,aborting\n");
+ 		goto err_dma;
+ 	}
+-- 
+2.16.4
+

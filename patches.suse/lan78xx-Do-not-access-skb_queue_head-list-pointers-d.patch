@@ -1,0 +1,40 @@
+From e42a43a5cab2e019b5ab82bedb1340854709154d Mon Sep 17 00:00:00 2001
+From: "David S. Miller" <davem@davemloft.net>
+Date: Mon, 6 Aug 2018 23:12:17 -0700
+Subject: [PATCH] lan78xx: Do not access skb_queue_head list pointers directly.
+Git-commit: e42a43a5cab2e019b5ab82bedb1340854709154d
+References: git-fixes
+Patch-mainline: v4.20-rc1
+
+Use skb_queue_walk() instead.
+
+Adjust inner loop test to utilize and skb_queue_is_first().
+Unfortunately we have to keep pkt_cnt around because it is
+used by a latter loop in this function.
+
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/net/usb/lan78xx.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/usb/lan78xx.c b/drivers/net/usb/lan78xx.c
+index 331bc99d55e7..3ce3c66559e4 100644
+--- a/drivers/net/usb/lan78xx.c
++++ b/drivers/net/usb/lan78xx.c
+@@ -3340,9 +3340,9 @@ static void lan78xx_tx_bh(struct lan78xx_net *dev)
+ 	count = 0;
+ 	length = 0;
+ 	spin_lock_irqsave(&tqp->lock, flags);
+-	for (skb = tqp->next; pkt_cnt < tqp->qlen; skb = skb->next) {
++	skb_queue_walk(tqp, skb) {
+ 		if (skb_is_gso(skb)) {
+-			if (pkt_cnt) {
++			if (!skb_queue_is_first(tqp, skb)) {
+ 				/* handle previous packets first */
+ 				break;
+ 			}
+-- 
+2.44.0
+
