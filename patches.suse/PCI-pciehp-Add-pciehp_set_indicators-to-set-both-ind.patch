@@ -1,0 +1,86 @@
+From: Denis Efremov <efremov@linux.com>
+Date: Tue, 3 Sep 2019 14:10:18 +0300
+Subject: PCI: pciehp: Add pciehp_set_indicators() to set both indicators
+Git-commit: 688033f52d7192ea8ddf617b86af0a4120247b42
+Patch-mainline: 5.4-rc1
+References: git-fixes
+
+Add pciehp_set_indicators() to set power and attention indicators with a
+single register write.
+
+This is a minor optimization because we frequently set both indicators and
+this can do it with a single command.  It also reduces the number of
+interfaces related to the indicators and makes them more discoverable
+because callers use the PCI_EXP_SLTCTL_ATTN_IND_* and
+PCI_EXP_SLTCTL_PWR_IND_* definitions directly.
+
+[bhelgaas: extend commit log, s/PCI_EXP_SLTCTL_.*_IND_NONE/INDICATOR_NOOP/
+so they don't look like things defined by the spec, add function doc, mask
+commands to make it obvious we only send valid commands
+(pcie_do_write_cmd() does mask it, but requires more effort to verify)]
+Link: https://lore.kernel.org/r/20190903111021.1559-2-efremov@linux.com
+Signed-off-by: Denis Efremov <efremov@linux.com>
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ drivers/pci/hotplug/pciehp.h     |    3 +++
+ drivers/pci/hotplug/pciehp_hpc.c |   36 ++++++++++++++++++++++++++++++++++++
+ 2 files changed, 39 insertions(+)
+
+--- a/drivers/pci/hotplug/pciehp.h
++++ b/drivers/pci/hotplug/pciehp.h
+@@ -181,6 +181,9 @@ int pciehp_power_on_slot(struct controll
+ void pciehp_power_off_slot(struct controller *ctrl);
+ void pciehp_get_power_status(struct controller *ctrl, u8 *status);
+ 
++#define INDICATOR_NOOP -1	/* Leave indicator unchanged */
++void pciehp_set_indicators(struct controller *ctrl, int pwr, int attn);
++
+ void pciehp_set_attention_status(struct controller *ctrl, u8 status);
+ void pciehp_get_latch_status(struct controller *ctrl, u8 *status);
+ int pciehp_query_power_fault(struct controller *ctrl);
+--- a/drivers/pci/hotplug/pciehp_hpc.c
++++ b/drivers/pci/hotplug/pciehp_hpc.c
+@@ -474,6 +474,42 @@ void pciehp_set_attention_status(struct
+ 		 pci_pcie_cap(ctrl->pcie->port) + PCI_EXP_SLTCTL, slot_cmd);
+ }
+ 
++/**
++ * pciehp_set_indicators() - set attention indicator, power indicator, or both
++ * @ctrl: PCIe hotplug controller
++ * @pwr: one of:
++ *	PCI_EXP_SLTCTL_PWR_IND_ON
++ *	PCI_EXP_SLTCTL_PWR_IND_BLINK
++ *	PCI_EXP_SLTCTL_PWR_IND_OFF
++ * @attn: one of:
++ *	PCI_EXP_SLTCTL_ATTN_IND_ON
++ *	PCI_EXP_SLTCTL_ATTN_IND_BLINK
++ *	PCI_EXP_SLTCTL_ATTN_IND_OFF
++ *
++ * Either @pwr or @attn can also be INDICATOR_NOOP to leave that indicator
++ * unchanged.
++ */
++void pciehp_set_indicators(struct controller *ctrl, int pwr, int attn)
++{
++	u16 cmd = 0, mask = 0;
++
++	if (PWR_LED(ctrl) && pwr != INDICATOR_NOOP) {
++		cmd |= (pwr & PCI_EXP_SLTCTL_PIC);
++		mask |= PCI_EXP_SLTCTL_PIC;
++	}
++
++	if (ATTN_LED(ctrl) && attn != INDICATOR_NOOP) {
++		cmd |= (attn & PCI_EXP_SLTCTL_AIC);
++		mask |= PCI_EXP_SLTCTL_AIC;
++	}
++
++	if (cmd) {
++		pcie_write_cmd_nowait(ctrl, cmd, mask);
++		ctrl_dbg(ctrl, "%s: SLOTCTRL %x write cmd %x\n", __func__,
++			 pci_pcie_cap(ctrl->pcie->port) + PCI_EXP_SLTCTL, cmd);
++	}
++}
++
+ void pciehp_green_led_on(struct controller *ctrl)
+ {
+ 	if (!PWR_LED(ctrl))
