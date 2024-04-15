@@ -1,10 +1,10 @@
-From d3b726e236c8833fcaa1a1633731a579ab7e5c0f Mon Sep 17 00:00:00 2001
+From 9fe6e9e7b58944037714442384075c17cfde1c56 Mon Sep 17 00:00:00 2001
 From: Jan Kara <jack@suse.cz>
 Date: Mon, 18 Mar 2024 17:32:09 +0100
 Subject: [PATCH] nfsd: Fix error cleanup path in nfsd_rename()
 Git-commit: 9fe6e9e7b58944037714442384075c17cfde1c56
 Patch-mainline: v6.9-rc2
-References: git-fixes
+References: bsc#1221044 CVE-2023-52591
 
 Commit a8b0026847b8 ("rename(): avoid a deadlock in the case of parents
 having no common ancestor") added an error bail out path. However this
@@ -16,16 +16,15 @@ Signed-off-by: Jan Kara <jack@suse.cz>
 Reviewed-by: Jeff Layton <jlayton@kernel.org>
 Acked-by: Al Viro <viro@zeniv.linux.org.uk>
 Signed-off-by: Chuck Lever <chuck.lever@oracle.com>
-Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+Acked-by: Jan Kara <jack@suse.cz>
+
 ---
- fs/nfsd/vfs.c | 3 ++-
+ fs/nfsd/vfs.c |    3 ++-
  1 file changed, 2 insertions(+), 1 deletion(-)
 
-diff --git a/fs/nfsd/vfs.c b/fs/nfsd/vfs.c
-index dea58c838c98..35cb4f4f9270 100644
 --- a/fs/nfsd/vfs.c
 +++ b/fs/nfsd/vfs.c
-@@ -1706,7 +1706,7 @@ nfsd_rename(struct svc_rqst *rqstp, struct svc_fh *ffhp, char *fname, int flen,
+@@ -1714,7 +1714,7 @@ nfsd_rename(struct svc_rqst *rqstp, stru
  	trap = lock_rename(tdentry, fdentry);
  	if (IS_ERR(trap)) {
  		err = (rqstp->rq_vers == 2) ? nfserr_acces : nfserr_xdev;
@@ -34,14 +33,11 @@ index dea58c838c98..35cb4f4f9270 100644
  	}
  	ffhp->fh_locked = tfhp->fh_locked = true;
  	fill_pre_wcc(ffhp);
-@@ -1753,6 +1753,7 @@ nfsd_rename(struct svc_rqst *rqstp, struct svc_fh *ffhp, char *fname, int flen,
+@@ -1766,6 +1766,7 @@ nfsd_rename(struct svc_rqst *rqstp, stru
+ 	fill_post_wcc(ffhp);
  	fill_post_wcc(tfhp);
  	unlock_rename(tdentry, fdentry);
- 	ffhp->fh_locked = tfhp->fh_locked = false;
 +out_want_write:
+ 	ffhp->fh_locked = tfhp->fh_locked = false;
  	fh_drop_write(ffhp);
  
- out:
--- 
-2.16.4
-
