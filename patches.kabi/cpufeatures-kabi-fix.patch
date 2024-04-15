@@ -12,6 +12,14 @@ be recorded in the new member.
 Additionally cpu_caps_set is also grown by the number of additional cpuid words
 and the getter/setter macros are modified to reflect this. All forced bits which
 belong to extended cpuid words will be written in cpu_caps_set after NCAPINTS+NBUGINTS.
+
+The code also supports adding additional bugsints. It works similarly to how the
+additional cpu feature ints work. The only problem is that the first ordinary bugint
+overlaps with the first extended cpufeature due to the way IS_EXT_CPUID_BIT is
+coded. This problem is fixed by ensuring that the various macros for checking
+features/bug in cpufeature.h are called with the respective set of either flags or
+bug. This ensure that if IS_EXT_CPUID_BIT returns true it's because we've called it
+with an extended feature int.
 ---
  arch/x86/include/asm/cpufeature.h        |   78 ++++++++++++++++++++++++-------
  arch/x86/include/asm/cpufeatures.h       |    5 +
@@ -25,10 +33,18 @@ belong to extended cpuid words will be written in cpu_caps_set after NCAPINTS+NB
  arch/x86/include/asm/processor.h         |    5 +
  arch/x86/include/asm/required-features.h |    4 -
  arch/x86/kernel/alternative.c            |    2
- arch/x86/kernel/cpu/common.c             |   12 +++-
+ arch/x86/include/asm/cpufeature.h        |   99 ++++++++++++++++++++++++-------
+ arch/x86/include/asm/cpufeatures.h       |    5 +
+ arch/x86/include/asm/disabled-features.h |    4 -
+ arch/x86/include/asm/processor.h         |    5 +
+ arch/x86/include/asm/required-features.h |    4 -
+ arch/x86/kernel/alternative.c            |    5 -
+ arch/x86/kernel/cpu/common.c             |   12 +++
  arch/x86/kernel/cpu/mkcapflags.sh        |    4 -
  arch/x86/kernel/cpu/proc.c               |    4 -
- 9 files changed, 99 insertions(+), 33 deletions(-)
+ arch/x86/kvm/cpuid.c                     |    4 -
+ arch/x86/kvm/svm.c                       |    2
+ 11 files changed, 107 insertions(+), 41 deletions(-)
 
 --- a/arch/x86/include/asm/cpufeature.h
 +++ b/arch/x86/include/asm/cpufeature.h
@@ -153,7 +169,24 @@ belong to extended cpuid words will be written in cpu_caps_set after NCAPINTS+NB
 
  #if defined(CC_HAVE_ASM_GOTO) && defined(CONFIG_X86_FAST_FEATURE_TESTS)
  /*
-@@ -209,15 +252,28 @@ static __always_inline __pure bool _stat
+@@ -196,11 +239,12 @@ static __always_inline __pure bool _stat
+ }
+
+ #define static_cpu_has(bit)					\
+-(								\
+-	__builtin_constant_p(boot_cpu_has(bit)) ?		\
++({								\
++	BUILD_BUG_ON_MSG((bit >> 5) >= NCAPINTS+NBUGINTS, "extended bits/bugs not supported"); \
++	(__builtin_constant_p(boot_cpu_has(bit)) ?		\
+ 		boot_cpu_has(bit) :				\
+-		_static_cpu_has(bit)				\
+-)
++		_static_cpu_has(bit));				\
++})
+ #else
+ /*
+  * Fall back to dynamic for gcc versions which don't support asm goto. Should be
+@@ -209,15 +253,26 @@ static __always_inline __pure bool _stat
  #define static_cpu_has(bit)		boot_cpu_has(bit)
  #endif
 
@@ -166,9 +199,7 @@ belong to extended cpuid words will be written in cpu_caps_set after NCAPINTS+NB
 +#define set_cpu_bug(c, bit) do { \
 +	if (IS_EXT_BUG_BIT(bit)) {					      \
 +		set_bit(bit - ((NCAPINTS+NBUGINTS)*32),                                 \
-+			(unsigned long *)&(c)->x86_ext_capability[NEXTCAPINTS]); \
-+		set_bit(bit - (NCAPINTS*32),                                  \
-+			(unsigned long *)(c)->x86_ext_capability);	      \
++			(unsigned long *)(&((c)->x86_ext_capability[NEXTCAPINTS]))); \
 +	} else {							      \
 +		set_bit(bit, (unsigned long *)((c)->x86_capability));	      \
 +	}								      \
@@ -248,15 +279,18 @@ belong to extended cpuid words will be written in cpu_caps_set after NCAPINTS+NB
  #endif /* _ASM_X86_REQUIRED_FEATURES_H */
 --- a/arch/x86/kernel/alternative.c
 +++ b/arch/x86/kernel/alternative.c
-@@ -385,7 +385,7 @@ void __init_or_module noinline apply_alt
+@@ -385,8 +385,9 @@ void __init_or_module noinline apply_alt
  		instr = (u8 *)&a->instr_offset + a->instr_offset;
  		replacement = (u8 *)&a->repl_offset + a->repl_offset;
  		BUG_ON(a->instrlen > sizeof(insnbuf));
 -		BUG_ON(a->cpuid >= (NCAPINTS + NBUGINTS) * 32);
+-		if (!boot_cpu_has(a->cpuid)) {
 +		BUG_ON(a->cpuid >= (NCAPINTS + NBUGINTS + NEXTCAPINTS + NEXTBUGINTS) * 32);
- 		if (!boot_cpu_has(a->cpuid)) {
++		if ((a->cpuid < NCAPINTS && !boot_cpu_has(a->cpuid)) ||
++		    (a->cpuid > NCAPINTS && !boot_cpu_has_bug(a->cpuid))) {
  			if (a->padlen > 1)
  				optimize_nops(a, instr);
+
 --- a/arch/x86/kernel/cpu/common.c
 +++ b/arch/x86/kernel/cpu/common.c
 @@ -486,7 +486,7 @@ static const char *table_lookup_model(st
@@ -325,3 +359,34 @@ belong to extended cpuid words will be written in cpu_caps_set after NCAPINTS+NB
  		unsigned int bug_bit = 32*NCAPINTS + i;
 
  		if (cpu_has_bug(c, bug_bit) && x86_bug_flags[i])
+--- a/arch/x86/kvm/cpuid.c
++++ b/arch/x86/kvm/cpuid.c
+@@ -676,7 +676,7 @@ static inline int __do_cpuid_ent(struct
+ 		 * loop if said highest leaf has no subleaves indexed by ECX.
+ 		 */
+ 		if (entry->eax >= 0x8000001d &&
+-		    (static_cpu_has(X86_FEATURE_LFENCE_RDTSC)
++		    (boot_cpu_has(X86_FEATURE_LFENCE_RDTSC)
+ 		     || !static_cpu_has_bug(X86_BUG_NULL_SEG)))
+ 			entry->eax = max(entry->eax, 0x80000021);
+ 		break;
+@@ -769,7 +769,7 @@ static inline int __do_cpuid_ent(struct
+ 		 * the mask with the raw host CPUID, and reporting support in AMD's
+ 		 * leaf can make it easier for userspace to detect the feature.
+ 		 */
+-		if (cpu_feature_enabled(X86_FEATURE_LFENCE_RDTSC))
++		if (boot_cpu_has(X86_FEATURE_LFENCE_RDTSC))
+ 			entry->eax |= F(LFENCE_RDTSC);
+ 		if (!static_cpu_has_bug(X86_BUG_NULL_SEG))
+ 			entry->eax |= BIT(6);
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -4107,7 +4107,7 @@ static int svm_get_msr_feature(struct kv
+
+ 	switch (msr->index) {
+ 	case MSR_AMD64_DE_CFG:
+-		if (cpu_feature_enabled(X86_FEATURE_LFENCE_RDTSC))
++		if (boot_cpu_has(X86_FEATURE_LFENCE_RDTSC))
+ 			msr->data |= MSR_AMD64_DE_CFG_LFENCE_SERIALIZE;
+ 		break;
+ 	default:
