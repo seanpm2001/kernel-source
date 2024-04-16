@@ -2,9 +2,9 @@ From: NeilBrown <neilb@suse.de>
 Date: Mon, 4 Mar 2024 10:54:34 +1100
 Subject: [PATCH] NFS: add atomic_open for NFSv3 to handle O_TRUNC correctly.
 Patch-mainline: Submitted -  05mar2024 linux-nfs
-References: bsc#1219847
+References: bsc#1219847 bsc#1221862
 
-With two clients with NFSv3 mounts of the same directory, the sequence:
+With two clients, each with NFSv3 mounts of the same directory, the sequence:
 
    client1            client2
   ls -l afile
@@ -31,29 +31,31 @@ lookup_open() when atomic_open is not provided.  The significant change
 is that the O_TRUNC flag is passed a new nfs_do_create() which add
 'trunc' handling to nfs_create().
 
+With this change we also optimise away an unnecessary LOOKUP before the
+file is created.
+
 Signed-off-by: NeilBrown <neilb@suse.de>
 Acked-by: NeilBrown <neilb@suse.com>
 
 ---
- fs/nfs/dir.c           |   53 +++++++++++++++++++++++++++++++++++++++++++++++--
+ fs/nfs/dir.c           |   53 ++++++++++++++++++++++++++++++++++++++++++++++---
  fs/nfs/nfs3proc.c      |    1 
  fs/nfs/proc.c          |    1 
  include/linux/nfs_fs.h |    3 ++
- 4 files changed, 56 insertions(+), 2 deletions(-)
+ 4 files changed, 55 insertions(+), 3 deletions(-)
 
 --- a/fs/nfs/dir.c
 +++ b/fs/nfs/dir.c
-@@ -53,6 +53,9 @@ static int nfs_readdir(struct file *, st
+@@ -53,6 +53,8 @@ static int nfs_readdir(struct file *, st
  static int nfs_fsync_dir(struct file *, loff_t, loff_t, int);
  static loff_t nfs_llseek_dir(struct file *, loff_t, int);
  static void nfs_readdir_clear_array(struct page*);
-+static int nfs_do_create(struct inode *dir,
-+			 struct dentry *dentry, umode_t mode,
-+			 bool excl, bool trunc);
++static int nfs_do_create(struct inode *dir, struct dentry *dentry,
++			 umode_t mode, int open_flags);
  
  const struct file_operations nfs_dir_operations = {
  	.llseek		= nfs_llseek_dir,
-@@ -1721,6 +1724,42 @@ static int nfs4_lookup_revalidate(struct
+@@ -1721,6 +1723,40 @@ static int nfs4_lookup_revalidate(struct
  }
  
  #endif /* CONFIG_NFSV4 */
@@ -66,6 +68,14 @@ Acked-by: NeilBrown <neilb@suse.com>
 +	 * handling.
 +	 */
 +	int error = 0;
++
++	if (open_flags & O_CREAT) {
++		*opened |= FILE_CREATED;
++		error = nfs_do_create(dir, dentry, mode, open_flags);
++		if (error)
++			return error;
++		return finish_open(file, dentry, NULL, opened);
++	}
 +
 +	if (d_in_lookup(dentry)) {
 +		/* The only flag that nfs_lookup uses is LOOKUP_EXCL,
@@ -80,45 +90,40 @@ Acked-by: NeilBrown <neilb@suse.com>
 +			return finish_no_open(file, res);
 +		}
 +	}
-+
-+	/* Negative dentry, just create the file */
-+	if (!dentry->d_inode && (open_flags & O_CREAT)) {
-+		*opened |= FILE_CREATED;
-+		error = nfs_do_create(dir, dentry, mode,
-+				      open_flags & O_EXCL,
-+				      open_flags & O_TRUNC);
-+		if (error)
-+			return error;
-+	}
-+	return finish_open(file, dentry, NULL, opened);
++	return finish_no_open(file, NULL);
 +}
 +EXPORT_SYMBOL_GPL(nfs_atomic_open_v23);
  
  /*
   * Code common to create, mkdir, and mknod.
-@@ -1771,8 +1810,8 @@ EXPORT_SYMBOL_GPL(nfs_instantiate);
+@@ -1771,18 +1807,23 @@ EXPORT_SYMBOL_GPL(nfs_instantiate);
   * that the operation succeeded on the server, but an error in the
   * reply path made it appear to have failed.
   */
 -int nfs_create(struct inode *dir, struct dentry *dentry,
 -		umode_t mode, bool excl)
 +static int nfs_do_create(struct inode *dir, struct dentry *dentry,
-+			 umode_t mode, bool excl, bool trunc)
++			 umode_t mode, int open_flags)
  {
  	struct iattr attr;
- 	int open_flags = excl ? O_CREAT | O_EXCL : O_CREAT;
-@@ -1783,6 +1822,10 @@ int nfs_create(struct inode *dir, struct
+-	int open_flags = excl ? O_CREAT | O_EXCL : O_CREAT;
+ 	int error;
+ 
++	open_flags |= O_CREAT;
++
+ 	dfprintk(VFS, "NFS: create(%s/%lu), %pd\n",
+ 			dir->i_sb->s_id, dir->i_ino, dentry);
  
  	attr.ia_mode = mode;
  	attr.ia_valid = ATTR_MODE;
-+	if (trunc) {
++	if (open_flags & O_TRUNC) {
 +		attr.ia_size = 0;
 +		attr.ia_valid |= ATTR_SIZE;
 +	}
  
  	trace_nfs_create_enter(dir, dentry, open_flags);
  	error = NFS_PROTO(dir)->create(dir, dentry, &attr, open_flags);
-@@ -1794,6 +1837,12 @@ out_err:
+@@ -1794,6 +1835,12 @@ out_err:
  	d_drop(dentry);
  	return error;
  }
@@ -126,7 +131,7 @@ Acked-by: NeilBrown <neilb@suse.com>
 +int nfs_create(struct inode *dir,
 +	       struct dentry *dentry, umode_t mode, bool excl)
 +{
-+	return nfs_do_create(dir, dentry, mode, excl, false);
++	return nfs_do_create(dir, dentry, mode, excl ? O_EXCL : 0);
 +}
  EXPORT_SYMBOL_GPL(nfs_create);
  
