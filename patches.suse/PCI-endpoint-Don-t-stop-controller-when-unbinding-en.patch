@@ -1,0 +1,34 @@
+From: Shunsuke Mie <mie@igel.co.jp>
+Date: Wed, 22 Jun 2022 13:09:24 +0900
+Subject: PCI: endpoint: Don't stop controller when unbinding endpoint function
+Git-commit: 1bc2b7bfba6e2f64edf5e246f3af2967261f6c3d
+Patch-mainline: 6.0-rc1
+References: git-fixes
+
+Unbinding an endpoint function from the endpoint controller shouldn't stop
+the controller.  This is especially a problem for multi-function endpoints
+where other endpoints may still be active.
+
+Don't stop the controller when unbinding one of its endpoints.  Normally
+the controller is stopped via configfs.
+
+Fixes: 349e7a85b25f ("PCI: endpoint: functions: Add an EP function to test PCI")
+Link: https://lore.kernel.org/r/20220622040924.113279-1-mie@igel.co.jp
+Signed-off-by: Shunsuke Mie <mie@igel.co.jp>
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Acked-by: Kishon Vijay Abraham I <kishon@ti.com>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ drivers/pci/endpoint/functions/pci-epf-test.c |    1 -
+ 1 file changed, 1 deletion(-)
+
+--- a/drivers/pci/endpoint/functions/pci-epf-test.c
++++ b/drivers/pci/endpoint/functions/pci-epf-test.c
+@@ -340,7 +340,6 @@ static void pci_epf_test_unbind(struct p
+ 	int bar;
+ 
+ 	cancel_delayed_work(&epf_test->cmd_handler);
+-	pci_epc_stop(epc);
+ 	for (bar = BAR_0; bar <= BAR_5; bar++) {
+ 		if (epf_test->reg[bar]) {
+ 			pci_epf_free_space(epf, epf_test->reg[bar], bar);
