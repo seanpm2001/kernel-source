@@ -1,0 +1,151 @@
+From: Jiri Slaby <jslaby@suse.cz>
+Subject: kABI: regmap: Add regmap_noinc_read/write API
+Patch-mainline: never, kabi
+References: bsc#1221162 CVE-2023-52488
+
+Commits 74fe7b551f33 (regmap: Add regmap_noinc_read API) and
+cdf6b11daa77 (regmap: Add regmap_noinc_write API) added some members to
+structs regmap and regmap_config. It made the kABI checker complaining.
+
+Remove all these members by protecting them by NOT_SUPPORTED_KABI
+ifdefs. They are not really needed, they are used only for sanity
+checking.
+
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ drivers/base/regmap/internal.h |    4 ++++
+ drivers/base/regmap/regmap.c   |   10 ++++++++++
+ drivers/tty/serial/sc16is7xx.c |    4 ++++
+ include/linux/regmap.h         |    4 ++++
+ 4 files changed, 22 insertions(+)
+
+--- a/drivers/base/regmap/internal.h
++++ b/drivers/base/regmap/internal.h
+@@ -93,14 +93,18 @@ struct regmap {
+ 	bool (*readable_reg)(struct device *dev, unsigned int reg);
+ 	bool (*volatile_reg)(struct device *dev, unsigned int reg);
+ 	bool (*precious_reg)(struct device *dev, unsigned int reg);
++#ifdef NOT_SUPPORTED_KABI
+ 	bool (*writeable_noinc_reg)(struct device *dev, unsigned int reg);
+ 	bool (*readable_noinc_reg)(struct device *dev, unsigned int reg);
++#endif
+ 	const struct regmap_access_table *wr_table;
+ 	const struct regmap_access_table *rd_table;
+ 	const struct regmap_access_table *volatile_table;
+ 	const struct regmap_access_table *precious_table;
++#ifdef NOT_SUPPORTED_KABI
+ 	const struct regmap_access_table *wr_noinc_table;
+ 	const struct regmap_access_table *rd_noinc_table;
++#endif
+ 
+ 	int (*reg_read)(void *context, unsigned int reg, unsigned int *val);
+ 	int (*reg_write)(void *context, unsigned int reg, unsigned int val);
+--- a/drivers/base/regmap/regmap.c
++++ b/drivers/base/regmap/regmap.c
+@@ -169,22 +169,26 @@ bool regmap_precious(struct regmap *map,
+ 
+ bool regmap_writeable_noinc(struct regmap *map, unsigned int reg)
+ {
++#ifdef NOT_SUPPORTED_KABI
+ 	if (map->writeable_noinc_reg)
+ 		return map->writeable_noinc_reg(map->dev, reg);
+ 
+ 	if (map->wr_noinc_table)
+ 		return regmap_check_range_table(map, reg, map->wr_noinc_table);
++#endif
+ 
+ 	return true;
+ }
+ 
+ bool regmap_readable_noinc(struct regmap *map, unsigned int reg)
+ {
++#ifdef NOT_SUPPORTED_KABI
+ 	if (map->readable_noinc_reg)
+ 		return map->readable_noinc_reg(map->dev, reg);
+ 
+ 	if (map->rd_noinc_table)
+ 		return regmap_check_range_table(map, reg, map->rd_noinc_table);
++#endif
+ 
+ 	return true;
+ }
+@@ -705,14 +709,18 @@ struct regmap *__regmap_init(struct devi
+ 	map->rd_table = config->rd_table;
+ 	map->volatile_table = config->volatile_table;
+ 	map->precious_table = config->precious_table;
++#ifdef NOT_SUPPORTED_KABI
+ 	map->wr_noinc_table = config->wr_noinc_table;
+ 	map->rd_noinc_table = config->rd_noinc_table;
++#endif
+ 	map->writeable_reg = config->writeable_reg;
+ 	map->readable_reg = config->readable_reg;
+ 	map->volatile_reg = config->volatile_reg;
+ 	map->precious_reg = config->precious_reg;
++#ifdef NOT_SUPPORTED_KABI
+ 	map->writeable_noinc_reg = config->writeable_noinc_reg;
+ 	map->readable_noinc_reg = config->readable_noinc_reg;
++#endif
+ 	map->cache_type = config->cache_type;
+ 	map->name = config->name;
+ 
+@@ -1220,8 +1228,10 @@ int regmap_reinit_cache(struct regmap *m
+ 	map->readable_reg = config->readable_reg;
+ 	map->volatile_reg = config->volatile_reg;
+ 	map->precious_reg = config->precious_reg;
++#ifdef NOT_SUPPORTED_KABI
+ 	map->writeable_noinc_reg = config->writeable_noinc_reg;
+ 	map->readable_noinc_reg = config->readable_noinc_reg;
++#endif
+ 	map->cache_type = config->cache_type;
+ 
+ 	regmap_debugfs_init(map, config->name);
+--- a/drivers/tty/serial/sc16is7xx.c
++++ b/drivers/tty/serial/sc16is7xx.c
+@@ -491,10 +491,12 @@ static bool sc16is7xx_regmap_precious(st
+ 	return false;
+ }
+ 
++#ifdef NOT_SUPPORTED_KABI
+ static bool sc16is7xx_regmap_noinc(struct device *dev, unsigned int reg)
+ {
+ 	return reg == SC16IS7XX_RHR_REG;
+ }
++#endif
+ 
+ static int sc16is7xx_set_baud(struct uart_port *port, int baud)
+ {
+@@ -1374,8 +1376,10 @@ static struct regmap_config regcfg = {
+ 	.cache_type = REGCACHE_RBTREE,
+ 	.volatile_reg = sc16is7xx_regmap_volatile,
+ 	.precious_reg = sc16is7xx_regmap_precious,
++#ifdef NOT_SUPPORTED_KABI
+ 	.writeable_noinc_reg = sc16is7xx_regmap_noinc,
+ 	.readable_noinc_reg = sc16is7xx_regmap_noinc,
++#endif
+ };
+ 
+ #ifdef CONFIG_SERIAL_SC16IS7XX_SPI
+--- a/include/linux/regmap.h
++++ b/include/linux/regmap.h
+@@ -342,8 +342,10 @@ struct regmap_config {
+ 	bool (*readable_reg)(struct device *dev, unsigned int reg);
+ 	bool (*volatile_reg)(struct device *dev, unsigned int reg);
+ 	bool (*precious_reg)(struct device *dev, unsigned int reg);
++#ifdef NOT_SUPPORTED_KABI
+ 	bool (*writeable_noinc_reg)(struct device *dev, unsigned int reg);
+ 	bool (*readable_noinc_reg)(struct device *dev, unsigned int reg);
++#endif
+ 	regmap_lock lock;
+ 	regmap_unlock unlock;
+ 	void *lock_arg;
+@@ -358,8 +360,10 @@ struct regmap_config {
+ 	const struct regmap_access_table *rd_table;
+ 	const struct regmap_access_table *volatile_table;
+ 	const struct regmap_access_table *precious_table;
++#ifdef NOT_SUPPORTED_KABI
+ 	const struct regmap_access_table *wr_noinc_table;
+ 	const struct regmap_access_table *rd_noinc_table;
++#endif
+ 	const struct reg_default *reg_defaults;
+ 	unsigned int num_reg_defaults;
+ 	enum regcache_type cache_type;
