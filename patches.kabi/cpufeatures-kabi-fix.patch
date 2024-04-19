@@ -44,6 +44,17 @@ with an extended feature int.
  arch/x86/kernel/cpu/proc.c               |    4 -
  arch/x86/kvm/cpuid.c                     |    4 -
  arch/x86/kvm/svm.c                       |    2
+ arch/x86/include/asm/cpufeature.h        |   99 ++++++++++++++++++++++++-------
+ arch/x86/include/asm/cpufeatures.h       |    5 +
+ arch/x86/include/asm/disabled-features.h |    4 -
+ arch/x86/include/asm/processor.h         |    5 +
+ arch/x86/include/asm/required-features.h |    4 -
+ arch/x86/kernel/alternative.c            |    5 -
+ arch/x86/kernel/cpu/common.c             |   12 +++
+ arch/x86/kernel/cpu/mkcapflags.sh        |    4 -
+ arch/x86/kernel/cpu/proc.c               |    4 -
+ arch/x86/kvm/cpuid.c                     |    4 -
+ arch/x86/kvm/svm.c                       |    2 
  11 files changed, 107 insertions(+), 41 deletions(-)
 
 --- a/arch/x86/include/asm/cpufeature.h
@@ -61,7 +72,7 @@ with an extended feature int.
  	CPUID_LNX_5,
  	CPUID_LNX_6,
  };
-
+ 
 +#define CPUID_IDX(x) \
 +	__builtin_choose_expr((x) > CPUID_MAX, (x) - CPUID_MAX - 1, (x))
 +#define IS_EXT_CPUID_BIT(bit) ((bit>>5) >= NCAPINTS)
@@ -86,7 +97,7 @@ with an extended feature int.
 -#define test_cpu_cap(c, bit)						\
 -	 test_bit(bit, (unsigned long *)((c)->x86_capability))
 +extern const char * const x86_bug_flags[(NBUGINTS+NEXTBUGINTS)*32];
-
+ 
 +#define test_cpu_cap(c, bit) \
 +	(IS_EXT_CPUID_BIT((bit)) ? test_bit((bit) - (NCAPINTS*32), \
 +				(unsigned long *)((c)->x86_ext_capability)) : \
@@ -103,7 +114,7 @@ with an extended feature int.
  	   REQUIRED_MASK_CHECK					  ||	\
 -	   BUILD_BUG_ON_ZERO(NCAPINTS != 21))
 +	   BUILD_BUG_ON_ZERO(NCAPINTS != 19))
-
+ 
  #define DISABLED_MASK_BIT_SET(feature_bit)				\
  	 ( CHECK_BIT_IN_MASK_WORD(DISABLED_MASK,  0, feature_bit) ||	\
 @@ -108,10 +124,8 @@ extern const char * const x86_bug_flags[
@@ -115,13 +126,13 @@ with an extended feature int.
  	   DISABLED_MASK_CHECK					  ||	\
 -	   BUILD_BUG_ON_ZERO(NCAPINTS != 21))
 +	   BUILD_BUG_ON_ZERO(NCAPINTS != 19))
-
+ 
  #define cpu_has(c, bit)							\
  	(__builtin_constant_p(bit) && REQUIRED_MASK_BIT_SET(bit) ? 1 :	\
 @@ -134,17 +148,46 @@ extern const char * const x86_bug_flags[
-
+ 
  #define boot_cpu_has(bit)	cpu_has(&boot_cpu_data, bit)
-
+ 
 -#define set_cpu_cap(c, bit)	set_bit(bit, (unsigned long *)((c)->x86_capability))
 +#define set_cpu_cap(c, bit) do { \
 +	if (IS_EXT_CPUID_BIT(bit)) {					      \
@@ -131,10 +142,10 @@ with an extended feature int.
 +		set_bit(bit, (unsigned long *)((c)->x86_capability));	      \
 +	}								      \
 +} while (0)
-
+ 
  extern void setup_clear_cpu_cap(unsigned int bit);
  extern void clear_cpu_cap(struct cpuinfo_x86 *c, unsigned int bit);
-
+ 
  #define setup_force_cpu_cap(bit) do { \
 -	set_cpu_cap(&boot_cpu_data, bit);	\
 -	set_bit(bit, (unsigned long *)cpu_caps_set);	\
@@ -148,7 +159,7 @@ with an extended feature int.
 +		set_bit(bit, (unsigned long *)cpu_caps_set);		      \
 +	}								      \
  } while (0)
-
+ 
 -#define setup_force_cpu_bug(bit) setup_force_cpu_cap(bit)
 +
 +/*
@@ -162,16 +173,16 @@ with an extended feature int.
 +		set_bit(bit - ((NCAPINTS+NBUGINTS)*32),                                 \
 +			(unsigned long *)&(&boot_cpu_data)->x86_ext_capability[NEXTCAPINTS]); \
 +	} else {							      \
-+		set_cpu_cap(&boot_cpu_data, bit);			      \
++		set_bit(bit, (unsigned long *)((&boot_cpu_data)->x86_capability));	      \
 +		set_bit(bit, (unsigned long *)cpu_caps_set);		      \
 +	}								      \
 +} while (0)
-
+ 
  #if defined(CC_HAVE_ASM_GOTO) && defined(CONFIG_X86_FAST_FEATURE_TESTS)
  /*
 @@ -196,11 +239,12 @@ static __always_inline __pure bool _stat
  }
-
+ 
  #define static_cpu_has(bit)					\
 -(								\
 -	__builtin_constant_p(boot_cpu_has(bit)) ?		\
@@ -189,7 +200,7 @@ with an extended feature int.
 @@ -209,15 +253,26 @@ static __always_inline __pure bool _stat
  #define static_cpu_has(bit)		boot_cpu_has(bit)
  #endif
-
+ 
 -#define cpu_has_bug(c, bit)		cpu_has(c, (bit))
 -#define set_cpu_bug(c, bit)		set_cpu_cap(c, (bit))
 +#define cpu_has_bug(c, bit) (IS_EXT_BUG_BIT((bit)) ? test_bit((bit) - ((NCAPINTS+NBUGINTS)*32), \
@@ -206,16 +217,16 @@ with an extended feature int.
 +} while (0)
 +
  #define clear_cpu_bug(c, bit)		clear_cpu_cap(c, (bit))
-
+ 
  #define static_cpu_has_bug(bit)		static_cpu_has((bit))
  #define boot_cpu_has_bug(bit)		cpu_has_bug(&boot_cpu_data, (bit))
 -#define boot_cpu_set_bug(bit)		set_cpu_cap(&boot_cpu_data, (bit))
 +#define boot_cpu_set_bug(bit)		set_cpu_bug(&boot_cpu_data, (bit))
-
+ 
 -#define MAX_CPU_FEATURES		(NCAPINTS * 32)
 +#define MAX_CPU_FEATURES		((NCAPINTS + NEXTCAPINTS) * 32)
  #define cpu_have_feature		boot_cpu_has
-
+ 
  #define CPU_FEATURE_TYPEFMT		"x86,ven%04Xfam%04Xmod%04X"
 --- a/arch/x86/include/asm/cpufeatures.h
 +++ b/arch/x86/include/asm/cpufeatures.h
@@ -229,7 +240,7 @@ with an extended feature int.
 +#define NEXTCAPINTS     4       /* N 32-bit words which come after NCAPINTS */
 +#define NEXTBUGINTS     1       /* N 32-bit words which come after NEXTCAPINTS */
 +
-
+ 
  /*
   * Note: If the comment begins with a quoted string, that string is used
 --- a/arch/x86/include/asm/disabled-features.h
@@ -242,7 +253,7 @@ with an extended feature int.
 -#define DISABLED_MASK20	0
 -#define DISABLED_MASK_CHECK BUILD_BUG_ON_ZERO(NCAPINTS != 21)
 +#define DISABLED_MASK_CHECK BUILD_BUG_ON_ZERO(NCAPINTS != 19)
-
+ 
  #endif /* _ASM_X86_DISABLED_FEATURES_H */
 --- a/arch/x86/include/asm/processor.h
 +++ b/arch/x86/include/asm/processor.h
@@ -254,15 +265,15 @@ with an extended feature int.
 +	__u32 x86_ext_capability[NEXTCAPINTS+NEXTBUGINTS];
 +#endif
  };
-
+ 
  struct cpuid_regs {
 @@ -172,7 +175,7 @@ extern struct cpuinfo_x86	new_cpu_data;
-
+ 
  extern struct x86_hw_tss	doublefault_tss;
  extern __u32			cpu_caps_cleared[NCAPINTS + NBUGINTS];
 -extern __u32			cpu_caps_set[NCAPINTS + NBUGINTS];
 +extern __u32			cpu_caps_set[NCAPINTS + NBUGINTS + NEXTCAPINTS + NEXTBUGINTS];
-
+ 
  #ifdef CONFIG_SMP
  DECLARE_PER_CPU_READ_MOSTLY(struct cpuinfo_x86, cpu_info);
 --- a/arch/x86/include/asm/required-features.h
@@ -275,7 +286,7 @@ with an extended feature int.
 -#define REQUIRED_MASK20 0
 -#define REQUIRED_MASK_CHECK BUILD_BUG_ON_ZERO(NCAPINTS != 21)
 +#define REQUIRED_MASK_CHECK BUILD_BUG_ON_ZERO(NCAPINTS != 19)
-
+ 
  #endif /* _ASM_X86_REQUIRED_FEATURES_H */
 --- a/arch/x86/kernel/alternative.c
 +++ b/arch/x86/kernel/alternative.c
@@ -290,16 +301,16 @@ with an extended feature int.
 +		    (a->cpuid > NCAPINTS && !boot_cpu_has_bug(a->cpuid))) {
  			if (a->padlen > 1)
  				optimize_nops(a, instr);
-
+ 
 --- a/arch/x86/kernel/cpu/common.c
 +++ b/arch/x86/kernel/cpu/common.c
 @@ -486,7 +486,7 @@ static const char *table_lookup_model(st
  }
-
+ 
  __u32 cpu_caps_cleared[NCAPINTS + NBUGINTS];
 -__u32 cpu_caps_set[NCAPINTS + NBUGINTS];
 +__u32 cpu_caps_set[NCAPINTS + NBUGINTS + NEXTCAPINTS + NEXTBUGINTS];
-
+ 
  void load_percpu_segment(int cpu)
  {
 @@ -749,6 +749,10 @@ static void apply_forced_caps(struct cpu
@@ -311,12 +322,12 @@ with an extended feature int.
 +		c->x86_ext_capability[i] |= cpu_caps_set[NCAPINTS + NBUGINTS + i];
 +	}
  }
-
+ 
  static void init_speculation_control(struct cpuinfo_x86 *c)
 @@ -888,8 +892,12 @@ void get_cpu_cap(struct cpuinfo_x86 *c)
  	if (c->extended_cpuid_level >= 0x8000000a)
  		c->x86_capability[CPUID_8000_000A_EDX] = cpuid_edx(0x8000000a);
-
+ 
 +	/*
 +	 * Every new leaf should go into the extended caps array, consult
 +	 * cpuid_leafs enum for more info
@@ -324,7 +335,7 @@ with an extended feature int.
  	if (c->extended_cpuid_level >= 0x80000021)
 -		c->x86_capability[CPUID_8000_0021_EAX] = cpuid_eax(0x80000021);
 +		c->x86_ext_capability[CPUID_IDX(CPUID_8000_0021_EAX)] = cpuid_eax(0x80000021);
-
+ 
  	init_scattered_cpuid_features(c);
  	init_speculation_control(c);
 --- a/arch/x86/kernel/cpu/mkcapflags.sh
@@ -332,32 +343,32 @@ with an extended feature int.
 @@ -56,10 +56,10 @@ trap 'rm "$OUT"' EXIT
  	echo "#endif"
  	echo ""
-
+ 
 -	dump_array "x86_cap_flags" "NCAPINTS*32" "X86_FEATURE_" ""
 +	dump_array "x86_cap_flags" "(NCAPINTS+NEXTCAPINTS)*32" "X86_FEATURE_" ""
  	echo ""
-
+ 
 -	dump_array "x86_bug_flags" "NBUGINTS*32" "X86_BUG_" "NCAPINTS*32"
 +	dump_array "x86_bug_flags" "(NBUGINTS+NEXTBUGINTS)*32" "X86_BUG_" "NCAPINTS*32"
-
+ 
  ) > $OUT
-
+ 
 --- a/arch/x86/kernel/cpu/proc.c
 +++ b/arch/x86/kernel/cpu/proc.c
 @@ -93,12 +93,12 @@ static int show_cpuinfo(struct seq_file
  	show_cpuinfo_misc(m, c);
-
+ 
  	seq_puts(m, "flags\t\t:");
 -	for (i = 0; i < 32*NCAPINTS; i++)
 +	for (i = 0; i < 32*(NCAPINTS + NEXTCAPINTS); i++)
  		if (cpu_has(c, i) && x86_cap_flags[i] != NULL)
  			seq_printf(m, " %s", x86_cap_flags[i]);
-
+ 
  	seq_puts(m, "\nbugs\t\t:");
 -	for (i = 0; i < 32*NBUGINTS; i++) {
 +	for (i = 0; i < 32*(NBUGINTS+NEXTBUGINTS); i++) {
  		unsigned int bug_bit = 32*NCAPINTS + i;
-
+ 
  		if (cpu_has_bug(c, bug_bit) && x86_bug_flags[i])
 --- a/arch/x86/kvm/cpuid.c
 +++ b/arch/x86/kvm/cpuid.c
@@ -382,7 +393,7 @@ with an extended feature int.
 --- a/arch/x86/kvm/svm.c
 +++ b/arch/x86/kvm/svm.c
 @@ -4107,7 +4107,7 @@ static int svm_get_msr_feature(struct kv
-
+ 
  	switch (msr->index) {
  	case MSR_AMD64_DE_CFG:
 -		if (cpu_feature_enabled(X86_FEATURE_LFENCE_RDTSC))
