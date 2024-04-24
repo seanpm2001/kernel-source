@@ -1,0 +1,322 @@
+From 9bec2b9c6134052994115d2d3374e96f2ccb9b9d Mon Sep 17 00:00:00 2001
+From: Samuel Holland <samuel@sholland.org>
+Date: Wed, 1 Sep 2021 00:05:19 -0500
+Subject: [PATCH] clk: sunxi-ng: Unregister clocks/resets when unbinding
+Git-commit: 9bec2b9c6134052994115d2d3374e96f2ccb9b9d
+Patch-mainline: v5.16-rc1
+References: CVE-2021-47205 bsc#1222888
+
+Currently, unbinding a CCU driver unmaps the device's MMIO region, while
+leaving its clocks/resets and their providers registered. This can cause
+a page fault later when some clock operation tries to perform MMIO. Fix
+this by separating the CCU initialization from the memory allocation,
+and then using a devres callback to unregister the clocks and resets.
+
+This also fixes a memory leak of the `struct ccu_reset`, and uses the
+correct owner (the specific platform driver) for the clocks and resets.
+
+Early OF clock providers are never unregistered, and limited error
+handling is possible, so they are mostly unchanged. The error reporting
+is made more consistent by moving the message inside of_sunxi_ccu_probe.
+
+Signed-off-by: Samuel Holland <samuel@sholland.org>
+Signed-off-by: Maxime Ripard <maxime@cerno.tech>
+Link: https://lore.kernel.org/r/20210901050526.45673-2-samuel@sholland.org
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/clk/sunxi-ng/ccu-sun50i-a64.c    |    2 
+ drivers/clk/sunxi-ng/ccu-sun5i.c         |    2 
+ drivers/clk/sunxi-ng/ccu-sun6i-a31.c     |    2 
+ drivers/clk/sunxi-ng/ccu-sun8i-a23.c     |    2 
+ drivers/clk/sunxi-ng/ccu-sun8i-a33.c     |    2 
+ drivers/clk/sunxi-ng/ccu-sun8i-h3.c      |    2 
+ drivers/clk/sunxi-ng/ccu-sun8i-r.c       |    2 
+ drivers/clk/sunxi-ng/ccu-sun8i-v3s.c     |    2 
+ drivers/clk/sunxi-ng/ccu-sun9i-a80-de.c  |    3 -
+ drivers/clk/sunxi-ng/ccu-sun9i-a80-usb.c |    3 -
+ drivers/clk/sunxi-ng/ccu-sun9i-a80.c     |    2 
+ drivers/clk/sunxi-ng/ccu_common.c        |   86 +++++++++++++++++++++++++------
+ drivers/clk/sunxi-ng/ccu_common.h        |    6 +-
+ 13 files changed, 87 insertions(+), 29 deletions(-)
+
+--- a/drivers/clk/sunxi-ng/ccu-sun50i-a64.c
++++ b/drivers/clk/sunxi-ng/ccu-sun50i-a64.c
+@@ -918,7 +918,7 @@ static int sun50i_a64_ccu_probe(struct p
+ 
+ 	writel(0x515, reg + SUN50I_A64_PLL_MIPI_REG);
+ 
+-	ret = sunxi_ccu_probe(pdev->dev.of_node, reg, &sun50i_a64_ccu_desc);
++	ret = devm_sunxi_ccu_probe(&pdev->dev, reg, &sun50i_a64_ccu_desc);
+ 	if (ret)
+ 		return ret;
+ 
+--- a/drivers/clk/sunxi-ng/ccu-sun5i.c
++++ b/drivers/clk/sunxi-ng/ccu-sun5i.c
+@@ -997,7 +997,7 @@ static void __init sun5i_ccu_init(struct
+ 	val &= ~GENMASK(7, 6);
+ 	writel(val | (2 << 6), reg + SUN5I_AHB_REG);
+ 
+-	sunxi_ccu_probe(node, reg, desc);
++	of_sunxi_ccu_probe(node, reg, desc);
+ }
+ 
+ static void __init sun5i_a10s_ccu_setup(struct device_node *node)
+--- a/drivers/clk/sunxi-ng/ccu-sun6i-a31.c
++++ b/drivers/clk/sunxi-ng/ccu-sun6i-a31.c
+@@ -1242,7 +1242,7 @@ static void __init sun6i_a31_ccu_setup(s
+ 	val |= 0x3 << 12;
+ 	writel(val, reg + SUN6I_A31_AHB1_REG);
+ 
+-	sunxi_ccu_probe(node, reg, &sun6i_a31_ccu_desc);
++	of_sunxi_ccu_probe(node, reg, &sun6i_a31_ccu_desc);
+ 
+ 	ccu_mux_notifier_register(pll_cpu_clk.common.hw.clk,
+ 				  &sun6i_a31_cpu_nb);
+--- a/drivers/clk/sunxi-ng/ccu-sun8i-a23.c
++++ b/drivers/clk/sunxi-ng/ccu-sun8i-a23.c
+@@ -731,7 +731,7 @@ static void __init sun8i_a23_ccu_setup(s
+ 	val &= ~BIT(16);
+ 	writel(val, reg + SUN8I_A23_PLL_MIPI_REG);
+ 
+-	sunxi_ccu_probe(node, reg, &sun8i_a23_ccu_desc);
++	of_sunxi_ccu_probe(node, reg, &sun8i_a23_ccu_desc);
+ }
+ CLK_OF_DECLARE(sun8i_a23_ccu, "allwinner,sun8i-a23-ccu",
+ 	       sun8i_a23_ccu_setup);
+--- a/drivers/clk/sunxi-ng/ccu-sun8i-a33.c
++++ b/drivers/clk/sunxi-ng/ccu-sun8i-a33.c
+@@ -792,7 +792,7 @@ static void __init sun8i_a33_ccu_setup(s
+ 	val &= ~BIT(16);
+ 	writel(val, reg + SUN8I_A33_PLL_MIPI_REG);
+ 
+-	sunxi_ccu_probe(node, reg, &sun8i_a33_ccu_desc);
++	of_sunxi_ccu_probe(node, reg, &sun8i_a33_ccu_desc);
+ 
+ 	/* Gate then ungate PLL CPU after any rate changes */
+ 	ccu_pll_notifier_register(&sun8i_a33_pll_cpu_nb);
+--- a/drivers/clk/sunxi-ng/ccu-sun8i-h3.c
++++ b/drivers/clk/sunxi-ng/ccu-sun8i-h3.c
+@@ -1136,7 +1136,7 @@ static void __init sunxi_h3_h5_ccu_init(
+ 	val &= ~GENMASK(19, 16);
+ 	writel(val | (3 << 16), reg + SUN8I_H3_PLL_AUDIO_REG);
+ 
+-	sunxi_ccu_probe(node, reg, desc);
++	of_sunxi_ccu_probe(node, reg, desc);
+ 
+ 	/* Gate then ungate PLL CPU after any rate changes */
+ 	ccu_pll_notifier_register(&sun8i_h3_pll_cpu_nb);
+--- a/drivers/clk/sunxi-ng/ccu-sun8i-r.c
++++ b/drivers/clk/sunxi-ng/ccu-sun8i-r.c
+@@ -195,7 +195,7 @@ static void __init sunxi_r_ccu_init(stru
+ 		return;
+ 	}
+ 
+-	sunxi_ccu_probe(node, reg, desc);
++	of_sunxi_ccu_probe(node, reg, desc);
+ }
+ 
+ static void __init sun8i_h3_r_ccu_setup(struct device_node *node)
+--- a/drivers/clk/sunxi-ng/ccu-sun8i-v3s.c
++++ b/drivers/clk/sunxi-ng/ccu-sun8i-v3s.c
+@@ -599,7 +599,7 @@ static void __init sun8i_v3s_ccu_setup(s
+ 	val &= ~GENMASK(19, 16);
+ 	writel(val | (3 << 16), reg + SUN8I_V3S_PLL_AUDIO_REG);
+ 
+-	sunxi_ccu_probe(node, reg, &sun8i_v3s_ccu_desc);
++	of_sunxi_ccu_probe(node, reg, &sun8i_v3s_ccu_desc);
+ }
+ CLK_OF_DECLARE(sun8i_v3s_ccu, "allwinner,sun8i-v3s-ccu",
+ 	       sun8i_v3s_ccu_setup);
+--- a/drivers/clk/sunxi-ng/ccu-sun9i-a80-de.c
++++ b/drivers/clk/sunxi-ng/ccu-sun9i-a80-de.c
+@@ -254,8 +254,7 @@ static int sun9i_a80_de_clk_probe(struct
+ 		goto err_disable_clk;
+ 	}
+ 
+-	ret = sunxi_ccu_probe(pdev->dev.of_node, reg,
+-			      &sun9i_a80_de_clk_desc);
++	ret = devm_sunxi_ccu_probe(&pdev->dev, reg, &sun9i_a80_de_clk_desc);
+ 	if (ret)
+ 		goto err_assert_reset;
+ 
+--- a/drivers/clk/sunxi-ng/ccu-sun9i-a80-usb.c
++++ b/drivers/clk/sunxi-ng/ccu-sun9i-a80-usb.c
+@@ -117,8 +117,7 @@ static int sun9i_a80_usb_clk_probe(struc
+ 		return ret;
+ 	}
+ 
+-	ret = sunxi_ccu_probe(pdev->dev.of_node, reg,
+-			      &sun9i_a80_usb_clk_desc);
++	ret = devm_sunxi_ccu_probe(&pdev->dev, reg, &sun9i_a80_usb_clk_desc);
+ 	if (ret)
+ 		goto err_disable_clk;
+ 
+--- a/drivers/clk/sunxi-ng/ccu-sun9i-a80.c
++++ b/drivers/clk/sunxi-ng/ccu-sun9i-a80.c
+@@ -1238,7 +1238,7 @@ static int sun9i_a80_ccu_probe(struct pl
+ 	sun9i_a80_cpu_pll_fixup(reg + SUN9I_A80_PLL_C0CPUX_REG);
+ 	sun9i_a80_cpu_pll_fixup(reg + SUN9I_A80_PLL_C1CPUX_REG);
+ 
+-	return sunxi_ccu_probe(pdev->dev.of_node, reg, &sun9i_a80_ccu_desc);
++	return devm_sunxi_ccu_probe(&pdev->dev, reg, &sun9i_a80_ccu_desc);
+ }
+ 
+ static const struct of_device_id sun9i_a80_ccu_ids[] = {
+--- a/drivers/clk/sunxi-ng/ccu_common.c
++++ b/drivers/clk/sunxi-ng/ccu_common.c
+@@ -16,6 +16,7 @@
+ 
+ #include <linux/clk.h>
+ #include <linux/clk-provider.h>
++#include <linux/device.h>
+ #include <linux/iopoll.h>
+ #include <linux/slab.h>
+ 
+@@ -23,6 +24,11 @@
+ #include "ccu_gate.h"
+ #include "ccu_reset.h"
+ 
++struct sunxi_ccu {
++	const struct sunxi_ccu_desc	*desc;
++	struct ccu_reset		reset;
++};
++
+ static DEFINE_SPINLOCK(ccu_lock);
+ 
+ void ccu_helper_wait_for_lock(struct ccu_common *common, u32 lock)
+@@ -88,12 +94,15 @@ int ccu_pll_notifier_register(struct ccu
+ 				     &pll_nb->clk_nb);
+ }
+ 
+-int sunxi_ccu_probe(struct device_node *node, void __iomem *reg,
+-		    const struct sunxi_ccu_desc *desc)
++static int sunxi_ccu_probe(struct sunxi_ccu *ccu, struct device *dev,
++			   struct device_node *node, void __iomem *reg,
++			   const struct sunxi_ccu_desc *desc)
+ {
+ 	struct ccu_reset *reset;
+ 	int i, ret;
+ 
++	ccu->desc = desc;
++
+ 	for (i = 0; i < desc->num_ccu_clks; i++) {
+ 		struct ccu_common *cclk = desc->ccu_clks[i];
+ 
+@@ -110,7 +119,7 @@ int sunxi_ccu_probe(struct device_node *
+ 		if (!hw)
+ 			continue;
+ 
+-		ret = clk_hw_register(NULL, hw);
++		ret = clk_hw_register(dev, hw);
+ 		if (ret) {
+ 			pr_err("Couldn't register clock %d - %s\n",
+ 			       i, clk_hw_get_name(hw));
+@@ -123,15 +132,10 @@ int sunxi_ccu_probe(struct device_node *
+ 	if (ret)
+ 		goto err_clk_unreg;
+ 
+-	reset = kzalloc(sizeof(*reset), GFP_KERNEL);
+-	if (!reset) {
+-		ret = -ENOMEM;
+-		goto err_alloc_reset;
+-	}
+-
++	reset = &ccu->reset;
+ 	reset->rcdev.of_node = node;
+ 	reset->rcdev.ops = &ccu_reset_ops;
+-	reset->rcdev.owner = THIS_MODULE;
++	reset->rcdev.owner = dev ? dev->driver->owner : THIS_MODULE;
+ 	reset->rcdev.nr_resets = desc->num_resets;
+ 	reset->base = reg;
+ 	reset->lock = &ccu_lock;
+@@ -139,13 +143,11 @@ int sunxi_ccu_probe(struct device_node *
+ 
+ 	ret = reset_controller_register(&reset->rcdev);
+ 	if (ret)
+-		goto err_of_clk_unreg;
++		goto err_del_provider;
+ 
+ 	return 0;
+ 
+-err_of_clk_unreg:
+-	kfree(reset);
+-err_alloc_reset:
++err_del_provider:
+ 	of_clk_del_provider(node);
+ err_clk_unreg:
+ 	while (--i >= 0) {
+@@ -157,3 +159,59 @@ err_clk_unreg:
+ 	}
+ 	return ret;
+ }
++
++static void devm_sunxi_ccu_release(struct device *dev, void *res)
++{
++	struct sunxi_ccu *ccu = res;
++	const struct sunxi_ccu_desc *desc = ccu->desc;
++	int i;
++
++	reset_controller_unregister(&ccu->reset.rcdev);
++	of_clk_del_provider(dev->of_node);
++
++	for (i = 0; i < desc->hw_clks->num; i++) {
++		struct clk_hw *hw = desc->hw_clks->hws[i];
++
++		if (!hw)
++			continue;
++		clk_hw_unregister(hw);
++	}
++}
++
++int devm_sunxi_ccu_probe(struct device *dev, void __iomem *reg,
++			 const struct sunxi_ccu_desc *desc)
++{
++	struct sunxi_ccu *ccu;
++	int ret;
++
++	ccu = devres_alloc(devm_sunxi_ccu_release, sizeof(*ccu), GFP_KERNEL);
++	if (!ccu)
++		return -ENOMEM;
++
++	ret = sunxi_ccu_probe(ccu, dev, dev->of_node, reg, desc);
++	if (ret) {
++		devres_free(ccu);
++		return ret;
++	}
++
++	devres_add(dev, ccu);
++
++	return 0;
++}
++
++void of_sunxi_ccu_probe(struct device_node *node, void __iomem *reg,
++			const struct sunxi_ccu_desc *desc)
++{
++	struct sunxi_ccu *ccu;
++	int ret;
++
++	ccu = kzalloc(sizeof(*ccu), GFP_KERNEL);
++	if (!ccu)
++		return;
++
++	ret = sunxi_ccu_probe(ccu, NULL, node, reg, desc);
++	if (ret) {
++		pr_err("%pOF: probing clocks failed: %d\n", node, ret);
++		kfree(ccu);
++	}
++}
+--- a/drivers/clk/sunxi-ng/ccu_common.h
++++ b/drivers/clk/sunxi-ng/ccu_common.h
+@@ -95,7 +95,9 @@ struct ccu_pll_nb {
+ 
+ int ccu_pll_notifier_register(struct ccu_pll_nb *pll_nb);
+ 
+-int sunxi_ccu_probe(struct device_node *node, void __iomem *reg,
+-		    const struct sunxi_ccu_desc *desc);
++int devm_sunxi_ccu_probe(struct device *dev, void __iomem *reg,
++			 const struct sunxi_ccu_desc *desc);
++void of_sunxi_ccu_probe(struct device_node *node, void __iomem *reg,
++			const struct sunxi_ccu_desc *desc);
+ 
+ #endif /* _COMMON_H_ */
