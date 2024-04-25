@@ -38,11 +38,11 @@ Signed-off-by: NeilBrown <neilb@suse.de>
 Acked-by: NeilBrown <neilb@suse.com>
 
 ---
- fs/nfs/dir.c           |   53 ++++++++++++++++++++++++++++++++++++++++++++++---
+ fs/nfs/dir.c           |   56 ++++++++++++++++++++++++++++++++++++++++++++++---
  fs/nfs/nfs3proc.c      |    1 
  fs/nfs/proc.c          |    1 
  include/linux/nfs_fs.h |    3 ++
- 4 files changed, 55 insertions(+), 3 deletions(-)
+ 4 files changed, 58 insertions(+), 3 deletions(-)
 
 --- a/fs/nfs/dir.c
 +++ b/fs/nfs/dir.c
@@ -55,7 +55,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  
  const struct file_operations nfs_dir_operations = {
  	.llseek		= nfs_llseek_dir,
-@@ -1721,6 +1723,40 @@ static int nfs4_lookup_revalidate(struct
+@@ -1721,6 +1723,43 @@ static int nfs4_lookup_revalidate(struct
  }
  
  #endif /* CONFIG_NFSV4 */
@@ -68,6 +68,9 @@ Acked-by: NeilBrown <neilb@suse.com>
 +	 * handling.
 +	 */
 +	int error = 0;
++
++	if (dentry->d_name.len > NFS_SERVER(dir)->namelen)
++		return -ENAMETOOLONG;
 +
 +	if (open_flags & O_CREAT) {
 +		*opened |= FILE_CREATED;
@@ -96,7 +99,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  
  /*
   * Code common to create, mkdir, and mknod.
-@@ -1771,18 +1807,23 @@ EXPORT_SYMBOL_GPL(nfs_instantiate);
+@@ -1771,18 +1810,23 @@ EXPORT_SYMBOL_GPL(nfs_instantiate);
   * that the operation succeeded on the server, but an error in the
   * reply path made it appear to have failed.
   */
@@ -123,7 +126,7 @@ Acked-by: NeilBrown <neilb@suse.com>
  
  	trace_nfs_create_enter(dir, dentry, open_flags);
  	error = NFS_PROTO(dir)->create(dir, dentry, &attr, open_flags);
-@@ -1794,6 +1835,12 @@ out_err:
+@@ -1794,6 +1838,12 @@ out_err:
  	d_drop(dentry);
  	return error;
  }
