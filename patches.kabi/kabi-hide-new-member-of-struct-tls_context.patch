@@ -1,0 +1,30 @@
+From: Michal Kubecek <mkubecek@suse.cz>
+Date: Tue, 7 May 2024 01:59:22 +0200
+Subject: kabi: hide new member of struct tls_context
+Patch-mainline: Never, kabi workaround
+References: CVE-2021-47131 bsc#1221545
+
+Backport of mainline commit c55dcdd435aa ("net/tls: Fix use-after-free
+after the TLS device goes down and up") adds new pointer sk into kabi
+protected struct tls_context. As this structure is always created with
+create_ctx() helper and is always referenced via a pointer, we can
+simply hide the change from genksyms (the SLE12-SP5 backport already
+adds sk at the end of the structure).
+
+Signed-off-by: Michal Kubecek <mkubecek@suse.cz>
+---
+ include/net/tls.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/include/net/tls.h
++++ b/include/net/tls.h
+@@ -251,7 +251,9 @@ struct tls_context {
+ 			   int __user *optlen);
+ 	int  (*hash)(struct sock *sk);
+ 	void (*unhash)(struct sock *sk);
++#ifndef __GENKSYMS__
+ 	struct sock *sk;
++#endif
+ };
+ 
+ struct tls_offload_context_rx {
