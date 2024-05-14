@@ -1,0 +1,109 @@
+From 590a8e564c6eff7e77a84e728612f1269e3c0685 Mon Sep 17 00:00:00 2001
+From: Hans Verkuil <hverkuil-cisco@xs4all.nl>
+Date: Thu, 3 Mar 2022 14:01:44 +0000
+Subject: [PATCH] media: cec: abort if the current transmit was canceled
+Git-commit: 590a8e564c6eff7e77a84e728612f1269e3c0685
+Patch-mainline: v5.19-rc1
+References: CVE-2024-23848 bsc#1219104
+
+[ backport note: slightly adjusted for SLE12-SP5 kernel base, the set of
+  CEC_TX_STATUS_ABORTED is dropped -- tiwai ]
+
+If a transmit-in-progress was canceled, then, once the transmit
+is done, mark it as aborted and refrain from retrying the transmit.
+
+To signal this situation the new transmit_in_progress_aborted field is
+set to true.
+
+The old implementation would just set adap->transmitting to NULL and
+set adap->transmit_in_progress to false, but on the hardware level
+the transmit was still ongoing. However, the framework would think
+the transmit was aborted, and if a new transmit was issued, then
+it could overwrite the HW buffer containing the old transmit with the
+new transmit, leading to garbled data on the CEC bus.
+
+Signed-off-by: Hans Verkuil <hverkuil-cisco@xs4all.nl>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@kernel.org>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/media/cec/cec-adap.c |   15 ++++++++++++---
+ include/media/cec.h          |    1 +
+ 2 files changed, 13 insertions(+), 3 deletions(-)
+
+--- a/drivers/media/cec/cec-adap.c
++++ b/drivers/media/cec/cec-adap.c
+@@ -320,7 +320,7 @@ static void cec_flush(struct cec_adapter
+ 		cec_data_cancel(data);
+ 	}
+ 	if (adap->transmitting)
+-		cec_data_cancel(adap->transmitting);
++		adap->transmit_in_progress_aborted = true;
+ 
+ 	/* Cancel the pending timeout work. */
+ 	list_for_each_entry_safe(data, n, &adap->wait_queue, list) {
+@@ -450,6 +450,7 @@ int cec_thread_func(void *_adap)
+ 		if (data->attempts == 0)
+ 			data->attempts = attempts;
+ 
++		adap->transmit_in_progress_aborted = false;
+ 		/* Tell the adapter to transmit, cancel on error */
+ 		if (adap->ops->adap_transmit(adap, data->attempts,
+ 					     signal_free_time, &data->msg))
+@@ -473,6 +474,8 @@ void cec_transmit_done_ts(struct cec_ada
+ {
+ 	struct cec_data *data;
+ 	struct cec_msg *msg;
++	bool done = status & (CEC_TX_STATUS_MAX_RETRIES | CEC_TX_STATUS_OK);
++	bool aborted = adap->transmit_in_progress_aborted;
+ 
+ 	dprintk(2, "cec_transmit_done %02x\n", status);
+ 	mutex_lock(&adap->lock);
+@@ -486,6 +489,7 @@ void cec_transmit_done_ts(struct cec_ada
+ 		dprintk(1, "cec_transmit_done without an ongoing transmit!\n");
+ 		goto unlock;
+ 	}
++	adap->transmit_in_progress_aborted = false;
+ 
+ 	msg = &data->msg;
+ 
+@@ -506,8 +510,7 @@ void cec_transmit_done_ts(struct cec_ada
+ 	 * the hardware didn't signal that it retried itself (by setting
+ 	 * CEC_TX_STATUS_MAX_RETRIES), then we will retry ourselves.
+ 	 */
+-	if (data->attempts > 1 &&
+-	    !(status & (CEC_TX_STATUS_MAX_RETRIES | CEC_TX_STATUS_OK))) {
++	if (!aborted && data->attempts > 1 && !done) {
+ 		/* Retry this message */
+ 		data->attempts--;
+ 		/* Add the message in front of the transmit queue */
+@@ -516,6 +519,8 @@ void cec_transmit_done_ts(struct cec_ada
+ 		goto wake_thread;
+ 	}
+ 
++	// if (aborted && !done)
++	// 	status |= CEC_TX_STATUS_ABORTED;
+ 	data->attempts = 0;
+ 
+ 	/* Always set CEC_TX_STATUS_MAX_RETRIES on error */
+@@ -1419,6 +1424,10 @@ void __cec_s_phys_addr(struct cec_adapte
+ 	}
+ 
+ 	mutex_lock(&adap->devnode.lock);
++	adap->transmit_in_progress_aborted = false;
++	if (adap->transmitting)
++		cec_data_cancel(adap->transmitting);
++
+ 	if ((adap->needs_hpd || list_empty(&adap->devnode.fhs)) &&
+ 	    adap->ops->adap_enable(adap, true)) {
+ 		mutex_unlock(&adap->devnode.lock);
+--- a/include/media/cec.h
++++ b/include/media/cec.h
+@@ -175,6 +175,7 @@ struct cec_adapter {
+ 	struct cec_fh *cec_follower;
+ 	struct cec_fh *cec_initiator;
+ 	bool passthrough;
++	bool transmit_in_progress_aborted:1;
+ 	struct cec_log_addrs log_addrs;
+ 
+ #ifdef CONFIG_CEC_NOTIFIER
