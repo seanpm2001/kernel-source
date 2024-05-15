@@ -16,6 +16,8 @@ the last query. And because the previous phy info will be used when calling
 sas_unregister_devs_sas_addr(), sas_unregister_devs_sas_addr() should be
 called before sas_set_ex_phy().
 
+[lduncan: also had to delete now-unused function sas_get_phy_attached_dev()]
+
 Fixes: d8649fc1c5e4 ("scsi: libsas: Do discovery on empty PHY to update PHY info")
 Signed-off-by: Xingui Yang <yangxingui@huawei.com>
 Link: https://lore.kernel.org/r/20240307141413.48049-3-yangxingui@huawei.com
@@ -23,14 +25,36 @@ Reviewed-by: John Garry <john.g.garry@oracle.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
 Acked-by: Lee Duncan <lduncan@suse.com>
 ---
- drivers/scsi/libsas/sas_expander.c | 32 ++++++++++++++++++++++----------
- 1 file changed, 22 insertions(+), 10 deletions(-)
+ drivers/scsi/libsas/sas_expander.c |   49 ++++++++++++++++---------------------
+ 1 file changed, 22 insertions(+), 27 deletions(-)
 
-diff --git a/drivers/scsi/libsas/sas_expander.c b/drivers/scsi/libsas/sas_expander.c
-index de9dee488277..5c261005b74e 100644
 --- a/drivers/scsi/libsas/sas_expander.c
 +++ b/drivers/scsi/libsas/sas_expander.c
-@@ -1945,6 +1945,7 @@ static int sas_rediscover_dev(struct domain_device *dev, int phy_id,
+@@ -1757,23 +1757,6 @@ static int sas_get_phy_change_count(stru
+ 	return res;
+ }
+ 
+-static int sas_get_phy_attached_dev(struct domain_device *dev, int phy_id,
+-				    u8 *sas_addr, enum sas_device_type *type)
+-{
+-	int res;
+-	struct smp_disc_resp *disc_resp;
+-
+-	disc_resp = alloc_smp_resp(DISCOVER_RESP_SIZE);
+-	if (!disc_resp)
+-		return -ENOMEM;
+-
+-	res = sas_get_phy_discover(dev, phy_id, disc_resp);
+-	if (res == 0)
+-		sas_get_sas_addr_and_dev_type(disc_resp, sas_addr, type);
+-	kfree(disc_resp);
+-	return res;
+-}
+-
+ static int sas_find_bcast_phy(struct domain_device *dev, int *phy_id,
+ 			      int from_phy, bool update)
+ {
+@@ -2035,6 +2018,7 @@ static int sas_rediscover_dev(struct dom
  	struct expander_device *ex = &dev->ex_dev;
  	struct ex_phy *phy = &ex->ex_phy[phy_id];
  	enum sas_device_type type = SAS_PHY_UNUSED;
@@ -38,7 +62,7 @@ index de9dee488277..5c261005b74e 100644
  	u8 sas_addr[SAS_ADDR_SIZE];
  	char msg[80] = "";
  	int res;
-@@ -1956,33 +1957,41 @@ static int sas_rediscover_dev(struct domain_device *dev, int phy_id,
+@@ -2046,33 +2030,41 @@ static int sas_rediscover_dev(struct dom
  		 SAS_ADDR(dev->sas_addr), phy_id, msg);
  
  	memset(sas_addr, 0, SAS_ADDR_SIZE);
@@ -88,7 +112,7 @@ index de9dee488277..5c261005b74e 100644
  	} else if (SAS_ADDR(sas_addr) == SAS_ADDR(phy->attached_sas_addr) &&
  		   dev_type_flutter(type, phy->attached_dev_type)) {
  		struct domain_device *ata_dev = sas_ex_to_ata(dev, phy_id);
-@@ -1994,7 +2003,7 @@ static int sas_rediscover_dev(struct domain_device *dev, int phy_id,
+@@ -2084,7 +2076,7 @@ static int sas_rediscover_dev(struct dom
  			action = ", needs recovery";
  		pr_debug("ex %016llx phy%02d broadcast flutter%s\n",
  			 SAS_ADDR(dev->sas_addr), phy_id, action);
@@ -97,7 +121,7 @@ index de9dee488277..5c261005b74e 100644
  	}
  
  	/* we always have to delete the old device when we went here */
-@@ -2003,7 +2012,10 @@ static int sas_rediscover_dev(struct domain_device *dev, int phy_id,
+@@ -2093,7 +2085,10 @@ static int sas_rediscover_dev(struct dom
  		SAS_ADDR(phy->attached_sas_addr));
  	sas_unregister_devs_sas_addr(dev, phy_id, last);
  
@@ -109,4 +133,3 @@ index de9dee488277..5c261005b74e 100644
  }
  
  /**
-
