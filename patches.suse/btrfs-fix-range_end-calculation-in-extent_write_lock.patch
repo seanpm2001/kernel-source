@@ -1,0 +1,33 @@
+From: Christoph Hellwig <hch@lst.de>
+Date: Wed, 31 May 2023 08:04:50 +0200
+Subject: [PATCH] btrfs: fix range_end calculation in extent_write_locked_range
+Git-commit: 36614a3beba33a05ad78d4dcb9aa1d00e8a7d01f
+Patch-mainline: v6.5-rc1
+References: git-fixes
+
+The range_end field in struct writeback_control is inclusive, just like
+the end parameter passed to extent_write_locked_range.  Not doing this
+could cause extra writeout, which is harmless but suboptimal.
+
+Fixes: 771ed689d2cd ("Btrfs: Optimize compressed writeback and reads")
+Cc: stable@vger.kernel.org # 5.9+
+Reviewed-by: Josef Bacik <josef@toxicpanda.com>
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+
+---
+ fs/btrfs/extent_io.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -4297,7 +4297,7 @@ int extent_write_locked_range(struct ino
+ 		.sync_mode	= mode,
+ 		.nr_to_write	= nr_pages * 2,
+ 		.range_start	= start,
+-		.range_end	= end + 1,
++		.range_end	= end,
+ 	};
+ 
+ 	while (start <= end) {
