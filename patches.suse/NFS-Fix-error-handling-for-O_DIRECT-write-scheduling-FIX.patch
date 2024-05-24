@@ -1,0 +1,39 @@
+From: NeilBrown <neilb@suse.de>
+Subject: Fix backport of :  NFS: Fix error handling for O_DIRECT write scheduling
+Patch-mainline: Never, fix of backprot
+References: bsc#1224785
+
+The backport of
+Commit 954998b60caa ("NFS: Fix error handling for O_DIRECT write scheduling")
+
+introduced a bug that causes direct writes to be written to the wrong address in the file.
+The setting of req->wb_index and req_wb_offset happens in a different place upstream
+so it didn't need to be moved there.  But we need to move it.
+
+Importantly, we must use 'pos' in setting these fields in req BEFORE we update pos.
+
+Signed-off-by: NeilBrown <neilb@suse.de>
+---
+ fs/nfs/direct.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/fs/nfs/direct.c
++++ b/fs/nfs/direct.c
+@@ -887,6 +887,8 @@ static ssize_t nfs_direct_write_schedule
+ 				result = desc.pg_error;
+ 				break;
+ 			}
++			req->wb_index = pos >> PAGE_SHIFT;
++			req->wb_offset = pos & ~PAGE_MASK;
+ 
+ 			pgbase = 0;
+ 			bytes -= req_len;
+@@ -900,8 +902,6 @@ static ssize_t nfs_direct_write_schedule
+ 			}
+ 
+ 			nfs_lock_request(req);
+-			req->wb_index = pos >> PAGE_SHIFT;
+-			req->wb_offset = pos & ~PAGE_MASK;
+ 			if (nfs_pageio_add_request(&desc, req))
+ 				continue;
+ 
