@@ -1,0 +1,40 @@
+From: Takashi Iwai <tiwai@suse.de>
+Subject: kABI workaround for spi_controller
+Patch-mainline: Never, kABI workaround
+References: CVE-2021-47469 bsc#1225347
+
+The recent fix for spi
+  patches.suse/spi-Fix-deadlock-when-adding-SPI-controllers-on-SPI-.patch
+introduced a new field to struct spi_controller.  As it's dynamically
+allocated, apply the standard kABI workaround to move it the tail.
+
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ include/linux/spi/spi.h |    8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+--- a/include/linux/spi/spi.h
++++ b/include/linux/spi/spi.h
+@@ -471,9 +471,6 @@ struct spi_controller {
+ 	/* I/O mutex */
+ 	struct mutex		io_mutex;
+ 
+-	/* Used to avoid adding the same CS twice */
+-	struct mutex		add_lock;
+-
+ 	/* lock and mutex for SPI bus locking */
+ 	spinlock_t		bus_lock_spinlock;
+ 	struct mutex		bus_lock_mutex;
+@@ -591,6 +588,11 @@ struct spi_controller {
+ 	void			*dummy_tx;
+ 
+ 	int (*fw_translate_cs)(struct spi_controller *ctlr, unsigned cs);
++
++#ifndef __GENKSYMS__
++	/* Used to avoid adding the same CS twice */
++	struct mutex		add_lock;
++#endif
+ };
+ 
+ static inline void *spi_controller_get_devdata(struct spi_controller *ctlr)
