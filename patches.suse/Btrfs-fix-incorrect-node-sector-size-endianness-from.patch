@@ -1,0 +1,41 @@
+From: Omar Sandoval <osandov@fb.com>
+Date: Tue, 22 Aug 2017 23:46:00 -0700
+Subject: [PATCH] Btrfs: fix incorrect {node,sector}size endianness from
+ BTRFS_IOC_FS_INFO
+Git-commit: bea7eafdbda3ba1d4b2ccb9cca829eefb7989bb9
+Patch-mainline: v4.14-rc3
+References: git-fixes
+
+fs_info->super_copy->{node,sector}size are little-endian, but the ioctl
+should return the values in native endianness. Use the cached values in
+btrfs_fs_info instead. Found with sparse.
+
+Fixes: 80a773fbfc2d ("btrfs: retrieve more info from FS_INFO ioctl")
+Signed-off-by: Omar Sandoval <osandov@fb.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+
+---
+ fs/btrfs/ioctl.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/fs/btrfs/ioctl.c b/fs/btrfs/ioctl.c
+index ae8fbf9d3de2ad..cf1c2ee030ddb0 100644
+--- a/fs/btrfs/ioctl.c
++++ b/fs/btrfs/ioctl.c
+@@ -2769,9 +2769,9 @@ static long btrfs_ioctl_fs_info(struct btrfs_fs_info *fs_info,
+ 	}
+ 	mutex_unlock(&fs_devices->device_list_mutex);
+ 
+-	fi_args->nodesize = fs_info->super_copy->nodesize;
+-	fi_args->sectorsize = fs_info->super_copy->sectorsize;
+-	fi_args->clone_alignment = fs_info->super_copy->sectorsize;
++	fi_args->nodesize = fs_info->nodesize;
++	fi_args->sectorsize = fs_info->sectorsize;
++	fi_args->clone_alignment = fs_info->sectorsize;
+ 
+ 	if (copy_to_user(arg, fi_args, sizeof(*fi_args)))
+ 		ret = -EFAULT;
+-- 
+2.45.0
+
