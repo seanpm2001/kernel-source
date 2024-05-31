@@ -1,0 +1,45 @@
+From: Tom Zanussi <tom.zanussi@linux.intel.com>
+Date: Tue, 5 Mar 2019 10:12:00 -0600
+Subject: tracing: Use strncpy instead of memcpy when copying comm in trace.c
+Git-commit: 85f726a35e504418607b77c5e7da165dc1ea63ce
+Patch-mainline: v5.1-rc1
+References: git-fixes
+
+Because there may be random garbage beyond a string's null terminator,
+code that might use the entire comm array e.g. histogram keys, can
+give unexpected results if that garbage is copied in too, so avoid
+that possibility by using strncpy instead of memcpy.
+
+Link: http://lkml.kernel.org/r/1d6ebac26570c2a29ce9fb575379f17ef5c8b81b.1551802084.git.tom.zanussi@linux.intel.com
+
+Signed-off-by: Tom Zanussi <tom.zanussi@linux.intel.com>
+Suggested-by: Steven Rostedt (VMware) <rostedt@goodmis.org>
+Signed-off-by: Steven Rostedt (VMware) <rostedt@goodmis.org>
+Acked-by: Petr Pavlu <petr.pavlu@suse.com>
+---
+ kernel/trace/trace.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/trace/trace.c b/kernel/trace/trace.c
+index 3835f7ed3293..e9cc47e59d25 100644
+--- a/kernel/trace/trace.c
++++ b/kernel/trace/trace.c
+@@ -1497,7 +1497,7 @@ __update_max_tr(struct trace_array *tr, struct task_struct *tsk, int cpu)
+ 	max_data->critical_start = data->critical_start;
+ 	max_data->critical_end = data->critical_end;
+ 
+-	memcpy(max_data->comm, tsk->comm, TASK_COMM_LEN);
++	strncpy(max_data->comm, tsk->comm, TASK_COMM_LEN);
+ 	max_data->pid = tsk->pid;
+ 	/*
+ 	 * If tsk == current, then use current_uid(), as that does not use
+@@ -1923,7 +1923,7 @@ static inline char *get_saved_cmdlines(int idx)
+ 
+ static inline void set_cmdline(int idx, const char *cmdline)
+ {
+-	memcpy(get_saved_cmdlines(idx), cmdline, TASK_COMM_LEN);
++	strncpy(get_saved_cmdlines(idx), cmdline, TASK_COMM_LEN);
+ }
+ 
+ static int allocate_cmdlines_buffer(unsigned int val,
+
