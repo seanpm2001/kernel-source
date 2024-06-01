@@ -1,0 +1,44 @@
+From 00d81f4fba1fecf3f9c128c6e017dba8eadbe3b2 Mon Sep 17 00:00:00 2001
+From: David Howells <dhowells@redhat.com>
+Date: Fri, 24 Nov 2017 10:18:40 +0000
+Subject: [PATCH 1/5] rxrpc: The mutex lock returned by rxrpc_accept_call()
+ needs releasing
+Patch-mainline: v4.15-rc2
+Git-commit: 03a6c82218b9a87014b2c6c4e178294fdc8ebd8a
+References: git-fixes
+
+The caller of rxrpc_accept_call() must release the lock on call->user_mutex
+returned by that function.
+
+Signed-off-by: David Howells <dhowells@redhat.com>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/rxrpc/sendmsg.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/net/rxrpc/sendmsg.c b/net/rxrpc/sendmsg.c
+index dc25738484fc..0af50af02995 100644
+--- a/net/rxrpc/sendmsg.c
++++ b/net/rxrpc/sendmsg.c
+@@ -513,8 +513,8 @@ int rxrpc_do_sendmsg(struct rxrpc_sock *rx, struct msghdr *msg, size_t len)
+ 		/* The socket is now unlocked. */
+ 		if (IS_ERR(call))
+ 			return PTR_ERR(call);
+-		rxrpc_put_call(call, rxrpc_call_put);
+-		return 0;
++		ret = 0;
++		goto out_put_unlock;
+ 	}
+ 
+ 	call = rxrpc_find_call_by_user_ID(rx, user_call_ID);
+@@ -575,6 +575,7 @@ int rxrpc_do_sendmsg(struct rxrpc_sock *rx, struct msghdr *msg, size_t len)
+ 		ret = rxrpc_send_data(rx, call, msg, len);
+ 	}
+ 
++out_put_unlock:
+ 	mutex_unlock(&call->user_mutex);
+ error_put:
+ 	rxrpc_put_call(call, rxrpc_call_put);
+-- 
+2.16.4
+
