@@ -1,0 +1,47 @@
+From e95a39ef6d2c7ee39639a6d68e61c3a643aacb4e Mon Sep 17 00:00:00 2001
+From: Dag Moxnes <dag.moxnes@oracle.com>
+Date: Wed, 25 Apr 2018 13:22:01 +0200
+Subject: [PATCH 5/5] rds: ib: Fix missing call to rds_ib_dev_put in
+ rds_ib_setup_qp
+Patch-mainline: v4.17-rc4
+Git-commit: 91a825290ca4eae88603bc811bf74a45f94a3f46
+References: git-fixes
+
+The function rds_ib_setup_qp is calling rds_ib_get_client_data and
+should correspondingly call rds_ib_dev_put. This call was lost in
+the non-error path with the introduction of error handling done in
+commit 3b12f73a5c29 ("rds: ib: add error handle")
+
+Signed-off-by: Dag Moxnes <dag.moxnes@oracle.com>
+Reviewed-by: Håkon Bugge <haakon.bugge@oracle.com>
+Acked-by: Santosh Shilimkar <santosh.shilimkar@oracle.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/rds/ib_cm.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/net/rds/ib_cm.c b/net/rds/ib_cm.c
+index 80fb6f63e768..6e721c449c4b 100644
+--- a/net/rds/ib_cm.c
++++ b/net/rds/ib_cm.c
+@@ -546,7 +546,7 @@ static int rds_ib_setup_qp(struct rds_connection *conn)
+ 	rdsdebug("conn %p pd %p cq %p %p\n", conn, ic->i_pd,
+ 		 ic->i_send_cq, ic->i_recv_cq);
+ 
+-	return ret;
++	goto out;
+ 
+ sends_out:
+ 	vfree(ic->i_sends);
+@@ -571,6 +571,7 @@ static int rds_ib_setup_qp(struct rds_connection *conn)
+ 		ic->i_send_cq = NULL;
+ rds_ibdev_out:
+ 	rds_ib_remove_conn(rds_ibdev, conn);
++out:
+ 	rds_ib_dev_put(rds_ibdev);
+ 
+ 	return ret;
+-- 
+2.16.4
+

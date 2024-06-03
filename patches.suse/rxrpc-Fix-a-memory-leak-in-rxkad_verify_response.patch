@@ -1,0 +1,45 @@
+From b6745f509c4bb094697bc247efffe2e781e671fa Mon Sep 17 00:00:00 2001
+From: Qiushi Wu <wu000273@umn.edu>
+Date: Fri, 22 May 2020 13:45:18 -0500
+Subject: [PATCH] rxrpc: Fix a memory leak in rxkad_verify_response()
+Patch-mainline: v5.7-rc7
+Git-commit: f45d01f4f30b53c3a0a1c6c1c154acb7ff74ab9f
+References: git-fixes
+
+A ticket was not released after a call of the function
+"rxkad_decrypt_ticket" failed. Thus replace the jump target
+"temporary_error_free_resp" by "temporary_error_free_ticket".
+
+Fixes: 8c2f826dc3631 ("rxrpc: Don't put crypto buffers on the stack")
+Signed-off-by: Qiushi Wu <wu000273@umn.edu>
+Signed-off-by: David Howells <dhowells@redhat.com>
+cc: Markus Elfring <Markus.Elfring@web.de>
+Signed-off-by: Denis Kirjanov <denis.kirjanov@suse.com>
+---
+ net/rxrpc/rxkad.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/net/rxrpc/rxkad.c b/net/rxrpc/rxkad.c
+index 53e45709603c..3744a6f9993c 100644
+--- a/net/rxrpc/rxkad.c
++++ b/net/rxrpc/rxkad.c
+@@ -1102,7 +1102,7 @@ static int rxkad_verify_response(struct rxrpc_connection *conn,
+ 	ret = rxkad_decrypt_ticket(conn, skb, ticket, ticket_len, &session_key,
+ 				   &expiry, _abort_code);
+ 	if (ret < 0)
+-		goto temporary_error_free_resp;
++		goto temporary_error_free_ticket;
+ 
+ 	/* use the session key from inside the ticket to decrypt the
+ 	 * response */
+@@ -1184,7 +1184,6 @@ static int rxkad_verify_response(struct rxrpc_connection *conn,
+ 
+ temporary_error_free_ticket:
+ 	kfree(ticket);
+-temporary_error_free_resp:
+ 	kfree(response);
+ temporary_error:
+ 	/* Ignore the response packet if we got a temporary error such as
+-- 
+2.16.4
+
