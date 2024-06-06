@@ -1,0 +1,135 @@
+From d142e0d121b4205a43d15449944591174a2f621f Mon Sep 17 00:00:00 2001
+From: Friedrich Vock <friedrich.vock@gmx.de>
+Date: Tue, 23 Jan 2024 12:52:03 +0100
+Subject: drm/amdgpu: Reset IH OVERFLOW_CLEAR bit
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Git-commit: 7330256268664ea0a7dd5b07a3fed363093477dd
+Patch-mainline: v6.8-rc3
+References: bsc#1223207 CVE-2024-26915
+
+Allows us to detect subsequent IH ring buffer overflows as well.
+
+Cc: Joshua Ashton <joshua@froggi.es>
+Cc: Alex Deucher <alexander.deucher@amd.com>
+Cc: Christian König <christian.koenig@amd.com>
+Cc: stable@vger.kernel.org
+Signed-off-by: Friedrich Vock <friedrich.vock@gmx.de>
+Reviewed-by: Christian König <christian.koenig@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+Acked-by: Thomas Zimmermann <tzimmermann@suse.com>
+---
+ drivers/gpu/drm/amd/amdgpu/cik_ih.c     | 6 ++++++
+ drivers/gpu/drm/amd/amdgpu/cz_ih.c      | 6 ++++++
+ drivers/gpu/drm/amd/amdgpu/iceland_ih.c | 6 ++++++
+ drivers/gpu/drm/amd/amdgpu/si_ih.c      | 6 ++++++
+ drivers/gpu/drm/amd/amdgpu/tonga_ih.c   | 6 ++++++
+ drivers/gpu/drm/amd/amdgpu/vega10_ih.c  | 6 ++++++
+ 6 files changed, 36 insertions(+)
+
+diff --git a/drivers/gpu/drm/amd/amdgpu/cik_ih.c b/drivers/gpu/drm/amd/amdgpu/cik_ih.c
+index 44d10c2172f69..581ecbe5bbd17 100644
+--- a/drivers/gpu/drm/amd/amdgpu/cik_ih.c
++++ b/drivers/gpu/drm/amd/amdgpu/cik_ih.c
+@@ -201,6 +201,12 @@ static u32 cik_ih_get_wptr(struct amdgpu_device *adev)
+ 		tmp = RREG32(mmIH_RB_CNTL);
+ 		tmp |= IH_RB_CNTL__WPTR_OVERFLOW_CLEAR_MASK;
+ 		WREG32(mmIH_RB_CNTL, tmp);
++
++		/* Unset the CLEAR_OVERFLOW bit immediately so new overflows
++		 * can be detected.
++		 */
++		tmp &= ~IH_RB_CNTL__WPTR_OVERFLOW_CLEAR_MASK;
++		WREG32(mmIH_RB_CNTL, tmp);
+ 	}
+ 	return (wptr & adev->irq.ih.ptr_mask);
+ }
+diff --git a/drivers/gpu/drm/amd/amdgpu/cz_ih.c b/drivers/gpu/drm/amd/amdgpu/cz_ih.c
+index 960c29e17da65..cf7beff60058d 100644
+--- a/drivers/gpu/drm/amd/amdgpu/cz_ih.c
++++ b/drivers/gpu/drm/amd/amdgpu/cz_ih.c
+@@ -203,6 +203,12 @@ static u32 cz_ih_get_wptr(struct amdgpu_device *adev)
+ 		tmp = RREG32(mmIH_RB_CNTL);
+ 		tmp = REG_SET_FIELD(tmp, IH_RB_CNTL, WPTR_OVERFLOW_CLEAR, 1);
+ 		WREG32(mmIH_RB_CNTL, tmp);
++
++		/* Unset the CLEAR_OVERFLOW bit immediately so new overflows
++		 * can be detected.
++		 */
++		tmp = REG_SET_FIELD(tmp, IH_RB_CNTL, WPTR_OVERFLOW_CLEAR, 0);
++		WREG32(mmIH_RB_CNTL, tmp);
+ 	}
+ 	return (wptr & adev->irq.ih.ptr_mask);
+ }
+diff --git a/drivers/gpu/drm/amd/amdgpu/iceland_ih.c b/drivers/gpu/drm/amd/amdgpu/iceland_ih.c
+index 842c4b677b4d9..36b771837ec6b 100644
+--- a/drivers/gpu/drm/amd/amdgpu/iceland_ih.c
++++ b/drivers/gpu/drm/amd/amdgpu/iceland_ih.c
+@@ -203,6 +203,12 @@ static u32 iceland_ih_get_wptr(struct amdgpu_device *adev)
+ 		tmp = RREG32(mmIH_RB_CNTL);
+ 		tmp = REG_SET_FIELD(tmp, IH_RB_CNTL, WPTR_OVERFLOW_CLEAR, 1);
+ 		WREG32(mmIH_RB_CNTL, tmp);
++
++		/* Unset the CLEAR_OVERFLOW bit immediately so new overflows
++		 * can be detected.
++		 */
++		tmp = REG_SET_FIELD(tmp, IH_RB_CNTL, WPTR_OVERFLOW_CLEAR, 0);
++		WREG32(mmIH_RB_CNTL, tmp);
+ 	}
+ 	return (wptr & adev->irq.ih.ptr_mask);
+ }
+diff --git a/drivers/gpu/drm/amd/amdgpu/si_ih.c b/drivers/gpu/drm/amd/amdgpu/si_ih.c
+index bec1671a7f203..e04baa4060920 100644
+--- a/drivers/gpu/drm/amd/amdgpu/si_ih.c
++++ b/drivers/gpu/drm/amd/amdgpu/si_ih.c
+@@ -115,6 +115,12 @@ static u32 si_ih_get_wptr(struct amdgpu_device *adev)
+ 		tmp = RREG32(IH_RB_CNTL);
+ 		tmp |= IH_RB_CNTL__WPTR_OVERFLOW_CLEAR_MASK;
+ 		WREG32(IH_RB_CNTL, tmp);
++
++		/* Unset the CLEAR_OVERFLOW bit immediately so new overflows
++		 * can be detected.
++		 */
++		tmp &= ~IH_RB_CNTL__WPTR_OVERFLOW_CLEAR_MASK;
++		WREG32(IH_RB_CNTL, tmp);
+ 	}
+ 	return (wptr & adev->irq.ih.ptr_mask);
+ }
+diff --git a/drivers/gpu/drm/amd/amdgpu/tonga_ih.c b/drivers/gpu/drm/amd/amdgpu/tonga_ih.c
+index 52853d8a8fdda..6375109e1e72f 100644
+--- a/drivers/gpu/drm/amd/amdgpu/tonga_ih.c
++++ b/drivers/gpu/drm/amd/amdgpu/tonga_ih.c
+@@ -214,6 +214,12 @@ static u32 tonga_ih_get_wptr(struct amdgpu_device *adev)
+ 		tmp = RREG32(mmIH_RB_CNTL);
+ 		tmp = REG_SET_FIELD(tmp, IH_RB_CNTL, WPTR_OVERFLOW_CLEAR, 1);
+ 		WREG32(mmIH_RB_CNTL, tmp);
++
++		/* Unset the CLEAR_OVERFLOW bit immediately so new overflows
++		 * can be detected.
++		 */
++		tmp = REG_SET_FIELD(tmp, IH_RB_CNTL, WPTR_OVERFLOW_CLEAR, 0);
++		WREG32(mmIH_RB_CNTL, tmp);
+ 	}
+ 	return (wptr & adev->irq.ih.ptr_mask);
+ }
+diff --git a/drivers/gpu/drm/amd/amdgpu/vega10_ih.c b/drivers/gpu/drm/amd/amdgpu/vega10_ih.c
+index 21bc12e023111..900bf3f3a09ab 100644
+--- a/drivers/gpu/drm/amd/amdgpu/vega10_ih.c
++++ b/drivers/gpu/drm/amd/amdgpu/vega10_ih.c
+@@ -215,6 +215,12 @@ static u32 vega10_ih_get_wptr(struct amdgpu_device *adev)
+ 		tmp = RREG32_NO_KIQ(SOC15_REG_OFFSET(OSSSYS, 0, mmIH_RB_CNTL));
+ 		tmp = REG_SET_FIELD(tmp, IH_RB_CNTL, WPTR_OVERFLOW_CLEAR, 1);
+ 		WREG32_NO_KIQ(SOC15_REG_OFFSET(OSSSYS, 0, mmIH_RB_CNTL), tmp);
++
++		/* Unset the CLEAR_OVERFLOW bit immediately so new overflows
++		 * can be detected.
++		 */
++		tmp = REG_SET_FIELD(tmp, IH_RB_CNTL, WPTR_OVERFLOW_CLEAR, 0);
++		WREG32_NO_KIQ(SOC15_REG_OFFSET(OSSSYS, 0, mmIH_RB_CNTL), tmp);
+ 	}
+ 	return (wptr & adev->irq.ih.ptr_mask);
+ }
+-- 
+2.44.0
+
