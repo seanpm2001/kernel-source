@@ -1,0 +1,36 @@
+From b271fa158a3a63d352f86af5ae94125f64cbdae1 Mon Sep 17 00:00:00 2001
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Fri, 29 Sep 2017 15:24:06 -0400
+Subject: [PATCH 1/2] fs: make fiemap work from compat_ioctl
+Git-commit: ceac204e1da942a634d3bb0db3e959edc78e47c7
+Patch-mainline: v4.15-rc1
+References: bsc#1225848
+
+We don't need to do anything special with fiemap to make it work with a
+64bit kernel from 32bit userspace, so just go down to do_vfs_ioctl().
+Without this patch we were incorrectly failing to do fiemap with a 32bit
+userspace on a 64bit kernel.
+
+Signed-off-by: Josef Bacik <jbacik@fb.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Acked-by: David Disseldorp <ddiss@suse.de>
+---
+ fs/compat_ioctl.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fs/compat_ioctl.c b/fs/compat_ioctl.c
+index ff9d32ba9302d..a3199c1462a43 100644
+--- a/fs/compat_ioctl.c
++++ b/fs/compat_ioctl.c
+@@ -1587,6 +1587,7 @@ COMPAT_SYSCALL_DEFINE3(ioctl, unsigned int, fd, unsigned int, cmd,
+ 	case FICLONE:
+ 	case FICLONERANGE:
+ 	case FIDEDUPERANGE:
++	case FS_IOC_FIEMAP:
+ 		goto do_ioctl;
+ 
+ 	case FIBMAP:
+-- 
+2.45.1
+
