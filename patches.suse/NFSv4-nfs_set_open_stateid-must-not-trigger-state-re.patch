@@ -1,0 +1,31 @@
+From: Trond Myklebust <trond.myklebust@primarydata.com>
+Date: Tue, 7 Nov 2017 13:10:46 -0500
+Subject: [PATCH] NFSv4: nfs_set_open_stateid must not trigger state recovery
+ for closed state
+Git-commit: e1fff5df6e04818c711882d40f06e97891bca36e
+Patch-mainline: v4.15
+References: bsc#1221791
+
+In nfs_set_open_stateid_locked, we must ignore stateids from closed state.
+
+Reported-by: Andrew W Elble <aweits@rit.edu>
+Signed-off-by: Trond Myklebust <trond.myklebust@primarydata.com>
+Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/nfs4proc.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/fs/nfs/nfs4proc.c
++++ b/fs/nfs/nfs4proc.c
+@@ -1560,7 +1560,8 @@ static void nfs_set_open_stateid_locked(
+ 		write_seqlock(&state->seqlock);
+ 	}
+ 
+-	if (!nfs4_stateid_match_other(stateid, &state->open_stateid)) {
++	if (test_bit(NFS_OPEN_STATE, &state->flags) &&
++	    !nfs4_stateid_match_other(stateid, &state->open_stateid)) {
+ 		nfs4_stateid_copy(freeme, &state->open_stateid);
+ 		nfs_test_and_clear_all_open_stateid(state);
+ 	}
