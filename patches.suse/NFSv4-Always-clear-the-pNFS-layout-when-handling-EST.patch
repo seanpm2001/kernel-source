@@ -1,0 +1,45 @@
+From: Trond Myklebust <trond.myklebust@hammerspace.com>
+Date: Tue, 29 May 2018 22:06:08 -0400
+Subject: [PATCH] NFSv4: Always clear the pNFS layout when handling ESTALE
+Git-commit: cf61eb268678c83eef812f937a3a9aeee67c460b
+Patch-mainline: v4.18
+References: bsc#1221791
+
+If we get an ESTALE error in response to an RPC call operating on the
+file on the MDS, we should immediately cancel the layout for that file.
+
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Acked-by: NeilBrown <neilb@suse.com>
+
+---
+ fs/nfs/nfs42proc.c |    4 ++++
+ fs/nfs/nfs4proc.c  |    5 +++++
+ 2 files changed, 9 insertions(+)
+
+--- a/fs/nfs/nfs42proc.c
++++ b/fs/nfs/nfs42proc.c
+@@ -415,6 +415,10 @@ nfs42_layoutstat_done(struct rpc_task *t
+ 	switch (task->tk_status) {
+ 	case 0:
+ 		break;
++	case -NFS4ERR_BADHANDLE:
++	case -ESTALE:
++		pnfs_destroy_layout(NFS_I(inode));
++		break;
+ 	case -NFS4ERR_EXPIRED:
+ 	case -NFS4ERR_ADMIN_REVOKED:
+ 	case -NFS4ERR_DELEG_REVOKED:
+--- a/fs/nfs/nfs4proc.c
++++ b/fs/nfs/nfs4proc.c
+@@ -418,6 +418,11 @@ static int nfs4_do_handle_exception(stru
+ 	switch(errorcode) {
+ 		case 0:
+ 			return 0;
++		case -NFS4ERR_BADHANDLE:
++		case -ESTALE:
++			if (inode != NULL && S_ISREG(inode->i_mode))
++				pnfs_destroy_layout(NFS_I(inode));
++			break;
+ 		case -NFS4ERR_DELEG_REVOKED:
+ 		case -NFS4ERR_ADMIN_REVOKED:
+ 		case -NFS4ERR_EXPIRED:
