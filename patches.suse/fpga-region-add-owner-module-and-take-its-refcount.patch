@@ -1,0 +1,142 @@
+From b7c0e1ecee403a43abc89eb3e75672b01ff2ece9 Mon Sep 17 00:00:00 2001
+From: Marco Pagani <marpagan@redhat.com>
+Date: Fri, 19 Apr 2024 10:35:59 +0200
+Subject: [PATCH] fpga: region: add owner module and take its refcount
+Git-commit: b7c0e1ecee403a43abc89eb3e75672b01ff2ece9
+Patch-mainline: v6.10-rc1
+References: CVE-2024-35247 bsc#1226948
+
+[ backport note: majorly rewritten to match with the old code base
+  using fpga_region_create().  The kABI workaround is also embedded into
+  this patch exceptionally for the ease of maintenance -- tiwai ]
+
+The current implementation of the fpga region assumes that the low-level
+module registers a driver for the parent device and uses its owner pointer
+to take the module's refcount. This approach is problematic since it can
+lead to a null pointer dereference while attempting to get the region
+during programming if the parent device does not have a driver.
+
+To address this problem, add a module owner pointer to the fpga_region
+struct and use it to take the module's refcount. Modify the functions for
+registering a region to take an additional owner module parameter and
+rename them to avoid conflicts. Use the old function names for helper
+macros that automatically set the module that registers the region as the
+owner. This ensures compatibility with existing low-level control modules
+and reduces the chances of registering a region without setting the owner.
+
+Also, update the documentation to keep it consistent with the new interface
+for registering an fpga region.
+
+Fixes: 0fa20cdfcc1f ("fpga: fpga-region: device tree control for FPGA")
+Suggested-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Suggested-by: Xu Yilun <yilun.xu@intel.com>
+Reviewed-by: Russ Weight <russ.weight@linux.dev>
+Signed-off-by: Marco Pagani <marpagan@redhat.com>
+Acked-by: Xu Yilun <yilun.xu@intel.com>
+Link: https://lore.kernel.org/r/20240419083601.77403-1-marpagan@redhat.com
+Signed-off-by: Xu Yilun <yilun.xu@linux.intel.com>
+Acked-by: Takashi Iwai <tiwai@suse.de>
+
+---
+ drivers/fpga/fpga-region.c       |   25 +++++++++++++++++++------
+ include/linux/fpga/fpga-region.h |   13 ++++++++++---
+ 2 files changed, 29 insertions(+), 9 deletions(-)
+
+--- a/drivers/fpga/fpga-region.c
++++ b/drivers/fpga/fpga-region.c
+@@ -64,7 +64,7 @@ static struct fpga_region *fpga_region_g
+ 	}
+ 
+ 	get_device(dev);
+-	if (!try_module_get(dev->parent->driver->owner)) {
++	if (!try_module_get(region->ops_owner)) {
+ 		put_device(dev);
+ 		mutex_unlock(&region->mutex);
+ 		return ERR_PTR(-ENODEV);
+@@ -86,7 +86,7 @@ static void fpga_region_put(struct fpga_
+ 
+ 	dev_dbg(dev, "put\n");
+ 
+-	module_put(dev->parent->driver->owner);
++	module_put(region->ops_owner);
+ 	put_device(dev);
+ 	mutex_unlock(&region->mutex);
+ }
+@@ -191,10 +191,11 @@ ATTRIBUTE_GROUPS(fpga_region);
+  *
+  * Return: struct fpga_region or NULL
+  */
+-struct fpga_region
+-*fpga_region_create(struct device *dev,
+-		    struct fpga_manager *mgr,
+-		    int (*get_bridges)(struct fpga_region *))
++struct fpga_region *
++__fpga_region_create(struct device *dev,
++		     struct fpga_manager *mgr,
++		     int (*get_bridges)(struct fpga_region *),
++		     struct module *owner)
+ {
+ 	struct fpga_region *region;
+ 	int id, ret = 0;
+@@ -209,6 +210,7 @@ struct fpga_region
+ 
+ 	region->mgr = mgr;
+ 	region->get_bridges = get_bridges;
++	region->ops_owner = owner;
+ 	mutex_init(&region->mutex);
+ 	INIT_LIST_HEAD(&region->bridge_list);
+ 
+@@ -231,6 +233,17 @@ err_free:
+ 
+ 	return NULL;
+ }
++EXPORT_SYMBOL_GPL(__fpga_region_create);
++
++/* FIXME: provided only for kABI compatibility */
++#undef fpga_region_create
++struct fpga_region *
++fpga_region_create(struct device *dev,
++		   struct fpga_manager *mgr,
++		   int (*get_bridges)(struct fpga_region *))
++{
++	return __fpga_region_create(dev, mgr, get_bridges, dev->parent->driver->owner);
++}
+ EXPORT_SYMBOL_GPL(fpga_region_create);
+ 
+ /**
+--- a/include/linux/fpga/fpga-region.h
++++ b/include/linux/fpga/fpga-region.h
+@@ -13,6 +13,7 @@
+  * @mgr: FPGA manager
+  * @info: FPGA image info
+  * @compat_id: FPGA region id for compatibility check.
++ * @ops_owner: module containing the get_bridges function
+  * @priv: private data
+  * @get_bridges: optional function to get bridges to a list
+  */
+@@ -25,6 +26,9 @@ struct fpga_region {
+ 	struct fpga_compat_id *compat_id;
+ 	void *priv;
+ 	int (*get_bridges)(struct fpga_region *region);
++#ifndef __GENKSYMS__
++	struct module *ops_owner;
++#endif
+ };
+ 
+ #define to_fpga_region(d) container_of(d, struct fpga_region, dev)
+@@ -35,9 +39,12 @@ struct fpga_region *fpga_region_class_fi
+ 
+ int fpga_region_program_fpga(struct fpga_region *region);
+ 
+-struct fpga_region
+-*fpga_region_create(struct device *dev, struct fpga_manager *mgr,
+-		    int (*get_bridges)(struct fpga_region *));
++struct fpga_region *
++__fpga_region_create(struct device *dev, struct fpga_manager *mgr,
++		     int (*get_bridges)(struct fpga_region *),
++		     struct module *owner);
++#define fpga_region_create(dev, mgr, get_bridges) \
++	__fpga_region_create(dev, mgr, get_bridges, THIS_MODULE)
+ void fpga_region_free(struct fpga_region *region);
+ int fpga_region_register(struct fpga_region *region);
+ void fpga_region_unregister(struct fpga_region *region);
