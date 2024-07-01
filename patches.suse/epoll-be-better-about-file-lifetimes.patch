@@ -1,0 +1,106 @@
+From 4efaa5acf0a1d2b5947f98abb3acf8bfd966422b Mon Sep 17 00:00:00 2001
+From: Linus Torvalds <torvalds@linux-foundation.org>
+Date: Fri, 3 May 2024 13:36:09 -0700
+Subject: [PATCH] epoll: be better about file lifetimes
+Git-commit: 4efaa5acf0a1d2b5947f98abb3acf8bfd966422b
+Patch-mainline: v6.9-rc7
+References: bsc#1226610 CVE-2024-38580
+
+epoll can call out to vfs_poll() with a file pointer that may race with
+the last 'fput()'. That would make f_count go down to zero, and while
+the ep->mtx locking means that the resulting file pointer tear-down will
+be blocked until the poll returns, it means that f_count is already
+dead, and any use of it won't actually get a reference to the file any
+More: it's dead regardless.
+
+Make sure we have a valid ref on the file pointer before we call down to
+vfs_poll() from the epoll routines.
+
+Link: https://lore.kernel.org/lkml/0000000000002d631f0615918f1e@google.com/
+Reported-by: syzbot+045b454ab35fd82a35fb@syzkaller.appspotmail.com
+Reviewed-by: Jens Axboe <axboe@kernel.dk>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Acked-by: Jan Kara <jack@suse.cz>
+
+---
+ fs/eventpoll.c |   56 ++++++++++++++++++++++++++++++++++++++++++++++++--------
+ 1 file changed, 48 insertions(+), 8 deletions(-)
+
+--- a/fs/eventpoll.c
++++ b/fs/eventpoll.c
+@@ -870,27 +870,67 @@ static void ep_ptable_queue_proc(struct
+ 				 poll_table *pt);
+ 
+ /*
++ * The ffd.file pointer may be in the process of being torn down due to
++ * being closed, but we may not have finished eventpoll_release() yet.
++ *
++ * Normally, even with the atomic_long_inc_not_zero, the file may have
++ * been free'd and then gotten re-allocated to something else (since
++ * files are not RCU-delayed, they are SLAB_TYPESAFE_BY_RCU).
++ *
++ * But for epoll, users hold the ep->mtx mutex, and as such any file in
++ * the process of being free'd will block in eventpoll_release_file()
++ * and thus the underlying file allocation will not be free'd, and the
++ * file re-use cannot happen.
++ *
++ * For the same reason we can avoid a rcu_read_lock() around the
++ * operation - 'ffd.file' cannot go away even if the refcount has
++ * reached zero (but we must still not call out to ->poll() functions
++ * etc).
++ */
++static struct file *epi_fget(const struct epitem *epi)
++{
++	struct file *file;
++
++	file = epi->ffd.file;
++	if (!atomic_long_inc_not_zero(&file->f_count))
++		file = NULL;
++	return file;
++}
++
++/*
+  * Differs from ep_eventpoll_poll() in that internal callers already have
+  * the ep->mtx so we need to start from depth=1, such that mutex_lock_nested()
+  * is correctly annotated.
+  */
+ static unsigned int ep_item_poll(struct epitem *epi, poll_table *pt, int depth)
+ {
++	struct file *file = epi_fget(epi);
+ 	struct eventpoll *ep;
++	unsigned int res;
+ 	bool locked;
+ 
++	/*
++	 * We could return EPOLLERR | EPOLLHUP or something, but let's
++	 * treat this more as "file doesn't exist, poll didn't happen".
++	 */
++	if (!file)
++		return 0;
++
+ 	pt->_key = epi->event.events;
+-	if (!is_file_epoll(epi->ffd.file))
+-		return epi->ffd.file->f_op->poll(epi->ffd.file, pt) &
+-		       epi->event.events;
++	if (!is_file_epoll(file)) {
++		res = file->f_op->poll(file, pt) & epi->event.events;
++		fput(file);
++		return res;
++	}
+ 
+-	ep = epi->ffd.file->private_data;
+-	poll_wait(epi->ffd.file, &ep->poll_wait, pt);
++	ep = file->private_data;
++	poll_wait(file, &ep->poll_wait, pt);
+ 	locked = pt && (pt->_qproc == ep_ptable_queue_proc);
+ 
+-	return ep_scan_ready_list(epi->ffd.file->private_data,
+-				  ep_read_events_proc, &depth, depth,
+-				  locked) & epi->event.events;
++	res = ep_scan_ready_list(file->private_data, ep_read_events_proc,
++				 &depth, depth, locked) & epi->event.events;
++	fput(file);
++	return res;
+ }
+ 
+ static int ep_read_events_proc(struct eventpoll *ep, struct list_head *head,
