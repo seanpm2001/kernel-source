@@ -1,0 +1,65 @@
+From: Filipe Manana <fdmanana@suse.com>
+Date: Mon, 24 May 2021 11:35:54 +0100
+Git-commit: 4f7e67378e1bccd4d1d4de5d7f5aaf928cc07928
+Patch-mainline: v5.14-rc1
+References: bsc#1227101 CVE-2024-37354
+Subject: [PATCH] btrfs: fix misleading and incomplete comment of
+ btrfs_truncate()
+
+The comment at the top of btrfs_truncate() mentions that csum items are
+dropped or truncated to the new i_size, but this is wrong and non sense,
+as they are unrelated to the i_size and are located in the csums tree and
+not on a tree with inode items (fs/subvolume tree or a log tree). Instead
+that claim applies to file extent items, so fix the comment to refer to
+them instead.
+
+While at it make the whole comment for the function more descriptive and
+follow the kernel doc style.
+
+Tested-by: Anand Jain <anand.jain@oracle.com>
+Signed-off-by: Filipe Manana <fdmanana@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/inode.c | 24 +++++++++++++++++-------
+ 1 file changed, 17 insertions(+), 7 deletions(-)
+
+diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
+index c70ae0a5df92..30643ef973f5 100644
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -4472,15 +4472,25 @@ static int btrfs_rmdir(struct inode *dir, struct dentry *dentry)
+ #define NEED_TRUNCATE_BLOCK 1
+ 
+ /*
+- * this can truncate away extent items, csum items and directory items.
+- * It starts at a high offset and removes keys until it can't find
+- * any higher than new_size
++ * Remove inode items from a given root.
+  *
+- * csum items that cross the new i_size are truncated to the new size
+- * as well.
++ * @trans:		A transaction handle.
++ * @root:		The root from which to remove items.
++ * @inode:		The inode whose items we want to remove.
++ * @new_size:		The new i_size for the inode. This is only applicable when
++ *			@min_type is BTRFS_EXTENT_DATA_KEY, must be 0 otherwise.
++ * @min_type:		The minimum key type to remove. All keys with a type
++ *			greater than this value are removed and all keys with
++ *			this type are removed only if their offset is >= @new_size.
+  *
+- * min_type is the minimum key type to truncate down to.  If set to 0, this
+- * will kill all the items on this inode, including the INODE_ITEM_KEY.
++ * Remove all keys associated with the inode from the given root that have a key
++ * with a type greater than or equals to @min_type. When @min_type has a value of
++ * BTRFS_EXTENT_DATA_KEY, only remove file extent items that have an offset value
++ * greater than or equals to @new_size. If a file extent item that starts before
++ * @new_size and ends after it is found, its length is adjusted.
++ *
++ * Returns: 0 on success, < 0 on error and NEED_TRUNCATE_BLOCK when @min_type is
++ * BTRFS_EXTENT_DATA_KEY and the caller must truncate the last block.
+  */
+ int btrfs_truncate_inode_items(struct btrfs_trans_handle *trans,
+ 			       struct btrfs_root *root,
+-- 
+2.35.3
+
