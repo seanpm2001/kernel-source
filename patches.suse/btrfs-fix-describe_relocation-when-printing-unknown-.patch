@@ -1,0 +1,38 @@
+From: Anand Jain <anand.jain@oracle.com>
+Date: Thu, 17 May 2018 21:25:12 +0800
+Subject: [PATCH] btrfs: fix describe_relocation when printing unknown flags
+Git-commit: b78e2b78a88ce4982294ceb03c1227810e659a7b
+Patch-mainline: v4.18-rc1
+References: git-fixes
+
+Looks like the original idea was to print the hex of the flags which is
+not coded with their flag name. So use the current buf pointer bp
+instead of buf.
+
+Reaching the uknown flags should never happen, it's there just in case.
+
+Fixes: ebce0e01b930b ("btrfs: make block group flags in balance printks human-readable")
+Signed-off-by: Anand Jain <anand.jain@oracle.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+
+---
+ fs/btrfs/relocation.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/btrfs/relocation.c b/fs/btrfs/relocation.c
+index 74656d79e511ea..879b76fa881a5a 100644
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -4344,7 +4344,7 @@ static void describe_relocation(struct btrfs_fs_info *fs_info,
+ 		DESCRIBE_FLAG(RAID5,    "raid5");
+ 		DESCRIBE_FLAG(RAID6,    "raid6");
+ 		if (flags)
+-			snprintf(buf, buf - bp + sizeof(buf), "|0x%llx", flags);
++			snprintf(bp, buf - bp + sizeof(buf), "|0x%llx", flags);
+ #undef DESCRIBE_FLAG
+ 	}
+ 
+-- 
+2.45.0
+

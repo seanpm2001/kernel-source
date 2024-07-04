@@ -1,0 +1,154 @@
+From 993c07090533c05bf03b39849f22cf9e66054e50 Mon Sep 17 00:00:00 2001
+From: Mukul Joshi <mukul.joshi@amd.com>
+Date: Tue, 31 May 2022 14:39:36 -0400
+Subject: drm/amdkfd: Rework kfd_locked handling
+Git-commit: fe1f05df5919c67c3add49efb55e251a8d78ee4e
+Patch-mainline: v6.5-rc1
+References: bsc#1225894
+
+Currently, even if kfd_locked is set, a process is first
+created and then removed to work around a race condition
+in updating kfd_locked flag. Rework kfd_locked handling to
+ensure no processes is created if kfd_locked is set. This
+is achieved by updating kfd_locked under kfd_processes_mutex.
+With this there is no need for kfd_locked to be an atomic
+counter. Instead, it can be a regular integer.
+
+Signed-off-by: Mukul Joshi <mukul.joshi@amd.com>
+Reviewed-by: Felix Kuehling <Felix.Kuehling@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+Acked-by: Thomas Zimmermann <tzimmermann@suse.com>
+---
+ drivers/gpu/drm/amd/amdkfd/kfd_chardev.c |  3 ---
+ drivers/gpu/drm/amd/amdkfd/kfd_device.c  | 26 +++++++++++++++++-------
+ drivers/gpu/drm/amd/amdkfd/kfd_priv.h    |  2 ++
+ drivers/gpu/drm/amd/amdkfd/kfd_process.c |  8 +++++++-
+ 4 files changed, 28 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/gpu/drm/amd/amdkfd/kfd_chardev.c b/drivers/gpu/drm/amd/amdkfd/kfd_chardev.c
+index 840dfe8524e4d..ff2a83c1fe541 100644
+--- a/drivers/gpu/drm/amd/amdkfd/kfd_chardev.c
++++ b/drivers/gpu/drm/amd/amdkfd/kfd_chardev.c
+@@ -122,9 +122,6 @@ static int kfd_open(struct inode *inode, struct file *filep)
+ 	if (IS_ERR(process))
+ 		return PTR_ERR(process);
+ 
+-	if (kfd_is_locked())
+-		return -EAGAIN;
+-
+ 	dev_dbg(kfd_device, "process %d opened, compat mode (32 bit) - %d\n",
+ 		process->pasid, process->is_32bit_user_mode);
+ 
+diff --git a/drivers/gpu/drm/amd/amdkfd/kfd_device.c b/drivers/gpu/drm/amd/amdkfd/kfd_device.c
+index 938d0053a8208..5f25929c23b10 100644
+--- a/drivers/gpu/drm/amd/amdkfd/kfd_device.c
++++ b/drivers/gpu/drm/amd/amdkfd/kfd_device.c
+@@ -36,7 +36,7 @@
+  * once locked, kfd driver will stop any further GPU execution.
+  * create process (open) will return -EAGAIN.
+  */
+-static atomic_t kfd_locked = ATOMIC_INIT(0);
++static int kfd_locked;
+ 
+ #ifdef KFD_SUPPORT_IOMMU_V2
+ static const struct kfd_device_info kaveri_device_info = {
+@@ -577,7 +577,7 @@ int kgd2kfd_pre_reset(struct kfd_dev *kfd)
+ 
+ int kgd2kfd_post_reset(struct kfd_dev *kfd)
+ {
+-	int ret, count;
++	int ret;
+ 
+ 	if (!kfd->init_complete)
+ 		return 0;
+@@ -587,23 +587,32 @@ int kgd2kfd_post_reset(struct kfd_dev *kfd)
+ 	ret = kfd_resume(kfd);
+ 	if (ret)
+ 		return ret;
+-	count = atomic_dec_return(&kfd_locked);
+-	WARN_ONCE(count != 0, "KFD reset ref. error");
++	mutex_lock(&kfd_processes_mutex);
++	--kfd_locked;
++	mutex_unlock(&kfd_processes_mutex);
++
+ 	return 0;
+ }
+ 
+ bool kfd_is_locked(void)
+ {
+-	return  (atomic_read(&kfd_locked) > 0);
++	lockdep_assert_held(&kfd_processes_mutex);
++	return  (kfd_locked > 0);
+ }
+ 
+ void kgd2kfd_suspend(struct kfd_dev *kfd)
+ {
++	int count;
++
+ 	if (!kfd->init_complete)
+ 		return;
+ 
++	mutex_lock(&kfd_processes_mutex);
++	count = ++kfd_locked;
++	mutex_unlock(&kfd_processes_mutex);
++
+ 	/* For first KFD device suspend all the KFD processes */
+-	if (atomic_inc_return(&kfd_locked) == 1)
++	if (count == 1)
+ 		kfd_suspend_all_processes();
+ 
+ 	kfd->dqm->ops.stop(kfd->dqm);
+@@ -622,7 +631,10 @@ int kgd2kfd_resume(struct kfd_dev *kfd)
+ 	if (ret)
+ 		return ret;
+ 
+-	count = atomic_dec_return(&kfd_locked);
++	mutex_lock(&kfd_processes_mutex);
++	count = --kfd_locked;
++	mutex_unlock(&kfd_processes_mutex);
++
+ 	WARN_ONCE(count < 0, "KFD suspend / resume ref. error");
+ 	if (count == 0)
+ 		ret = kfd_resume_all_processes();
+diff --git a/drivers/gpu/drm/amd/amdkfd/kfd_priv.h b/drivers/gpu/drm/amd/amdkfd/kfd_priv.h
+index 92b285ca73aab..5f8ece6a19d4a 100644
+--- a/drivers/gpu/drm/amd/amdkfd/kfd_priv.h
++++ b/drivers/gpu/drm/amd/amdkfd/kfd_priv.h
+@@ -176,6 +176,8 @@ enum kfd_sched_policy {
+ 	KFD_SCHED_POLICY_NO_HWS
+ };
+ 
++extern struct mutex kfd_processes_mutex;
++
+ enum cache_policy {
+ 	cache_policy_coherent,
+ 	cache_policy_noncoherent
+diff --git a/drivers/gpu/drm/amd/amdkfd/kfd_process.c b/drivers/gpu/drm/amd/amdkfd/kfd_process.c
+index 486ea4219d6ad..2e9f1f0ec4c80 100644
+--- a/drivers/gpu/drm/amd/amdkfd/kfd_process.c
++++ b/drivers/gpu/drm/amd/amdkfd/kfd_process.c
+@@ -44,7 +44,7 @@ struct mm_struct;
+  * Unique/indexed by mm_struct*
+  */
+ DEFINE_HASHTABLE(kfd_processes_table, KFD_PROCESS_TABLE_SIZE);
+-static DEFINE_MUTEX(kfd_processes_mutex);
++DEFINE_MUTEX(kfd_processes_mutex);
+ 
+ DEFINE_SRCU(kfd_processes_srcu);
+ 
+@@ -221,6 +221,12 @@ struct kfd_process *kfd_create_process(struct file *filep)
+ 	 */
+ 	mutex_lock(&kfd_processes_mutex);
+ 
++	if (kfd_is_locked()) {
++		mutex_unlock(&kfd_processes_mutex);
++		pr_debug("KFD is locked! Cannot create process");
++		return ERR_PTR(-EINVAL);
++	}
++
+ 	/* A prior open of /dev/kfd could have already created the process. */
+ 	process = find_process(thread);
+ 	if (process) {
+-- 
+2.45.2
+

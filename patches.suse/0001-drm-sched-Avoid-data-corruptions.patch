@@ -1,0 +1,49 @@
+From efa21fee61f0ebb0e777eb2832a71f1e5eab277c Mon Sep 17 00:00:00 2001
+From: Andrey Grodzovsky <andrey.grodzovsky@amd.com>
+Date: Wed, 19 May 2021 10:14:07 -0400
+Subject: drm/sched: Avoid data corruptions
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Git-commit: 0b10ab80695d61422337ede6ff496552d8ace99d
+Patch-mainline: v5.14-rc1
+References: bsc#1225140 CVE-2021-47354
+
+Wait for all dependencies of a job  to complete before
+killing it to avoid data corruptions.
+
+Signed-off-by: Andrey Grodzovsky <andrey.grodzovsky@amd.com>
+Reviewed-by: Christian König <christian.koenig@amd.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20210519141407.88444-1-andrey.grodzovsky@amd.com
+Acked-by: Thomas Zimmermann <tzimmermann@suse.com>
+---
+ drivers/gpu/drm/scheduler/gpu_scheduler.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/gpu/drm/scheduler/gpu_scheduler.c b/drivers/gpu/drm/scheduler/gpu_scheduler.c
+index 4fc211e19d6e5..f5cf0df808008 100644
+--- a/drivers/gpu/drm/scheduler/gpu_scheduler.c
++++ b/drivers/gpu/drm/scheduler/gpu_scheduler.c
+@@ -300,6 +300,7 @@ EXPORT_SYMBOL(drm_sched_entity_flush);
+ void drm_sched_entity_fini(struct drm_sched_entity *entity)
+ {
+ 	struct drm_gpu_scheduler *sched;
++	struct dma_fence *f;
+ 
+ 	sched = entity->rq->sched;
+ 	drm_sched_rq_remove_entity(entity->rq, entity);
+@@ -325,6 +326,11 @@ void drm_sched_entity_fini(struct drm_sched_entity *entity)
+ 
+ 		while ((job = to_drm_sched_job(spsc_queue_pop(&entity->job_queue)))) {
+ 			struct drm_sched_fence *s_fence = job->s_fence;
++
++			/* Wait for all dependencies to avoid data corruptions */
++			while ((f = job->sched->ops->dependency(job, entity)))
++				dma_fence_wait(f, false);
++
+ 			drm_sched_fence_scheduled(s_fence);
+ 			dma_fence_set_error(&s_fence->finished, -ESRCH);
+ 
+-- 
+2.45.2
+
