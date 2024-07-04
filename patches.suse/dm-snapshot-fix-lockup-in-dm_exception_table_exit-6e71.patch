@@ -1,0 +1,32 @@
+From 6e7132ed3c07bd8a6ce3db4bb307ef2852b322dc Mon Sep 17 00:00:00 2001
+From: Mikulas Patocka <mpatocka@redhat.com>
+Date: Wed, 20 Mar 2024 18:43:11 +0100
+Subject: [PATCH] dm snapshot: fix lockup in dm_exception_table_exit
+Git-commit: 6e7132ed3c07bd8a6ce3db4bb307ef2852b322dc
+Patch-mainline: v6.9-rc1
+References: bsc#1224743, CVE-2024-35805
+
+There was reported lockup when we exit a snapshot with many exceptions.
+Fix this by adding "cond_resched" to the loop that frees the exceptions.
+
+(Coly Li: rebased for Linux 4.12 based SUSE kernel)
+
+Reported-by: John Pittman <jpittman@redhat.com>
+Cc: stable@vger.kernel.org
+Signed-off-by: Mikulas Patocka <mpatocka@redhat.com>
+Signed-off-by: Mike Snitzer <snitzer@kernel.org>
+Signed-off-by: Coly Li <colyli@suse.de>
+---
+ drivers/md/dm-snap.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/drivers/md/dm-snap.c
++++ b/drivers/md/dm-snap.c
+@@ -630,6 +630,7 @@ static void dm_exception_table_exit(stru
+ 
+ 		list_for_each_entry_safe (ex, next, slot, hash_list)
+ 			kmem_cache_free(mem, ex);
++			cond_resched();
+ 	}
+ 
+ 	vfree(et->table);
