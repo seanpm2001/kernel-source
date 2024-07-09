@@ -1,0 +1,42 @@
+From afe58346d5d3887b3e49ff623d2f2e471f232a8d Mon Sep 17 00:00:00 2001
+From: Alex Deucher <alexander.deucher@amd.com>
+Date: Mon, 27 Nov 2023 17:26:29 -0500
+Subject: drm/amdgpu/debugfs: fix error code when smc register accessors are
+ NULL
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Git-commit: afe58346d5d3887b3e49ff623d2f2e471f232a8d
+Patch-mainline: v6.8-rc1
+References: git-fixes
+
+Should be -EOPNOTSUPP.
+
+Fixes: 5104fdf50d32 ("drm/amdgpu: Fix a null pointer access when the smc_rreg pointer is NULL")
+Reviewed-by: Christian König <christian.koenig@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+Acked-by: Patrik Jakobsson <pjakobsson@suse.de>
+---
+ drivers/gpu/drm/amd/amdgpu/amdgpu_debugfs.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_debugfs.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_debugfs.c
+@@ -431,7 +431,7 @@
+ 	int r;
+ 
+ 	if (!adev->smc_rreg)
+-		return -EPERM;
++		return -EOPNOTSUPP;
+ 
+ 	if (size & 0x3 || *pos & 0x3)
+ 		return -EINVAL;
+@@ -477,7 +477,7 @@
+ 	uint32_t *config, no_regs = 0;
+ 
+ 	if (!adev->smc_wreg)
+-		return -EPERM;
++		return -EOPNOTSUPP;
+ 
+ 	if (size & 0x3 || *pos & 0x3)
+ 		return -EINVAL;
