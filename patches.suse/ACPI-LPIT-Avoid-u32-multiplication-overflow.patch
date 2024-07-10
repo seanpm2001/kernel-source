@@ -1,0 +1,33 @@
+From: Nikita Kiryushin <kiryushin@ancud.ru>
+Date: Thu, 9 Nov 2023 21:08:59 +0300
+Subject: ACPI: LPIT: Avoid u32 multiplication overflow
+Patch-mainline: v6.8-rc1
+Git-commit: 56d2eeda87995245300836ee4dbd13b002311782
+References: bsc#1224627 CVE-2023-52683
+
+In lpit_update_residency() there is a possibility of overflow
+in multiplication, if tsc_khz is large enough (> UINT_MAX/1000).
+
+Change multiplication to mul_u32_u32().
+
+Found by Linux Verification Center (linuxtesting.org) with SVACE.
+
+Fixes: eeb2d80d502a ("ACPI / LPIT: Add Low Power Idle Table (LPIT) support")
+Signed-off-by: Nikita Kiryushin <kiryushin@ancud.ru>
+Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Acked-by: Chun-Yi Lee <jlee@suse.com>
+---
+ drivers/acpi/acpi_lpit.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/acpi/acpi_lpit.c
++++ b/drivers/acpi/acpi_lpit.c
+@@ -106,7 +106,7 @@ static void lpit_update_residency(struct
+ 				 struct acpi_lpit_native *lpit_native)
+ {
+ 	info->frequency = lpit_native->counter_frequency ?
+-				lpit_native->counter_frequency : tsc_khz * 1000;
++				lpit_native->counter_frequency : mul_u32_u32(tsc_khz, 1000U);
+ 	if (!info->frequency)
+ 		info->frequency = 1;
+ 
