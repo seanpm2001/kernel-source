@@ -1,0 +1,66 @@
+From 5fee5a5afa9ff1e4a242a492d5ce181974fbd969 Mon Sep 17 00:00:00 2001
+From: Lu Baolu <baolu.lu@linux.intel.com>
+Date: Fri, 16 Mar 2018 16:32:59 +0200
+Subject: [PATCH] usb: xhci: Remove ep_trb from xhci_cleanup_halted_endpoint()
+Git-commit: 5fee5a5afa9ff1e4a242a492d5ce181974fbd969
+References: CVE-2024-26659 bsc#1222317
+Patch-mainline: v4.17-rc1
+
+Function argument ep_trb for xhci_cleanup_halted_endpoint() isn't
+needed anymore. Cleanup it.
+
+Signed-off-by: Lu Baolu <baolu.lu@linux.intel.com>
+Signed-off-by: Mathias Nyman <mathias.nyman@linux.intel.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/usb/host/xhci-ring.c | 11 ++++-------
+ 1 file changed, 4 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/usb/host/xhci-ring.c b/drivers/usb/host/xhci-ring.c
+index daa94c3aed80..642a07022e7a 100644
+--- a/drivers/usb/host/xhci-ring.c
++++ b/drivers/usb/host/xhci-ring.c
+@@ -1815,8 +1815,7 @@ struct xhci_segment *trb_in_td(struct xhci_hcd *xhci,
+ 
+ static void xhci_cleanup_halted_endpoint(struct xhci_hcd *xhci,
+ 		unsigned int slot_id, unsigned int ep_index,
+-		unsigned int stream_id,
+-		struct xhci_td *td, union xhci_trb *ep_trb,
++		unsigned int stream_id, struct xhci_td *td,
+ 		enum xhci_ep_reset_type reset_type)
+ {
+ 	struct xhci_virt_ep *ep = &xhci->devs[slot_id]->eps[ep_index];
+@@ -1957,8 +1956,7 @@ static int finish_td(struct xhci_hcd *xhci, struct xhci_td *td,
+ 		 * The class driver clears the device side halt later.
+ 		 */
+ 		xhci_cleanup_halted_endpoint(xhci, slot_id, ep_index,
+-					ep_ring->stream_id, td, ep_trb,
+-					EP_HARD_RESET);
++					ep_ring->stream_id, td, EP_HARD_RESET);
+ 	} else {
+ 		/* Update ring dequeue pointer */
+ 		while (ep_ring->dequeue != td->last_trb)
+@@ -2318,7 +2316,7 @@ static int handle_tx_event(struct xhci_hcd *xhci,
+ 		case COMP_INVALID_STREAM_TYPE_ERROR:
+ 		case COMP_INVALID_STREAM_ID_ERROR:
+ 			xhci_cleanup_halted_endpoint(xhci, slot_id, ep_index, 0,
+-						     NULL, NULL, EP_SOFT_RESET);
++						     NULL, EP_SOFT_RESET);
+ 			goto cleanup;
+ 		case COMP_RING_UNDERRUN:
+ 		case COMP_RING_OVERRUN:
+@@ -2584,8 +2582,7 @@ static int handle_tx_event(struct xhci_hcd *xhci,
+ 				xhci_cleanup_halted_endpoint(xhci, slot_id,
+ 							     ep_index,
+ 							     ep_ring->stream_id,
+-							     td, ep_trb,
+-							     EP_HARD_RESET);
++							     td, EP_HARD_RESET);
+ 			goto cleanup;
+ 		}
+ 
+-- 
+2.45.1
+
