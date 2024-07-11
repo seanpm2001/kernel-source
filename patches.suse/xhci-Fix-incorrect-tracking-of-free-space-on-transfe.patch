@@ -1,0 +1,99 @@
+From fe82f16aafdaf8002281d3b9524291d4a4a28460 Mon Sep 17 00:00:00 2001
+From: Mathias Nyman <mathias.nyman@linux.intel.com>
+Date: Mon, 15 May 2023 16:40:59 +0300
+Subject: [PATCH] xhci: Fix incorrect tracking of free space on transfer rings
+Git-commit: fe82f16aafdaf8002281d3b9524291d4a4a28460
+References: CVE-2024-26659 bsc#1222317
+Patch-mainline: v6.4-rc3
+
+This incorrect tracking caused unnecessary ring expansion in some
+usecases which over days of use consume a lot of memory.
+
+xhci driver tries to keep track of free transfer blocks (TRBs) on the
+ring buffer, but failed to add back some cancelled transfers that were
+turned into no-op operations instead of just moving past them.
+
+This can happen if there are several queued pending transfers which
+then are cancelled in reverse order.
+
+Solve this by counting the numer of steps we move the dequeue pointer
+once we complete a transfer, and add it to the number of free trbs
+instead of just adding the trb number of the current transfer.
+This way we ensure we count the no-op trbs on the way as well.
+
+Fixes: 55f6153d8cc8 ("xhci: remove extra loop in interrupt context")
+Cc: stable@vger.kernel.org
+Reported-by: Miller Hunter <MillerH@hearthnhome.com>
+Closes: https://bugzilla.kernel.org/show_bug.cgi?id=217242
+Tested-by: Miller Hunter <MillerH@hearthnhome.com>
+Signed-off-by: Mathias Nyman <mathias.nyman@linux.intel.com>
+Link: https://lore.kernel.org/r/20230515134059.161110-3-mathias.nyman@linux.intel.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/usb/host/xhci-ring.c |   30 +++++++++++++++++++++++++++++-
+ 1 file changed, 29 insertions(+), 1 deletion(-)
+
+--- a/drivers/usb/host/xhci-ring.c
++++ b/drivers/usb/host/xhci-ring.c
+@@ -263,6 +263,26 @@ static void inc_enq(struct xhci_hcd *xhc
+ 	trace_xhci_inc_enq(ring);
+ }
+ 
++static int xhci_num_trbs_to(struct xhci_segment *start_seg, union xhci_trb *start,
++			    struct xhci_segment *end_seg, union xhci_trb *end,
++			    unsigned int num_segs)
++{
++	union xhci_trb *last_on_seg;
++	int num = 0;
++	int i = 0;
++
++	do {
++		if (start_seg == end_seg && end >= start)
++			return num + (end - start);
++		last_on_seg = &start_seg->trbs[TRBS_PER_SEGMENT - 1];
++		num += last_on_seg - start;
++		start_seg = start_seg->next;
++		start = start_seg->trbs;
++	} while (i++ <= num_segs);
++
++	return -EINVAL;
++}
++
+ /*
+  * Check to see if there's room to enqueue num_trbs on the ring and make sure
+  * enqueue pointer will not advance into dequeue segment. See rules above.
+@@ -1997,6 +2017,7 @@ static int finish_td(struct xhci_hcd *xh
+ 	unsigned int slot_id;
+ 	u32 trb_comp_code;
+ 	int ep_index;
++	int trbs_freed;
+ 
+ 	slot_id = TRB_TO_SLOT_ID(le32_to_cpu(event->flags));
+ 	xdev = xhci->devs[slot_id];
+@@ -2026,9 +2047,15 @@ static int finish_td(struct xhci_hcd *xh
+ 					ep_ring->stream_id, td, EP_HARD_RESET);
+ 	} else {
+ 		/* Update ring dequeue pointer */
++		trbs_freed = xhci_num_trbs_to(ep_ring->deq_seg, ep_ring->dequeue,
++					      td->last_trb_seg, td->last_trb,
++					      ep_ring->num_segs);
++		if (trbs_freed < 0)
++			xhci_dbg(xhci, "Failed to count freed trbs at TD finish\n");
++		else
++			ep_ring->num_trbs_free += trbs_freed;
+ 		ep_ring->dequeue = td->last_trb;
+ 		ep_ring->deq_seg = td->last_trb_seg;
+-		ep_ring->num_trbs_free += td->num_trbs - 1;
+ 		inc_deq(xhci, ep_ring);
+ 	}
+ 
+@@ -3173,6 +3200,7 @@ int xhci_queue_intr_tx(struct xhci_hcd *
+ 		struct urb *urb, int slot_id, unsigned int ep_index)
+ {
+ 	struct xhci_ep_ctx *ep_ctx;
++	int trbs_freed;
+ 
+ 	ep_ctx = xhci_get_ep_ctx(xhci, xhci->devs[slot_id]->out_ctx, ep_index);
+ 	check_interval(xhci, urb, ep_ctx);
