@@ -1,0 +1,47 @@
+From: Vincent Chen <vincent.chen@sifive.com>
+Date: Thu, 16 Apr 2020 10:38:04 +0800
+Subject: kgdb: Add kgdb_has_hit_break function
+Git-commit: f83b04d36e52cc3d941120ec859374fcda36eb31
+Patch-mainline: v5.8-rc1
+References: git-fixes
+
+The break instruction in RISC-V does not have an immediate value field, so
+the kernel cannot identify the purpose of each trap exception through the
+opcode. This makes the existing identification schemes in other
+architecture unsuitable for the RISC-V kernel. To solve this problem, this
+patch adds kgdb_has_hit_break(), which can help RISC-V kernel identify
+the KGDB trap exception.
+
+Signed-off-by: Vincent Chen <vincent.chen@sifive.com>
+Reviewed-by: Palmer Dabbelt <palmerdabbelt@google.com>
+Acked-by: Daniel Thompson <daniel.thompson@linaro.org>
+Signed-off-by: Palmer Dabbelt <palmerdabbelt@google.com>
+Acked-by: Nikolay Borisov <nik.borisov@suse.com>
+---
+ kernel/debug/debug_core.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/kernel/debug/debug_core.c b/kernel/debug/debug_core.c
+index 2b7c9b67931d..01bc3eea3d4d 100644
+--- a/kernel/debug/debug_core.c
++++ b/kernel/debug/debug_core.c
+@@ -417,6 +417,18 @@ int kgdb_isremovedbreak(unsigned long addr)
+ 	return 0;
+ }
+ 
++int kgdb_has_hit_break(unsigned long addr)
++{
++	int i;
++
++	for (i = 0; i < KGDB_MAX_BREAKPOINTS; i++) {
++		if (kgdb_break[i].state == BP_ACTIVE &&
++		    kgdb_break[i].bpt_addr == addr)
++			return 1;
++	}
++	return 0;
++}
++
+ int dbg_remove_all_break(void)
+ {
+ 	int error;
+
