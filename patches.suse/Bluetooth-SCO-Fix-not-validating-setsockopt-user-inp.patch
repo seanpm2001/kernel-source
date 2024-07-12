@@ -1,0 +1,97 @@
+From: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+Date: Fri, 5 Apr 2024 15:41:52 -0400
+Subject: Bluetooth: SCO: Fix not validating setsockopt user input
+Patch-mainline: v6.9-rc4
+Git-commit: 51eda36d33e43201e7a4fd35232e069b2c850b01
+References: bsc#1224576 CVE-2024-35966
+
+syzbot reported sco_sock_setsockopt() is copying data without
+checking user input length.
+
+BUG: KASAN: slab-out-of-bounds in copy_from_sockptr_offset
+include/linux/sockptr.h:49 [inline]
+BUG: KASAN: slab-out-of-bounds in copy_from_sockptr
+include/linux/sockptr.h:55 [inline]
+BUG: KASAN: slab-out-of-bounds in sco_sock_setsockopt+0xc0b/0xf90
+net/bluetooth/sco.c:893
+Read of size 4 at addr ffff88805f7b15a3 by task syz-executor.5/12578
+
+Joey Lee:
+I do not backport "ba423fdaa589 net: add a new sockptr_t type"
+because it changes too many things (also kABI change?). Which
+means that the copy_from_sockptr() also NOT be backported. So
+the bt_copy_from_sockptr() in original 51eda36d33e4 patch be
+modified to bt_copy_from_user(). The function still checking
+the user input length but using copy_from_user() instead of
+copy_from_sockptr();
+
+Fixes: ad10b1a48754 ("Bluetooth: Add Bluetooth socket voice option")
+Fixes: b96e9c671b05 ("Bluetooth: Add BT_DEFER_SETUP option to sco socket")
+Fixes: 00398e1d5183 ("Bluetooth: Add support for BT_PKT_STATUS CMSG data for SCO connections")
+Fixes: f6873401a608 ("Bluetooth: Allow setting of codec for HFP offload use case")
+Reported-by: syzbot <syzkaller@googlegroups.com>
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Signed-off-by: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+Acked-by: Chun-Yi Lee <jlee@suse.com>
+---
+ include/net/bluetooth/bluetooth.h |    9 +++++++++
+ net/bluetooth/sco.c               |   14 ++++++--------
+ 2 files changed, 15 insertions(+), 8 deletions(-)
+
+--- a/include/net/bluetooth/bluetooth.h
++++ b/include/net/bluetooth/bluetooth.h
+@@ -372,6 +372,15 @@ out:
+ 	return NULL;
+ }
+ 
++static inline int bt_copy_from_user(void *dst, size_t dst_size,
++				    const void __user *src, size_t src_size)
++{
++	if (dst_size > src_size)
++		return -EINVAL;
++
++	return copy_from_user(dst, src, dst_size);
++}
++
+ int bt_to_errno(u16 code);
+ 
+ void hci_sock_set_flag(struct sock *sk, int nr);
+--- a/net/bluetooth/sco.c
++++ b/net/bluetooth/sco.c
+@@ -821,7 +821,7 @@ static int sco_sock_setsockopt(struct so
+ 			       char __user *optval, unsigned int optlen)
+ {
+ 	struct sock *sk = sock->sk;
+-	int len, err = 0;
++	int err = 0;
+ 	struct bt_voice voice;
+ 	u32 opt;
+ 
+@@ -837,10 +837,9 @@ static int sco_sock_setsockopt(struct so
+ 			break;
+ 		}
+ 
+-		if (get_user(opt, (u32 __user *) optval)) {
+-			err = -EFAULT;
++		err = bt_copy_from_user(&opt, sizeof(opt), optval, optlen);
++		if (err)
+ 			break;
+-		}
+ 
+ 		if (opt)
+ 			set_bit(BT_SK_DEFER_SETUP, &bt_sk(sk)->flags);
+@@ -857,11 +856,10 @@ static int sco_sock_setsockopt(struct so
+ 
+ 		voice.setting = sco_pi(sk)->setting;
+ 
+-		len = min_t(unsigned int, sizeof(voice), optlen);
+-		if (copy_from_user((char *)&voice, optval, len)) {
+-			err = -EFAULT;
++		err = bt_copy_from_user(&voice, sizeof(voice), optval,
++					optlen);
++		if (err)
+ 			break;
+-		}
+ 
+ 		/* Explicitly check for these values */
+ 		if (voice.setting != BT_VOICE_TRANSPARENT &&
