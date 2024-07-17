@@ -1,0 +1,38 @@
+From b08a6259a141baba98c57524ee4283fd91445bb8 Mon Sep 17 00:00:00 2001
+From: Gavin Li <git@thegavinli.com>
+Date: Wed, 14 Aug 2019 14:29:24 -0700
+Subject: [PATCH] usb: usbfs: only account once for mmap()'ed usb memory usage
+Git-commit: b08a6259a141baba98c57524ee4283fd91445bb8
+References: CVE-2021-47582 bsc#1226559
+Patch-mainline: v5.4-rc1
+
+Memory usage for USB memory allocated via mmap() is already accounted
+for at mmap() time; no need to account for it again at submiturb time.
+
+Signed-off-by: Gavin Li <git@thegavinli.com>
+Acked-by: Alan Stern <stern@rowland.harvard.edu>
+Link: https://lore.kernel.org/r/20190814212924.10381-1-gavinli@thegavinli.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/usb/core/devio.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/usb/core/devio.c b/drivers/usb/core/devio.c
+index 24d4a801ca64..63f23f567680 100644
+--- a/drivers/usb/core/devio.c
++++ b/drivers/usb/core/devio.c
+@@ -1664,7 +1664,8 @@ static int proc_do_submiturb(struct usb_dev_state *ps, struct usbdevfs_urb *uurb
+ 	if (as->usbm)
+ 		num_sgs = 0;
+ 
+-	u += sizeof(struct async) + sizeof(struct urb) + uurb->buffer_length +
++	u += sizeof(struct async) + sizeof(struct urb) +
++	     (as->usbm ? 0 : uurb->buffer_length) +
+ 	     num_sgs * sizeof(struct scatterlist);
+ 	ret = usbfs_increase_memory_usage(u);
+ 	if (ret)
+-- 
+2.45.1
+
