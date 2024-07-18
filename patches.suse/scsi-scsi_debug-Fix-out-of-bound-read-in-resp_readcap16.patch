@@ -3,7 +3,7 @@ Date: Wed, 13 Oct 2021 11:39:12 +0800
 Subject: scsi: scsi_debug: Fix out-of-bound read in resp_readcap16()
 Git-commit: 4e3ace0051e7e504b55d239daab8789dd89b863c
 Patch-mainline: v5.16-rc1
-References: bsc#122286 CVE-2021-47191 bsc#1222866
+References: bsc#1222866 CVE-2021-47191
 
 The following warning was observed running syzkaller:
 
@@ -51,16 +51,14 @@ leads to OOB in sg_copy_buffer().
 
 To solve this issue, define alloc_len as u32.
 
-[lduncan: modified: only needed hunk 1 of 2 for our code base]
-
 Link: https://lore.kernel.org/r/20211013033913.2551004-2-yebin10@huawei.com
 Acked-by: Douglas Gilbert <dgilbert@interlog.com>
 Signed-off-by: Ye Bin <yebin10@huawei.com>
 Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
 Acked-by: Lee Duncan <lduncan@suse.com>
 ---
- drivers/scsi/scsi_debug.c |    2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ drivers/scsi/scsi_debug.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
 
 --- a/drivers/scsi/scsi_debug.c
 +++ b/drivers/scsi/scsi_debug.c
@@ -73,3 +71,12 @@ Acked-by: Lee Duncan <lduncan@suse.com>
  
  	alloc_len = get_unaligned_be32(cmd + 10);
  	/* following just in case virtual_gb changed */
+@@ -1691,7 +1691,7 @@ static int resp_readcap16(struct scsi_cm
+ 	}
+ 
+ 	return fill_from_dev_buffer(scp, arr,
+-				    min(alloc_len, SDEBUG_READCAP16_ARR_SZ));
++				    min_t(u32, alloc_len, SDEBUG_READCAP16_ARR_SZ));
+ }
+ 
+ #define SDEBUG_MAX_TGTPGS_ARR_SZ 1412
