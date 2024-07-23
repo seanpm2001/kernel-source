@@ -32,16 +32,14 @@ Signed-off-by: David S. Miller <davem@davemloft.net>
 Acked-by: Vasant Karasulli <vkarasulli@suse.de>
 
 ---
- net/ipv6/seg6_iptunnel.c | 11 ++++++-----
+ net/ipv6/seg6_iptunnel.c |   11 ++++++-----
  1 file changed, 6 insertions(+), 5 deletions(-)
 
-diff --git a/net/ipv6/seg6_iptunnel.c b/net/ipv6/seg6_iptunnel.c
-index 03b877ff4558..a75df2ec8db0 100644
 --- a/net/ipv6/seg6_iptunnel.c
 +++ b/net/ipv6/seg6_iptunnel.c
-@@ -459,10 +459,8 @@ static int seg6_input_core(struct net *net, struct sock *sk,
+@@ -242,10 +242,8 @@ static int seg6_input(struct sk_buff *sk
  	int err;
-
+ 
  	err = seg6_do_srh(skb);
 -	if (unlikely(err)) {
 -		kfree_skb(skb);
@@ -49,28 +47,20 @@ index 03b877ff4558..a75df2ec8db0 100644
 -	}
 +	if (unlikely(err))
 +		goto drop;
-
+ 
  	slwt = seg6_lwt_lwtunnel(orig_dst->lwtstate);
-
-@@ -486,7 +484,7 @@ static int seg6_input_core(struct net *net, struct sock *sk,
-
+ 
+@@ -270,9 +268,12 @@ static int seg6_input(struct sk_buff *sk
+ 
  	err = skb_cow_head(skb, LL_RESERVED_SPACE(dst->dev));
  	if (unlikely(err))
 -		return err;
 +		goto drop;
-
- 	return dst_input(skb);
- }
-@@ -494,6 +492,9 @@ static int seg6_input_core(struct net *net, struct sock *sk,
- 		return err;
-
+ 
  	return dst_input(skb);
 +drop:
 +	kfree_skb(skb);
 +	return err;
  }
-
+ 
  static int seg6_output(struct net *net, struct sock *sk, struct sk_buff *skb)
---
-2.34.1
-
