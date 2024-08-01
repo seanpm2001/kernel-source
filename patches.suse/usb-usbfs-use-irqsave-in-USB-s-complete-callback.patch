@@ -1,0 +1,48 @@
+From 3f38dace1a206d0ffe9d9a25e97288fbf8c79b55 Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Mon, 25 Jun 2018 00:08:37 +0200
+Subject: [PATCH] usb: usbfs: use irqsave() in USB's complete callback
+Git-commit: 3f38dace1a206d0ffe9d9a25e97288fbf8c79b55
+References: CVE-2021-47582 bsc#1226559
+Patch-mainline: v4.19-rc1
+
+The USB completion callback does not disable interrupts while acquiring
+the lock. We want to remove the local_irq_disable() invocation from
+__usb_hcd_giveback_urb() and therefore it is required for the callback
+handler to disable the interrupts while acquiring the lock.
+The callback may be invoked either in IRQ or BH context depending on the
+USB host controller.
+Use the _irqsave() variant of the locking primitives.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Acked-by: Alan Stern <stern@rowland.harvard.edu>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/usb/core/devio.c |    5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+--- a/drivers/usb/core/devio.c
++++ b/drivers/usb/core/devio.c
+@@ -601,9 +601,10 @@ static void async_completed(struct urb *
+ 	struct pid *pid = NULL;
+ 	u32 secid = 0;
+ 	const struct cred *cred = NULL;
++	unsigned long flags;
+ 	int signr;
+ 
+-	spin_lock(&ps->lock);
++	spin_lock_irqsave(&ps->lock, flags);
+ 	list_move_tail(&as->asynclist, &ps->async_completed);
+ 	as->status = urb->status;
+ 	signr = as->signr;
+@@ -628,7 +629,7 @@ static void async_completed(struct urb *
+ 		cancel_bulk_urbs(ps, as->bulk_addr);
+ 
+ 	wake_up(&ps->wait);
+-	spin_unlock(&ps->lock);
++	spin_unlock_irqrestore(&ps->lock, flags);
+ 
+ 	if (signr) {
+ 		kill_pid_info_as_cred(sinfo.si_signo, &sinfo, pid, cred, secid);

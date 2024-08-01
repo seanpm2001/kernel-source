@@ -1,0 +1,79 @@
+From fe6bb59f4dd693ffb678224fe78fc69dda163c46 Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@zeniv.linux.org.uk>
+Date: Thu, 23 Apr 2020 10:27:20 -0400
+Subject: [PATCH] usb: get rid of pointless access_ok() calls
+Git-commit: fe6bb59f4dd693ffb678224fe78fc69dda163c46
+References: CVE-2021-47582 bsc#1226559
+Patch-mainline: v5.8-rc1
+
+in all affected cases addresses are passed only to
+copy_from()_user or copy_to_user().
+
+Reviewed-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/usb/core/devices.c          |    2 --
+ drivers/usb/core/devio.c            |    9 ---------
+ drivers/usb/gadget/function/f_hid.c |    6 ------
+ 3 files changed, 17 deletions(-)
+
+--- a/drivers/usb/core/devices.c
++++ b/drivers/usb/core/devices.c
+@@ -611,8 +611,6 @@ static ssize_t usb_device_read(struct fi
+ 		return -EINVAL;
+ 	if (nbytes <= 0)
+ 		return 0;
+-	if (!access_ok(VERIFY_WRITE, buf, nbytes))
+-		return -EFAULT;
+ 
+ 	mutex_lock(&usb_bus_idr_lock);
+ 	/* print devices for all busses */
+--- a/drivers/usb/core/devio.c
++++ b/drivers/usb/core/devio.c
+@@ -1134,11 +1134,6 @@ static int proc_control(struct usb_dev_s
+ 		ctrl.bRequestType, ctrl.bRequest, ctrl.wValue,
+ 		ctrl.wIndex, ctrl.wLength);
+ 	if (ctrl.bRequestType & 0x80) {
+-		if (ctrl.wLength && !access_ok(VERIFY_WRITE, ctrl.data,
+-					       ctrl.wLength)) {
+-			ret = -EINVAL;
+-			goto done;
+-		}
+ 		pipe = usb_rcvctrlpipe(dev, 0);
+ 		snoop_urb(dev, NULL, pipe, ctrl.wLength, tmo, SUBMIT, NULL, 0);
+ 
+@@ -1223,10 +1218,6 @@ static int proc_bulk(struct usb_dev_stat
+ 	}
+ 	tmo = bulk.timeout;
+ 	if (bulk.ep & 0x80) {
+-		if (len1 && !access_ok(VERIFY_WRITE, bulk.data, len1)) {
+-			ret = -EINVAL;
+-			goto done;
+-		}
+ 		snoop_urb(dev, NULL, pipe, len1, tmo, SUBMIT, NULL, 0);
+ 
+ 		usb_unlock_device(dev);
+--- a/drivers/usb/gadget/function/f_hid.c
++++ b/drivers/usb/gadget/function/f_hid.c
+@@ -255,9 +255,6 @@ static ssize_t f_hidg_read(struct file *
+ 	if (!count)
+ 		return 0;
+ 
+-	if (!access_ok(VERIFY_WRITE, buffer, count))
+-		return -EFAULT;
+-
+ 	spin_lock_irqsave(&hidg->read_spinlock, flags);
+ 
+ #define READ_COND (!list_empty(&hidg->completed_out_req))
+@@ -342,9 +339,6 @@ static ssize_t f_hidg_write(struct file
+ 	unsigned long flags;
+ 	ssize_t status = -ENOMEM;
+ 
+-	if (!access_ok(VERIFY_READ, buffer, count))
+-		return -EFAULT;
+-
+ 	spin_lock_irqsave(&hidg->write_spinlock, flags);
+ 
+ #define WRITE_COND (!hidg->write_pending)

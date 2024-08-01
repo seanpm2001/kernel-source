@@ -28,8 +28,8 @@ Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
 Acked-by: Nikolay Borisov <nik.borisov@suse.com>
 ---
  arch/x86/kernel/e820.c        |    4 +-
- arch/x86/power/hibernate_64.c |   77 ++++++++----------------------------------
- 2 files changed, 18 insertions(+), 63 deletions(-)
+ arch/x86/power/hibernate_64.c |   79 ++++++++----------------------------------
+ 2 files changed, 18 insertions(+), 65 deletions(-)
 
 --- a/arch/x86/kernel/e820.c
 +++ b/arch/x86/kernel/e820.c
@@ -57,7 +57,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  
  #include <asm/e820/api.h>
  #include <asm/init.h>
-@@ -203,85 +204,38 @@ int pfn_is_nosave(unsigned long pfn)
+@@ -203,85 +204,36 @@ int pfn_is_nosave(unsigned long pfn)
  	return (pfn >= nosave_begin_pfn) && (pfn < nosave_end_pfn);
  }
  
@@ -72,8 +72,8 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
 +	unsigned long e820_checksum;
  };
  
- #define RESTORE_MAGIC	0x23456789ABCDEF01UL
- 
+-#define RESTORE_MAGIC	0x23456789ABCDEF01UL
+-
 -#if IS_BUILTIN(CONFIG_CRYPTO_MD5)
  /**
 - * get_e820_md5 - calculate md5 according to given e820 table
@@ -97,7 +97,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
 -	tfm = crypto_alloc_ahash("md5", 0, CRYPTO_ALG_ASYNC);
 -	if (IS_ERR(tfm))
 -		return -ENOMEM;
- 
+-
 -	{
 -		AHASH_REQUEST_ON_STACK(req, tfm);
 -		size = offsetof(struct e820_table, entries) + sizeof(struct e820_entry) * table->nr_entries;
@@ -111,7 +111,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
 -		ahash_request_zero(req);
 -	}
 -	crypto_free_ahash(tfm);
--
+ 
 -	return ret;
 +	return ~crc32_le(~0, (unsigned char const *)table, size);
  }
@@ -154,7 +154,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  #endif
  
  /**
-@@ -319,7 +273,8 @@ int arch_hibernation_header_save(void *a
+@@ -319,7 +271,8 @@ int arch_hibernation_header_save(void *a
  
  	rdr->magic = RESTORE_MAGIC;
  
@@ -164,7 +164,7 @@ Acked-by: Nikolay Borisov <nik.borisov@suse.com>
  }
  
  /**
-@@ -340,7 +295,7 @@ int arch_hibernation_header_restore(void
+@@ -340,7 +293,7 @@ int arch_hibernation_header_restore(void
  		return -EINVAL;
  	}
  

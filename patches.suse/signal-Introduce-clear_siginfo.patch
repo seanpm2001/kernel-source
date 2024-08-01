@@ -1,0 +1,40 @@
+From 8c5dbf2ae00bb8667f61c5edc6521c1fa2bbe4d7 Mon Sep 17 00:00:00 2001
+From: "Eric W. Biederman" <ebiederm@xmission.com>
+Date: Mon, 24 Jul 2017 15:28:56 -0500
+Subject: [PATCH] signal: Introduce clear_siginfo
+Git-commit: 8c5dbf2ae00bb8667f61c5edc6521c1fa2bbe4d7
+REferences: git-fixes
+Patch-mainline: v4.16-rc1
+
+Unfortunately struct siginfo has holes both in the common part of the
+structure, in the union members, and in the lack of padding of the
+union members.  The result of those wholes is that the C standard does
+not guarantee those bits will be initialized.  As struct siginfo is
+for communication between the kernel and userspace that is a problem.
+
+Add the helper function clear_siginfo that is guaranteed to clear all of
+the bits in struct siginfo so when the structure is copied there is no danger
+of copying old kernel data and causing a leak of information from kernel
+space to userspace.
+
+Signed-off-by: "Eric W. Biederman" <ebiederm@xmission.com>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ include/linux/signal.h |    5 +++++
+ 1 file changed, 5 insertions(+)
+
+--- a/include/linux/signal.h
++++ b/include/linux/signal.h
+@@ -22,6 +22,11 @@ static inline void copy_siginfo(struct s
+ 		memcpy(to, from, __ARCH_SI_PREAMBLE_SIZE + sizeof(from->_sifields._sigchld));
+ }
+ 
++static inline void clear_siginfo(struct siginfo *info)
++{
++	memset(info, 0, sizeof(*info));
++}
++
+ #endif
+ 
+ /*

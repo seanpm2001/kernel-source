@@ -1,0 +1,63 @@
+From 0c341910cb3d2376cd438b074634b173af8a2a52 Mon Sep 17 00:00:00 2001
+From: Lu Baolu <baolu.lu@linux.intel.com>
+Date: Fri, 16 Mar 2018 16:33:00 +0200
+Subject: [PATCH] usb: xhci: Remove ep_trb from finish_td()
+Git-commit: 0c341910cb3d2376cd438b074634b173af8a2a52
+References: CVE-2024-26659 bsc#1222317
+Patch-mainline: v4.17-rc1
+
+Function argument ep_trb for finish_td() isn't needed anymore.
+Cleanup it.
+
+Signed-off-by: Lu Baolu <baolu.lu@linux.intel.com>
+Signed-off-by: Mathias Nyman <mathias.nyman@linux.intel.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/usb/host/xhci-ring.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/usb/host/xhci-ring.c b/drivers/usb/host/xhci-ring.c
+index 642a07022e7a..88071c4444c6 100644
+--- a/drivers/usb/host/xhci-ring.c
++++ b/drivers/usb/host/xhci-ring.c
+@@ -1921,7 +1921,7 @@ static int xhci_td_cleanup(struct xhci_hcd *xhci, struct xhci_td *td,
+ }
+ 
+ static int finish_td(struct xhci_hcd *xhci, struct xhci_td *td,
+-	union xhci_trb *ep_trb, struct xhci_transfer_event *event,
++	struct xhci_transfer_event *event,
+ 	struct xhci_virt_ep *ep, int *status)
+ {
+ 	struct xhci_virt_device *xdev;
+@@ -2081,7 +2081,7 @@ static int process_ctrl_td(struct xhci_hcd *xhci, struct xhci_td *td,
+ 		td->urb->actual_length = requested;
+ 
+ finish_td:
+-	return finish_td(xhci, td, ep_trb, event, ep, status);
++	return finish_td(xhci, td, event, ep, status);
+ }
+ 
+ /*
+@@ -2168,7 +2168,7 @@ static int process_isoc_td(struct xhci_hcd *xhci, struct xhci_td *td,
+ 
+ 	td->urb->actual_length += frame->actual_length;
+ 
+-	return finish_td(xhci, td, ep_trb, event, ep, status);
++	return finish_td(xhci, td, event, ep, status);
+ }
+ 
+ static int skip_isoc_td(struct xhci_hcd *xhci, struct xhci_td *td,
+@@ -2258,7 +2258,7 @@ static int process_bulk_intr_td(struct xhci_hcd *xhci, struct xhci_td *td,
+ 			  remaining);
+ 		td->urb->actual_length = 0;
+ 	}
+-	return finish_td(xhci, td, ep_trb, event, ep, status);
++	return finish_td(xhci, td, event, ep, status);
+ }
+ 
+ /*
+-- 
+2.45.1
+

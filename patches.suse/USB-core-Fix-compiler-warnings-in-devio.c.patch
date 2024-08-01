@@ -1,0 +1,70 @@
+From 257adc0fbe9f0a26695f4d68bdbf2886f5a3ecd0 Mon Sep 17 00:00:00 2001
+From: Alan Stern <stern@rowland.harvard.edu>
+Date: Tue, 25 Jun 2019 16:00:26 -0400
+Subject: [PATCH] USB: core: Fix compiler warnings in devio.c
+Mime-version: 1.0
+Content-type: text/plain; charset=UTF-8
+Content-transfer-encoding: 8bit
+Git-commit: 257adc0fbe9f0a26695f4d68bdbf2886f5a3ecd0
+References: CVE-2021-47582 bsc#1226559
+Patch-mainline: v5.3-rc1
+
+In the current kernel, devio.c generates a number of compiler warnings
+about taking the address of a member of a packed structure.  The
+warnings all look like this one:
+
+	drivers/usb/core/devio.c: In function ‘proc_do_submiturb’:
+	drivers/usb/core/devio.c:1489:43: warning: taking address of packed member of ‘struct usb_ctrlrequest’ may result in an unaligned pointer value [-Waddress-of-packed-member]
+	 1489 |   if (uurb->buffer_length < (le16_to_cpup(&dr->wLength) + 8)) {
+	      |                                           ^~~~~~~~~~~~
+
+These warnings can easily be eliminated by changing various
+le16_to_cpup() calls to use le16_to_cpu() instead.
+
+Signed-off-by: Alan Stern <stern@rowland.harvard.edu>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Oliver Neukum <oneukum@suse.com>
+
+---
+ drivers/usb/core/devio.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/usb/core/devio.c b/drivers/usb/core/devio.c
+index 0100a54165cd..a951ce69f10e 100644
+--- a/drivers/usb/core/devio.c
++++ b/drivers/usb/core/devio.c
+@@ -1510,15 +1510,15 @@ static int proc_do_submiturb(struct usb_dev_state *ps, struct usbdevfs_urb *uurb
+ 			ret = -EFAULT;
+ 			goto error;
+ 		}
+-		if (uurb->buffer_length < (le16_to_cpup(&dr->wLength) + 8)) {
++		if (uurb->buffer_length < (le16_to_cpu(dr->wLength) + 8)) {
+ 			ret = -EINVAL;
+ 			goto error;
+ 		}
+ 		ret = check_ctrlrecip(ps, dr->bRequestType, dr->bRequest,
+-				      le16_to_cpup(&dr->wIndex));
++				      le16_to_cpu(dr->wIndex));
+ 		if (ret)
+ 			goto error;
+-		uurb->buffer_length = le16_to_cpup(&dr->wLength);
++		uurb->buffer_length = le16_to_cpu(dr->wLength);
+ 		uurb->buffer += 8;
+ 		if ((dr->bRequestType & USB_DIR_IN) && uurb->buffer_length) {
+ 			is_in = 1;
+@@ -1533,9 +1533,9 @@ static int proc_do_submiturb(struct usb_dev_state *ps, struct usbdevfs_urb *uurb
+ 			"bRequest=%02x wValue=%04x "
+ 			"wIndex=%04x wLength=%04x\n",
+ 			dr->bRequestType, dr->bRequest,
+-			__le16_to_cpup(&dr->wValue),
+-			__le16_to_cpup(&dr->wIndex),
+-			__le16_to_cpup(&dr->wLength));
++			__le16_to_cpu(dr->wValue),
++			__le16_to_cpu(dr->wIndex),
++			__le16_to_cpu(dr->wLength));
+ 		u = sizeof(struct usb_ctrlrequest);
+ 		break;
+ 
+-- 
+2.45.1
+

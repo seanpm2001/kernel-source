@@ -1,0 +1,57 @@
+From: Yonglong Liu <liuyonglong@huawei.com>
+Date: Wed, 5 Jun 2024 15:20:57 +0800
+Subject: net: hns3: fix kernel crash problem in concurrent scenario
+Patch-mainline: v6.10-rc4
+Git-commit: 12cda920212a49fa22d9e8b9492ac4ea013310a4
+References: CVE-2024-39507 bsc#1227730
+
+When link status change, the nic driver need to notify the roce
+driver to handle this event, but at this time, the roce driver
+may uninit, then cause kernel crash.
+
+To fix the problem, when link status change, need to check
+whether the roce registered, and when uninit, need to wait link
+update finish.
+
+Fixes: 45e92b7e4e27 ("net: hns3: add calling roce callback function when link status change")
+Signed-off-by: Yonglong Liu <liuyonglong@huawei.com>
+Signed-off-by: Jijie Shao <shaojijie@huawei.com>
+Reviewed-by: Simon Horman <horms@kernel.org>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Acked-by: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c |   15 +++++++++------
+ 1 file changed, 9 insertions(+), 6 deletions(-)
+
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3pf/hclge_main.c
+@@ -2585,9 +2585,7 @@ static int hclge_get_mac_phy_link(struct
+ 
+ static void hclge_update_link_status(struct hclge_dev *hdev)
+ {
+-	struct hnae3_client *rclient = hdev->roce_client;
+ 	struct hnae3_client *client = hdev->nic_client;
+-	struct hnae3_handle *rhandle;
+ 	struct hnae3_handle *handle;
+ 	int state;
+ 	int i;
+@@ -2600,10 +2598,15 @@ static void hclge_update_link_status(str
+ 			handle = &hdev->vport[i].nic;
+ 			client->ops->link_status_change(handle, state);
+ 			hclge_config_mac_tnl_int(hdev, state);
+-			rhandle = &hdev->vport[i].roce;
+-			if (rclient && rclient->ops->link_status_change)
+-				rclient->ops->link_status_change(rhandle,
+-								 state);
++
++			if (test_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state)) {
++				struct hnae3_handle *rhandle = &hdev->vport[0].roce;
++				struct hnae3_client *rclient = hdev->roce_client;
++
++				if (rclient && rclient->ops->link_status_change)
++					rclient->ops->link_status_change(rhandle,
++									 state);
++			}
+ 		}
+ 		hdev->hw.mac.link = state;
+ 	}

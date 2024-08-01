@@ -1,0 +1,50 @@
+From: Chengming Zhou <zhouchengming@bytedance.com>
+Date: Wed, 27 Dec 2023 09:35:23 +0000
+Subject: crypto: scomp - fix req->dst buffer overflow
+Patch-mainline: v6.8-rc1
+Git-commit: 744e1885922a9943458954cfea917b31064b4131
+References: CVE-2023-52612 bsc#1221616
+
+The req->dst buffer size should be checked before copying from the
+scomp_scratch->dst to avoid req->dst buffer overflow problem.
+
+Fixes: 1ab53a77b772 ("crypto: acomp - add driver-side scomp interface")
+Reported-by: syzbot+3eff5e51bf1db122a16e@syzkaller.appspotmail.com
+Closes: https://lore.kernel.org/all/0000000000000b05cd060d6b5511@google.com/
+Signed-off-by: Chengming Zhou <zhouchengming@bytedance.com>
+Reviewed-by: Barry Song <v-songbaohua@oppo.com>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Acked-by: Nicolai Stange <nstange@suse.de>
+---
+ crypto/scompress.c |    6 ++++++
+ 1 file changed, 6 insertions(+)
+
+--- a/crypto/scompress.c
++++ b/crypto/scompress.c
+@@ -187,6 +187,7 @@ static int scomp_acomp_comp_decomp(struc
+ 	const int cpu = get_cpu();
+ 	u8 *scratch_src = *per_cpu_ptr(scomp_src_scratches, cpu);
+ 	u8 *scratch_dst = *per_cpu_ptr(scomp_dst_scratches, cpu);
++	unsigned int dlen;
+ 	int ret;
+ 
+ 	if (!req->src || !req->slen || req->slen > SCOMP_SCRATCH_SIZE) {
+@@ -202,6 +203,8 @@ static int scomp_acomp_comp_decomp(struc
+ 	if (!req->dlen || req->dlen > SCOMP_SCRATCH_SIZE)
+ 		req->dlen = SCOMP_SCRATCH_SIZE;
+ 
++	dlen = req->dlen;
++
+ 	scatterwalk_map_and_copy(scratch_src, req->src, 0, req->slen, 0);
+ 	if (dir)
+ 		ret = crypto_scomp_compress(scomp, scratch_src, req->slen,
+@@ -214,6 +217,9 @@ static int scomp_acomp_comp_decomp(struc
+ 			req->dst = crypto_scomp_sg_alloc(req->dlen, GFP_ATOMIC);
+ 			if (!req->dst)
+ 				goto out;
++		} else if (req->dlen > dlen) {
++			ret = -ENOSPC;
++			goto out;
+ 		}
+ 		scatterwalk_map_and_copy(scratch_dst, req->dst, 0, req->dlen,
+ 					 1);
